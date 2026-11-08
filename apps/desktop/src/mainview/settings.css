@@ -138,17 +138,12 @@
   box-shadow: var(--ds-elevation-stroke);
   color: var(--ds-text-muted);
 }
-.settings-search:focus-within {
-  outline: 1px solid var(--ds-focus);
-}
-.settings-search input:not([type="range"]),
-.settings-search input:not([type="range"]):focus {
+.settings-search input:not([type="range"]) {
   min-width: 0;
   width: 100%;
   background: transparent;
   border: 0;
   padding: 8px 0;
-  outline: none;
 }
 .settings-search input::placeholder {
   color: var(--ds-placeholder-ink);
@@ -300,24 +295,15 @@
   min-width: 140px;
 }
 .utility-provider button:focus-visible,
-.utility-model-select select:focus-visible,
-.utility-model-select input:focus-visible {
+.utility-model-select select:focus-visible {
   outline-offset: -2px;
 }
-.provider-categories {
-  display: flex;
-  flex-wrap: wrap;
+/* Same segmented control as Settings; sized to its tabs instead of the row.
+   Doubled class: .segmented-control's `margin: 0` would otherwise win. */
+.segmented-control.provider-categories {
   flex: none;
-  gap: 6px;
+  width: fit-content;
   margin-bottom: 20px;
-}
-.provider-categories button {
-  padding: 8px 14px;
-  border: 1px solid var(--ds-border-strong);
-}
-.provider-categories button[aria-pressed="true"] {
-  background: var(--ds-bg-active);
-  color: var(--ds-accent);
 }
 .provider-utility-panel {
   min-height: 0;

@@ -76,11 +76,14 @@ export function Providers() {
       <p className="muted page-description">
         {
           t[
-            "Connect a subscription or API key. Credentials are shared with the pi CLI."
+            "Connect a subscription or API key. Credentials are stored by pig only."
           ]
         }
       </p>
-      <nav className="provider-categories" aria-label={t.Providers}>
+      <nav
+        className="segmented-control provider-categories"
+        aria-label={t.Providers}
+      >
         {[
           ["chat", t.Models],
           ["images", t["Image generation"]],
