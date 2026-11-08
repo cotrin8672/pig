@@ -13,4 +13,5 @@ export default {
     linux: { bundleCEF: false },
     win: { bundleCEF: false },
   },
+  scripts: { postBuild: "scripts/windows-native.ts" },
 } satisfies ElectrobunConfig;
