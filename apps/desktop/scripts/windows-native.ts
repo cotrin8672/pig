@@ -1,6 +1,13 @@
 import { copyFileSync, existsSync, mkdirSync, rmSync } from "node:fs";
 import { join, resolve } from "node:path";
 
+// Git Bash's GNU tar on PATH treats "D:\..." as a remote host; use the built-in Windows tar.
+const tar = join(
+  process.env.SystemRoot ?? "C:\\Windows",
+  "System32",
+  "tar.exe",
+);
+
 // shortcut: pinned to Electrobun 1.18.1/win-x64; remove when upgrading to native drag support.
 const commit = "4eba723c85b97559e1d9e13439d9a92ede0832e8";
 const assets = [
@@ -162,7 +169,7 @@ async function main() {
     mkdirSync(work, { recursive: true });
     run(
       [
-        "tar.exe",
+        tar,
         "-xf",
         join(archives, "source.tar.gz"),
         "-C",
@@ -182,7 +189,7 @@ async function main() {
       mkdirSync(target, { recursive: true });
       run(
         [
-          "tar.exe",
+          tar,
           "-xf",
           join(archives, archive),
           "-C",
