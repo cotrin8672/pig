@@ -1,31 +1,35 @@
-# piris
+# pig
 
-A minimal Windows desktop chat client for the in-process pi coding-agent SDK.
+pig (pi on gui) is a thin GUI client for the pi agent harness.
 Electrobun **1.18.1**, Bun, React 19, Vite, Tailwind v4, and zustand.
 
 ## Install
 
 On Windows x64, install [Scoop](https://scoop.sh/) and the Microsoft Edge
-WebView2 Runtime, then run in PowerShell (once the first release is published):
+WebView2 Runtime, then run in PowerShell (after the corresponding pig build is published):
 
 ```powershell
-scoop bucket add piris https://github.com/cotrin8672/piris
-scoop install piris          # Latest stable release
-# Or: scoop install piris-nightly   # Latest successful main build
+scoop bucket add pig https://github.com/cotrin8672/pig
+scoop install pig          # Latest stable release
+# Or: scoop install pig-nightly   # Latest successful main build
 ```
 
-Both packages install the same unsigned portable app, with the `piris` command
+Both packages install the same unsigned portable app, with the `pig` command
 and Start menu shortcut. **Scoop treats them as separate apps, not replacements:**
-installing both conflicts on the `piris` shim and shortcut. Fully exit the app,
-then use `scoop reset piris` or `scoop reset piris-nightly` to select which runs
+installing both conflicts on the `pig` shim and shortcut. Fully exit the app,
+then use `scoop reset pig` or `scoop reset pig-nightly` to select which runs
 (also reset the remaining package after uninstalling the other).
-Both builds use identifier `dev.piris.desktop` and channel `stable`, sharing
-`%LOCALAPPDATA%/dev.piris.desktop/stable` settings/projects and pi's existing
-credentials/sessions. Do not run both concurrently; back up data before switching.
+Both builds retain the legacy identifier `dev.piris.desktop` and use channel
+`stable`. Desktop settings/projects live in `~/.config/pig`; pi credentials and
+sessions keep their existing SDK locations. The WebView profile/cache remains
+under `%LOCALAPPDATA%/dev.piris.desktop/stable`. Do not run both clients
+concurrently; back up data before switching.
 Scoop uninstall does not remove this data. No Scoop `persist` directory is needed.
+If upgrading from piris, quit the app and uninstall the old `piris` or
+`piris-nightly` Scoop package before installing pig; the shared profile is retained.
 
-Update with `scoop update` followed by `scoop update piris` or
-`scoop update piris-nightly`. Nightly uses a rolling prerelease and Scoop's
+Update with `scoop update` followed by `scoop update pig` or
+`scoop update pig-nightly`. Nightly uses a rolling prerelease and Scoop's
 `nightly` version: updates re-download it without hash verification.
 
 ### Publish
@@ -42,7 +46,7 @@ For stable releases, keep the versions in `apps/desktop/package.json` and
 git tag v0.1.0 && git push --tags
 ```
 
-The workflow uploads `piris-windows-x64.zip` plus its `.sha256`, then commits the
+The workflow uploads `pig-windows-x64.zip` plus its `.sha256`, then commits the
 stable Scoop version/hash to `main` using `GITHUB_TOKEN` (`contents: write`).
 No Excavator service is needed; checkver/autoupdate metadata is also provided.
 Wait for that bucket commit before installing the first stable build. See
@@ -51,6 +55,11 @@ Wait for that bucket commit before installing the first stable build. See
 ## Run
 
 Requires Windows with WebView2, Node 22+, pnpm 10.14, and Bun (tested with 1.4.2).
+
+Windows x64 builds also require Visual Studio 2022/2026 C++ Build Tools with
+CMake and the Windows SDK. The post-build hook compiles the pinned Electrobun
+native drag-region backport, downloads about 170 MB of checksum-verified SDKs on
+the first build, and caches the result. Installed dependencies are not modified.
 
 ```sh
 pnpm install
@@ -63,8 +72,20 @@ with the project's **+**. Enter sends; Shift+Enter inserts a newline. Sending
 while pi is running queues a follow-up. Stop aborts the current run. Closing a
 chat releases its live SDK session without deleting history.
 
+Each chat's **…** menu provides Rename, Pin/Unpin, Archive/Restore, Copy link,
+and Delete. Rename updates the pi session name; pins and archive flags are
+Desktop-only. Archived chats remain available from **Archived chats**. Delete
+requires confirmation and permanently removes local history; stop an active
+response/command first. Removing a project still never deletes its chats.
+
+Copied `pig://session/<id>` links are local, not cloud shares. Paste a link in
+pig outside a text field, or click a Markdown chat link inside pig, to open it.
+Only sessions in registered project folders can be opened. Electrobun 1.18.1
+does not support OS-level URL activation on Windows/Linux, so links do not
+launch the app from other applications.
+
 `pnpm dev` builds the webview and launches the app. For webview HMR, also run
-`pnpm --filter @piris/desktop exec vite` in another terminal; restart `pnpm dev`
+`pnpm --filter @pig/desktop exec vite` in another terminal; restart `pnpm dev`
 after changing main-process code. Without Vite, the app uses bundled views.
 
 ```sh
@@ -72,7 +93,7 @@ pnpm typecheck
 pnpm lint
 pnpm format
 pnpm test
-pnpm --filter @piris/desktop smoke
+pnpm --filter @pig/desktop smoke
 pnpm build
 ```
 
@@ -82,13 +103,18 @@ and packages a portable ZIP instead.
 
 ## Storage and limits
 
-- pi owns credentials at its default `~/.pi/agent/auth.json` and sessions at its
-  default location. Existing CLI extensions, skills, and settings load normally;
-  extension UI dialogs are not implemented. Only `openai-codex` and `anthropic`
+- pi/SDK settings, authentication, extensions, skills, and history use the pi
+  SDK's standard locations (`~/.pi/agent` by default, respecting its environment
+  overrides). pig does not copy credentials or history into its config folder.
+- Desktop-only data is saved under `~/.config/pig` (Windows:
+  `%USERPROFILE%\.config\pig`): `projects.json`, `appearance.json`,
+  `disabled-models.json`, `settings.json` (language/context display/keybindings),
+  and `desktop.json` (pins, archives, chat width, recent models).
+  First startup copies the known legacy Desktop files from Electrobun userData
+  without overwriting existing destination files. Originals remain untouched;
+  legacy browser width/recent-model preferences are imported only when unset.
+- Extension UI dialogs are not implemented. Only `openai-codex` and `anthropic`
   appear in the model picker.
-- Project folders are saved in `projects.json` inside Electrobun's
-  `Utils.paths.userData` (`%LOCALAPPDATA%/dev.piris.desktop/dev` for dev builds).
-  Removing a project never deletes files or session history.
 - OAuth URLs remain visible beside manual-code inputs; the system browser opens
   automatically. Cancel handles both the whole flow and per-prompt cancellation.
 - The Windows folder picker uses an RPC **message**, not a request, to avoid
@@ -102,5 +128,5 @@ and packages a portable ZIP instead.
   dependency build scripts are approved.
 
 The smoke script creates and disposes an in-memory session without sending a
-prompt or initiating login. Real subscription login and model requests need
-manual verification; automated tests only cover transcript/event handling.
+prompt or initiating login. Automated session/storage tests use scratch files;
+real subscription login and model requests still require manual verification.
