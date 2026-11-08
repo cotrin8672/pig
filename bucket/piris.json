@@ -1,0 +1,32 @@
+{
+  "version": "0.1.0",
+  "description": "A minimal Windows desktop chat client for the pi coding-agent SDK",
+  "homepage": "https://github.com/cotrin8672/piris",
+  "license": "MIT",
+  "architecture": {
+    "64bit": {
+      "url": "https://github.com/cotrin8672/piris/releases/download/v0.1.0/piris-windows-x64.zip",
+      "hash": "13ad2eaa704e4db55a4b0f0f58e2b0459ede3dddf1f16e2e80f00135b4544627"
+    }
+  },
+  "bin": [["bin/launcher.exe", "piris"]],
+  "shortcuts": [["bin/launcher.exe", "piris"]],
+  "notes": [
+    "Requires Microsoft Edge WebView2 Runtime. This build is unsigned.",
+    "piris and piris-nightly are separate Scoop apps sharing the piris shim and shortcut; installing both causes conflicts. Switch with 'scoop reset piris' or 'scoop reset piris-nightly'.",
+    "Exit all piris instances before updating or switching. Both builds share %LOCALAPPDATA%/dev.piris.desktop/stable; uninstall does not delete your data."
+  ],
+  "checkver": {
+    "github": "https://github.com/cotrin8672/piris"
+  },
+  "autoupdate": {
+    "architecture": {
+      "64bit": {
+        "url": "https://github.com/cotrin8672/piris/releases/download/v$version/piris-windows-x64.zip",
+        "hash": {
+          "url": "$url.sha256"
+        }
+      }
+    }
+  }
+}

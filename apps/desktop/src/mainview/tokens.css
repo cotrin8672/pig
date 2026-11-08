@@ -1,0 +1,148 @@
+/* Blue-gray Seamless, matched to PI-Desktop. Geometry and type keep its token ramp. */
+:root {
+  color-scheme: dark;
+  --ds-accent: #c5d9ff;
+  --ds-accent-hover: #d9e7ff;
+  --ds-accent-soft: #adc4e6;
+  --ds-bg-active: #c5d9ff1f;
+  --ds-bg-chip: #ffffff0d;
+  --ds-bg-composer: #414959e6;
+  --ds-bg-elevated: #343d4df5;
+  --ds-bg-elevated-opaque: #343d4d;
+  --ds-bg-hover: #ffffff0d;
+  --ds-bg-inset: #252c39;
+  --ds-bg-primary: #2b3443;
+  --ds-bg-secondary: #414959;
+  --ds-bg-sidebar: #0c111b1f;
+  --ds-bg-tertiary: #394354;
+  --ds-bg-under: #2b3443;
+  --ds-border-default: transparent;
+  --ds-border-strong: #dbe7ff30;
+  --ds-border-subtle: transparent;
+  --ds-elevation-stroke: 0 0 0 0.5px #dbe7ff1a;
+  --ds-field-inset-bg: #ffffff0d;
+  --ds-field-inset-focus-bg: #ffffff14;
+  --ds-focus: #d4e4ff;
+  --ds-placeholder-ink: #b4bbc9;
+  --ds-raised: #414959;
+  --ds-settings-field-bg: #333e50;
+  --ds-shadow-composer: 0 6px 18px #1111163d, inset 0 1px 0 #ffffff08;
+  --ds-shadow-dialog: 0 16px 48px #11111666;
+  --ds-text-faint: #a0a9ba;
+  --ds-text-muted: #b4bbc9;
+  --ds-text-primary: #f1edf5;
+  --ds-text-secondary: #c6cbd6;
+  --ds-tool-row-bg: #ffffff07;
+  --ds-tile: #ffffff08;
+  --ds-tile-hover: #ffffff0f;
+  --ds-thinking-code-bg: #252c39;
+  --ds-success: #67dfa0;
+  --ds-error: #ff9996;
+  --ds-warning: #ffb88e;
+  --ds-info: #adc4e6;
+  --ds-purple: #c8afff;
+  --ds-sidebar-width: 260px;
+  --ds-toolbar-height: 46px;
+  --ds-composer-radius: var(--radius-lg-plus);
+  --font-scale: 1;
+  --motion-duration-fast: 150ms;
+  --motion-duration-normal: 200ms;
+  --motion-ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+@theme {
+  --color-bg-primary: var(--ds-bg-primary);
+  --color-bg-secondary: var(--ds-bg-secondary);
+  --color-bg-tertiary: var(--ds-bg-tertiary);
+  --color-bg-inset: var(--ds-bg-inset);
+  --color-bg-under: var(--ds-bg-under);
+  --color-bg-elevated: var(--ds-bg-elevated);
+  --color-bg-hover: var(--ds-bg-hover);
+  --color-bg-active: var(--ds-bg-active);
+  --color-bg-composer: var(--ds-bg-composer);
+  --color-bg-chip: var(--ds-bg-chip);
+  --color-text-primary: var(--ds-text-primary);
+  --color-text-secondary: var(--ds-text-secondary);
+  --color-text-muted: var(--ds-text-muted);
+  --color-text-faint: var(--ds-text-faint);
+  --color-border-default: var(--ds-border-default);
+  --color-border-subtle: var(--ds-border-subtle);
+  --color-border-strong: var(--ds-border-strong);
+  --color-accent: var(--ds-accent);
+  --color-accent-hover: var(--ds-accent-hover);
+  --color-accent-soft: var(--ds-accent-soft);
+  --color-success: var(--ds-success);
+  --color-warning: var(--ds-warning);
+  --color-error: var(--ds-error);
+  --color-info: var(--ds-info);
+  --color-purple: var(--ds-purple);
+
+  /*
+    Token scales — the ONLY allowed values for typography and radii.
+    Raw px/em literals for font-size, font-weight, line-height,
+    letter-spacing, and border-radius are forbidden in component CSS
+    and TSX (enforced by scripts/check-style-tokens.mjs).
+  */
+  /*
+    Apple-inspired fixed-radius ladder for dense desktop UI. Compact controls
+    remain rounded rectangles; capsules and circles use the explicit shape
+    tokens below. The regular two-pixel rhythm keeps adjacent levels legible
+    and makes concentric nesting predictable.
+  */
+  --radius-3xs: 4px;
+  --radius-2xs: 6px;
+  --radius-xs: 8px;
+  --radius-sm: 10px;
+  --radius-md: 12px;
+  --radius-md-plus: 14px;
+  --radius-lg: 16px;
+  --radius-lg-plus: 18px;
+  --radius-xl: 20px;
+  --radius-2xl: 24px;
+  --radius-full: 9999px;
+  --radius-round: 50%;
+
+  --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+  --font-mono: ui-monospace, "SFMono-Regular", "SF Mono", Menlo, Consolas, "Liberation Mono",
+    monospace;
+
+  /* Type ramp (Codex metrics; "-plus" = half-step between named sizes) */
+  --text-3xs: calc(10.5px * var(--font-scale));
+  --text-2xs: calc(11px * var(--font-scale)); /* alias kept: --text-xs */
+  --text-xs: calc(11px * var(--font-scale));
+  --text-xs-plus: calc(11.5px * var(--font-scale));
+  --text-sm: calc(12px * var(--font-scale));
+  --text-sm-plus: calc(12.5px * var(--font-scale));
+  --text-md: calc(13px * var(--font-scale));
+  --text-md-plus: calc(13.5px * var(--font-scale));
+  --text-base: calc(14px * var(--font-scale));
+  --text-base-plus: calc(15px * var(--font-scale));
+  --text-lg: calc(16px * var(--font-scale));
+  --text-lg-plus: calc(18px * var(--font-scale));
+  --text-xl: calc(20px * var(--font-scale));
+  --text-2xl: calc(28px * var(--font-scale));
+
+  --font-weight-normal: 400;
+  --font-weight-medium: 500;
+  --font-weight-medium-plus: 520;
+  --font-weight-strong: 560;
+  --font-weight-semibold: 600;
+
+  --leading-none: 1;
+  --leading-heading: 1.15;
+  --leading-tighter: 1.2;
+  --leading-tight: 1.25;
+  --leading-compact: 1.3;
+  --leading-compact-plus: 1.35;
+  --leading-normal: 1.4;
+  --leading-body: 1.45;
+  --leading-relaxed: 1.5;
+  --leading-chat: 1.55;
+  --leading-prose: 1.6;
+  --leading-row: calc(18px * var(--font-scale)); /* sidebar thread titles */
+
+  --tracking-tighter: -0.03em;
+  --tracking-tight: -0.02em;
+  --tracking-normal: 0em;
+  --tracking-wide: 0.02em;
+}

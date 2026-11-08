@@ -1,0 +1,16 @@
+{
+  "name": "piris",
+  "private": true,
+  "packageManager": "pnpm@10.14.0",
+  "scripts": {
+    "dev": "pnpm --filter @piris/desktop dev",
+    "build": "pnpm --filter @piris/desktop build",
+    "typecheck": "pnpm --filter @piris/desktop typecheck",
+    "lint": "biome check .",
+    "format": "biome check --write .",
+    "test": "bun test apps/desktop/src"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "2.4.8"
+  }
+}

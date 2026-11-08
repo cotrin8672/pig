@@ -1,0 +1,115 @@
+name: Release
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+# Serialize publication, including the stable bucket commit.
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: bash
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Manual runs and queued main builds always build the latest main.
+          ref: ${{ github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v') && github.ref || 'main' }}
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.2
+      - name: Identify release
+        id: release
+        run: |
+          set -euo pipefail
+          echo "RELEASE_DIR=$RUNNER_TEMP/release" >> "$GITHUB_ENV"
+          sha=$(git rev-parse HEAD)
+          version=$(node -p "require('./apps/desktop/package.json').version")
+          if [[ "$GITHUB_EVENT_NAME" == push && "$GITHUB_REF" == refs/tags/v* ]]; then
+            [[ "$GITHUB_REF_NAME" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo 'Use a stable vX.Y.Z tag'; exit 1; }
+            [[ "$GITHUB_REF_NAME" == "v$version" ]] || { echo 'Tag must match apps/desktop/package.json'; exit 1; }
+            bun -e 'import config from "./apps/desktop/electrobun.config.ts"; if (config.app.version !== process.env.GITHUB_REF_NAME.slice(1)) throw new Error("Tag must match electrobun.config.ts");'
+            echo "tag=$GITHUB_REF_NAME" >> "$GITHUB_OUTPUT"
+            echo "version=$version" >> "$GITHUB_OUTPUT"
+          else
+            echo 'tag=nightly' >> "$GITHUB_OUTPUT"
+            echo "version=$version-nightly.$(date -u +%Y%m%d).${sha:0:7}" >> "$GITHUB_OUTPUT"
+          fi
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm typecheck
+      - run: pnpm lint
+      - run: pnpm test
+      - name: Build portable app (shared stable profile)
+        run: |
+          set -euo pipefail
+          pnpm --filter @piris/desktop exec vite build
+          pnpm --filter @piris/desktop exec electrobun build --env=stable
+      - name: Package ZIP and checksum
+        shell: pwsh
+        run: ./.github/scripts/package.ps1 -OutputDirectory $env:RELEASE_DIR
+      - name: Publish release
+        env:
+          TAG: ${{ steps.release.outputs.tag }}
+          VERSION: ${{ steps.release.outputs.version }}
+          SHA: ${{ steps.release.outputs.sha }}
+        run: |
+          set -euo pipefail
+          if [[ "$TAG" == nightly ]]; then
+            notes="Nightly $VERSION from commit $SHA. Built with the stable identifier and channel to share settings and projects. Unsigned Windows x64 portable build; requires WebView2."
+            if ! gh release view nightly >/dev/null 2>&1; then
+              gh release create nightly --target "$SHA" --prerelease --latest=false --title 'piris nightly' --notes "$notes"
+            fi
+            gh api --method PATCH "repos/$GH_REPO/git/refs/tags/nightly" -f sha="$SHA" -F force=true
+            gh release edit nightly --prerelease --latest=false --title 'piris nightly' --notes "$notes"
+            gh release upload nightly "$RELEASE_DIR/piris-windows-x64.zip" "$RELEASE_DIR/piris-windows-x64.zip.sha256" --clobber
+          else
+            gh release create "$TAG" --verify-tag --latest --title "piris $VERSION" \
+              --notes "Unsigned Windows x64 portable build; requires WebView2. Install with Scoop using the repository bucket." \
+              "$RELEASE_DIR/piris-windows-x64.zip" "$RELEASE_DIR/piris-windows-x64.zip.sha256"
+          fi
+      # checkver/autoupdate are metadata, not a scheduler. Commit the actual
+      # published hash so ordinary 'scoop update' works without Excavator.
+      - name: Update stable Scoop manifest on main
+        if: steps.release.outputs.tag != 'nightly'
+        env:
+          VERSION: ${{ steps.release.outputs.version }}
+        run: |
+          set -euo pipefail
+          git fetch origin main
+          git switch -C bucket-update origin/main
+          node --input-type=module <<'NODE'
+          import fs from 'node:fs';
+          const path = 'bucket/piris.json';
+          const manifest = JSON.parse(fs.readFileSync(path, 'utf8'));
+          manifest.version = process.env.VERSION;
+          manifest.architecture['64bit'].url = `https://github.com/cotrin8672/piris/releases/download/v${process.env.VERSION}/piris-windows-x64.zip`;
+          manifest.architecture['64bit'].hash = fs.readFileSync(`${process.env.RELEASE_DIR}/piris-windows-x64.zip.sha256`, 'utf8').trim().split(/\s+/)[0];
+          fs.writeFileSync(path, `${JSON.stringify(manifest, null, 2)}\n`);
+          NODE
+          pnpm exec biome format --write bucket/piris.json
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add bucket/piris.json
+          if ! git diff --cached --quiet; then
+            git commit -m "chore(scoop): update piris to $VERSION"
+            git push origin HEAD:main
+          fi

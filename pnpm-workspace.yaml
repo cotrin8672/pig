@@ -1,0 +1,9 @@
+packages:
+  - apps/*
+
+onlyBuiltDependencies:
+  - electrobun
+  - esbuild
+
+patchedDependencies:
+  electrobun@1.18.1: patches/electrobun@1.18.1.patch

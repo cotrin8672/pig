@@ -1,0 +1,16 @@
+{
+  "$schema": "https://biomejs.dev/schemas/2.4.8/schema.json",
+  "files": {
+    "includes": [
+      "**",
+      "!!**/dist",
+      "!!**/build",
+      "!!**/artifacts",
+      "!!pnpm-lock.yaml",
+      "!!**/tokens.css"
+    ]
+  },
+  "formatter": { "indentStyle": "space", "indentWidth": 2 },
+  "linter": { "enabled": true, "rules": { "recommended": true } },
+  "css": { "parser": { "tailwindDirectives": true } }
+}

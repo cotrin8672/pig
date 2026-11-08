@@ -1,0 +1,18 @@
+diff --git a/dist/api/bun/index.ts b/dist/api/bun/index.ts
+index 8af542a997e3fb25cab3700875063cead1493f26..b04bc5a41c2eb62f48c6f04feefadd2b50c8b2dd 100644
+--- a/dist/api/bun/index.ts
++++ b/dist/api/bun/index.ts
+@@ -1,3 +1,4 @@
++// @ts-nocheck — upstream optional Three.js export has no bundled declarations.
+ import electobunEventEmmitter from "./events/eventEmitter";
+ import { BrowserWindow, type WindowOptionsType } from "./core/BrowserWindow";
+ import { BrowserView, type BrowserViewOptions } from "./core/BrowserView";
+diff --git a/dist/api/bun/proc/native.ts b/dist/api/bun/proc/native.ts
+index f0f6c2532ba2eb467ec1d452a25c835b6db72661..90d5591942624c0d0e5f7123a72ac169e516cfe2 100644
+--- a/dist/api/bun/proc/native.ts
++++ b/dist/api/bun/proc/native.ts
+@@ -1,3 +1,4 @@
++// @ts-nocheck — upstream FFI pointer/nullability errors with current Bun types.
+ import { join } from "path";
+ import electrobunEventEmitter from "../events/eventEmitter";
+ import ElectrobunEvent from "../events/event";
