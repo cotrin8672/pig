@@ -8,6 +8,7 @@ import {
   rm,
   writeFile,
 } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { basename, dirname, isAbsolute, join } from "node:path";
 import { DesktopStateStore } from "./desktop-state";
 
@@ -20,7 +21,7 @@ afterEach(async () => {
   );
 });
 async function fixture() {
-  const scratch = process.env.PI_SCRATCH_DIR;
+  const scratch = process.env.PI_SCRATCH_DIR ?? tmpdir();
   if (!scratch || !isAbsolute(scratch))
     throw new Error("PI_SCRATCH_DIR must be absolute.");
   const directory = await mkdtemp(join(scratch, "desktop-state-"));

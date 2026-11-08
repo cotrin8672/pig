@@ -1,5 +1,6 @@
 import { afterEach, expect, spyOn, test } from "bun:test";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { dirname, isAbsolute, join } from "node:path";
 import { SessionManager } from "@earendil-works/pi-coding-agent";
 import type { SessionInfo } from "../shared/rpc-schema";
@@ -20,7 +21,7 @@ afterEach(async () => {
   );
 });
 async function fixture() {
-  const scratch = process.env.PI_SCRATCH_DIR;
+  const scratch = process.env.PI_SCRATCH_DIR ?? tmpdir();
   if (!scratch || !isAbsolute(scratch))
     throw new Error("PI_SCRATCH_DIR must be absolute.");
   const directory = await mkdtemp(join(scratch, "session-files-"));

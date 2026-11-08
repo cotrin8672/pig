@@ -1,12 +1,13 @@
 import { expect, test } from "bun:test";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { defaultSettings, patchSettings } from "../shared/settings";
 import { loadSettings, saveSettings } from "./settings";
 
 test("missing and corrupt settings default without overwriting; valid saves round trip", async () => {
   const directory = await mkdtemp(
-    join(process.env.PI_SCRATCH_DIR ?? process.cwd(), "pig-settings-"),
+    join(process.env.PI_SCRATCH_DIR ?? tmpdir(), "pig-settings-"),
   );
   const file = join(directory, "settings.json");
   try {

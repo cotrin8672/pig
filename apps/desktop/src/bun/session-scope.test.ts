@@ -1,5 +1,6 @@
 import { afterEach, expect, test } from "bun:test";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { validateSessionScope } from "./session-scope";
 
@@ -10,9 +11,8 @@ afterEach(async () => {
 });
 
 test("only registered or managed-general cwd is accepted; project-only never permits general", async () => {
-  if (!process.env.PI_SCRATCH_DIR) throw new Error("PI_SCRATCH_DIR required");
   const root = await mkdtemp(
-    join(process.env.PI_SCRATCH_DIR, "session-scope-"),
+    join(process.env.PI_SCRATCH_DIR ?? tmpdir(), "session-scope-"),
   );
   directories.push(root);
   const project = join(root, "project");
