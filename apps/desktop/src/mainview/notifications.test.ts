@@ -7,7 +7,6 @@ import {
   clearNotices,
   dismissNotice,
   markNoticeRead,
-  receivePackageOp,
   showError,
   showNotice,
   useStore,
@@ -15,7 +14,7 @@ import {
 
 afterEach(() => {
   jest.useRealTimers();
-  useStore.setState({ notices: [], noticeHistory: [], packageOps: {} });
+  useStore.setState({ notices: [], noticeHistory: [] });
 });
 
 test("identical notices coexist and expire independently, including before session load", () => {
@@ -42,25 +41,17 @@ test("identical notices coexist and expire independently, including before sessi
   ).toBe(true);
 });
 
-test("dismissal removes only its notice; existing errors and package results share the stack", () => {
+test("dismissal removes only its notice; errors and completions share the stack", () => {
   jest.useFakeTimers();
   showError("Failure");
   const first = useStore.getState().notices[0];
-  const op = { opId: "op", action: "install" as const, source: "npm:example" };
-  receivePackageOp({ ...op, status: "running" });
-  expect(useStore.getState().notices).toHaveLength(1);
-  receivePackageOp({ ...op, status: "done" });
+  showNotice({ message: "Finished", level: "success" });
   expect(useStore.getState().notices.map((n) => n.level)).toEqual([
     "error",
     "success",
   ]);
   dismissNotice(first.id);
   expect(useStore.getState().notices).toHaveLength(1);
-  receivePackageOp({ ...op, status: "error", message: "Cannot install" });
-  expect(useStore.getState().notices[1]).toMatchObject({
-    message: "Cannot install",
-    level: "error",
-  });
 });
 
 test("history supports individual and bulk read, retains the newest 200, and clears without timer resurrection", () => {

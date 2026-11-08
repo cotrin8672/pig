@@ -1,9 +1,9 @@
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
-import { getAgentDir, SettingsManager } from "@earendil-works/pi-coding-agent";
 import type { ModelOverride } from "../shared/model-overrides";
 import { modelKey } from "../shared/models";
 import type { Effort } from "../shared/rpc-schema";
+import { desktopConfigDir } from "./desktop-config";
 
 type ModelsJson = {
   providers?: Record<
@@ -12,9 +12,11 @@ type ModelsJson = {
   >;
 } & Record<string, unknown>;
 
-export const modelsJsonPath = () => join(getAgentDir(), "models.json");
+export const modelsJsonPath = () => join(desktopConfigDir, "models.json");
 
-async function readModelsJson(file: string): Promise<ModelsJson> {
+export async function readModelsJson(
+  file = modelsJsonPath(),
+): Promise<ModelsJson> {
   let text: string;
   try {
     text = await readFile(file, "utf8");
@@ -33,6 +35,19 @@ async function readModelsJson(file: string): Promise<ModelsJson> {
   );
 }
 
+/** Startup accepts the SDK's JSONC format; the editor still refuses comment-destructive rewrites. */
+export async function readModelConfig(
+  file = modelsJsonPath(),
+): Promise<unknown> {
+  try {
+    return Bun.JSONC.parse(
+      (await readFile(file, "utf8")).replace(/^\uFEFF/, ""),
+    );
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return {};
+    throw error;
+  }
+}
 export async function readModelOverrides(file = modelsJsonPath()) {
   const result: Record<string, ModelOverride> = {};
   for (const [provider, config] of Object.entries(
@@ -71,22 +86,34 @@ export function writeModelOverride(
   return run;
 }
 
-// Global pi settings (shared with the pi CLI); agentDir as cwd skips project settings.
-let piSettings: SettingsManager | undefined;
-export function settings() {
-  piSettings ??= SettingsManager.create(getAgentDir(), getAgentDir());
-  return piSettings;
+const effortFile = join(desktopConfigDir, "model-efforts.json");
+let efforts: Record<string, Effort> = {};
+export async function loadEfforts() {
+  try {
+    efforts = JSON.parse(await readFile(effortFile, "utf8"));
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+  }
 }
-export async function writeDefaultEffort(
+export function defaultEffort(provider: string, id: string) {
+  return efforts[modelKey({ provider, id })];
+}
+export function writeDefaultEffort(
   provider: string,
   id: string,
   effort: Effort | null,
 ) {
-  const manager = settings();
-  await manager.reload();
-  if (effort) manager.setModelThinkingLevel(provider, id, effort);
-  else manager.removeModelThinkingLevel(provider, id);
-  await manager.flush();
-  const [error] = manager.drainErrors();
-  if (error) throw new Error(`Cannot save pi settings: ${error.error.message}`);
+  const run = queue.then(async () => {
+    const next = { ...efforts };
+    const key = modelKey({ provider, id });
+    if (effort) next[key] = effort;
+    else delete next[key];
+    await mkdir(desktopConfigDir, { recursive: true });
+    const temporary = `${effortFile}.${crypto.randomUUID()}.tmp`;
+    await writeFile(temporary, JSON.stringify(next));
+    await rename(temporary, effortFile);
+    efforts = next;
+  });
+  queue = run.catch(() => {});
+  return run;
 }

@@ -1,5 +1,5 @@
 import type { SessionFlags } from "../shared/desktop-state";
-import type { ExtensionDialogRequest, SessionInfo } from "../shared/rpc-schema";
+import type { SessionInfo } from "../shared/rpc-schema";
 import { hasUnreadCompletion } from "./session-status";
 
 export function visibleCompletion(
@@ -13,7 +13,6 @@ export function visibleCompletion(
       string,
       { info: SessionInfo; transcript: { running: boolean } }
     >;
-    dialogs: Record<string, ExtensionDialogRequest[]>;
   },
   visible: boolean,
   focused: boolean,
@@ -32,7 +31,6 @@ export function visibleCompletion(
   if (
     !snapshot ||
     snapshot.transcript.running ||
-    state.dialogs[state.active]?.length ||
     !flags?.completion ||
     !hasUnreadCompletion(flags)
   )
@@ -42,21 +40,4 @@ export function visibleCompletion(
     id: state.active,
     completionId: flags.completion.id,
   };
-}
-
-// Keep events received during a request instead of resurrecting an answered question.
-export function mergeDialogSnapshot(
-  before: Record<string, ExtensionDialogRequest[]>,
-  current: Record<string, ExtensionDialogRequest[]>,
-  incoming: ExtensionDialogRequest[],
-): Record<string, ExtensionDialogRequest[]> {
-  const next: Record<string, ExtensionDialogRequest[]> = {};
-  for (const request of incoming) {
-    next[request.sessionId] ??= [];
-    next[request.sessionId].push(request);
-  }
-  for (const id of new Set([...Object.keys(before), ...Object.keys(current)])) {
-    if (before[id] !== current[id]) next[id] = current[id] ?? [];
-  }
-  return next;
 }

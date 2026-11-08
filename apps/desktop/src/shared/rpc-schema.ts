@@ -4,33 +4,23 @@ import type {
   ImageContent,
 } from "@earendil-works/pi-ai";
 import type {
-  AgentSession,
-  AgentSessionEvent,
-} from "@earendil-works/pi-coding-agent";
-import type {
   DesktopState,
   SessionFlags,
   UiPreferences,
 } from "./desktop-state";
-import type {
-  ExtensionDialogRequest,
-  ExtensionDialogResponse,
-} from "./extension-dialog";
 import type { ModelOverride } from "./model-overrides";
+import type { ProjectFlags } from "./projects";
 import type { Settings, SettingsPatch } from "./settings";
-import type { TerminalUICommand, TerminalUIEvent } from "./terminal-ui";
 import type { Transcript } from "./transcript";
 
-export type {
-  ExtensionDialogRequest,
-  ExtensionDialogResponse,
-} from "./extension-dialog";
+export type WireEvent = {
+  type: "snapshot";
+  transcript: Transcript;
+  failure?: string;
+  aborted?: boolean;
+};
 
-export type WireEvent =
-  | Exclude<AgentSessionEvent, { type: "message_update" }>
-  | Omit<Extract<AgentSessionEvent, { type: "message_update" }>, "message">;
-
-// Built from pi's ModelRuntime: built-ins, models.json and extension-registered providers.
+// Provider catalog and authentication status supplied by pi-ai.
 export interface ProviderInfo {
   id: string;
   name: string;
@@ -69,7 +59,6 @@ export interface ModelInfo {
 export interface SessionInfo {
   id: string;
   cwd: string;
-  path?: string;
   title: string;
   modified: number;
 }
@@ -90,9 +79,11 @@ export type Effort =
   | "high"
   | "xhigh"
   | "max";
-export type ContextUsage = NonNullable<
-  ReturnType<AgentSession["getContextUsage"]>
->;
+export interface ContextUsage {
+  tokens: number | null;
+  contextWindow: number;
+  percent: number | null;
+}
 export interface ModelSelection {
   model?: ModelInfo;
   effort: Effort;
@@ -102,7 +93,8 @@ export interface ModelSelection {
 export interface Snapshot extends ModelSelection {
   info: SessionInfo;
   transcript: Transcript;
-  pendingDialogs: ExtensionDialogRequest[];
+  failure?: string;
+  aborted?: boolean;
 }
 // WezTerm-style window appearance: `opacity` stores background alpha per mode
 // (0..1), `backdrop` the Windows 11 DWM system backdrop behind it.
@@ -115,7 +107,6 @@ export interface Appearance {
 export interface Bootstrap {
   projects: string[];
   generalCwd: string;
-  pendingDialogs: ExtensionDialogRequest[];
   providers: ProviderInfo[];
   models: ModelInfo[];
   imageModels: UtilityModelInfo[];
@@ -133,34 +124,6 @@ export type LoginFrame = { loginId: string; provider: string } & (
   | { kind: "success" | "cancelled" }
   | { kind: "error"; message: string }
 );
-export type PackageType = "extension" | "skill" | "theme" | "prompt";
-// One npm `pi-package` gallery card, mirroring https://pi.dev/packages.
-export interface MarketPackage {
-  name: string;
-  version: string;
-  description: string;
-  publisher?: string;
-  date: string;
-  monthlyDownloads: number;
-  types: PackageType[];
-  npmUrl?: string;
-  repoUrl?: string;
-}
-// One entry of the user's pi settings `packages` (npm, git or local source).
-export interface InstalledPackage {
-  source: string;
-  scope: "user" | "project";
-  name?: string;
-  version?: string;
-  description?: string;
-  types: PackageType[];
-  updateAvailable: boolean;
-}
-export type PackageOpStatus = {
-  opId: string;
-  source: string;
-  action: "install" | "uninstall" | "update";
-} & ({ status: "running" | "done" } | { status: "error"; message: string });
 export interface PromptAccepted {
   disposition: "started" | "queued" | "handled";
 }
@@ -169,7 +132,12 @@ export type RPCSchema = {
   bun: {
     requests: {
       prompt: {
-        params: { sessionId: string; text: string; images?: ImageContent[] };
+        params: {
+          sessionId: string;
+          text: string;
+          requestId: string;
+          images?: ImageContent[];
+        };
         response: PromptAccepted;
       };
       // biome-ignore lint/suspicious/noConfusingVoidType: Electrobun's parameterless RPC convention.
@@ -192,16 +160,11 @@ export type RPCSchema = {
         params: SessionTarget & { completionId: string };
         response: DesktopState;
       };
-      answerExtensionDialog: {
-        params: ExtensionDialogResponse;
-        // biome-ignore lint/suspicious/noConfusingVoidType: Electrobun's empty response convention.
-        response: void;
-      };
       openSessionLink: { params: { url: string }; response: Snapshot };
       // biome-ignore lint/suspicious/noConfusingVoidType: Electrobun's empty response convention.
       setUiPreferences: { params: UiPreferences; response: void };
       openSession: {
-        params: { cwd: string; path?: string; id?: string };
+        params: { cwd: string; id?: string };
         response: Snapshot;
       };
       // `timestamp` identifies a transcript message (user for rewind, assistant for fork).
@@ -214,6 +177,11 @@ export type RPCSchema = {
         response: Snapshot;
       };
       removeProject: { params: { cwd: string }; response: string[] };
+      setProjectState: {
+        params: { cwd: string } & ProjectFlags;
+        response: DesktopState;
+      };
+      openProjectFolder: { params: { cwd: string }; response: boolean };
       // biome-ignore lint/suspicious/noConfusingVoidType: Electrobun's empty response convention.
       logout: { params: { provider: string }; response: void };
       setModel: {
@@ -242,17 +210,6 @@ export type RPCSchema = {
         params: { sessionId: string; effort: Effort };
         response: ModelSelection;
       };
-      searchPackages: {
-        params: { query: string; page: number };
-        response: { items: MarketPackage[]; total: number; pageSize: number };
-      };
-      // name -> https image URL (null when the package has no preview).
-      packagePreviews: {
-        params: { names: string[] };
-        response: Record<string, string | null>;
-      };
-      // biome-ignore lint/suspicious/noConfusingVoidType: Electrobun's parameterless RPC convention.
-      listInstalled: { params: void; response: InstalledPackage[] };
       // biome-ignore lint/suspicious/noConfusingVoidType: Electrobun's empty response convention.
       copyImage: { params: { src: string }; response: void };
       saveImage: { params: { src: string }; response: string };
@@ -269,12 +226,8 @@ export type RPCSchema = {
       openExternal: { url: string };
       // src is a rendered image: a base64 data URL or an http(s) Markdown image URL.
       imageMenu: { src: string };
-      terminalUI: TerminalUICommand;
       abort: { sessionId: string };
       closeSession: { sessionId: string };
-      installPackage: { opId: string; name: string };
-      uninstallPackage: { opId: string; source: string };
-      updatePackage: { opId: string; source: string };
     };
   };
   webview: {
@@ -282,10 +235,6 @@ export type RPCSchema = {
     messages: {
       projects: string[];
       desktopState: DesktopState;
-      extensionDialogs: {
-        sessionId: string;
-        requests: ExtensionDialogRequest[];
-      };
       appearance: Appearance;
       settings: Settings;
       windowState: { maximized: boolean };
@@ -296,11 +245,8 @@ export type RPCSchema = {
         contextUsage?: ContextUsage | null;
       };
       loginFrame: LoginFrame;
-      terminalUI: TerminalUIEvent;
       notification: Notice;
       error: { message: string };
-      packageOp: PackageOpStatus;
-      installed: InstalledPackage[];
     };
   };
 };

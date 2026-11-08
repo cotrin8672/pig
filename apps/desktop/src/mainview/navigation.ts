@@ -47,7 +47,7 @@ export function initNavigation() {
       const revision = navigationRevision;
       void import("./rpc").then(({ openChat }) => {
         if (revision === navigationRevision)
-          return openChat(session.cwd, session.path, session.id, false);
+          return openChat(session.cwd, session.id, false);
       });
     }
   };

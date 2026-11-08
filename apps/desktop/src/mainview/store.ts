@@ -1,19 +1,15 @@
 import type { AuthEvent, AuthPrompt } from "@earendil-works/pi-ai";
 import { create } from "zustand";
 import { defaultAppearance } from "../shared/appearance";
-import { dictionary } from "../shared/i18n";
 import type {
   Appearance,
   AuthMethod,
   Bootstrap,
-  ExtensionDialogRequest,
-  InstalledPackage,
   Notice,
-  PackageOpStatus,
   SessionInfo,
-  Snapshot,
 } from "../shared/rpc-schema";
 import { defaultSettings, type Settings } from "../shared/settings";
+import type { ChatSnapshot } from "./chat-snapshot";
 import {
   loadNoticeHistory,
   NOTICE_HISTORY_KEY,
@@ -34,12 +30,9 @@ export interface LoginState {
 export const useStore = create<{
   bootstrap: Bootstrap;
   sessions: Record<string, SessionInfo[]>;
-  snapshots: Record<string, Snapshot>;
-  dialogs: Record<string, ExtensionDialogRequest[]>;
+  snapshots: Record<string, ChatSnapshot>;
   active?: string;
   page: "chat" | "providers" | "extensions" | "settings";
-  installed: InstalledPackage[];
-  packageOps: Record<string, PackageOpStatus>;
   notices: (Notice & { id: string })[];
   noticeHistory: NoticeRecord[];
   login?: LoginState;
@@ -51,7 +44,6 @@ export const useStore = create<{
 }>(() => ({
   bootstrap: {
     generalCwd: "",
-    pendingDialogs: [],
     projects: [],
     providers: [],
     models: [],
@@ -64,10 +56,7 @@ export const useStore = create<{
   },
   sessions: {},
   snapshots: {},
-  dialogs: {},
   page: "chat",
-  installed: [],
-  packageOps: {},
   notices: [],
   noticeHistory: loadNoticeHistory(),
   opening: false,
@@ -124,21 +113,4 @@ export function showNotice(notice: Notice) {
 }
 export function showError(error: unknown) {
   showNotice({ message: String(error), level: "error" });
-}
-
-export function receivePackageOp(op: PackageOpStatus) {
-  useStore.setState((s) => ({
-    packageOps: { ...s.packageOps, [op.opId]: op },
-  }));
-  if (op.status === "running") return;
-  showNotice({
-    message:
-      op.status === "error"
-        ? op.message
-        : dictionary(useStore.getState().settings.language).packageDone(
-            op.action,
-            op.source.replace(/^npm:/, ""),
-          ),
-    level: op.status === "error" ? "error" : "success",
-  });
 }

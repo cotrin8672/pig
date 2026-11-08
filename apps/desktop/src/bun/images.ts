@@ -1,6 +1,8 @@
+import { readFileSync } from "node:fs";
 import { writeFile } from "node:fs/promises";
+import { createRequire } from "node:module";
 import { join } from "node:path";
-import { convertToPng } from "@earendil-works/pi-coding-agent";
+import { initSync, PhotonImage } from "@silvia-odwyer/photon";
 import { ContextMenu, Utils } from "electrobun/bun";
 
 const maxRemoteBytes = 50 * 1024 * 1024;
@@ -40,13 +42,22 @@ async function loadImage(src: unknown) {
 
 export async function copyImage(src: unknown) {
   const { mimeType, bytes } = await loadImage(src);
-  const png =
-    mimeType === "image/png"
-      ? bytes
-      : await convertToPng(bytes.toString("base64"), mimeType).then(
-          (converted) => converted && Buffer.from(converted.data, "base64"),
-        );
-  if (!png) throw new Error("Could not convert image for the clipboard.");
+  let png: Uint8Array = bytes;
+  if (mimeType !== "image/png") {
+    initSync({
+      module: readFileSync(
+        createRequire(import.meta.url).resolve(
+          "@silvia-odwyer/photon/photon_rs_bg.wasm",
+        ),
+      ),
+    });
+    const image = PhotonImage.new_from_byteslice(bytes);
+    try {
+      png = image.get_bytes();
+    } finally {
+      image.free();
+    }
+  }
   Utils.clipboardWriteImage(png);
 }
 

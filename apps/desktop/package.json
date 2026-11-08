@@ -4,18 +4,17 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
-    "dev": "vite build && electrobun dev",
+    "dev": "vite build && bun scripts/dev.ts",
     "build": "vite build && electrobun build",
     "typecheck": "tsc --noEmit",
     "smoke": "bun scripts/smoke.ts"
   },
   "dependencies": {
+    "@earendil-works/chord": "1.5.0",
     "@earendil-works/pi-ai": "1.5.0",
-    "@earendil-works/pi-coding-agent": "1.5.0",
-    "@earendil-works/pi-tui": "1.5.0",
+    "@earendil-works/pi-durable": "1.5.0",
     "@lobehub/icons": "6.15.0",
-    "@xterm/addon-fit": "0.10.0",
-    "@xterm/xterm": "5.5.0",
+    "@silvia-odwyer/photon": "0.3.3",
     "electrobun": "1.18.1",
     "lucide-react": "^0.468.0",
     "react": "^19.0.0",

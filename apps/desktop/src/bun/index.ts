@@ -9,6 +9,7 @@ import Electrobun, {
 import { dictionary } from "../shared/i18n";
 import { sanitizeOverride } from "../shared/model-overrides";
 import { isModelEnabled } from "../shared/models";
+import { knownProject, withoutProject } from "../shared/projects";
 import type {
   Appearance,
   Notice,
@@ -34,6 +35,7 @@ import { copyImage, initImageMenu, saveImage, showImageMenu } from "./images";
 import {
   cancelAllLogins,
   cancelLogin,
+  logoutProvider,
   resolveLogin,
   startLogin,
 } from "./login";
@@ -44,38 +46,28 @@ import {
   writeModelOverride,
 } from "./model-settings";
 import { createCompletionTracker } from "./notifications";
-import { withPackageLock } from "./package-queue";
-import {
-  listInstalled,
-  packageOperation,
-  packagePreviews,
-  searchPackages,
-} from "./packages";
 import {
   abortSession,
-  acceptTerminalUI,
   applyModelSettings,
   availableModels,
   closeSession,
   deleteSession,
   disposeSessions,
-  extensionDialogs,
   forkSession,
-  getSession,
   listProviders,
   listSessions,
-  loadUserExtensionProviders,
+  modelErrors,
   modelInfo,
-  modelSelection,
   openSession,
   promptSession,
-  reloadPackageSessions,
   renameSession,
   rewindSession,
   runtime,
+  sessionCwd,
+  setSessionEffort,
+  setSessionModel,
   utilityModels,
 } from "./pi-service";
-import { awaitPromptAcceptance } from "./prompt-acceptance";
 import { validateSessionScope } from "./session-scope";
 import { loadSettings, saveSettings } from "./settings";
 import { synchronizeClientArea } from "./window-layout";
@@ -145,24 +137,23 @@ async function resolveSession(input: SessionTarget) {
   return info;
 }
 let windowFocused = true;
-function openManagedSession(input: {
-  cwd: string;
-  path?: string;
-  id?: string;
-}) {
+function openManagedSession(input: { cwd: string; id?: string }) {
   const completion = createCompletionTracker();
   return openSession(
     input,
     (sessionId, event, contextUsage) => {
       rpc.send.agentEvent({ sessionId, event, contextUsage });
       const outcome = completion(event);
-      if (event.type === "agent_start")
+      if (event.transcript.running)
         void desktopState.clearCompletion(sessionId).catch(report);
       if (!outcome) return;
       void desktopState.completeSession(sessionId, outcome).catch(report);
       const t = dictionary(settings.language);
       const notice: Notice = {
-        message: outcome === "error" ? t["Agent failed"] : t["Agent finished"],
+        message:
+          outcome === "error"
+            ? (event.failure ?? t["Agent failed"])
+            : t["Agent finished"],
         level: outcome,
         session: { id: sessionId, cwd: input.cwd },
       };
@@ -176,9 +167,6 @@ function openManagedSession(input: {
       }
     },
     modelPreferences.disabled,
-    (message) => rpc.send.error({ message }),
-    (notice) => rpc.send.notification(notice),
-    (event) => rpc.send.terminalUI(event),
   );
 }
 const settingsFile = join(desktopConfigDir, "settings.json");
@@ -208,39 +196,20 @@ const report = (error: unknown) => {
   rpc.send.error({ message: String(error) });
 };
 initImageMenu(report);
-const reportExtensions = (error: unknown) =>
-  console.error("[pi] Cannot load user extensions:", error);
-let extensionProviders = loadUserExtensionProviders().catch(reportExtensions);
-async function reloadPackages() {
-  const failures = await reloadPackageSessions((message) =>
-    rpc.send.error({ message }),
-  );
-  extensionProviders = loadUserExtensionProviders().catch(reportExtensions);
-  await extensionProviders;
-  return failures;
-}
 const rpc = BrowserView.defineRPC<RPCSchema>({
   maxRequestTime: 600_000,
   handlers: {
     requests: {
-      prompt: async ({ sessionId, text, images }) => {
-        const session = getSession(sessionId);
-        await validateScope(session.sessionManager.getCwd());
-        if (!session.model) throw new Error("Choose a model first.");
-        return awaitPromptAcceptance(
-          (accept) => promptSession(sessionId, text, images, accept),
-          report,
-        );
+      prompt: async ({ sessionId, text, requestId, images }) => {
+        await validateScope(await sessionCwd(sessionId));
+        return promptSession(sessionId, text, requestId, images);
       },
-      searchPackages: (input) => searchPackages(input),
-      packagePreviews: (input) => packagePreviews(input),
-      listInstalled: () => listInstalled(),
       copyImage: ({ src }) => copyImage(src),
       saveImage: ({ src }) => saveImage(src),
       appearance: () => appearance,
       settings: () => settings,
       bootstrap: async () => {
-        await extensionProviders;
+        for (const message of modelErrors.splice(0)) report(message);
         const [providers, models, utilities, modelOverrides] =
           await Promise.all([
             listProviders(),
@@ -254,7 +223,6 @@ const rpc = BrowserView.defineRPC<RPCSchema>({
         await desktopState.settled();
         return {
           generalCwd,
-          pendingDialogs: extensionDialogs.list(),
           projects,
           disabledModels: modelPreferences.disabled,
           modelOverrides,
@@ -268,7 +236,6 @@ const rpc = BrowserView.defineRPC<RPCSchema>({
         await validateScope(cwd);
         return listSessions(cwd);
       },
-      answerExtensionDialog: (input) => extensionDialogs.answer(input),
       markSessionRead: async (input) => {
         const info = await resolveSession(input);
         return desktopState.markSessionRead(info.id, input.completionId);
@@ -306,7 +273,7 @@ const rpc = BrowserView.defineRPC<RPCSchema>({
           const info = (await listSessions(cwd)).find(
             (session) => session.id === id,
           );
-          if (info) return openManagedSession({ cwd, path: info.path, id });
+          if (info) return openManagedSession({ cwd, id });
         }
         throw new Error(
           "Chat not found in registered projects or general chats.",
@@ -316,53 +283,41 @@ const rpc = BrowserView.defineRPC<RPCSchema>({
         await validateScope(input.cwd);
         if (input.id) {
           const info = await resolveSession({ cwd: input.cwd, id: input.id });
-          if (input.path && input.path !== info.path)
-            throw new Error("Session does not belong to this project.");
           return openManagedSession({
             cwd: input.cwd,
-            path: info.path,
             id: info.id,
           });
         }
-        if (
-          input.path &&
-          !(await listSessions(input.cwd)).some(
-            (session) => session.path === input.path,
-          )
-        )
-          throw new Error("Session does not belong to this project.");
         return openManagedSession(input);
       },
       rewindSession: async ({ sessionId, timestamp }) => {
-        await validateScope(getSession(sessionId).sessionManager.getCwd());
-        return rewindSession(sessionId, timestamp);
+        await validateScope(await sessionCwd(sessionId));
+        return openManagedSession(await rewindSession(sessionId, timestamp));
       },
       forkSession: async ({ sessionId, timestamp }) => {
-        await validateScope(getSession(sessionId).sessionManager.getCwd());
-        return openManagedSession(forkSession(sessionId, timestamp));
+        await validateScope(await sessionCwd(sessionId));
+        return openManagedSession(await forkSession(sessionId, timestamp));
       },
-      removeProject: ({ cwd }) =>
-        saveProjects((current) => current.filter((p) => p !== cwd)),
+      removeProject: (input) =>
+        saveProjects((current) => withoutProject(current, input?.cwd)),
+      setProjectState: (input) =>
+        desktopState.setProject(knownProject(input?.cwd, projects), input),
+      openProjectFolder: (input) =>
+        Utils.openPath(knownProject(input?.cwd, projects)),
       logout: async ({ provider }) => {
         if (typeof provider !== "string" || !runtime.getProvider(provider))
           throw new Error("Invalid provider.");
-        await runtime.logout(provider);
+        await logoutProvider(provider);
       },
-      setModel: async ({ sessionId, provider, id }) =>
-        withPackageLock(async () => {
-          const model = (await availableModels()).find(
-            (m) => m.provider === provider && m.id === id,
-          );
-          if (!model || !isModelEnabled(model, modelPreferences.disabled))
-            throw new Error(
-              "Model unavailable or hidden. Check provider settings.",
-            );
-          const session = getSession(sessionId);
-          if (!session.isIdle)
-            throw new Error("Wait for the current response to finish.");
-          await session.setModel(model);
-          return modelSelection(session);
-        }),
+      setModel: async ({ sessionId, provider, id }) => {
+        await validateScope(await sessionCwd(sessionId));
+        const model = (await availableModels()).find(
+          (m) => m.provider === provider && m.id === id,
+        );
+        if (!model || !isModelEnabled(model, modelPreferences.disabled))
+          throw new Error("Model unavailable or hidden.");
+        return setSessionModel(sessionId, provider, id);
+      },
       setModelEnabled: async ({ provider, id, enabled }) => {
         if (
           typeof enabled !== "boolean" ||
@@ -418,17 +373,9 @@ const rpc = BrowserView.defineRPC<RPCSchema>({
         await writeDefaultEffort(provider, id, effort);
         await applyModelSettings();
       },
-      setEffort: ({ sessionId, effort }) => {
-        const session = getSession(sessionId);
-        if (!session.isIdle)
-          throw new Error("Wait for the current response to finish.");
-        if (
-          !session.supportsThinking() ||
-          !modelSelection(session).effortLevels.includes(effort)
-        )
-          throw new Error("Unsupported reasoning effort.");
-        session.setThinkingLevel(effort);
-        return modelSelection(session);
+      setEffort: async ({ sessionId, effort }) => {
+        await validateScope(await sessionCwd(sessionId));
+        return setSessionEffort(sessionId, effort);
       },
     },
     messages: {
@@ -444,36 +391,6 @@ const rpc = BrowserView.defineRPC<RPCSchema>({
             report(error);
             rpc.send.settings(settings);
           });
-      },
-      installPackage: (input) => {
-        void packageOperation(
-          "install",
-          input,
-          (event) => rpc.send.packageOp(event),
-          (items) => rpc.send.installed(items),
-          reloadPackages,
-          (message) => rpc.send.error({ message }),
-        ).catch(console.error);
-      },
-      uninstallPackage: (input) => {
-        void packageOperation(
-          "uninstall",
-          input,
-          (event) => rpc.send.packageOp(event),
-          (items) => rpc.send.installed(items),
-          reloadPackages,
-          (message) => rpc.send.error({ message }),
-        ).catch(console.error);
-      },
-      updatePackage: (input) => {
-        void packageOperation(
-          "update",
-          input,
-          (event) => rpc.send.packageOp(event),
-          (items) => rpc.send.installed(items),
-          reloadPackages,
-          (message) => rpc.send.error({ message }),
-        ).catch(console.error);
       },
       setAppearance: (value) => updateAppearance(value),
       windowControl: (value) => {
@@ -529,11 +446,6 @@ const rpc = BrowserView.defineRPC<RPCSchema>({
         const t = dictionary(settings.language);
         showImageMenu(src, { copy: t["Copy image"], save: t["Save image"] });
       },
-      terminalUI: (command) => {
-        void Promise.resolve()
-          .then(() => acceptTerminalUI(command))
-          .catch(report);
-      },
       abort: ({ sessionId }) => {
         void Promise.resolve()
           .then(() => abortSession(sessionId))
@@ -545,9 +457,6 @@ const rpc = BrowserView.defineRPC<RPCSchema>({
     },
   },
 });
-extensionDialogs.subscribe((sessionId, requests) =>
-  rpc.send.extensionDialogs({ sessionId, requests }),
-);
 let url = "views://mainview/index.html";
 if ((await Updater.localInfo.channel()) === "dev") {
   setNativeEnvironment(
@@ -605,7 +514,7 @@ window.webview.on("dom-ready", () => {
 console.log("[window] pig started");
 function dispose() {
   cancelAllLogins();
-  disposeSessions();
+  void disposeSessions().catch(console.error);
 }
 window.on("close", dispose);
 Electrobun.events.on("before-quit", dispose);

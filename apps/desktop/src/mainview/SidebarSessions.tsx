@@ -1,14 +1,16 @@
-import { ChevronRight, Folder, Plus, X } from "lucide-react";
+import { Archive, ChevronRight, Folder, Pin, Plus } from "lucide-react";
 import { useId, useState } from "react";
+import { visibleProjects } from "../shared/projects";
 import { useT } from "./i18n";
-import { openChat, refresh, rpc } from "./rpc";
+import { ProjectMenu } from "./ProjectMenu";
+import { openChat, rpc } from "./rpc";
 import { SessionList } from "./SessionList";
 import {
   hasUnreadCompletion,
   sessionStatus,
   sessionStatusLabels,
 } from "./session-status";
-import { showError, useStore } from "./store";
+import { useStore } from "./store";
 
 const basename = (path: string) =>
   path.split(/[\\/]/).filter(Boolean).pop() || path;
@@ -16,6 +18,11 @@ const basename = (path: string) =>
 export function SidebarSessions() {
   const t = useT();
   const projects = useStore((s) => s.bootstrap.projects);
+  const projectFlags = useStore((s) => s.bootstrap.desktop.projects);
+  const [archived, setArchived] = useState(false);
+  const archivedCount = projects.filter(
+    (cwd) => projectFlags?.[cwd]?.archived,
+  ).length;
   const generalCwd = useStore((s) => s.bootstrap.generalCwd);
   const opening = useStore((s) => s.opening);
   const chatsId = useId();
@@ -49,9 +56,22 @@ export function SidebarSessions() {
             <Plus size={14} aria-hidden="true" />
           </button>
         </div>
-        {projects.map((cwd) => (
+        {visibleProjects(projects, projectFlags, archived).map((cwd) => (
           <ProjectSessions key={cwd} cwd={cwd} />
         ))}
+        {(archivedCount > 0 || archived) && (
+          <button
+            type="button"
+            className="archived-chats"
+            aria-pressed={archived}
+            onClick={() => setArchived(!archived)}
+          >
+            <Archive size={12} />
+            {archived
+              ? t["Back to projects"]
+              : `${t["Archived projects"]} (${archivedCount})`}
+          </button>
+        )}
         {!projects.length && (
           <p className="sidebar-empty">{t["No projects yet"]}</p>
         )}
@@ -62,13 +82,14 @@ export function SidebarSessions() {
 
 function ProjectSessions({ cwd }: { cwd: string }) {
   const t = useT();
+  const projectFlags = useStore((s) => s.bootstrap.desktop.projects?.[cwd]);
+  const displayName = projectFlags?.name || basename(cwd);
   const [expanded, setExpanded] = useState(true);
   const listId = useId();
   const opening = useStore((s) => s.opening);
   const sessions = useStore((s) => s.sessions[cwd]);
   const flags = useStore((s) => s.bootstrap.desktop.sessions);
   const snapshots = useStore((s) => s.snapshots);
-  const dialogs = useStore((s) => s.dialogs);
   const active = useStore((s) => s.active);
   const modelPending = useStore((s) => s.modelPending);
   const counts = { waiting: 0, running: 0, completed: 0, failed: 0 };
@@ -78,7 +99,7 @@ function ProjectSessions({ cwd }: { cwd: string }) {
     const status = sessionStatus(
       !!snapshots[session.id]?.transcript.running ||
         (modelPending && active === session.id),
-      !!dialogs[session.id]?.length,
+      false,
       flags[session.id],
     );
     if (status) counts[status]++;
@@ -104,7 +125,10 @@ function ProjectSessions({ cwd }: { cwd: string }) {
             aria-hidden="true"
           />
           <Folder size={13} aria-hidden="true" />
-          <span className="project-name">{basename(cwd)}</span>
+          <span className="project-name">{displayName}</span>
+          {projectFlags?.pinned && (
+            <Pin size={11} aria-label={t["Pin project"]} />
+          )}
         </button>
         {leading && (
           <span
@@ -129,7 +153,7 @@ function ProjectSessions({ cwd }: { cwd: string }) {
           <button
             type="button"
             title={t["New chat"]}
-            aria-label={t.newChatIn(basename(cwd))}
+            aria-label={t.newChatIn(displayName)}
             disabled={opening}
             onClick={() => {
               setExpanded(true);
@@ -138,19 +162,7 @@ function ProjectSessions({ cwd }: { cwd: string }) {
           >
             <Plus size={13} aria-hidden="true" />
           </button>
-          <button
-            type="button"
-            title={t["Remove project from list"]}
-            aria-label={t.removeProject(basename(cwd))}
-            onClick={() => {
-              void rpc.request
-                .removeProject({ cwd })
-                .then(() => refresh())
-                .catch(showError);
-            }}
-          >
-            <X size={12} aria-hidden="true" />
-          </button>
+          <ProjectMenu cwd={cwd} displayName={displayName} />
         </div>
       </div>
       <div id={listId} className="project-threads" hidden={!expanded}>

@@ -1,513 +1,323 @@
-import { afterAll, expect, test } from "bun:test";
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { expect, test } from "bun:test";
+import { existsSync } from "node:fs";
+import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { createAssistantMessageEventStream } from "@earendil-works/pi-ai";
-import { clearNotices, showNotice, useStore } from "../mainview/store";
-import type { Notice } from "../shared/rpc-schema";
-import { prepareDesktopConfig } from "./desktop-config";
-import { DesktopStateStore } from "./desktop-state";
-import { createCompletionTracker } from "./notifications";
 
-// Isolate pi from the user's real auth.json and extensions before pi-service loads.
-const agentDir = await mkdtemp(
-  join(process.env.PI_SCRATCH_DIR ?? tmpdir(), "pi-service-"),
-);
-process.env.PI_CODING_AGENT_DIR = agentDir;
-afterAll(() => rm(agentDir, { recursive: true, force: true }));
-
-const extension = `export default function (pi) {
-  pi.registerProvider("piris-test", {
-    name: "Piris Test",
-    baseUrl: "http://127.0.0.1:9/v1",
-    api: "openai-completions",
-    apiKey: "test-key",
-    models: [{
-      id: "m1", name: "Model One", reasoning: false, input: ["text"],
-      cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-      contextWindow: 1000, maxTokens: 100,
-    }],
-  });
-}
-`;
-
-test("user extension providers are listed without a session and dropped on reload", async () => {
-  const file = join(agentDir, "extensions", "piris-test.js");
-  await mkdir(join(agentDir, "extensions"), { recursive: true });
-  await writeFile(file, extension);
-  const service = await import("./pi-service");
-
-  await service.loadUserExtensionProviders();
-  const providers = await service.listProviders();
-  expect(providers.find((p) => p.id === "piris-test")).toMatchObject({
-    name: "Piris Test",
-    extension: true,
-    configured: true,
-  });
-  // Built-ins come from pi's runtime rather than a hardcoded list.
-  expect(providers.some((p) => p.id === "anthropic")).toBe(true);
-  expect(providers.length).toBeGreaterThan(10);
-
-  await rm(file);
-  await service.loadUserExtensionProviders();
-  expect(
-    (await service.listProviders()).some((p) => p.id === "piris-test"),
-  ).toBe(false);
-}, 30_000);
-
-test("model settings round-trip through pi's models.json and settings.json", async () => {
-  const service = await import("./pi-service");
-  const store = await import("./model-settings");
-  const model = service.runtime
-    .getModels("anthropic")
-    .find((candidate) => candidate.reasoning);
-  if (!model) throw new Error("expected a reasoning anthropic model");
-  await store.writeModelOverride(
-    model.provider,
-    model.id,
-    { name: "Fast", contextWindow: 123_000, input: ["text"] },
-    store.modelsJsonPath(),
-  );
-  await store.writeDefaultEffort(model.provider, model.id, "high");
-  await service.applyModelSettings();
-  const fresh = service.runtime.getModel(model.provider, model.id);
-  if (!fresh) throw new Error("model disappeared");
-  expect(service.modelInfo(fresh)).toMatchObject({
-    name: "Fast",
-    contextWindow: 123_000,
-    vision: false,
-    defaultEffort: "high",
-  });
-
-  await store.writeModelOverride(model.provider, model.id, {});
-  await store.writeDefaultEffort(model.provider, model.id, null);
-  await service.applyModelSettings();
-  const restored = service.runtime.getModel(model.provider, model.id);
-  expect(restored?.name).toBe(model.name);
-  expect(restored && service.modelInfo(restored).defaultEffort).toBeUndefined();
-}, 30_000);
-
-test("effort choices and inherited defaults follow each model's capabilities", async () => {
-  const { modelInfo, runtime } = await import("./pi-service");
-  const { settings } = await import("./model-settings");
-  const base = runtime.getModels("anthropic")[0];
-  const model = {
-    ...base,
-    id: "effort-test",
-    reasoning: true,
-    thinkingLevelMap: {
-      off: null,
-      minimal: null,
-      low: "low",
-      medium: null,
-      high: "high",
-      xhigh: null,
-      max: null,
-    },
-  };
-  const manager = settings();
-  const previous = manager.getDefaultThinkingLevel();
+// Isolate the application's homedir-based config and module-level Harness from other tests.
+test("application service uses pig storage, publishes Durable snapshots and persists model/login settings", async () => {
+  const home = await mkdtemp(join(tmpdir(), "pig-app-durable-"));
   try {
-    manager.setDefaultThinkingLevel("high");
-    expect(modelInfo(model).effortLevels).toEqual(["low", "high"]);
-    expect(modelInfo(model).effectiveDefaultEffort).toBe("high");
-    manager.setModelThinkingLevel(model.provider, model.id, "low");
-    expect(modelInfo(model).effectiveDefaultEffort).toBe("low");
-    manager.setModelThinkingLevel(model.provider, model.id, "max");
-    expect(modelInfo(model).effortLevels).toContain(
-      modelInfo(model).effectiveDefaultEffort,
-    );
-    const plain = modelInfo({ ...model, reasoning: false });
-    expect(plain.effortLevels).toEqual([]);
-    expect(plain.effectiveDefaultEffort).toBe("off");
-  } finally {
-    manager.removeModelThinkingLevel(model.provider, model.id);
-    manager.setDefaultThinkingLevel(previous ?? "medium");
-    await manager.flush();
-  }
-});
+    const script = `
+      import { expect } from "bun:test";
+      import { BACKGROUND_CONTEXT as context } from "@earendil-works/chord/context";
+      import { fauxProvider, fauxAssistantMessage } from "@earendil-works/pi-ai";
+      import * as app from ${JSON.stringify(new URL("./pi-service.ts", import.meta.url).href)};
+      expect((await app.utilityModels()).imageModels.some(m => m.provider === "openai-codex")).toBe(false);
+      await app.credentials.modify("openai-codex", async () => ({type: "oauth", access: "test-only", refresh: "test-only", expires: Date.now() + 3600000, accountId: "test-account"}));
+      expect((await app.utilityModels()).imageModels.filter(m => m.provider === "openai-codex")).toEqual([
+        {provider: "openai-codex", id: "gpt-image-2.5", name: "gpt-image-2.5"},
+        {provider: "openai-codex", id: "gpt-image-2", name: "gpt-image-2"},
+      ]);
+      expect(app.runtime.getModelsOfType("image", "openai").some(m => m.id === "gpt-image-2.5")).toBe(false);
+      await app.credentials.delete("openai-codex");
+      const faux = fauxProvider({tokensPerSecond: Infinity});
+      const { withRemoteCatalog } = await import(${JSON.stringify(new URL("./remote-catalog.ts", import.meta.url).href)});
+      const originalFetch = globalThis.fetch;
+      globalThis.fetch = async () => Response.json([{...faux.getModel(), type: "image", api: "openai-images", id: "remote-image", name: "Remote image"}]);
+      app.runtime.clearProviders();
+      app.runtime.setProvider(withRemoteCatalog(faux.provider));
+      await app.runtime.refresh({allowNetwork: true});
+      expect((await app.utilityModels()).imageModels).toEqual([{provider: faux.provider.id, id: "remote-image", name: "Remote image"}]);
+      globalThis.fetch = originalFetch;
+      app.runtime.clearProviders(); app.runtime.setProvider(faux.provider);
+      const model = faux.getModel();
+      const events = [];
+      const chat = await app.openSession({cwd: ${JSON.stringify(home)}}, (id, event, contextUsage) => events.push({id, event, contextUsage}));
+      if (!/^[1-9]\\d*$/.test(chat.info.id)) throw new Error("RPC ID must be a numeric string");
+      faux.setResponses([fauxAssistantMessage("App answer")]);
+      const accepted = await app.promptSession(chat.info.id, "App hello", "app-1");
+      if (accepted.disposition !== "started") throw new Error("Not accepted");
+      const service = await app.durable();
+      await service.harness.waitForIdle(context);
+      await new Promise(resolve => setTimeout(resolve, 20));
+      if (!events.some(({event}) => event.transcript.turns.some(({message}) => message.role === "assistant"))) throw new Error("Missing streamed snapshot");
+      expect(events.some(item => item.contextUsage?.contextWindow > 0)).toBe(true);
+      expect((await app.openSession({cwd: ${JSON.stringify(home)}, id: chat.info.id}, () => {})).info.title).toBe("App hello");
+      expect(app.modelInfo({...model, api: "anthropic-messages", compat: {forceAdaptiveThinking: true}}).adaptiveThinking).toBe(true);
+      expect(app.modelInfo({...model, api: "anthropic-messages", compat: {forceAdaptiveThinking: false}}).adaptiveThinking).toBe(false);
+      const renamed = await app.renameSession(chat.info, "Renamed");
+      if (!(await app.listSessions(${JSON.stringify(home)})).some(item => item.title === "Renamed")) throw new Error("Missing name");
+      await app.setSessionModel(chat.info.id, model.provider, model.id);
+      await app.runtime.login(model.provider, "api_key", {notify() {}, async prompt() {return "test-only";}}).catch(() => {});
+      await app.credentials.modify(model.provider, async () => ({type: "api_key", key: "test-only"}));
+      if (!(await app.credentials.list()).length) throw new Error("Missing stored auth");
+      let rejected = false;
+      try { await app.promptSession(chat.info.id, "", "bad"); } catch { rejected = true; }
+      if (!rejected) throw new Error("Failed admission reported success");
+      // Controlled watches exercise open races without relying on scheduler timing.
+      await app.closeSession(chat.info.id);
+      const originalHistory = service.history.bind(service);
+      const originalWatch = service.watch.bind(service);
+      const originalList = service.list.bind(service);
+      const originalAbort = service.abort.bind(service);
+      let aborted = 0;
+      service.abort = async () => { aborted++; };
+      service.list = async () => [chat.info];
+      const deferred = () => {
+        let resolve;
+        const promise = new Promise(r => { resolve = r; });
+        return {promise, resolve};
+      };
+      const entry = id => ({id, conversationId: Number(chat.info.id), kind: "pi.user", model: [{role: "user", content: "entry-" + id, timestamp: id}]});
+      let attached = 0, stopped = 0, listener;
+      let ready = deferred(), release = deferred();
+      service.watch = async () => {
+        attached++;
+        return {value: {entries: [entry(1)], docs: {}}, start(callback) {listener = callback;}, async stop() {expect(aborted).toBeGreaterThan(stopped); stopped++;}};
+      };
+      service.history = async () => {
+        expect(listener).toBeDefined();
+        ready.resolve();
+        await release.promise;
+        return [entry(1), entry(2)];
+      };
+      const input = {cwd: ${JSON.stringify(home)}, id: chat.info.id};
+      const first = app.openSession(input, (id, event) => events.push({id, event}));
+      const second = app.openSession(input, () => {});
+      await ready.promise;
+      // More than a watch window is committed while history is in flight.
+      for (let id = 3; id <= 65; id++) await listener({kind: "value", value: {entries: [entry(id)], docs: {}}});
+      release.resolve();
+      const snapshots = await Promise.all([first, second]);
+      expect(attached).toBe(1);
+      expect(snapshots[0].transcript.turns).toHaveLength(65);
+      expect(snapshots[1]).toEqual(snapshots[0]);
+      expect(snapshots[0].info.title).toBe("entry-1");
+      await listener({kind: "value", value: {entries: [{id: 66, kind: "pig.name", data: "Watch renamed"}], docs: {"pi.live": {runFailure: {reason: "faulted", detail: "Real failure detail"}}}}});
+      expect(events.at(-1).event.failure).toBe("Real failure detail");
+      const renamedSnapshot = await app.openSession(input, () => {});
+      expect(renamedSnapshot.info.title).toBe("Watch renamed");
+      expect(renamedSnapshot.info.modified).toBeGreaterThan(0);
+      await app.closeSession(chat.info.id);
+      expect(stopped).toBe(1);
 
-test("extension notifications are wired before session_start and survive reload", async () => {
-  const file = join(agentDir, "extensions", "notifications.js");
-  await mkdir(join(agentDir, "extensions"), { recursive: true });
-  await writeFile(
-    file,
-    `export default function (pi) {
-    pi.on("session_start", async (_event, ctx) => {
-      ctx.ui.notify(JSON.stringify({ hasUI: ctx.hasUI, mode: ctx.mode }));
-      ctx.ui.notify("warning", "warning");
-      ctx.ui.notify("error", "error");
-      ctx.ui.notify("confirmed:" + await ctx.ui.confirm("Delete?", "Must not approve"));
+      // Close cancels an open after attachment, including its eventual completion.
+      ready = deferred(); release = deferred(); listener = undefined;
+      const cancelled = app.openSession(input, () => {}).then(() => "opened", error => error.message);
+      await ready.promise;
+      await app.closeSession(chat.info.id);
+      expect(stopped).toBe(2);
+      release.resolve();
+      expect(await cancelled).toBe("Chat closed.");
+      expect(stopped).toBe(2);
+
+      // A watch returned after close is stopped as soon as attachment resolves.
+      ready = deferred(); release = deferred();
+      const fakeWatch = {value: {entries: [], docs: {}}, start() {}, async stop() {stopped++;}};
+      service.watch = async () => { ready.resolve(); await release.promise; return fakeWatch; };
+      const late = app.openSession(input, () => {}).then(() => "opened", error => error.message);
+      await ready.promise;
+      await app.closeSession(chat.info.id);
+      release.resolve();
+      expect(await late).toBe("Chat closed.");
+      expect(stopped).toBe(3);
+
+      // History failure tears down the attached watch and allows a retry.
+      service.watch = async () => fakeWatch;
+      service.history = async () => { throw new Error("history failed"); };
+      await expect(app.openSession(input, () => {})).rejects.toThrow("history failed");
+      expect(stopped).toBe(4);
+      service.history = async () => [];
+      await app.openSession(input, () => {});
+      await app.closeSession(chat.info.id);
+      expect(stopped).toBe(5);
+      service.history = originalHistory;
+      service.watch = originalWatch;
+      service.list = originalList;
+      service.abort = originalAbort;
+      await app.disposeSessions();
+    `;
+    const child = Bun.spawn([process.execPath, "--eval", script], {
+      cwd: join(import.meta.dir, "../.."),
+      env: { ...process.env, HOME: home, USERPROFILE: home, PI_OFFLINE: "1" },
+      stdout: "pipe",
+      stderr: "pipe",
     });
-  }`,
-  );
-  const service = await import("./pi-service");
-  const cwd = join(agentDir, "notification-project");
-  await mkdir(cwd, { recursive: true });
-  const notices: Notice[] = [];
-  const errors: string[] = [];
-  const unsubscribe = service.extensionDialogs.subscribe((_id, requests) => {
-    for (const request of requests)
-      if (request.kind === "confirm")
-        service.extensionDialogs.answer({ ...request, value: false });
-  });
-  const snapshot = await service.openSession(
-    { cwd },
-    () => {},
-    [],
-    (message) => errors.push(message),
-    (notice) => notices.push(notice),
-  );
-  try {
-    expect(errors).toEqual([]);
-    expect(notices.map(({ message, level }) => [message, level])).toEqual([
-      ['{"hasUI":true,"mode":"rpc"}', "info"],
-      ["warning", "warning"],
-      ["error", "error"],
-      ["confirmed:false", "info"],
+    const [code, stdout, stderr] = await Promise.all([
+      child.exited,
+      new Response(child.stdout).text(),
+      new Response(child.stderr).text(),
     ]);
-    expect(
-      notices.every(
-        (notice) =>
-          notice.session?.id === snapshot.info.id && notice.session.cwd === cwd,
-      ),
-    ).toBe(true);
-    const original = [...notices];
-    notices.length = 0;
-    await service.getSession(snapshot.info.id).reload();
-    expect(notices).toEqual(original);
-    const ui = service
-      .getSession(snapshot.info.id)
-      .extensionRunner.getUIContext();
-    for (const result of [
-      ui.select("Choose", ["one"]),
-      ui.input("Input"),
-      ui.editor("Edit"),
-    ]) {
-      const request = service.extensionDialogs.list(snapshot.info.id)[0];
-      expect(request).toBeDefined();
-      const reopened = await service.openSession(
-        { cwd, id: snapshot.info.id },
-        () => {},
-      );
-      expect(reopened.pendingDialogs).toEqual(
-        service.extensionDialogs.list(snapshot.info.id),
-      );
-      service.extensionDialogs.answer({ ...request, cancelled: true });
-      expect(await result).toBeUndefined();
-    }
-    await expect(
-      ui.custom(() => {
-        throw new Error("must not run TUI factory");
-      }),
-    ).rejects.toThrow("TUI components are not supported");
+    expect({ code, stdout, stderr }).toMatchObject({ code: 0 });
+    if (code !== 0) throw new Error(stderr);
+    expect(existsSync(join(home, ".config", "pig", "durable"))).toBe(true);
+    expect(existsSync(join(home, ".config", "pig", "auth.json"))).toBe(true);
+    expect(existsSync(join(home, ".pi", "agent"))).toBe(false);
   } finally {
-    unsubscribe();
-    await service.closeSession(snapshot.info.id);
-    await rm(file);
+    await rm(home, { recursive: true, force: true });
   }
-}, 30_000);
+}, 15_000);
 
-test("real SDK prompts settle once and reach toast/history across repeated runs", async () => {
-  const service = await import("./pi-service");
-  const provider = "notification-test";
-  service.runtime.registerProvider(provider, {
-    baseUrl: "http://127.0.0.1:9",
-    api: "openai-completions",
-    apiKey: "test-only",
-    models: [
-      {
-        id: "fixed",
-        name: "Fixed",
-        reasoning: false,
-        input: ["text"],
-        cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-        contextWindow: 100000,
-        maxTokens: 100,
-      },
-    ],
-    streamSimple(model) {
-      const stream = createAssistantMessageEventStream();
-      queueMicrotask(() => {
-        stream.push({
-          type: "done",
-          reason: "stop",
-          message: {
-            role: "assistant",
-            content: [{ type: "text", text: "Done" }],
-            api: model.api,
-            provider,
-            model: model.id,
-            stopReason: "stop",
-            timestamp: Date.now(),
-            usage: {
-              input: 1,
-              output: 1,
-              cacheRead: 0,
-              cacheWrite: 0,
-              totalTokens: 2,
-              cost: {
-                input: 0,
-                output: 0,
-                cacheRead: 0,
-                cacheWrite: 0,
-                total: 0,
-              },
-            },
-          },
-        });
-      });
-      return stream;
-    },
-  });
-  const config = join(agentDir, "desktop");
-  await prepareDesktopConfig(join(agentDir, "legacy"), config);
-  const cwd = join(config, "general");
-  const desktop = new DesktopStateStore(join(config, "desktop.json"));
-  const completion = createCompletionTracker();
-  const events: string[] = [];
-  clearNotices();
-  const snapshot = await service.openSession({ cwd }, (id, event) => {
-    events.push(event.type);
-    const outcome = completion(event);
-    if (event.type === "agent_start") void desktop.clearCompletion(id);
-    if (outcome) {
-      void desktop.completeSession(id, outcome);
-      showNotice({ message: "Finished", level: outcome, session: { id, cwd } });
-    }
-  });
+test("provider status, availability and requests ignore ambient credentials", async () => {
+  const home = await mkdtemp(join(tmpdir(), "pig-app-auth-"));
   try {
-    const model = service.runtime.getModel(provider, "fixed");
-    if (!model) throw new Error("test model missing");
-    const session = service.getSession(snapshot.info.id);
-    await session.setModel(model);
-    await service.promptSession(snapshot.info.id, "first");
-    expect(events).toContain("agent_start");
-    expect(events).toContain("agent_settled");
-    expect(useStore.getState().notices).toHaveLength(1);
-    expect(useStore.getState().noticeHistory).toHaveLength(1);
-    await desktop.settled();
-    const firstCompletion =
-      desktop.value.sessions[snapshot.info.id].completion?.id;
-    expect(firstCompletion).toBeDefined();
-    await service.promptSession(snapshot.info.id, "second");
-    expect(events.filter((event) => event === "agent_settled")).toHaveLength(2);
-    expect(useStore.getState().notices).toHaveLength(2);
-    expect(
-      useStore
-        .getState()
-        .noticeHistory.every(
-          (n) => n.level === "success" && n.session?.id === snapshot.info.id,
-        ),
-    ).toBe(true);
-    await desktop.settled();
-    expect(desktop.value.sessions[snapshot.info.id].completion?.id).not.toBe(
-      firstCompletion,
-    );
-    const fork = await service.openSession(
-      service.forkSession(
-        snapshot.info.id,
-        session.messages.find((m) => m.role === "assistant")?.timestamp ?? 0,
-      ),
-      () => {},
-    );
-    expect(fork.info.cwd).toBe(cwd);
-    expect(fork.info.id).not.toBe(snapshot.info.id);
-    await service.renameSession(fork.info, "General fork");
-    await service.closeSession(fork.info.id);
-    const stored = (await service.listSessions(cwd)).find(
-      (s) => s.id === fork.info.id,
-    );
-    expect(stored?.title).toBe("General fork");
-    if (!stored) throw new Error("missing fork");
-    const reopened = await service.openSession(
-      { cwd, id: stored.id, path: stored.path },
-      () => {},
-    );
-    expect(reopened.info.id).toBe(stored.id);
-    const waiting = service
-      .getSession(stored.id)
-      .extensionRunner.getUIContext()
-      .input("Pending on close");
-    await service.closeSession(stored.id);
-    expect(await waiting).toBeUndefined();
-    expect(service.extensionDialogs.list(stored.id)).toEqual([]);
-    await service.deleteSession(stored);
-    expect(
-      (await service.listSessions(cwd)).some((s) => s.id === stored.id),
-    ).toBe(false);
-    expect(
-      (await service.listSessions(cwd)).some((s) => s.id === snapshot.info.id),
-    ).toBe(true);
-  } finally {
-    await service.closeSession(snapshot.info.id);
-    service.runtime.unregisterProvider(provider);
-    clearNotices();
-  }
-}, 30_000);
-
-test("utility catalogs expose safe available models and all classifier providers", async () => {
-  const { runtime, utilityModels, listProviders } = await import(
-    "./pi-service"
-  );
-  const provider = "utility-catalog-test";
-  const image = runtime.getModelsOfType("image")[0];
-  const classifier = runtime.getModelsOfType("classifier")[0];
-  if (!image || !classifier) throw new Error("expected SDK utility models");
-  let configured = false;
-  const models = [
-    {
-      ...image,
-      provider,
-      id: "image-test",
-      name: "Test Image",
-      headers: { Authorization: "secret" },
-    },
-    {
-      ...classifier,
-      provider,
-      id: "classifier-test",
-      name: "Test Classifier",
-      headers: { Authorization: "secret" },
-    },
-  ];
-  runtime.registerNativeProvider({
-    id: provider,
-    name: "Utility Catalog Test",
-    headers: { Authorization: "provider-secret" },
-    auth: {
-      apiKey: {
-        name: "Fake auth",
-        async check() {
-          return configured ? { type: "api_key" as const } : undefined;
-        },
-        async resolve() {
-          throw new Error("catalog must not resolve request credentials");
-        },
-      },
-    },
-    getModels: () => [],
-    getAllModels: () => models,
-    stream() {
-      throw new Error("must not call API");
-    },
-    streamSimple() {
-      throw new Error("must not call API");
-    },
-  });
-  try {
-    const unavailable = await utilityModels();
-    expect(unavailable.imageModels.some((m) => m.provider === provider)).toBe(
-      false,
-    );
-    expect(
-      unavailable.classificationModels.some((m) => m.provider === provider),
-    ).toBe(false);
-    expect(unavailable.classificationProviders).toContain(provider);
-    expect(unavailable.classificationProviders).toContain("typesafe");
-    expect(new Set(unavailable.classificationProviders).size).toBe(
-      unavailable.classificationProviders.length,
-    );
-    expect(
-      (await listProviders()).find((p) => p.id === provider),
-    ).toMatchObject({ configured: false });
-    expect((await listProviders()).some((p) => p.id === "typesafe")).toBe(true);
-    expect(runtime.getModels(provider)).toEqual([]);
-    configured = true;
-    const available = await utilityModels();
-    expect(
-      available.imageModels.filter((m) => m.provider === provider),
-    ).toEqual([{ provider, id: "image-test", name: "Test Image" }]);
-    expect(
-      available.classificationModels.filter((m) => m.provider === provider),
-    ).toEqual([{ provider, id: "classifier-test", name: "Test Classifier" }]);
-    expect(
-      (await listProviders()).find((p) => p.id === provider),
-    ).toMatchObject({ configured: true });
-  } finally {
-    runtime.unregisterProvider(provider);
-  }
-});
-
-test("terminal custom UI works before session registration and is cancelled on close", async () => {
-  const service = await import("./pi-service");
-  const { withPackageLock } = await import("./package-queue");
-  const file = join(agentDir, "extensions", "terminal-startup.js");
-  await mkdir(join(agentDir, "extensions"), { recursive: true });
-  await writeFile(
-    file,
-    `export default function (pi) {
-    pi.on("session_start", async (_event, ctx) => {
-      if (ctx.mode !== "tui") return;
-      const result = await ctx.ui.custom((_tui, _theme, _keys, done) => ({
-        render() { return ["Startup terminal"]; },
-        invalidate() {},
-        handleInput(data) { if (data === "\\r") done({ value: "ok" }); }
-      }));
-      ctx.ui.notify("terminal:" + result.value);
-    });
-  }`,
-  );
-  const cwd = join(agentDir, "terminal-project");
-  await mkdir(cwd, { recursive: true });
-  const notices: Notice[] = [];
-  const replied = new Set<string>();
-  let sessionId: string | undefined;
-  let currentId = "";
-  try {
-    const snapshot = await service.openSession(
-      { cwd },
-      () => {},
-      [],
-      () => {},
-      (notice) => notices.push(notice),
-      (event) => {
-        if (event.type === "open") {
-          sessionId = event.sessionId;
-          currentId = event.id;
-          queueMicrotask(() =>
-            service.acceptTerminalUI({
-              type: "ready",
-              id: event.id,
-              cols: 80,
-              rows: 24,
-            }),
-          );
-        } else if (
-          event.type === "data" &&
-          event.data.includes("Startup terminal") &&
-          !replied.has(event.id)
-        ) {
-          replied.add(event.id);
-          queueMicrotask(() =>
-            service.acceptTerminalUI({
-              type: "input",
-              id: event.id,
-              data: "\r",
-            }),
-          );
+    // A subprocess isolates process.env and the module-level app runtime; the
+    // parent's environment is never changed and the child's dies on exit.
+    const script = `
+      import { expect } from "bun:test";
+      import { mkdir, writeFile } from "node:fs/promises";
+      import { join } from "node:path";
+      const home = ${JSON.stringify(home)};
+      await mkdir(join(home, ".config/gcloud"), {recursive: true});
+      await writeFile(join(home, ".config/gcloud/application_default_credentials.json"), "{}");
+      process.env.OPENAI_API_KEY = "ambient-openai";
+      process.env.ANTHROPIC_API_KEY = "ambient-anthropic";
+      process.env.AWS_ACCESS_KEY_ID = "ambient-aws";
+      process.env.AWS_SECRET_ACCESS_KEY = "ambient-secret";
+      process.env.GOOGLE_CLOUD_PROJECT = "ambient-project";
+      process.env.GOOGLE_CLOUD_LOCATION = "us-central1";
+      const app = await import(${JSON.stringify(new URL("./pi-service.ts", import.meta.url).href)});
+      expect(await app.credentials.list()).toEqual([]);
+      expect((await app.listProviders()).find(p => p.id === "openai")).toMatchObject({name: "OpenAI ChatGPT", apiKey: false, oauth: {label: "Sign in with ChatGPT"}});
+      expect((await app.listProviders()).find(p => p.id === "openai-api")).toMatchObject({name: "OpenAI API", apiKey: true, oauth: undefined});
+      const mirror = () => {
+        const upstream = app.runtime.getAllModels("openai");
+        expect(app.runtime.getAllModels("openai-api")).toEqual(upstream.map(m => ({...m, provider: "openai-api"})));
+      };
+      mirror();
+      // Mock the catalog transport, including utility types absent from the baseline.
+      const base = app.runtime.getModels("openai")[0];
+      const remote = [base, {...base, type: "image", api: "openai-images", id: "split-image"}, {...base, type: "classifier", api: "openai-decisions", id: "split-classifier"}];
+      const requests = [];
+      const originalFetch = globalThis.fetch;
+      globalThis.fetch = async url => {
+        requests.push(String(url));
+        return Response.json(remote, {headers: {"last-modified": "Thu, 01 Jan 2099 00:00:00 GMT"}});
+      };
+      await app.credentials.modify("openai-api", async () => ({type: "api_key", key: "catalog-test"}));
+      try {
+        const result = await app.refreshModels({providers: ["openai-api"], allowNetwork: true, force: true});
+        expect(result.errors.size).toBe(0);
+        expect(requests).toHaveLength(1);
+        expect(new URL(requests[0]).pathname).toBe("/api/models/providers/openai");
+      } finally { globalThis.fetch = originalFetch; }
+      mirror();
+      expect(app.runtime.getAllModels("openai-api").map(m => m.id)).toContain("split-image");
+      expect(app.runtime.getAllModels("openai-api").map(m => m.id)).toContain("split-classifier");
+      await app.refreshModels({allowNetwork: false});
+      mirror();
+      expect(app.runtime.getProvider("openai-api").auth.oauth).toBeUndefined();
+      const configFile = join(home, ".config", "pig", "models.json");
+      await writeFile(configFile, JSON.stringify({providers: {"openai-api": {modelOverrides: {[base.id]: {name: "API-only override"}}}}}));
+      await app.refreshModels({providers: ["openai-api"], allowNetwork: false});
+      expect(app.runtime.getModel("openai-api", base.id).name).toBe("API-only override");
+      expect(app.runtime.getModel("openai", base.id).name).toBe(base.name);
+      await writeFile(configFile, "{}");
+      await app.refreshModels({allowNetwork: false});
+      mirror();
+      await app.credentials.delete("openai-api");
+      const ids = ["openai-api", "anthropic", "amazon-bedrock", "google-vertex"];
+      for (const id of ids) {
+        expect((await app.listProviders()).find(p => p.id === id)).toMatchObject({configured: false, stored: false});
+        expect(await app.runtime.checkAuth(id)).toBeUndefined();
+        expect(await app.runtime.getAuth(id)).toBeUndefined();
+        expect(await app.runtime.getAllAvailable(id)).toEqual([]);
+        // Unavailable catalog models must not dispatch, even if selected by ID.
+        const provider = app.runtime.getProvider(id);
+        const model = app.runtime.getModels(id)[0];
+        expect(model).toBeDefined();
+        let dispatched = 0;
+        const dispatch = (_model, _context, options) => {
+          dispatched++;
+          expect(options.apiKey).toBe("stored-" + id);
+          throw new Error("test dispatch reached");
+        };
+        app.runtime.setProvider({...provider, stream: dispatch, streamSimple: dispatch});
+        const context = {messages: []};
+        for (const complete of [app.runtime.complete.bind(app.runtime), app.runtime.completeSimple.bind(app.runtime)]) {
+          const result = await complete(model, context);
+          expect(result.stopReason).toBe("error");
+          expect(result.errorMessage).toContain("Provider is not configured");
         }
-      },
-    );
-    expect(notices.map((n) => n.message)).toEqual(["terminal:ok"]);
-    expect(
-      await withPackageLock(() => service.reloadPackageSessions()),
-    ).toEqual([]);
-    expect(notices.filter((n) => n.message === "terminal:ok")).toHaveLength(2);
-    const pending = service
-      .getSession(snapshot.info.id)
-      .extensionRunner.getUIContext()
-      .custom(() => ({
-        render: () => ["Waiting"],
-        invalidate() {},
-      }));
-    const cancelled = pending.catch((error) => error);
-    await service.closeSession(snapshot.info.id);
-    expect(await cancelled).toMatchObject({ name: "AbortError" });
-    // Late messages from the destroyed surface cannot reach a new session.
-    service.acceptTerminalUI({ type: "input", id: currentId, data: "stale" });
+        expect(dispatched).toBe(0);
+        // The same runtime observes credentials saved by the app without restart.
+        await app.credentials.modify(id, async () => ({type: "api_key", key: "stored-" + id}));
+        expect((await app.listProviders()).find(p => p.id === id)).toMatchObject({configured: true, stored: true});
+        expect(await app.runtime.checkAuth("openai")).toBeUndefined();
+        expect(await app.runtime.getAllAvailable("openai")).toEqual([]);
+        expect(await app.runtime.checkAuth(id)).toMatchObject({type: "api_key"});
+        expect((await app.runtime.getAvailable(id)).length).toBeGreaterThan(0);
+        expect((await app.runtime.getAuth(id)).auth.apiKey).toBe("stored-" + id);
+        for (const complete of [app.runtime.complete.bind(app.runtime), app.runtime.completeSimple.bind(app.runtime)]) {
+          const result = await complete(model, context);
+          expect(result.errorMessage).toContain("test dispatch reached");
+        }
+        expect(dispatched).toBe(2);
+        await app.credentials.delete(id);
+        expect(await app.runtime.checkAuth(id)).toBeUndefined();
+      }
+    `;
+    const child = Bun.spawn([process.execPath, "--eval", script], {
+      cwd: join(import.meta.dir, "../.."),
+      env: { ...process.env, HOME: home, USERPROFILE: home, PI_OFFLINE: "1" },
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+    const [code, stdout, stderr] = await Promise.all([
+      child.exited,
+      new Response(child.stdout).text(),
+      new Response(child.stderr).text(),
+    ]);
+    expect({ code, stdout, stderr }).toMatchObject({ code: 0 });
   } finally {
-    if (sessionId) await service.closeSession(sessionId);
-    await rm(file);
+    await rm(home, { recursive: true, force: true });
   }
-}, 30_000);
+}, 15_000);
+
+test("models.json composes app configuration and malformed config reports an error without crashing startup", async () => {
+  for (const invalid of [false, true]) {
+    const home = await mkdtemp(join(tmpdir(), "pig-app-model-config-"));
+    try {
+      const script = `
+        import { expect } from "bun:test";
+        import { mkdir, writeFile } from "node:fs/promises";
+        import { join } from "node:path";
+        const dir = join(${JSON.stringify(home)}, ".config", "pig");
+        await mkdir(dir, {recursive: true});
+        const config = {providers: {local: {api: "openai-completions", baseUrl: "http://localhost:1234", apiKey: "literal", models: [{id: "custom"}]}}};
+        await writeFile(join(dir, "models.json"), ${invalid} ? '{"providers":[]}' : '// JSONC is supported\\n' + JSON.stringify(config));
+        const app = await import(${JSON.stringify(new URL("./pi-service.ts", import.meta.url).href)});
+        if (${invalid}) {
+          expect(app.modelErrors.some(e => e.includes("models.json"))).toBe(true);
+          expect(app.runtime.getProviders().length).toBeGreaterThan(0);
+        } else {
+          expect(app.runtime.getModel("local", "custom").baseUrl).toBe("http://localhost:1234");
+          expect((await app.runtime.getAuth("local")).auth.apiKey).toBe("literal");
+          await writeFile(join(dir, "models.json"), '{}');
+          await app.applyModelSettings();
+          expect(app.runtime.getProvider("local")).toBeUndefined();
+        }
+        const {fauxProvider} = await import("@earendil-works/pi-ai");
+        const {provider} = fauxProvider();
+        app.runtime.setProvider({...provider, refreshModels: async () => {throw new Error("catalog failure");}});
+        await app.refreshModels({allowNetwork: false});
+        expect(app.modelErrors.some(e => e.includes("catalog failure"))).toBe(true);
+      `;
+      const child = Bun.spawn([process.execPath, "--eval", script], {
+        cwd: join(import.meta.dir, "../.."),
+        env: { ...process.env, HOME: home, USERPROFILE: home, PI_OFFLINE: "1" },
+        stdout: "pipe",
+        stderr: "pipe",
+      });
+      const [code, stdout, stderr] = await Promise.all([
+        child.exited,
+        new Response(child.stdout).text(),
+        new Response(child.stderr).text(),
+      ]);
+      expect({ code, stdout, stderr }).toMatchObject({ code: 0 });
+    } finally {
+      await rm(home, { recursive: true, force: true });
+    }
+  }
+}, 15_000);

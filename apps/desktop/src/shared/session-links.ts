@@ -7,14 +7,7 @@ export function sessionIdFromLink(value: string): string | undefined {
     const match = /^pig:\/\/session\/([^/?#]+)$/i.exec(value.trim());
     if (!match) return;
     const id = decodeURIComponent(match[1]);
-    if (
-      !id ||
-      id === "." ||
-      id === ".." ||
-      id.length > 128 ||
-      /[\\/\p{Cc}\s]/u.test(id)
-    )
-      return;
+    if (!/^[1-9]\d*$/.test(id) || !Number.isSafeInteger(Number(id))) return;
     return id;
   } catch {
     return;

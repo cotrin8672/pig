@@ -9,7 +9,7 @@ import {
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { isAbsolute, join } from "node:path";
-import { prepareDesktopConfig } from "./desktop-config";
+import { deviceId, prepareDesktopConfig } from "./desktop-config";
 
 const directories: string[] = [];
 afterEach(async () => {
@@ -98,4 +98,16 @@ test("does not overwrite desktop settings and tolerates missing legacy files on 
   await prepareDesktopConfig(join(legacy, "missing"), emptyDestination);
   expect(await readdir(emptyDestination)).toEqual(["general"]);
   expect(await readdir(join(emptyDestination, "general"))).toEqual([]);
+});
+
+test("device id is a UUID created once and reused", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "pig-device-"));
+  directories.push(dir);
+  const file = join(dir, "device-id");
+  const first = await deviceId(file);
+  expect(first).toMatch(
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/,
+  );
+  expect(await deviceId(file)).toBe(first);
+  expect(await readFile(file, "utf8")).toBe(first);
 });

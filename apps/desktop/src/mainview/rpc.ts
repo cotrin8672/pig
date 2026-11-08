@@ -3,19 +3,26 @@ import {
   legacyUiPreferences,
   type UiPreferences,
 } from "../shared/desktop-state";
-import type { Appearance, RPCSchema, Snapshot } from "../shared/rpc-schema";
+import type {
+  Appearance,
+  RPCSchema,
+  Snapshot,
+  WireEvent,
+} from "../shared/rpc-schema";
 import { sessionIdFromLink } from "../shared/session-links";
 import {
   patchSettings,
   type Settings,
   type SettingsPatch,
 } from "../shared/settings";
-import { type Message, reduceTranscript } from "../shared/transcript";
+import type { Message } from "../shared/transcript";
+import { applyChatEvent, hydrateChatSnapshot } from "./chat-snapshot";
 import { navigate, navigationRevision } from "./navigation";
-import { mergeDialogSnapshot, visibleCompletion } from "./session-read";
-import { receivePackageOp, showError, showNotice, useStore } from "./store";
-import { receiveTerminalUI } from "./terminal-ui";
+import { visibleCompletion } from "./session-read";
+import { showError, showNotice, useStore } from "./store";
 
+// Preserve watch publications racing the open-session response (including a fast final answer).
+const latestEvents = new Map<string, WireEvent>();
 let appearanceInFlight = false;
 let appearancePending = false;
 let appearanceTimer: ReturnType<typeof setTimeout> | undefined;
@@ -87,12 +94,6 @@ export const rpc = Electroview.defineRPC<RPCSchema>({
   handlers: {
     requests: {},
     messages: {
-      packageOp: (op) => {
-        receivePackageOp(op);
-        // Extensions may add or remove providers; bun reloads them before "done".
-        if (op.status === "done") void refresh().catch(showError);
-      },
-      installed: (installed) => useStore.setState({ installed }),
       appearance: receiveAppearance,
       settings: receiveSettings,
       windowState: ({ maximized }) => useStore.setState({ maximized }),
@@ -103,7 +104,6 @@ export const rpc = Electroview.defineRPC<RPCSchema>({
       },
       error: ({ message }) => showError(message),
       notification: showNotice,
-      terminalUI: receiveTerminalUI,
       desktopState: (desktop) => {
         useStore.setState((s) => ({
           bootstrap: {
@@ -112,12 +112,10 @@ export const rpc = Electroview.defineRPC<RPCSchema>({
           },
         }));
       },
-      extensionDialogs: ({ sessionId, requests }) => {
-        useStore.setState((s) => ({
-          dialogs: { ...s.dialogs, [sessionId]: requests },
-        }));
-      },
       agentEvent: ({ sessionId, event, contextUsage }) => {
+        latestEvents.set(sessionId, event);
+        if (latestEvents.size > 100)
+          latestEvents.delete(latestEvents.keys().next().value ?? "");
         useStore.setState((s) => {
           const snapshot = s.snapshots[sessionId];
           if (!snapshot) return {};
@@ -125,18 +123,13 @@ export const rpc = Electroview.defineRPC<RPCSchema>({
             snapshots: {
               ...s.snapshots,
               [sessionId]: {
-                ...snapshot,
+                ...applyChatEvent(snapshot, event),
                 ...(contextUsage !== undefined ? { contextUsage } : {}),
-                transcript: reduceTranscript(snapshot.transcript, event),
               },
             },
           };
         });
-        if (
-          event.type === "agent_settled" ||
-          event.type === "session_info_changed"
-        )
-          void refreshSessions().catch(showError);
+        if (!event.transcript.running) void refreshSessions().catch(showError);
       },
       loginFrame: (frame) => {
         const login = useStore.getState().login;
@@ -220,11 +213,6 @@ export async function refresh() {
             : s.bootstrap.desktop.sessions,
       },
     },
-    dialogs: mergeDialogSnapshot(
-      before.dialogs,
-      s.dialogs,
-      bootstrap.pendingDialogs ?? [],
-    ),
   }));
   try {
     const beforeAppearance = useStore.getState().appearance;
@@ -248,8 +236,8 @@ export async function refresh() {
   }
   await refreshSessions();
 }
-export function openChat(cwd: string, path?: string, id?: string, push = true) {
-  return openSnapshot(() => rpc.request.openSession({ cwd, path, id }), push);
+export function openChat(cwd: string, id?: string, push = true) {
+  return openSnapshot(() => rpc.request.openSession({ cwd, id }), push);
 }
 export function openChatLink(url: string) {
   return openSnapshot(() => rpc.request.openSessionLink({ url }));
@@ -257,18 +245,22 @@ export function openChatLink(url: string) {
 export function forkChat(sessionId: string, timestamp: number) {
   return openSnapshot(() => rpc.request.forkSession({ sessionId, timestamp }));
 }
-/** Drops the reply to `user` (kept as an unseen branch) and sends it again. */
+/** Rewind and resend within the same conversation and desktop identity. */
 export async function regenerate(
   sessionId: string,
   user: Extract<Message, { role: "user" }>,
 ) {
-  const snapshot = await rpc.request.rewindSession({
-    sessionId,
-    timestamp: user.timestamp,
-  });
+  const snapshot = hydrateChatSnapshot(
+    await rpc.request.rewindSession({
+      sessionId,
+      timestamp: user.timestamp,
+    }),
+  );
   useStore.setState((s) => ({
+    active: sessionId,
     snapshots: { ...s.snapshots, [sessionId]: snapshot },
   }));
+  navigate("chat", sessionId);
   const blocks =
     typeof user.content === "string"
       ? [{ type: "text" as const, text: user.content }]
@@ -276,6 +268,7 @@ export async function regenerate(
   const images = blocks.filter((b) => b.type === "image");
   await rpc.request.prompt({
     sessionId,
+    requestId: crypto.randomUUID(),
     text: blocks
       .filter((b) => b.type === "text")
       .map((b) => b.text)
@@ -286,20 +279,16 @@ export async function regenerate(
 async function openSnapshot(load: () => Promise<Snapshot>, push = true) {
   if (push && useStore.getState().opening) return;
   const revision = navigationRevision;
-  const beforeDialogs = useStore.getState().dialogs;
+  const beforeEvents = new Map(latestEvents);
   useStore.setState({ opening: true });
   try {
-    const snapshot = await load();
+    let snapshot = hydrateChatSnapshot(await load());
+    const latest = latestEvents.get(snapshot.info.id);
+    if (latest && latest !== beforeEvents.get(snapshot.info.id))
+      snapshot = applyChatEvent(snapshot, latest);
     useStore.setState((s) => ({
       ...(revision === navigationRevision ? { active: snapshot.info.id } : {}),
       snapshots: { ...s.snapshots, [snapshot.info.id]: snapshot },
-      dialogs: {
-        ...s.dialogs,
-        [snapshot.info.id]:
-          beforeDialogs[snapshot.info.id] === s.dialogs[snapshot.info.id]
-            ? (snapshot.pendingDialogs ?? [])
-            : s.dialogs[snapshot.info.id],
-      },
     }));
     if (push && revision === navigationRevision)
       navigate("chat", snapshot.info.id);

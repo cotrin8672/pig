@@ -33,6 +33,9 @@ export function Composer({ snapshot }: { snapshot: Snapshot }) {
   const [text, setText] = useState("");
   const draftVersion = useRef(0);
   const sending = useRef(false);
+  const pendingRequest = useRef<{ version: number; id: string } | undefined>(
+    undefined,
+  );
   const [submitting, setSubmitting] = useState(false);
   const [pastes, setPastes] = useState(new Map<number, string>());
   const nextPaste = useRef(1);
@@ -58,9 +61,12 @@ export function Composer({ snapshot }: { snapshot: Snapshot }) {
     sending.current = true;
     setSubmitting(true);
     const version = draftVersion.current;
+    if (pendingRequest.current?.version !== version)
+      pendingRequest.current = { version, id: crypto.randomUUID() };
     try {
       await rpc.request.prompt({
         sessionId: info.id,
+        requestId: pendingRequest.current.id,
         text: expanded,
         images: images.length
           ? images.map(({ type, data, mimeType }) => ({ type, data, mimeType }))
@@ -69,6 +75,7 @@ export function Composer({ snapshot }: { snapshot: Snapshot }) {
       // Acknowledging an older submission must not erase a newer draft.
       if (draftVersion.current === version) {
         setText("");
+        pendingRequest.current = undefined;
         setPastes(new Map());
         nextPaste.current = 1;
         setImages([]);

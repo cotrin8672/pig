@@ -1,18 +1,11 @@
 import { afterEach, expect, test } from "bun:test";
 import type { SessionFlags } from "../shared/desktop-state";
-import type { ExtensionDialogRequest } from "../shared/rpc-schema";
-import { mergeDialogSnapshot, visibleCompletion } from "./session-read";
+import { visibleCompletion } from "./session-read";
 import { hasUnreadCompletion, sessionStatus } from "./session-status";
 import { clearNotices, markNoticeRead, useStore } from "./store";
 
 const complete: SessionFlags = {
   completion: { id: "turn-1", outcome: "success" },
-};
-const question: ExtensionDialogRequest = {
-  id: "ask-1",
-  sessionId: "chat",
-  kind: "input",
-  title: "Where?",
 };
 
 function state() {
@@ -28,7 +21,6 @@ function state() {
         transcript: { running: false },
       },
     },
-    dialogs: {} as Record<string, ExtensionDialogRequest[]>,
   };
 }
 
@@ -66,7 +58,6 @@ test("only the rendered, focused, visible, settled chat acknowledges its exact c
     { page: "settings" },
     { opening: true },
     { modelPending: true },
-    { dialogs: { chat: [question] } },
     { snapshots: {} },
   ])
     expect(
@@ -81,20 +72,6 @@ test("only the rendered, focused, visible, settled chat acknowledges its exact c
     readCompletionId: "turn-1",
   };
   expect(visibleCompletion(read, true, true)).toBeUndefined();
-});
-
-test("dialog resync preserves newer answers and requests, while clearing unchanged stale entries", () => {
-  const before = { chat: [question], stale: [question] };
-  const fresh = { ...question, id: "ask-2", sessionId: "other" };
-  const current = { ...before, chat: [], other: [fresh] };
-  expect(mergeDialogSnapshot(before, current, [question])).toEqual({
-    chat: [],
-    other: [fresh],
-  });
-  expect(mergeDialogSnapshot({}, {}, [question, fresh])).toEqual({
-    chat: [question],
-    other: [fresh],
-  });
 });
 
 const original = useStore.getState();

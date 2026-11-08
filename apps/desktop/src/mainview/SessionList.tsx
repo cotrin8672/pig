@@ -2,7 +2,6 @@ import {
   Archive,
   Check,
   Link2,
-  MoreHorizontal,
   Pencil,
   Pin,
   PinOff,
@@ -14,6 +13,7 @@ import { useEffect, useId, useRef, useState } from "react";
 import type { SessionFlags } from "../shared/desktop-state";
 import type { SessionInfo } from "../shared/rpc-schema";
 import { sessionLink } from "../shared/session-links";
+import { ActionsMenu } from "./ActionsMenu";
 import { useT } from "./i18n";
 import { navigate } from "./navigation";
 import { openChat, refreshSessions, rpc } from "./rpc";
@@ -67,25 +67,17 @@ function SessionRow({ session, cwd }: { session: SessionInfo; cwd: string }) {
       !!s.snapshots[session.id]?.transcript.running ||
       (s.modelPending && s.active === session.id),
   );
-  const waiting = useStore((s) => !!s.dialogs[session.id]?.length);
-  const status = sessionStatus(running, waiting, flags);
-  const trigger = useRef<HTMLButtonElement>(null);
-  const menu = useRef<HTMLDivElement>(null);
+  const status = sessionStatus(running, false, flags);
   const dialog = useRef<HTMLDialogElement>(null);
   const input = useRef<HTMLInputElement>(null);
   const cancel = useRef<HTMLButtonElement>(null);
-  const menuId = useId();
   const titleId = useId();
-  const [menuOpen, setMenuOpen] = useState(false);
   const [copied, setCopied] = useState(false);
   const [mode, setMode] = useState<"rename" | "delete">();
   const [name, setName] = useState(session.title);
   const [error, setError] = useState<string>();
   const [busy, setBusy] = useState(false);
   const target = { cwd, id: session.id };
-  function closeMenu() {
-    if (menu.current?.matches(":popover-open")) menu.current.hidePopover();
-  }
   useEffect(() => {
     if (!mode) return;
     dialog.current?.showModal();
@@ -94,27 +86,12 @@ function SessionRow({ session, cwd }: { session: SessionInfo; cwd: string }) {
       input.current?.select();
     } else cancel.current?.focus();
   }, [mode]);
-  useEffect(() => {
-    if (!menuOpen) return;
-    const close = () => {
-      if (menu.current?.matches(":popover-open")) menu.current.hidePopover();
-    };
-    const list = trigger.current?.closest(".project-list");
-    list?.addEventListener("scroll", close);
-    window.addEventListener("resize", close);
-    return () => {
-      list?.removeEventListener("scroll", close);
-      window.removeEventListener("resize", close);
-    };
-  }, [menuOpen]);
   function openDialog(next: "rename" | "delete") {
-    closeMenu();
     setName(session.title);
     setError(undefined);
     setMode(next);
   }
   async function setFlags(patch: SessionFlags) {
-    closeMenu();
     setBusy(true);
     try {
       await rpc.request.setSessionState({ ...target, ...patch });
@@ -149,11 +126,8 @@ function SessionRow({ session, cwd }: { session: SessionInfo; cwd: string }) {
         useStore.setState((s) => {
           const snapshots = { ...s.snapshots };
           delete snapshots[session.id];
-          const dialogs = { ...s.dialogs };
-          delete dialogs[session.id];
           return {
             snapshots,
-            dialogs,
             sessions: {
               ...s.sessions,
               [cwd]: (s.sessions[cwd] ?? []).filter(
@@ -185,7 +159,7 @@ function SessionRow({ session, cwd }: { session: SessionInfo; cwd: string }) {
         }
         disabled={opening}
         aria-current={active ? "page" : undefined}
-        onClick={() => void openChat(cwd, session.path, session.id)}
+        onClick={() => void openChat(cwd, session.id)}
       >
         <span className="session-status-slot">
           {status && (
@@ -199,129 +173,86 @@ function SessionRow({ session, cwd }: { session: SessionInfo; cwd: string }) {
         <span className="thread-title">{session.title}</span>
         {flags?.pinned && <Pin size={11} aria-label={t.Pin} />}
       </button>
-      <button
-        ref={trigger}
-        type="button"
-        className="thread-more"
-        popoverTarget={menuId}
-        aria-haspopup="menu"
-        aria-expanded={menuOpen}
-        aria-label={`${t["Chat actions"]}: ${session.title}`}
-        title={t["Chat actions"]}
+      <ActionsMenu
+        label={`${t["Chat actions"]}: ${session.title}`}
         disabled={busy || opening}
-        onClick={() => {
-          if (menu.current?.matches(":popover-open")) return;
-          setCopied(false);
-          requestAnimationFrame(() => {
-            const popup = menu.current;
-            const button = trigger.current;
-            if (!popup?.matches(":popover-open") || !button) return;
-            const anchor = button.getBoundingClientRect(),
-              panel = popup.getBoundingClientRect();
-            popup.style.left = `${Math.max(8, Math.min(innerWidth - panel.width - 8, anchor.right - panel.width))}px`;
-            popup.style.top = `${Math.max(8, Math.min(innerHeight - panel.height - 8, anchor.bottom + panel.height + 4 <= innerHeight - 8 ? anchor.bottom + 4 : anchor.top - panel.height - 4))}px`;
-            popup
-              .querySelector<HTMLButtonElement>("button:not(:disabled)")
-              ?.focus();
-          });
-        }}
+        onOpen={() => setCopied(false)}
       >
-        <MoreHorizontal size={15} />
-      </button>
-      <div
-        ref={menu}
-        id={menuId}
-        popover="auto"
-        className="session-menu"
-        role="menu"
-        aria-label={t["Chat actions"]}
-        onToggle={() => setMenuOpen(!!menu.current?.matches(":popover-open"))}
-        onKeyDown={(event) => {
-          if (event.key === "Escape") {
-            event.preventDefault();
-            event.stopPropagation();
-            closeMenu();
-            trigger.current?.focus();
-            return;
-          }
-          if (!["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key))
-            return;
-          event.preventDefault();
-          const buttons = Array.from(
-            event.currentTarget.querySelectorAll<HTMLButtonElement>(
-              "button:not(:disabled)",
-            ),
-          );
-          const index = buttons.indexOf(
-            document.activeElement as HTMLButtonElement,
-          );
-          const next =
-            event.key === "Home"
-              ? 0
-              : event.key === "End"
-                ? buttons.length - 1
-                : (index +
-                    (event.key === "ArrowDown" ? 1 : -1) +
-                    buttons.length) %
-                  buttons.length;
-          buttons[next]?.focus();
-        }}
-      >
-        <button
-          type="button"
-          role="menuitem"
-          onClick={() => openDialog("rename")}
-        >
-          <Pencil size={13} />
-          {t.Rename}
-        </button>
-        <button
-          type="button"
-          role="menuitem"
-          onClick={() => void setFlags({ pinned: !flags?.pinned })}
-        >
-          {flags?.pinned ? <PinOff size={13} /> : <Pin size={13} />}
-          {flags?.pinned ? t.Unpin : t.Pin}
-        </button>
-        <button
-          type="button"
-          role="menuitem"
-          onClick={() => void setFlags({ archived: !flags?.archived })}
-        >
-          {flags?.archived ? <RotateCcw size={13} /> : <Archive size={13} />}
-          {flags?.archived ? t["Restore chat"] : t.Archive}
-        </button>
-        <button
-          type="button"
-          role="menuitem"
-          title={
-            t["Paste in pig outside a text field to open this local link."]
-          }
-          onClick={() => {
-            if (!navigator.clipboard) {
-              showError(t["Clipboard is unavailable."]);
-              return;
-            }
-            void navigator.clipboard
-              .writeText(sessionLink(session.id))
-              .then(() => setCopied(true))
-              .catch(showError);
-          }}
-        >
-          {copied ? <Check size={13} /> : <Link2 size={13} />}
-          {copied ? t.Copied : t["Copy link"]}
-        </button>
-        <button
-          type="button"
-          role="menuitem"
-          className="session-menu-delete"
-          disabled={running || waiting}
-          onClick={() => openDialog("delete")}
-        >
-          <Trash2 size={13} />
-          {t.Delete}
-        </button>
-      </div>
+        {(closeMenu) => (
+          <>
+            <button
+              type="button"
+              role="menuitem"
+              onClick={() => {
+                closeMenu();
+                openDialog("rename");
+              }}
+            >
+              <Pencil size={13} />
+              {t.Rename}
+            </button>
+            <button
+              type="button"
+              role="menuitem"
+              onClick={() => {
+                closeMenu();
+                void setFlags({ pinned: !flags?.pinned });
+              }}
+            >
+              {flags?.pinned ? <PinOff size={13} /> : <Pin size={13} />}
+              {flags?.pinned ? t.Unpin : t.Pin}
+            </button>
+            <button
+              type="button"
+              role="menuitem"
+              onClick={() => {
+                closeMenu();
+                void setFlags({ archived: !flags?.archived });
+              }}
+            >
+              {flags?.archived ? (
+                <RotateCcw size={13} />
+              ) : (
+                <Archive size={13} />
+              )}
+              {flags?.archived ? t["Restore chat"] : t.Archive}
+            </button>
+            <button
+              type="button"
+              role="menuitem"
+              title={
+                t["Paste in pig outside a text field to open this local link."]
+              }
+              onClick={() => {
+                if (!navigator.clipboard) {
+                  showError(t["Clipboard is unavailable."]);
+                  return;
+                }
+                void navigator.clipboard
+                  .writeText(sessionLink(session.id))
+                  .then(() => setCopied(true))
+                  .catch(showError);
+              }}
+            >
+              {copied ? <Check size={13} /> : <Link2 size={13} />}
+              {copied ? t.Copied : t["Copy link"]}
+            </button>
+            <button
+              type="button"
+              role="menuitem"
+              className="session-menu-delete"
+              disabled={running}
+              onClick={() => {
+                closeMenu();
+                openDialog("delete");
+              }}
+            >
+              <Trash2 size={13} />
+              {t.Delete}
+            </button>
+          </>
+        )}
+      </ActionsMenu>
       <dialog
         ref={dialog}
         className="session-dialog"

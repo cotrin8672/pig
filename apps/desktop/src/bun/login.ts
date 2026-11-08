@@ -1,6 +1,8 @@
 import type { AuthInteraction } from "@earendil-works/pi-ai";
 import type { AuthMethod, LoginFrame } from "../shared/rpc-schema";
-import { runtime } from "./pi-service";
+import { authOperations } from "./auth-operations";
+import { deviceId } from "./desktop-config";
+import { refreshModels, runtime } from "./pi-service";
 
 const logins = new Map<
   string,
@@ -67,7 +69,18 @@ export async function startLogin(
       }),
   };
   try {
-    await runtime.login(provider, method, interaction);
+    await authOperations.login(provider, login.abort, async () => {
+      const id = await deviceId();
+      await runtime.login(provider, method, interaction, {
+        getDeviceId: () => id,
+        agentName: "pig",
+      });
+      await refreshModels({
+        providers: [provider],
+        signal: login.abort.signal,
+      });
+      login.abort.signal.throwIfAborted();
+    });
     push({ loginId, provider, kind: "success" });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
@@ -79,4 +92,10 @@ export async function startLogin(
   } finally {
     logins.delete(loginId);
   }
+}
+export function logoutProvider(provider: string) {
+  return authOperations.logout(provider, async () => {
+    await runtime.logout(provider);
+    await refreshModels({ providers: [provider], allowNetwork: false });
+  });
 }

@@ -17,19 +17,13 @@ import {
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { DEFAULT_CHAT_WIDTH } from "../shared/chat-width";
 import { filterModels } from "../shared/models";
-import type { Snapshot } from "../shared/rpc-schema";
 import { responseStats } from "../shared/transcript";
 import { ChatWidthHandles, useChatWidth } from "./ChatWidth";
 import { Composer } from "./Composer";
-import { ExtensionDialogs } from "./ExtensionDialogs";
+import type { ChatSnapshot } from "./chat-snapshot";
 import { Extensions } from "./Extensions";
 import { getT, useT } from "./i18n";
-import {
-  Markdown,
-  MessageContent,
-  ToolResultContent,
-  UserMessage,
-} from "./MessageContent";
+import { Markdown, ToolResultContent, UserMessage } from "./MessageContent";
 import { NotificationCenter } from "./NotificationCenter";
 import { Notifications } from "./Notifications";
 import { initNavigation, navigate } from "./navigation";
@@ -48,7 +42,6 @@ import { Settings } from "./Settings";
 import { SidebarSessions } from "./SidebarSessions";
 import { initShortcuts } from "./shortcuts";
 import { type LoginState, showError, useStore } from "./store";
-import { TerminalDialog } from "./TerminalDialog";
 
 const basename = (path: string) =>
   path.split(/[\\/]/).filter(Boolean).pop() || path;
@@ -225,7 +218,6 @@ export function App() {
       )}
       {state.opening && <div className="loading">{t["Opening chat…"]}</div>}
       <Notifications />
-      <TerminalDialog />
     </div>
   );
 }
@@ -440,7 +432,7 @@ function OAuthLoginDialog({ login }: { login: LoginState }) {
   );
 }
 
-function Chat({ snapshot }: { snapshot: Snapshot }) {
+function Chat({ snapshot }: { snapshot: ChatSnapshot }) {
   const t = useT();
   const { info, transcript } = snapshot;
   const { models: available, disabledModels } = useStore((s) => s.bootstrap);
@@ -463,10 +455,7 @@ function Chat({ snapshot }: { snapshot: Snapshot }) {
         sessionId={info.id}
         stats={stats}
         user={user?.role === "user" ? user : undefined}
-        // shortcut: only the latest reply regenerates; earlier ones would hide later turns with no tree UI.
-        canRegenerate={
-          index === transcript.turns.length - 1 && !transcript.running
-        }
+        canRegenerate={!transcript.running}
       />
     );
   };
@@ -504,9 +493,7 @@ function Chat({ snapshot }: { snapshot: Snapshot }) {
               useStore.setState((s) => {
                 const snapshots = { ...s.snapshots };
                 delete snapshots[info.id];
-                const dialogs = { ...s.dialogs };
-                delete dialogs[info.id];
-                return { snapshots, dialogs };
+                return { snapshots };
               });
               navigate("chat", null);
               void refreshSessions().catch(showError);
@@ -592,55 +579,21 @@ function Chat({ snapshot }: { snapshot: Snapshot }) {
                       <p className="error">{message.errorMessage}</p>
                     )}
                   </>
-                ) : message.role === "custom" && message.display ? (
-                  <div className="tool-card custom-message">
-                    <div className="muted">[{message.customType}]</div>
-                    <MessageContent content={message.content} />
-                  </div>
-                ) : message.role === "bashExecution" ? (
-                  <details
-                    className={`tool-card bash-execution ${message.excludeFromContext ? "excluded" : ""}`}
-                    open
-                  >
-                    <summary>
-                      <code>$ {message.command}</code>
-                    </summary>
-                    <MessageContent content={message.output} markdown={false} />
-                    {message.cancelled && (
-                      <p className="muted">{t.Cancelled}</p>
-                    )}
-                    {message.exitCode !== undefined &&
-                      message.exitCode !== 0 && (
-                        <p className="error">
-                          {t["Exit code"]}: {message.exitCode}
-                        </p>
-                      )}
-                    {message.truncated && (
-                      <p className="muted">
-                        {t["Output truncated"]}
-                        {message.fullOutputPath && (
-                          <>
-                            : <code>{message.fullOutputPath}</code>
-                          </>
-                        )}
-                      </p>
-                    )}
-                  </details>
-                ) : message.role === "compactionSummary" ||
-                  message.role === "branchSummary" ? (
-                  <details className="thinking summary-card">
-                    <summary>
-                      {message.role === "compactionSummary"
-                        ? `[compaction] ${t.compactedFrom(message.tokensBefore)}`
-                        : `[branch] ${t["Branch summary"]}`}
-                    </summary>
-                    <MessageContent content={message.summary} />
-                  </details>
                 ) : null}
               </article>
               {footer(index)}
             </div>
           ))}
+          {snapshot.failure && (
+            <p className="error" role="alert">
+              {snapshot.failure}
+            </p>
+          )}
+          {snapshot.aborted && !snapshot.failure && (
+            <p className="muted" role="status">
+              {t.Stopped}
+            </p>
+          )}
           {transcript.running && (
             <p className="muted running" role="status">
               {t["Working…"]}
@@ -648,7 +601,6 @@ function Chat({ snapshot }: { snapshot: Snapshot }) {
           )}
         </div>
       </div>
-      <ExtensionDialogs sessionId={info.id} />
       <Composer snapshot={snapshot} />
     </div>
   );
