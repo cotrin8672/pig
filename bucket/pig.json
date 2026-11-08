@@ -1,0 +1,32 @@
+{
+  "version": "0.1.0",
+  "description": "A thin GUI client for the pi agent harness (pi on gui)",
+  "homepage": "https://github.com/cotrin8672/pig",
+  "license": "MIT",
+  "architecture": {
+    "64bit": {
+      "url": "https://github.com/cotrin8672/pig/releases/download/v0.1.0/pig-windows-x64.zip",
+      "hash": "b52f6a8c25ed624971c00bc0c0a3decee482a8dddcfbfded1ec123599ddaa816"
+    }
+  },
+  "bin": [["bin/launcher.exe", "pig"]],
+  "shortcuts": [["bin/launcher.exe", "pig"]],
+  "notes": [
+    "Requires Microsoft Edge WebView2 Runtime. This build is unsigned.",
+    "pig and pig-nightly are separate Scoop apps sharing the pig shim and shortcut; installing both causes conflicts. Switch with 'scoop reset pig' or 'scoop reset pig-nightly'.",
+    "Exit all pig instances before updating or switching. Both builds share %LOCALAPPDATA%/dev.piris.desktop/stable; uninstall does not delete your data."
+  ],
+  "checkver": {
+    "github": "https://github.com/cotrin8672/pig"
+  },
+  "autoupdate": {
+    "architecture": {
+      "64bit": {
+        "url": "https://github.com/cotrin8672/pig/releases/download/v$version/pig-windows-x64.zip",
+        "hash": {
+          "url": "$url.sha256"
+        }
+      }
+    }
+  }
+}

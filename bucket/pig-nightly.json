@@ -1,0 +1,18 @@
+{
+  "version": "nightly",
+  "description": "The latest main build of pig, a thin GUI client for the pi agent harness",
+  "homepage": "https://github.com/cotrin8672/pig",
+  "license": "MIT",
+  "architecture": {
+    "64bit": {
+      "url": "https://github.com/cotrin8672/pig/releases/download/nightly/pig-windows-x64.zip"
+    }
+  },
+  "bin": [["bin/launcher.exe", "pig"]],
+  "shortcuts": [["bin/launcher.exe", "pig"]],
+  "notes": [
+    "Requires Microsoft Edge WebView2 Runtime. This build is unsigned. Nightly downloads skip hash verification and are re-downloaded by Scoop updates.",
+    "pig and pig-nightly are separate Scoop apps sharing the pig shim and shortcut; installing both causes conflicts. Switch with 'scoop reset pig' or 'scoop reset pig-nightly'.",
+    "Exit all pig instances before updating or switching. Both builds share %LOCALAPPDATA%/dev.piris.desktop/stable; uninstall does not delete your data."
+  ]
+}

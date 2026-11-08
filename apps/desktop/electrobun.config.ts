@@ -1,7 +1,8 @@
 import type { ElectrobunConfig } from "electrobun";
 
 export default {
-  app: { name: "piris", identifier: "dev.piris.desktop", version: "0.1.0" },
+  // Keep the original identifier to preserve existing projects and appearance settings.
+  app: { name: "pig", identifier: "dev.piris.desktop", version: "0.1.0" },
   build: {
     copy: {
       "dist/index.html": "views/mainview/index.html",
