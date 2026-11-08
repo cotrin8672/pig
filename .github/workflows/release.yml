@@ -55,6 +55,14 @@ jobs:
           fi
           echo "sha=$sha" >> "$GITHUB_OUTPUT"
       - run: pnpm install --frozen-lockfile
+      # electrobun downloads its CLI/core binaries from GitHub Releases on first build; cache them.
+      - uses: actions/cache@v4
+        with:
+          path: |
+            node_modules/.pnpm/electrobun@*/node_modules/electrobun/bin/electrobun.exe
+            node_modules/.pnpm/electrobun@*/node_modules/electrobun/.cache
+            node_modules/.pnpm/electrobun@*/node_modules/electrobun/dist-win-x64
+          key: electrobun-${{ runner.os }}-${{ hashFiles('pnpm-workspace.yaml', 'patches/electrobun@*.patch') }}
       - run: pnpm typecheck
       - run: pnpm lint
       - run: pnpm test
