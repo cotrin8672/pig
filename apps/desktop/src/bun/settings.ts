@@ -1,16 +1,28 @@
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
-import { dirname } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import {
   defaultSettings,
   type Settings,
   validateSettings,
 } from "../shared/settings";
+import { desktopConfigDir } from "./desktop-config";
+
+let runtimeSettings = defaultSettings;
+export const currentSettings = () => runtimeSettings;
+function applyRuntimeSettings(file: string, settings: Settings) {
+  if (resolve(file) === resolve(join(desktopConfigDir, "settings.json")))
+    runtimeSettings = settings;
+  return settings;
+}
 
 export async function loadSettings(file: string): Promise<Settings> {
   try {
-    return validateSettings(JSON.parse(await readFile(file, "utf8")));
+    return applyRuntimeSettings(
+      file,
+      validateSettings(JSON.parse(await readFile(file, "utf8"))),
+    );
   } catch {
-    return { ...defaultSettings, keybindings: {} };
+    return applyRuntimeSettings(file, { ...defaultSettings, keybindings: {} });
   }
 }
 export async function saveSettings(file: string, settings: Settings) {
@@ -19,4 +31,5 @@ export async function saveSettings(file: string, settings: Settings) {
   const temporary = `${file}.${crypto.randomUUID()}.tmp`;
   await writeFile(temporary, JSON.stringify(validated));
   await rename(temporary, file);
+  applyRuntimeSettings(file, validated);
 }

@@ -8,6 +8,8 @@ export interface UtilityModelSelection {
 export interface Settings {
   language: "en" | "ja";
   contextDisplay: "remaining" | "used";
+  shell: "git-bash" | "powershell";
+  blockImages: boolean;
   keybindings: KeyOverrides;
   imageGenerationModel: UtilityModelSelection | null;
   classificationModel: UtilityModelSelection | null;
@@ -16,6 +18,8 @@ export type SettingsPatch = Partial<Settings>;
 export const defaultSettings: Settings = {
   language: "en",
   contextDisplay: "remaining",
+  shell: "git-bash",
+  blockImages: false,
   keybindings: {},
   imageGenerationModel: null,
   classificationModel: null,
@@ -42,8 +46,12 @@ export function validateSettings(value: unknown): Settings {
   const language = input.language === undefined ? "en" : input.language;
   const contextDisplay =
     input.contextDisplay === undefined ? "remaining" : input.contextDisplay;
+  const shell = input.shell ?? "git-bash";
+  const blockImages = input.blockImages ?? false;
   if (
     !["en", "ja"].includes(language) ||
+    !["git-bash", "powershell"].includes(shell) ||
+    typeof blockImages !== "boolean" ||
     !["remaining", "used"].includes(contextDisplay)
   )
     throw new Error("Invalid settings.");
@@ -69,6 +77,8 @@ export function validateSettings(value: unknown): Settings {
   return {
     language,
     contextDisplay,
+    shell,
+    blockImages,
     keybindings,
     imageGenerationModel: validateModelSelection(input.imageGenerationModel),
     classificationModel: validateModelSelection(input.classificationModel),

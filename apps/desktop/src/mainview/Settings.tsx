@@ -128,6 +128,47 @@ export function Settings() {
                 </SettingsRow>
                 <SettingsRow
                   label={
+                    <label htmlFor="settings-agent-shell">
+                      {t["Agent shell"]}
+                    </label>
+                  }
+                >
+                  <div className="settings-select">
+                    <select
+                      id="settings-agent-shell"
+                      value={settings.shell}
+                      onChange={(event) =>
+                        updateSettings({
+                          shell: event.target.value as
+                            | "git-bash"
+                            | "powershell",
+                        })
+                      }
+                    >
+                      <option value="git-bash">{t["Git Bash"]}</option>
+                      <option value="powershell">{t.PowerShell}</option>
+                    </select>
+                    <ChevronDown size={14} aria-hidden="true" />
+                  </div>
+                </SettingsRow>
+                <SettingsRow
+                  label={
+                    <label htmlFor="settings-block-images">
+                      {t["Block images"]}
+                    </label>
+                  }
+                >
+                  <input
+                    id="settings-block-images"
+                    type="checkbox"
+                    checked={settings.blockImages}
+                    onChange={(event) =>
+                      updateSettings({ blockImages: event.target.checked })
+                    }
+                  />
+                </SettingsRow>
+                <SettingsRow
+                  label={
                     <span id="context-display-label">
                       {t["Context display"]}
                     </span>

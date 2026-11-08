@@ -20,6 +20,8 @@ test("settings defaults and patches validate enums and normalize overrides", () 
     [],
     { language: "fr" },
     { contextDisplay: "total" },
+    { shell: "cmd" },
+    { blockImages: "true" },
     { keybindings: [] },
     { keybindings: { bad: "Ctrl+B" } },
     { keybindings: { "settings.open": "Mod+B" } },
@@ -35,6 +37,8 @@ test("utility selections validate independently, preserve settings, and clear", 
   } as const;
   expect(validateSettings(old)).toEqual({
     ...old,
+    shell: "git-bash",
+    blockImages: false,
     imageGenerationModel: null,
     classificationModel: null,
   });
@@ -49,6 +53,8 @@ test("utility selections validate independently, preserve settings, and clear", 
   });
   expect(selected).toEqual({
     ...old,
+    shell: "git-bash",
+    blockImages: false,
     imageGenerationModel,
     classificationModel,
   });
@@ -81,4 +87,17 @@ test("utility selections validate independently, preserve settings, and clear", 
       expect(() => validateSettings({ [field]: value })).toThrow();
     }
   }
+});
+
+test("shell and image blocking patches preserve other settings", () => {
+  const selected = patchSettings(defaultSettings, {
+    shell: "powershell",
+    blockImages: true,
+  });
+  expect(selected).toEqual({
+    ...defaultSettings,
+    shell: "powershell",
+    blockImages: true,
+  });
+  expect(patchSettings(selected, { language: "ja" }).shell).toBe("powershell");
 });

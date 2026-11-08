@@ -25,12 +25,16 @@ test("missing and corrupt settings default without overwriting; valid saves roun
     await writeFile(file, JSON.stringify(old));
     expect(await loadSettings(file)).toEqual({
       ...old,
+      shell: "git-bash",
+      blockImages: false,
       imageGenerationModel: null,
       classificationModel: null,
     });
     const next = patchSettings(defaultSettings, {
       language: "ja",
       contextDisplay: "used",
+      shell: "powershell",
+      blockImages: true,
       keybindings: { "settings.open": null },
       imageGenerationModel: { provider: "disconnected-image", id: "image-1" },
       classificationModel: { provider: "typesafe", id: "jev-latest" },
