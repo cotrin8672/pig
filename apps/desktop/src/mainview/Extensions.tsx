@@ -22,32 +22,35 @@ import type {
   PackageOpStatus,
   PackageType,
 } from "../shared/rpc-schema";
+import { getT, useT } from "./i18n";
+import { navigate } from "./navigation";
 import { rpc } from "./rpc";
 import { receivePackageOp, showError, useStore } from "./store";
 import "./extensions.css";
 
 function CopyCommand({ name }: { name: string }) {
+  const t = useT();
   const [copied, setCopied] = useState(false);
   const timer = useRef<ReturnType<typeof setTimeout>>(undefined);
   useEffect(() => () => clearTimeout(timer.current), []);
   async function copy() {
     try {
       if (!navigator.clipboard?.writeText)
-        throw new Error("Clipboard is unavailable.");
+        throw new Error(t["Clipboard is unavailable."]);
       await navigator.clipboard.writeText(`pi install npm:${name}`);
       setCopied(true);
       clearTimeout(timer.current);
       timer.current = setTimeout(() => setCopied(false), 1500);
     } catch (error) {
-      showError(`Could not copy command: ${String(error)}`);
+      showError(t.copyError(String(error)));
     }
   }
   return (
     <button
       type="button"
       className="package-command"
-      title={`Copy pi install npm:${name}`}
-      aria-label={`Copy install command for ${name}`}
+      title={t.copyInstall(name)}
+      aria-label={t.copyCommand(name)}
       onClick={() => void copy()}
     >
       <span className="package-command-text">$ pi install npm:{name}</span>
@@ -58,7 +61,8 @@ function CopyCommand({ name }: { name: string }) {
         {copied ? (
           <>
             <Check size={13} aria-hidden="true" />
-            Copied
+
+            {t.Copied}
           </>
         ) : (
           <Copy size={13} aria-hidden="true" />
@@ -72,28 +76,40 @@ function CopyCommand({ name }: { name: string }) {
 function request<T>(promise: Promise<T>): Promise<T> {
   return new Promise((resolve, reject) => {
     const timer = setTimeout(
-      () => reject(new Error("Package service did not respond. Please retry.")),
+      () =>
+        reject(
+          new Error(getT()["Package service did not respond. Please retry."]),
+        ),
       20000,
     );
     promise.then(resolve, reject).finally(() => clearTimeout(timer));
   });
 }
 function downloads(n: number) {
-  return `${n >= 1e6 ? `${+(n / 1e6).toFixed(1)}M` : n >= 1000 ? `${+(n / 1000).toFixed(1)}k` : n}/mo`;
+  return getT().downloads(
+    String(
+      n >= 1e6
+        ? `${+(n / 1e6).toFixed(1)}M`
+        : n >= 1000
+          ? `${+(n / 1000).toFixed(1)}k`
+          : n,
+    ),
+  );
 }
 function relative(date: string) {
+  const t = getT();
   const days = Math.max(
     0,
     Math.floor((Date.now() - Date.parse(date)) / 86400000),
   );
-  if (!Number.isFinite(days)) return "Date unavailable";
+  if (!Number.isFinite(days)) return t["Date unavailable"];
   return days < 1
-    ? "today"
+    ? t.today
     : days < 30
-      ? `${days}d ago`
+      ? t.relativeDate(days, "d")
       : days < 365
-        ? `${Math.floor(days / 30)}mo ago`
-        : `${Math.floor(days / 365)}y ago`;
+        ? t.relativeDate(Math.floor(days / 30), "mo")
+        : t.relativeDate(Math.floor(days / 365), "y");
 }
 function Badges({ types }: { types: PackageType[] }) {
   return (
@@ -152,6 +168,7 @@ function Confirm({
   close: () => void;
   confirm: () => void;
 }) {
+  const t = useT();
   const dialog = useRef<HTMLDialogElement>(null);
   useEffect(() => {
     const previous = document.activeElement as HTMLElement | null;
@@ -174,19 +191,23 @@ function Confirm({
         className={install ? "package-warning" : "muted"}
       />
       <h2 id="package-confirm-title">
-        {install ? "Install" : "Uninstall"} {value.name}?
+        {install ? t.Install : t.Uninstall} {value.name}?
       </h2>
       <p id="package-confirm-description" className="muted">
         {install
-          ? "Packages can run code on your machine. Only install packages you trust."
-          : "This package will be removed from your pi configuration. Open chats will be reloaded."}
+          ? t[
+              "Packages can run code on your machine. Only install packages you trust."
+            ]
+          : t[
+              "This package will be removed from your pi configuration. Open chats will be reloaded."
+            ]}
       </p>
       <div className="package-dialog-actions">
         <button type="button" onClick={close}>
-          Cancel
+          {t.Cancel}
         </button>
         <button type="button" className="primary" onClick={confirm}>
-          {install ? "Install" : "Uninstall"}
+          {install ? t.Install : t.Uninstall}
         </button>
       </div>
     </dialog>
@@ -201,15 +222,16 @@ function operation(source: string, ops: Record<string, PackageOpStatus>) {
   return matches.find((op) => op.status === "running") ?? matches.at(-1);
 }
 function Progress({ op }: { op?: PackageOpStatus }) {
+  const t = useT();
   if (op?.status === "running")
     return (
       <span className="status" role="status">
         <LoaderCircle size={14} className="spinner" />
         {op.action === "install"
-          ? "Installing…"
+          ? t["Installing…"]
           : op.action === "uninstall"
-            ? "Removing…"
-            : "Updating…"}
+            ? t["Removing…"]
+            : t["Updating…"]}
       </span>
     );
   return null;
@@ -223,6 +245,7 @@ function OpError({ op }: { op?: PackageOpStatus }) {
   ) : null;
 }
 export function Extensions() {
+  const t = useT();
   const installed = useStore((s) => s.installed);
   const ops = useStore((s) => s.packageOps);
   const [tab, setTab] = useState<"marketplace" | "installed">("marketplace");
@@ -342,19 +365,20 @@ export function Extensions() {
       <button
         className="back-button"
         type="button"
-        onClick={() => useStore.setState({ page: "chat" })}
+        onClick={() => navigate("chat")}
       >
         <ArrowLeft size={14} />
-        Back to chat
+
+        {t["Back to chat"]}
       </button>
-      <h1>Extensions</h1>
+      <h1>{t.Extensions}</h1>
       <p className="muted page-description">
-        Make pi your own with community packages.
+        {t["Make pi your own with community packages."]}
       </p>
       <div
         className="extensions-tabs"
         role="tablist"
-        aria-label="Extensions"
+        aria-label={t.Extensions}
         onKeyDown={(e) => {
           if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(e.key))
             return;
@@ -387,7 +411,7 @@ export function Extensions() {
             ) : (
               <Download size={15} />
             )}
-            {name === "marketplace" ? "Marketplace" : "Installed"}
+            {name === "marketplace" ? t.Marketplace : t.Installed}
             {name === "installed" && (
               <span className="package-count">{installed.length}</span>
             )}
@@ -406,15 +430,15 @@ export function Extensions() {
             <div className="package-search">
               <Search size={17} aria-hidden="true" />
               <input
-                aria-label="Search packages"
-                placeholder="Search packages…"
+                aria-label={t["Search packages"]}
+                placeholder={t["Search packages…"]}
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
               />
               {query && (
                 <button
                   type="button"
-                  aria-label="Clear search"
+                  aria-label={t["Clear search"]}
                   onClick={() => setQuery("")}
                 >
                   <X size={14} />
@@ -423,10 +447,10 @@ export function Extensions() {
             </div>
             <p className="package-results muted" role="status">
               {loading && !items.length
-                ? "Finding packages…"
+                ? t["Finding packages…"]
                 : error && !items.length
-                  ? "Marketplace unavailable"
-                  : `${total.toLocaleString()} packages${search ? ` matching “${search}”` : " in the marketplace"}`}
+                  ? t["Marketplace unavailable"]
+                  : t.packageResults(total, search)}
             </p>
             <div className="package-list market-grid" aria-busy={loading}>
               {items.map((pkg) => {
@@ -455,7 +479,7 @@ export function Extensions() {
                       <div className="package-content">
                         <h2>{pkg.name}</h2>
                         <p className="package-meta">
-                          {pkg.publisher || "Unknown publisher"} ·{" "}
+                          {pkg.publisher || t["Unknown publisher"]} ·{" "}
                           {downloads(pkg.monthlyDownloads)} ·{" "}
                           {relative(pkg.date)}
                         </p>
@@ -463,16 +487,16 @@ export function Extensions() {
                     </div>
                     <p
                       className="package-description"
-                      title={pkg.description || "No description provided."}
+                      title={pkg.description || t["No description provided."]}
                     >
-                      {pkg.description || "No description provided."}
+                      {pkg.description || t["No description provided."]}
                     </p>
                     <div className="package-details">
                       <Badges types={pkg.types} />
                       <div className="package-links">
                         {pkg.npmUrl && <Link url={pkg.npmUrl}>npm</Link>}
-                        {pkg.repoUrl && <Link url={pkg.repoUrl}>repo</Link>}
-                        <Link url={report.toString()}>report</Link>
+                        {pkg.repoUrl && <Link url={pkg.repoUrl}>{t.repo}</Link>}
+                        <Link url={report.toString()}>{t.report}</Link>
                       </div>
                     </div>
                     <div className="package-card-footer">
@@ -484,7 +508,8 @@ export function Extensions() {
                           <>
                             <span className="status connected">
                               <Check size={14} />
-                              Installed
+
+                              {t.Installed}
                             </span>
                             <button
                               type="button"
@@ -498,7 +523,8 @@ export function Extensions() {
                               }
                             >
                               <Trash2 size={13} />
-                              Uninstall
+
+                              {t.Uninstall}
                             </button>
                           </>
                         ) : (
@@ -508,7 +534,7 @@ export function Extensions() {
                             disabled={installedLoading || !!installedError}
                             title={
                               installedError
-                                ? "Installed packages could not be checked"
+                                ? t["Installed packages could not be checked"]
                                 : undefined
                             }
                             onClick={() =>
@@ -520,7 +546,8 @@ export function Extensions() {
                             }
                           >
                             <Download size={14} />
-                            Install
+
+                            {t.Install}
                           </button>
                         )}
                       </div>
@@ -551,10 +578,10 @@ export function Extensions() {
             {!loading && !error && !items.length && (
               <div className="package-empty">
                 <Search size={28} />
-                <h2>No packages found</h2>
-                <p className="muted">Try a different name or keyword.</p>
+                <h2>{t["No packages found"]}</h2>
+                <p className="muted">{t["Try a different name or keyword."]}</p>
                 <button type="button" onClick={() => setQuery("")}>
-                  Clear search
+                  {t["Clear search"]}
                 </button>
               </div>
             )}
@@ -569,16 +596,14 @@ export function Extensions() {
                   {loading ? (
                     <LoaderCircle size={14} className="spinner" />
                   ) : null}
-                  {loading ? "Loading…" : "Load more"}
+                  {loading ? t["Loading…"] : t["Load more"]}
                 </button>
-                <span className="muted">
-                  {items.length} of {total.toLocaleString()}
-                </span>
+                <span className="muted">{t.countOf(items.length, total)}</span>
               </div>
             )}
             {installedError && (
               <ErrorState
-                message={`Could not check installed packages. ${installedError}`}
+                message={t.installedError(installedError)}
                 retry={() => setInstalledRetry((n) => n + 1)}
               />
             )}
@@ -586,12 +611,13 @@ export function Extensions() {
         ) : (
           <>
             <p className="package-results muted">
-              Packages from your user and project configuration.
+              {t["Packages from your user and project configuration."]}
             </p>
             {installedLoading && (
               <p className="status" role="status">
                 <LoaderCircle size={14} className="spinner" />
-                Loading installed packages…
+
+                {t["Loading installed packages…"]}
               </p>
             )}
             {installedError && (
@@ -603,14 +629,16 @@ export function Extensions() {
             {!installedLoading && !installedError && !installed.length && (
               <div className="package-empty">
                 <Package size={32} />
-                <h2>No extensions installed</h2>
-                <p className="muted">Find a package to extend your workflow.</p>
+                <h2>{t["No extensions installed"]}</h2>
+                <p className="muted">
+                  {t["Find a package to extend your workflow."]}
+                </p>
                 <button
                   type="button"
                   className="primary"
                   onClick={() => selectTab("marketplace", true)}
                 >
-                  Browse Marketplace
+                  {t["Browse Marketplace"]}
                 </button>
               </div>
             )}
@@ -640,7 +668,8 @@ export function Extensions() {
                       {pkg.updateAvailable && (
                         <span className="package-update">
                           <ArrowUpCircle size={13} />
-                          Update available
+
+                          {t["Update available"]}
                         </span>
                       )}
                       <OpError op={op} />
@@ -657,7 +686,8 @@ export function Extensions() {
                               onClick={() => run("update", pkg.source)}
                             >
                               <ArrowUpCircle size={14} />
-                              Update
+
+                              {t.Update}
                             </button>
                           )}
                           <button
@@ -672,7 +702,8 @@ export function Extensions() {
                             }
                           >
                             <Trash2 size={13} />
-                            Uninstall
+
+                            {t.Uninstall}
                           </button>
                         </>
                       )}
@@ -704,15 +735,16 @@ function ErrorState({
   message: string;
   retry: () => void;
 }) {
+  const t = useT();
   return (
     <div className="package-error" role="alert">
       <CircleAlert size={18} />
       <div>
-        <h2>Couldn’t load packages</h2>
+        <h2>{t["Couldn’t load packages"]}</h2>
         <p>{message}</p>
       </div>
       <button type="button" className="secondary" onClick={retry}>
-        Retry
+        {t.Retry}
       </button>
     </div>
   );

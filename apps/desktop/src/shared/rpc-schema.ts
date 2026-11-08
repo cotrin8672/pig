@@ -1,20 +1,70 @@
-import type { AuthEvent, AuthPrompt } from "@earendil-works/pi-ai";
-import type { AgentSessionEvent } from "@earendil-works/pi-coding-agent";
+import type {
+  AuthEvent,
+  AuthPrompt,
+  ImageContent,
+} from "@earendil-works/pi-ai";
+import type {
+  AgentSession,
+  AgentSessionEvent,
+} from "@earendil-works/pi-coding-agent";
+import type {
+  DesktopState,
+  SessionFlags,
+  UiPreferences,
+} from "./desktop-state";
+import type {
+  ExtensionDialogRequest,
+  ExtensionDialogResponse,
+} from "./extension-dialog";
+import type { ModelOverride } from "./model-overrides";
+import type { Settings, SettingsPatch } from "./settings";
+import type { TerminalUICommand, TerminalUIEvent } from "./terminal-ui";
 import type { Transcript } from "./transcript";
+
+export type {
+  ExtensionDialogRequest,
+  ExtensionDialogResponse,
+} from "./extension-dialog";
 
 export type WireEvent =
   | Exclude<AgentSessionEvent, { type: "message_update" }>
   | Omit<Extract<AgentSessionEvent, { type: "message_update" }>, "message">;
 
-export const providers = [
-  { id: "openai-codex", name: "OpenAI (ChatGPT Plus/Pro)" },
-  { id: "anthropic", name: "Anthropic (Claude Pro/Max)" },
-] as const;
-export type ProviderId = (typeof providers)[number]["id"];
+// Built from pi's ModelRuntime: built-ins, models.json and extension-registered providers.
+export interface ProviderInfo {
+  id: string;
+  name: string;
+  oauth?: { label?: string; subscription: boolean };
+  // Ambient-only providers (e.g. env/ADC) have no interactive API-key login.
+  apiKey: boolean;
+  configured: boolean;
+  // "stored", "runtime", or a human label such as an env var name.
+  source?: string;
+  stored: boolean;
+  extension: boolean;
+}
+export type AuthMethod = "oauth" | "api_key";
+export interface UtilityModelInfo {
+  provider: string;
+  id: string;
+  name: string;
+}
 export interface ModelInfo {
   provider: string;
   id: string;
   name: string;
+  contextWindow?: number;
+  reasoning?: boolean;
+  vision?: boolean;
+  maxTokens?: number;
+  // Supported levels for per-model settings (raw) and the deduped slider stops.
+  thinkingLevels?: Effort[];
+  effortLevels?: Effort[];
+  // pi settings.json modelThinkingLevels entry, if any.
+  defaultEffort?: Effort;
+  effectiveDefaultEffort?: Effort;
+  // Present only for anthropic-messages models, where the protocol applies.
+  adaptiveThinking?: boolean;
 }
 export interface SessionInfo {
   id: string;
@@ -23,24 +73,60 @@ export interface SessionInfo {
   title: string;
   modified: number;
 }
-export interface Snapshot {
+export interface SessionTarget {
+  cwd: string;
+  id: string;
+}
+export interface Notice {
+  message: string;
+  level: "info" | "success" | "warning" | "error";
+  session?: SessionTarget;
+}
+export type Effort =
+  | "off"
+  | "minimal"
+  | "low"
+  | "medium"
+  | "high"
+  | "xhigh"
+  | "max";
+export type ContextUsage = NonNullable<
+  ReturnType<AgentSession["getContextUsage"]>
+>;
+export interface ModelSelection {
+  model?: ModelInfo;
+  effort: Effort;
+  effortLevels: Effort[];
+  contextUsage?: ContextUsage | null;
+}
+export interface Snapshot extends ModelSelection {
   info: SessionInfo;
   transcript: Transcript;
-  model?: ModelInfo;
+  pendingDialogs: ExtensionDialogRequest[];
 }
-// WezTerm-style window appearance: `opacity` is the window background alpha
-// (0.3..1), `backdrop` the Windows 11 DWM system backdrop behind it.
+// WezTerm-style window appearance: `opacity` stores background alpha per mode
+// (0..1), `backdrop` the Windows 11 DWM system backdrop behind it.
 export type Backdrop = "none" | "acrylic" | "mica";
 export interface Appearance {
   backdrop: Backdrop;
-  opacity: number;
+  opacity: Record<Backdrop, number>;
+  effect: "acrylic" | "mica";
 }
 export interface Bootstrap {
   projects: string[];
-  providers: { id: ProviderId; name: string; loggedIn: boolean }[];
+  generalCwd: string;
+  pendingDialogs: ExtensionDialogRequest[];
+  providers: ProviderInfo[];
   models: ModelInfo[];
+  imageModels: UtilityModelInfo[];
+  classificationModels: UtilityModelInfo[];
+  classificationProviders: string[];
+  disabledModels: string[];
+  // pi models.json modelOverrides keyed by modelKey.
+  modelOverrides: Record<string, ModelOverride>;
+  desktop: DesktopState;
 }
-export type LoginFrame = { loginId: string; provider: ProviderId } & (
+export type LoginFrame = { loginId: string; provider: string } & (
   | { kind: "event"; event: AuthEvent }
   | { kind: "prompt"; prompt: AuthPrompt }
   | { kind: "promptEnd" }
@@ -75,24 +161,86 @@ export type PackageOpStatus = {
   source: string;
   action: "install" | "uninstall" | "update";
 } & ({ status: "running" | "done" } | { status: "error"; message: string });
+export interface PromptAccepted {
+  disposition: "started" | "queued" | "handled";
+}
+
 export type RPCSchema = {
   bun: {
     requests: {
+      prompt: {
+        params: { sessionId: string; text: string; images?: ImageContent[] };
+        response: PromptAccepted;
+      };
       // biome-ignore lint/suspicious/noConfusingVoidType: Electrobun's parameterless RPC convention.
       bootstrap: { params: void; response: Bootstrap };
       // biome-ignore lint/suspicious/noConfusingVoidType: Electrobun's parameterless RPC convention.
       appearance: { params: void; response: Appearance };
+      // biome-ignore lint/suspicious/noConfusingVoidType: Electrobun's parameterless RPC convention.
+      settings: { params: void; response: Settings };
       listSessions: { params: { cwd: string }; response: SessionInfo[] };
+      renameSession: {
+        params: SessionTarget & { name: string };
+        response: SessionInfo;
+      };
+      setSessionState: {
+        params: SessionTarget & SessionFlags;
+        response: DesktopState;
+      };
+      deleteSession: { params: SessionTarget; response: DesktopState };
+      markSessionRead: {
+        params: SessionTarget & { completionId: string };
+        response: DesktopState;
+      };
+      answerExtensionDialog: {
+        params: ExtensionDialogResponse;
+        // biome-ignore lint/suspicious/noConfusingVoidType: Electrobun's empty response convention.
+        response: void;
+      };
+      openSessionLink: { params: { url: string }; response: Snapshot };
+      // biome-ignore lint/suspicious/noConfusingVoidType: Electrobun's empty response convention.
+      setUiPreferences: { params: UiPreferences; response: void };
       openSession: {
         params: { cwd: string; path?: string; id?: string };
         response: Snapshot;
       };
+      // `timestamp` identifies a transcript message (user for rewind, assistant for fork).
+      rewindSession: {
+        params: { sessionId: string; timestamp: number };
+        response: Snapshot;
+      };
+      forkSession: {
+        params: { sessionId: string; timestamp: number };
+        response: Snapshot;
+      };
       removeProject: { params: { cwd: string }; response: string[] };
       // biome-ignore lint/suspicious/noConfusingVoidType: Electrobun's empty response convention.
-      logout: { params: { provider: ProviderId }; response: void };
+      logout: { params: { provider: string }; response: void };
       setModel: {
         params: { sessionId: string; provider: string; id: string };
-        response: ModelInfo;
+        response: ModelSelection;
+      };
+      setModelEnabled: {
+        params: { provider: string; id: string; enabled: boolean };
+        response: string[];
+      };
+      setModelsEnabled: {
+        params: { provider: string; ids: string[]; enabled: boolean };
+        response: string[];
+      };
+      setModelOverride: {
+        params: { provider: string; id: string; override: ModelOverride };
+        // biome-ignore lint/suspicious/noConfusingVoidType: Electrobun's empty response convention.
+        response: void;
+      };
+      setDefaultEffort: {
+        params: { provider: string; id: string; effort: Effort | null };
+        // biome-ignore lint/suspicious/noConfusingVoidType: Electrobun's empty response convention.
+        response: void;
+      };
+      setEffort: {
+        params: { sessionId: string; effort: Effort };
+        response: ModelSelection;
       };
       searchPackages: {
         params: { query: string; page: number };
@@ -105,17 +253,23 @@ export type RPCSchema = {
       };
       // biome-ignore lint/suspicious/noConfusingVoidType: Electrobun's parameterless RPC convention.
       listInstalled: { params: void; response: InstalledPackage[] };
+      // biome-ignore lint/suspicious/noConfusingVoidType: Electrobun's empty response convention.
+      copyImage: { params: { src: string }; response: void };
+      saveImage: { params: { src: string }; response: string };
     };
     messages: {
       // biome-ignore lint/suspicious/noConfusingVoidType: Electrobun's parameterless RPC convention.
       addProject: void;
       setAppearance: Appearance;
+      setSettings: SettingsPatch;
       windowControl: { action: "minimize" | "toggleMaximize" | "close" };
-      startLogin: { provider: ProviderId; loginId: string };
+      startLogin: { provider: string; method: AuthMethod; loginId: string };
       resolveLogin: { loginId: string; value: string };
       cancelLogin: { loginId: string };
       openExternal: { url: string };
-      prompt: { sessionId: string; text: string };
+      // src is a rendered image: a base64 data URL or an http(s) Markdown image URL.
+      imageMenu: { src: string };
+      terminalUI: TerminalUICommand;
       abort: { sessionId: string };
       closeSession: { sessionId: string };
       installPackage: { opId: string; name: string };
@@ -127,11 +281,23 @@ export type RPCSchema = {
     requests: Record<never, never>;
     messages: {
       projects: string[];
+      desktopState: DesktopState;
+      extensionDialogs: {
+        sessionId: string;
+        requests: ExtensionDialogRequest[];
+      };
       appearance: Appearance;
+      settings: Settings;
       windowState: { maximized: boolean };
       appearanceError: { message: string };
-      agentEvent: { sessionId: string; event: WireEvent };
+      agentEvent: {
+        sessionId: string;
+        event: WireEvent;
+        contextUsage?: ContextUsage | null;
+      };
       loginFrame: LoginFrame;
+      terminalUI: TerminalUIEvent;
+      notification: Notice;
       error: { message: string };
       packageOp: PackageOpStatus;
       installed: InstalledPackage[];

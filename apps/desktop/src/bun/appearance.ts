@@ -1,20 +1,10 @@
 import { dlopen, type Pointer, ptr } from "bun:ffi";
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
+import { defaultAppearance, validateAppearance } from "../shared/appearance";
 import type { Appearance } from "../shared/rpc-schema";
 
-export function validateAppearance(value: unknown): Appearance {
-  if (!value || typeof value !== "object")
-    throw new Error("Invalid appearance.");
-  const { backdrop, opacity } = value as Partial<Appearance>;
-  if (
-    (backdrop !== "none" && backdrop !== "acrylic" && backdrop !== "mica") ||
-    typeof opacity !== "number" ||
-    !Number.isFinite(opacity)
-  )
-    throw new Error("Invalid appearance.");
-  return { backdrop, opacity: Math.min(1, Math.max(0.3, opacity)) };
-}
+export { validateAppearance } from "../shared/appearance";
 
 export async function loadAppearance(file: string): Promise<Appearance> {
   try {
@@ -22,7 +12,7 @@ export async function loadAppearance(file: string): Promise<Appearance> {
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code !== "ENOENT")
       console.error("Cannot load appearance:", error);
-    return { backdrop: "acrylic", opacity: 0.78 };
+    return { ...defaultAppearance, opacity: { ...defaultAppearance.opacity } };
   }
 }
 
@@ -50,6 +40,10 @@ const user =
     ? dlopen("user32.dll", {
         GetWindowLongW: { args: ["ptr", "i32"], returns: "i32" },
         SetWindowLongW: { args: ["ptr", "i32", "i32"], returns: "i32" },
+        SetWindowPos: {
+          args: ["ptr", "ptr", "i32", "i32", "i32", "i32", "u32"],
+          returns: "i32",
+        },
         SetClassLongPtrW: { args: ["ptr", "i32", "ptr"], returns: "ptr" },
         FindWindowExW: { args: ["ptr", "ptr", "ptr", "ptr"], returns: "ptr" },
         RedrawWindow: { args: ["ptr", "ptr", "ptr", "u32"], returns: "i32" },
@@ -65,23 +59,29 @@ const gdi =
       })
     : undefined;
 
+export function windowStyleForBackdrop(style: number) {
+  return (style & ~0x02000000) | 0x000b0000;
+}
+
 export function applyBackdrop(hwnd: Pointer, appearance: Appearance) {
   if (!dwm) return;
+  let frameChanged = false;
   if (user) {
     // Electrobun needs transparent=true to clear WebView2, but DWM needs a non-layered HWND.
     const style = user.symbols.GetWindowLongW(hwnd, -20);
-    if (style & 0x80000)
+    if (style & 0x80000) {
       user.symbols.SetWindowLongW(hwnd, -20, style & ~0x80000);
+      frameChanged = true;
+    }
     // HiddenInset adds WS_CLIPCHILDREN; it clips the black alpha clear out of the
     // WebView2 area, leaving an opaque surface even with the correct class brushes.
     const windowStyle = user.symbols.GetWindowLongW(hwnd, -16);
-    // WS_MAXIMIZEBOX makes Windows maximize to the monitor work area (appbars stay
-    // visible) and enables Snap; WS_MINIMIZEBOX keeps taskbar-click minimize.
-    // No WS_SYSMENU: with the frame extended, DWM would draw native caption buttons
-    // underneath our custom window controls.
-    const nextStyle = (windowStyle & ~0x02080000) | 0x00030000;
-    if (nextStyle !== windowStyle)
+    // Native caption handling needs SYSMENU and both boxes for Windows Snap.
+    const nextStyle = windowStyleForBackdrop(windowStyle);
+    if (nextStyle !== windowStyle) {
       user.symbols.SetWindowLongW(hwnd, -16, nextStyle);
+      frameChanged = true;
+    }
   }
   const check = (result: number) => {
     // shortcut: Windows 10 has no system backdrops, upgrade to Windows 11 build 22621+.
@@ -90,6 +90,11 @@ export function applyBackdrop(hwnd: Pointer, appearance: Appearance) {
         `Windows backdrop unavailable (HRESULT 0x${(result >>> 0).toString(16)}). Windows 11 22H2 or later is required.`,
       );
   };
+  // Transparent WebView2 can expose a white redirection surface during DWM's
+  // maximize/restore animation even while the Acrylic attribute remains set.
+  // DWMWA_TRANSITIONS_FORCEDISABLED: keep Acrylic; disable only native animation.
+  const disableTransitions = new Int32Array([1]);
+  check(dwm.symbols.DwmSetWindowAttribute(hwnd, 3, ptr(disableTransitions), 4));
   if (user && gdi) {
     // Black GDI clears preserve glass alpha; the STATIC fallback otherwise erases gray.
     // Class brushes must be changed in-process, not by an external diagnostics helper.
@@ -128,6 +133,14 @@ export function applyBackdrop(hwnd: Pointer, appearance: Appearance) {
   const result = dwm.symbols.DwmSetWindowAttribute(hwnd, 38, ptr(type), 4);
   // Pre-22H2 Windows has no attribute 38; "none" needs no backdrop, so it must not fail there.
   if (appearance.backdrop !== "none") check(result);
+  // Apply cached frame changes only after alpha clears, the backdrop, and
+  // transition suppression are ready; otherwise frame recalculation can flash white.
+  if (
+    user &&
+    frameChanged &&
+    !user.symbols.SetWindowPos(hwnd, null, 0, 0, 0, 0, 0x37)
+  )
+    throw new Error("Cannot recalculate the Windows client frame.");
   // RDW_INVALIDATE | RDW_ERASE | RDW_ALLCHILDREN | RDW_FRAME.
   user?.symbols.RedrawWindow(hwnd, null, null, 0x485);
 }

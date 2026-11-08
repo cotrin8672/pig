@@ -1,6 +1,4 @@
 import {
-  ArrowLeft,
-  ArrowUp,
   Check,
   Circle,
   CircleAlert,
@@ -9,44 +7,49 @@ import {
   Folder,
   LoaderCircle,
   Minus,
+  MoveHorizontal,
   Plus,
   Puzzle,
   Settings2,
   Square,
   X,
 } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
-import ReactMarkdown from "react-markdown";
-import remarkGfm from "remark-gfm";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { DEFAULT_CHAT_WIDTH } from "../shared/chat-width";
+import { filterModels } from "../shared/models";
 import type { Snapshot } from "../shared/rpc-schema";
+import { responseStats } from "../shared/transcript";
+import { ChatWidthHandles, useChatWidth } from "./ChatWidth";
+import { Composer } from "./Composer";
+import { ExtensionDialogs } from "./ExtensionDialogs";
 import { Extensions } from "./Extensions";
-import { ModelPicker } from "./ModelPicker";
-import { ProviderIcon } from "./ProviderIcon";
-import { openChat, refresh, refreshSessions, rpc } from "./rpc";
+import { getT, useT } from "./i18n";
+import {
+  Markdown,
+  MessageContent,
+  ToolResultContent,
+  UserMessage,
+} from "./MessageContent";
+import { NotificationCenter } from "./NotificationCenter";
+import { Notifications } from "./Notifications";
+import { initNavigation, navigate } from "./navigation";
+import { ProviderIcon, useProviderName } from "./ProviderIcon";
+import { Providers } from "./Providers";
+import { ResponseFooter } from "./ResponseFooter";
+import {
+  initSessionLinks,
+  initSessionReadTracking,
+  openChat,
+  refresh,
+  refreshSessions,
+  rpc,
+} from "./rpc";
+import { Settings } from "./Settings";
+import { SidebarSessions } from "./SidebarSessions";
+import { initShortcuts } from "./shortcuts";
 import { type LoginState, showError, useStore } from "./store";
+import { TerminalDialog } from "./TerminalDialog";
 
-function Markdown({ text }: { text: string }) {
-  return (
-    <ReactMarkdown
-      remarkPlugins={[remarkGfm]}
-      components={{
-        a: ({ href, children }) => (
-          <a
-            href={href}
-            onClick={(e) => {
-              e.preventDefault();
-              if (href) rpc.send.openExternal({ url: href });
-            }}
-          >
-            {children}
-          </a>
-        ),
-      }}
-    >
-      {text}
-    </ReactMarkdown>
-  );
-}
 const basename = (path: string) =>
   path.split(/[\\/]/).filter(Boolean).pop() || path;
 
@@ -58,16 +61,25 @@ function isWindowDragTarget(target: EventTarget) {
   );
 }
 export function App() {
+  const t = useT();
   const state = useStore();
   useEffect(() => {
     void refresh().catch(showError);
   }, []);
+  useEffect(initNavigation, []);
+  useEffect(initShortcuts, []);
+  useEffect(initSessionLinks, []);
+  useEffect(initSessionReadTracking, []);
+  useEffect(() => {
+    document.documentElement.lang = state.settings.language;
+  }, [state.settings.language]);
   const active = state.active ? state.snapshots[state.active] : undefined;
-  const connected = state.bootstrap.providers.some((p) => p.loggedIn);
+  const connected = state.bootstrap.models.length > 0;
   return (
     // biome-ignore lint/a11y/noStaticElementInteractions: Native drag handles; maximize is also available as a keyboard-accessible button.
     <div
       className="app-shell"
+      onContextMenu={(event) => event.preventDefault()}
       onMouseDown={(event) => {
         // Do not start a second native move while double-clicking a drag handle.
         if (event.detail === 2 && isWindowDragTarget(event.target))
@@ -78,79 +90,28 @@ export function App() {
           rpc.send.windowControl({ action: "toggleMaximize" });
       }}
       style={
-        { "--window-opacity": state.appearance.opacity } as React.CSSProperties
+        {
+          "--window-opacity":
+            state.appearance.opacity[state.appearance.backdrop],
+        } as React.CSSProperties
       }
     >
       <aside className="sidebar">
         <header className="electrobun-webkit-app-region-drag">
-          <strong>piris</strong>
-          <button
-            type="button"
-            className="electrobun-webkit-app-region-no-drag"
-            aria-label="Add project"
-            title="Add project"
-            onClick={() => rpc.send.addProject()}
-          >
-            <Plus size={18} />
-          </button>
+          <strong>pig</strong>
+          <div className="sidebar-actions">
+            <NotificationCenter />
+          </div>
         </header>
-        <div className="project-list">
-          {state.bootstrap.projects.map((cwd) => (
-            <section key={cwd} className="project">
-              <div className="project-heading">
-                <Folder size={15} />
-                <span title={cwd}>{basename(cwd)}</span>
-                <button
-                  type="button"
-                  title="New chat"
-                  aria-label={`New chat in ${basename(cwd)}`}
-                  disabled={state.opening}
-                  onClick={() => void openChat(cwd)}
-                >
-                  <Plus size={15} />
-                </button>
-                <button
-                  type="button"
-                  aria-label={`Remove ${basename(cwd)}`}
-                  title="Remove project from list"
-                  onClick={() => {
-                    void rpc.request
-                      .removeProject({ cwd })
-                      .then(() => refresh())
-                      .catch(showError);
-                  }}
-                >
-                  <X size={13} />
-                </button>
-              </div>
-              {(state.sessions[cwd] || []).map((s) => (
-                <button
-                  type="button"
-                  key={s.id}
-                  disabled={state.opening}
-                  className={`thread ${state.active === s.id && state.page === "chat" ? "active" : ""}`}
-                  title={s.title}
-                  onClick={() => void openChat(cwd, s.path, s.id)}
-                >
-                  {s.title}
-                </button>
-              ))}
-            </section>
-          ))}
-          {!state.bootstrap.projects.length && (
-            <p className="muted empty-projects">
-              Add a project folder to start a chat.
-            </p>
-          )}
-        </div>
+        <SidebarSessions />
         <button
           type="button"
           className={`providers-nav ${state.page === "providers" ? "active" : ""}`}
-          onClick={() => useStore.setState({ page: "providers" })}
+          onClick={() => navigate("providers")}
         >
           <Settings2 size={16} />
           <span className="nav-label">
-            Providers{" "}
+            {t.Providers}{" "}
             <small
               className={
                 state.login?.error
@@ -171,19 +132,26 @@ export function App() {
               )}
               {state.login?.error ||
                 (state.login
-                  ? "Signing in…"
+                  ? t["Signing in…"]
                   : connected
-                    ? "Connected"
-                    : "Not connected")}
+                    ? t.Connected
+                    : t["Not connected"])}
             </small>
           </span>
         </button>
         <button
           type="button"
           className={`providers-nav ${state.page === "extensions" ? "active" : ""}`}
-          onClick={() => useStore.setState({ page: "extensions" })}
+          onClick={() => navigate("extensions")}
         >
-          <Puzzle size={16} /> Extensions
+          <Puzzle size={16} /> {t.Extensions}
+        </button>
+        <button
+          type="button"
+          className={`providers-nav ${state.page === "settings" ? "active" : ""}`}
+          onClick={() => navigate("settings")}
+        >
+          <Settings2 size={16} /> {t.Settings}
         </button>
       </aside>
       <main>
@@ -192,27 +160,29 @@ export function App() {
           <Providers />
         ) : state.page === "extensions" ? (
           <Extensions />
+        ) : state.page === "settings" ? (
+          <Settings />
         ) : active ? (
           <Chat key={active.info.id} snapshot={active} />
         ) : (
           <div className="welcome">
-            <h1>What shall we build?</h1>
+            <h1>{t["What shall we build?"]}</h1>
             <p className="muted">
               {connected
-                ? "Choose a project and start a new chat."
-                : "Connect your subscription to start building with pi."}
+                ? t["Start a chat, or add a project folder."]
+                : t["Connect a provider to start building with pi."]}
             </p>
             <button
               className="primary"
               type="button"
               onClick={() =>
                 connected
-                  ? rpc.send.addProject()
-                  : useStore.setState({ page: "providers" })
+                  ? void openChat(state.bootstrap.generalCwd)
+                  : navigate("providers")
               }
             >
               {connected ? <Plus size={16} /> : <Settings2 size={16} />}{" "}
-              {connected ? "Add project" : "Connect a provider"}
+              {connected ? t["New chat"] : t["Connect a provider"]}
             </button>
           </div>
         )}
@@ -221,21 +191,21 @@ export function App() {
       <div
         className="window-controls electrobun-webkit-app-region-no-drag"
         role="toolbar"
-        aria-label="Window controls"
+        aria-label={t["Window controls"]}
         onMouseDown={(e) => e.preventDefault()}
       >
         <button
           type="button"
-          aria-label="Minimize"
-          title="Minimize"
+          aria-label={t.Minimize}
+          title={t.Minimize}
           onClick={() => rpc.send.windowControl({ action: "minimize" })}
         >
           <Minus size={14} />
         </button>
         <button
           type="button"
-          aria-label={state.maximized ? "Restore" : "Maximize"}
-          title={state.maximized ? "Restore" : "Maximize"}
+          aria-label={state.maximized ? t.Restore : t.Maximize}
+          title={state.maximized ? t.Restore : t.Maximize}
           onClick={() => rpc.send.windowControl({ action: "toggleMaximize" })}
         >
           {state.maximized ? <Copy size={12} /> : <Square size={12} />}
@@ -243,8 +213,8 @@ export function App() {
         <button
           type="button"
           className="window-close"
-          aria-label="Close window"
-          title="Close"
+          aria-label={t["Close window"]}
+          title={t.Close}
           onClick={() => rpc.send.windowControl({ action: "close" })}
         >
           <X size={15} />
@@ -253,221 +223,22 @@ export function App() {
       {state.login && (
         <OAuthLoginDialog key={state.login.loginId} login={state.login} />
       )}
-      {state.opening && <div className="loading">Opening chat…</div>}
-      {state.packageToast && (
-        <div
-          className={`toast package-toast ${state.packageToast.error ? "error" : "connected"}`}
-          role={state.packageToast.error ? "alert" : "status"}
-        >
-          {state.packageToast.error ? (
-            <CircleAlert size={16} />
-          ) : (
-            <Check size={16} />
-          )}
-          {state.packageToast.message}
-          <button
-            type="button"
-            aria-label="Dismiss notification"
-            onClick={() => useStore.setState({ packageToast: undefined })}
-          >
-            <X size={16} />
-          </button>
-        </div>
-      )}
-      {state.error && (
-        <div className="toast" role="alert">
-          <CircleAlert size={16} aria-hidden="true" />
-          {state.error}
-          <button
-            type="button"
-            aria-label="Dismiss error"
-            onClick={() => useStore.setState({ error: undefined })}
-          >
-            <X size={16} />
-          </button>
-        </div>
-      )}
+      {state.opening && <div className="loading">{t["Opening chat…"]}</div>}
+      <Notifications />
+      <TerminalDialog />
     </div>
-  );
-}
-
-function Providers() {
-  const { bootstrap, login } = useStore();
-  const [loggingOut, setLoggingOut] = useState<string>();
-  return (
-    <div className="providers-page">
-      <button
-        className="back-button"
-        type="button"
-        onClick={() => useStore.setState({ page: "chat" })}
-      >
-        <ArrowLeft size={14} /> Back to chat
-      </button>
-      <h1>Providers</h1>
-      <p className="muted page-description">
-        Connect your subscription. Credentials are shared with the pi CLI.
-      </p>
-      {!bootstrap.providers.length && (
-        <p className="status" role="status">
-          <LoaderCircle className="spinner" size={14} /> Checking connections…
-        </p>
-      )}
-      <div className="provider-list">
-        {bootstrap.providers.map((p) => {
-          const signingIn = login?.provider === p.id && !login.error;
-          const error = login?.provider === p.id ? login.error : undefined;
-          return (
-            <section className="provider-card" key={p.id}>
-              <div className={`provider-icon ${p.id}`} aria-hidden="true">
-                <ProviderIcon provider={p.id} />
-              </div>
-              <div className="provider-info">
-                <h2>{p.id === "anthropic" ? "Anthropic" : "OpenAI"}</h2>
-                <p className="muted">
-                  {p.id === "anthropic"
-                    ? "Claude Pro/Max subscription"
-                    : "ChatGPT Plus/Pro subscription"}
-                </p>
-              </div>
-              <span
-                className={`status provider-status ${error ? "error" : signingIn ? "muted" : p.loggedIn ? "connected" : "muted"}`}
-                role="status"
-              >
-                {error ? (
-                  <CircleAlert size={13} />
-                ) : signingIn ? (
-                  <LoaderCircle className="spinner" size={13} />
-                ) : p.loggedIn ? (
-                  <Check size={13} />
-                ) : (
-                  <Circle size={7} fill="currentColor" />
-                )}
-                {error
-                  ? error
-                  : signingIn
-                    ? "Signing in…"
-                    : p.loggedIn
-                      ? "Connected"
-                      : "Not connected"}
-              </span>
-              {p.loggedIn ? (
-                <button
-                  type="button"
-                  className="secondary"
-                  disabled={!!login || !!loggingOut}
-                  onClick={() => {
-                    setLoggingOut(p.id);
-                    void rpc.request
-                      .logout({ provider: p.id })
-                      .then(refresh)
-                      .catch(showError)
-                      .finally(() => setLoggingOut(undefined));
-                  }}
-                >
-                  {loggingOut === p.id ? "Disconnecting…" : "Logout"}
-                </button>
-              ) : (
-                <button
-                  type="button"
-                  className="primary"
-                  disabled={!!login || !!loggingOut}
-                  onClick={() => {
-                    const loginId = crypto.randomUUID();
-                    useStore.setState({ login: { loginId, provider: p.id } });
-                    rpc.send.startLogin({ provider: p.id, loginId });
-                  }}
-                >
-                  Login
-                </button>
-              )}
-            </section>
-          );
-        })}
-      </div>
-      <AppearanceSettings />
-    </div>
-  );
-}
-
-function AppearanceSettings() {
-  const appearance = useStore((s) => s.appearance);
-  const pending = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
-  useEffect(
-    () => () => {
-      if (pending.current) {
-        clearTimeout(pending.current);
-        rpc.send.setAppearance(useStore.getState().appearance);
-      }
-    },
-    [],
-  );
-  function update(next: typeof appearance) {
-    useStore.setState({ appearance: next });
-    clearTimeout(pending.current);
-    pending.current = setTimeout(() => {
-      pending.current = undefined;
-      rpc.send.setAppearance(useStore.getState().appearance);
-    }, 120);
-  }
-  return (
-    <section className="appearance-section" aria-labelledby="appearance-title">
-      <h2 id="appearance-title">Appearance</h2>
-      <p className="muted">Blue-gray Seamless</p>
-      <div className="appearance-card">
-        <div className="appearance-heading">
-          <h3 id="backdrop-label">Window backdrop</h3>
-          <fieldset
-            className="segmented-control"
-            aria-labelledby="backdrop-label"
-          >
-            {(["none", "acrylic", "mica"] as const).map((backdrop) => (
-              <button
-                key={backdrop}
-                type="button"
-                aria-pressed={appearance.backdrop === backdrop}
-                onClick={() => update({ ...appearance, backdrop })}
-              >
-                {backdrop === "none"
-                  ? "None"
-                  : backdrop === "acrylic"
-                    ? "Acrylic"
-                    : "Mica"}
-              </button>
-            ))}
-          </fieldset>
-        </div>
-        <div className="opacity-control">
-          <label htmlFor="window-opacity">Window opacity</label>
-          <output htmlFor="window-opacity">
-            {Math.round(appearance.opacity * 100)}%
-          </output>
-          <input
-            id="window-opacity"
-            type="range"
-            min="30"
-            max="100"
-            step="1"
-            value={Math.round(appearance.opacity * 100)}
-            onChange={(e) =>
-              update({ ...appearance, opacity: Number(e.target.value) / 100 })
-            }
-          />
-        </div>
-        <p className="field-hint muted">
-          Acrylic/Mica need Windows 11. Lower opacity to see the desktop.
-        </p>
-      </div>
-    </section>
   );
 }
 
 function OAuthLoginDialog({ login }: { login: LoginState }) {
+  const t = useT();
   const dialog = useRef<HTMLDialogElement>(null);
   const input = useRef<HTMLInputElement>(null);
   const [value, setValue] = useState("");
   const [copied, setCopied] = useState<string>();
   const [copyError, setCopyError] = useState<string>();
   const { prompt, authUrl, deviceCode, event } = login;
+  const name = useProviderName(login.provider);
   useEffect(() => {
     dialog.current?.showModal();
   }, []);
@@ -490,15 +261,16 @@ function OAuthLoginDialog({ login }: { login: LoginState }) {
     useStore.setState({ login: { ...login, prompt: undefined } });
   }
   async function copy(text: string) {
+    const t = getT();
     try {
       await navigator.clipboard.writeText(text);
       setCopied(text);
       setCopyError(undefined);
     } catch {
-      setCopyError("Could not copy. Try opening the sign-in page again.");
+      setCopyError(t["Could not copy. Try opening the sign-in page again."]);
     }
   }
-  const status = event && "message" in event ? event.message : "Signing in…";
+  const status = event && "message" in event ? event.message : t["Signing in…"];
   return (
     <dialog
       ref={dialog}
@@ -512,11 +284,11 @@ function OAuthLoginDialog({ login }: { login: LoginState }) {
       <div className="dialog-heading">
         <h2 id="oauth-title">
           <ProviderIcon provider={login.provider} size={22} />
-          Sign in to {login.provider === "anthropic" ? "Anthropic" : "OpenAI"}
+          {login.method === "oauth" ? t.signIn(name) : t.setUp(name)}
         </h2>
         <button
           type="button"
-          aria-label="Close sign-in dialog"
+          aria-label={t["Close sign-in dialog"]}
           onClick={cancel}
         >
           <X size={16} />
@@ -537,7 +309,10 @@ function OAuthLoginDialog({ login }: { login: LoginState }) {
         <>
           {authUrl && (
             <div className="oauth-block">
-              <p>Browser opened — finish signing in there</p>
+              <p>{t["Browser opened — finish signing in there"]}</p>
+              {authUrl.instructions && (
+                <p className="muted">{authUrl.instructions}</p>
+              )}
               <div className="inline-actions">
                 <button type="button" onClick={() => void copy(authUrl.url)}>
                   {copied === authUrl.url ? (
@@ -545,25 +320,25 @@ function OAuthLoginDialog({ login }: { login: LoginState }) {
                   ) : (
                     <Copy size={13} />
                   )}
-                  {copied === authUrl.url ? "Copied" : "Copy link"}
+                  {copied === authUrl.url ? t.Copied : t["Copy link"]}
                 </button>
                 <button
                   className="accent-link"
                   type="button"
                   onClick={() => rpc.send.openExternal({ url: authUrl.url })}
                 >
-                  <ExternalLink size={13} /> Open again
+                  <ExternalLink size={13} /> {t["Open again"]}
                 </button>
               </div>
             </div>
           )}
           {deviceCode && (
             <div className="oauth-block">
-              <p>Enter this code on the verification page</p>
+              <p>{t["Enter this code on the verification page"]}</p>
               <button
                 type="button"
                 className="device-code"
-                aria-label={`Copy code ${deviceCode.userCode}`}
+                aria-label={t.copyCode(deviceCode.userCode)}
                 onClick={() => void copy(deviceCode.userCode)}
               >
                 {deviceCode.userCode}
@@ -609,7 +384,9 @@ function OAuthLoginDialog({ login }: { login: LoginState }) {
                   className="input-row"
                   onSubmit={(e) => {
                     e.preventDefault();
-                    if (value.trim()) answer(value.trim());
+                    // Some text prompts only ask to press Enter (e.g. Bedrock credential chain).
+                    if (value.trim() || prompt.type === "text")
+                      answer(value.trim());
                   }}
                 >
                   <input
@@ -627,9 +404,9 @@ function OAuthLoginDialog({ login }: { login: LoginState }) {
                   <button
                     className="primary"
                     type="submit"
-                    disabled={!value.trim()}
+                    disabled={!value.trim() && prompt.type !== "text"}
                   >
-                    Submit
+                    {t.Submit}
                   </button>
                 </form>
               )}
@@ -643,7 +420,7 @@ function OAuthLoginDialog({ login }: { login: LoginState }) {
                 className="accent-link"
                 onClick={() => rpc.send.openExternal({ url: link.url })}
               >
-                {link.label || "More information"}
+                {link.label || t["More information"]}
                 <ExternalLink size={13} />
               </button>
             ))}
@@ -656,7 +433,7 @@ function OAuthLoginDialog({ login }: { login: LoginState }) {
       )}
       <div className="dialog-actions">
         <button type="button" onClick={cancel}>
-          {login.error ? "Close" : "Cancel"}
+          {login.error ? t.Close : t.Cancel}
         </button>
       </div>
     </dialog>
@@ -664,177 +441,215 @@ function OAuthLoginDialog({ login }: { login: LoginState }) {
 }
 
 function Chat({ snapshot }: { snapshot: Snapshot }) {
-  const { info, transcript, model } = snapshot;
-  const models = useStore((s) => s.bootstrap.models);
-  const canSend = models.some(
-    (m) => m.provider === model?.provider && m.id === model.id,
-  );
-  const [text, setText] = useState("");
-  const end = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    if (transcript) end.current?.scrollIntoView({ block: "end" });
+  const t = useT();
+  const { info, transcript } = snapshot;
+  const { models: available, disabledModels } = useStore((s) => s.bootstrap);
+  const general = useStore((s) => s.bootstrap.generalCwd === info.cwd);
+  const models = filterModels(available, disabledModels);
+  const { width, setWidth } = useChatWidth();
+  const thread = useRef<HTMLDivElement>(null);
+  // A response ends where the next turn is not another assistant step.
+  const footer = (index: number) => {
+    const next = transcript.turns[index + 1]?.message.role;
+    if (next ? next === "assistant" : transcript.running) return null;
+    const stats = responseStats(transcript.turns, index);
+    if (!stats) return null;
+    const user =
+      stats.userIndex === undefined
+        ? undefined
+        : transcript.turns[stats.userIndex].message;
+    return (
+      <ResponseFooter
+        sessionId={info.id}
+        stats={stats}
+        user={user?.role === "user" ? user : undefined}
+        // shortcut: only the latest reply regenerates; earlier ones would hide later turns with no tree UI.
+        canRegenerate={
+          index === transcript.turns.length - 1 && !transcript.running
+        }
+      />
+    );
+  };
+  // biome-ignore lint/correctness/useExhaustiveDependencies: Transcript changes require scrolling its updated DOM before paint.
+  useLayoutEffect(() => {
+    if (thread.current) thread.current.scrollTop = thread.current.scrollHeight;
   }, [transcript]);
-  function send() {
-    if (!text.trim() || !canSend) return;
-    rpc.send.prompt({ sessionId: info.id, text: text.trim() });
-    setText("");
-  }
   return (
-    <div className="chat-shell">
+    <div
+      className="chat-shell"
+      style={{ "--chat-width": `${width}px` } as React.CSSProperties}
+    >
+      <ChatWidthHandles width={width} onChange={setWidth} />
       <header className="chat-header">
-        <span>{basename(info.cwd)}</span>
-        <button
-          type="button"
-          title="Close chat (history is kept)"
-          aria-label="Close chat"
-          onClick={() => {
-            rpc.send.closeSession({ sessionId: info.id });
-            useStore.setState({ active: undefined });
-            void refreshSessions().catch(showError);
-          }}
-        >
-          <X size={17} />
-        </button>
+        <div className="chat-heading">
+          <Folder size={14} />
+          <span>{general ? t.Chats : basename(info.cwd)}</span>
+          <small>{info.title}</small>
+        </div>
+        <div className="chat-header-actions">
+          <button
+            type="button"
+            aria-label={t["Reset chat width"]}
+            title={t["Reset chat width (drag either edge to resize)"]}
+            onClick={() => setWidth(DEFAULT_CHAT_WIDTH)}
+          >
+            <MoveHorizontal size={16} />
+          </button>
+          <button
+            type="button"
+            title={t["Close chat (history is kept)"]}
+            aria-label={t["Close chat"]}
+            onClick={() => {
+              rpc.send.closeSession({ sessionId: info.id });
+              useStore.setState((s) => {
+                const snapshots = { ...s.snapshots };
+                delete snapshots[info.id];
+                const dialogs = { ...s.dialogs };
+                delete dialogs[info.id];
+                return { snapshots, dialogs };
+              });
+              navigate("chat", null);
+              void refreshSessions().catch(showError);
+            }}
+          >
+            <X size={17} />
+          </button>
+        </div>
       </header>
-      <div className="thread-scroll">
+      <div ref={thread} className="thread-scroll">
         <div className="transcript">
           {!transcript.turns.length && (
             <div className="chat-empty">
-              <h1>What shall we build?</h1>
-              <p className="muted">Working in {info.cwd}</p>
+              <h1>{t["What shall we build?"]}</h1>
+              <p className="muted">
+                {general ? t["Chat without a project"] : t.workingIn(info.cwd)}
+              </p>
               {!models.length && (
                 <button
                   type="button"
                   className="primary"
-                  onClick={() => useStore.setState({ page: "providers" })}
+                  onClick={() => navigate("providers")}
                 >
-                  <Settings2 size={14} /> Connect a provider
+                  <Settings2 size={14} />{" "}
+                  {available.length
+                    ? t["Enable models"]
+                    : t["Connect a provider"]}
                 </button>
               )}
             </div>
           )}
-          {transcript.turns.map(({ id, message }) => (
-            <article key={id} className={`message ${message.role}`}>
-              {message.role === "user" ? (
-                <div className="user-bubble">
-                  {typeof message.content === "string"
-                    ? message.content
-                    : message.content
-                        .filter((c) => c.type === "text")
-                        .map((c) => c.text)
-                        .join("\n")}
-                </div>
-              ) : message.role === "assistant" ? (
-                <>
-                  {message.content.map((content, index) => (
-                    // biome-ignore lint/suspicious/noArrayIndexKey: Streaming content blocks retain their SDK indexes.
-                    <div key={`${content.type}-${index}`}>
-                      {content.type === "text" ? (
-                        <div className="prose">
-                          <Markdown text={content.text} />
-                        </div>
-                      ) : content.type === "thinking" ? (
-                        <details className="thinking">
-                          <summary>Thinking</summary>
-                          <Markdown text={content.thinking} />
-                        </details>
-                      ) : content.type === "toolCall" ? (
-                        <details className="tool-card">
-                          <summary>
-                            <span>{content.name}</span>
-                            <code>
-                              {JSON.stringify(content.arguments).slice(0, 100)}
-                            </code>
-                            <small>
-                              {transcript.tools[content.id]?.status ||
-                                "pending"}
-                            </small>
-                          </summary>
-                          <pre>
-                            {JSON.stringify(content.arguments, null, 2)}
-                          </pre>
-                          <pre>
-                            {JSON.stringify(
-                              transcript.tools[content.id]?.result,
-                              null,
-                              2,
-                            )}
-                          </pre>
-                        </details>
-                      ) : null}
-                    </div>
-                  ))}
-                  {message.errorMessage && (
-                    <p className="error">{message.errorMessage}</p>
-                  )}
-                </>
-              ) : null}
-            </article>
+          {transcript.turns.map(({ id, message }, index) => (
+            <div key={id} className="response-turn">
+              <article className={`message ${message.role}`}>
+                {message.role === "user" ? (
+                  <UserMessage
+                    message={message}
+                    sessionId={info.id}
+                    disabled={transcript.running || !snapshot.model}
+                  />
+                ) : message.role === "assistant" ? (
+                  <>
+                    {message.content.map((content, index) => (
+                      // biome-ignore lint/suspicious/noArrayIndexKey: Streaming content blocks retain their SDK indexes.
+                      <div key={`${content.type}-${index}`}>
+                        {content.type === "text" ? (
+                          <div className="prose">
+                            <Markdown text={content.text} />
+                          </div>
+                        ) : content.type === "thinking" ? (
+                          <details className="thinking">
+                            <summary>{t.Thinking}</summary>
+                            <Markdown text={content.thinking} />
+                          </details>
+                        ) : content.type === "toolCall" ? (
+                          <details className="tool-card">
+                            <summary>
+                              <span>{content.name}</span>
+                              <code>
+                                {JSON.stringify(content.arguments).slice(
+                                  0,
+                                  100,
+                                )}
+                              </code>
+                              <small>
+                                {t.toolStatus(
+                                  transcript.tools[content.id]?.status ||
+                                    "pending",
+                                )}
+                              </small>
+                            </summary>
+                            <pre>
+                              {JSON.stringify(content.arguments, null, 2)}
+                            </pre>
+                            <ToolResultContent
+                              result={transcript.tools[content.id]?.result}
+                            />
+                          </details>
+                        ) : null}
+                      </div>
+                    ))}
+                    {message.errorMessage && (
+                      <p className="error">{message.errorMessage}</p>
+                    )}
+                  </>
+                ) : message.role === "custom" && message.display ? (
+                  <div className="tool-card custom-message">
+                    <div className="muted">[{message.customType}]</div>
+                    <MessageContent content={message.content} />
+                  </div>
+                ) : message.role === "bashExecution" ? (
+                  <details
+                    className={`tool-card bash-execution ${message.excludeFromContext ? "excluded" : ""}`}
+                    open
+                  >
+                    <summary>
+                      <code>$ {message.command}</code>
+                    </summary>
+                    <MessageContent content={message.output} markdown={false} />
+                    {message.cancelled && (
+                      <p className="muted">{t.Cancelled}</p>
+                    )}
+                    {message.exitCode !== undefined &&
+                      message.exitCode !== 0 && (
+                        <p className="error">
+                          {t["Exit code"]}: {message.exitCode}
+                        </p>
+                      )}
+                    {message.truncated && (
+                      <p className="muted">
+                        {t["Output truncated"]}
+                        {message.fullOutputPath && (
+                          <>
+                            : <code>{message.fullOutputPath}</code>
+                          </>
+                        )}
+                      </p>
+                    )}
+                  </details>
+                ) : message.role === "compactionSummary" ||
+                  message.role === "branchSummary" ? (
+                  <details className="thinking summary-card">
+                    <summary>
+                      {message.role === "compactionSummary"
+                        ? `[compaction] ${t.compactedFrom(message.tokensBefore)}`
+                        : `[branch] ${t["Branch summary"]}`}
+                    </summary>
+                    <MessageContent content={message.summary} />
+                  </details>
+                ) : null}
+              </article>
+              {footer(index)}
+            </div>
           ))}
           {transcript.running && (
             <p className="muted running" role="status">
-              Working…
+              {t["Working…"]}
             </p>
           )}
-          <div ref={end} />
         </div>
       </div>
-      <div className="composer-dock">
-        <form
-          className="composer"
-          onSubmit={(e) => {
-            e.preventDefault();
-            send();
-          }}
-        >
-          <textarea
-            aria-label="Message"
-            placeholder={
-              transcript.running
-                ? "Send a follow-up…"
-                : "Ask pi to build something…"
-            }
-            rows={3}
-            value={text}
-            onChange={(e) => setText(e.target.value)}
-            onKeyDown={(e) => {
-              if (
-                e.key === "Enter" &&
-                !e.shiftKey &&
-                !e.nativeEvent.isComposing &&
-                e.keyCode !== 229
-              ) {
-                e.preventDefault();
-                send();
-              }
-            }}
-          />
-          <div className="composer-toolbar">
-            <ModelPicker snapshot={snapshot} />
-            <div className="send-controls">
-              {transcript.running && (
-                <button
-                  type="button"
-                  className="send-button"
-                  title="Stop"
-                  aria-label="Stop"
-                  onClick={() => rpc.send.abort({ sessionId: info.id })}
-                >
-                  <Square size={15} fill="currentColor" />
-                </button>
-              )}
-              <button
-                type="submit"
-                className="send-button"
-                aria-label={transcript.running ? "Queue follow-up" : "Send"}
-                disabled={!text.trim() || !canSend}
-              >
-                <ArrowUp size={19} />
-              </button>
-            </div>
-          </div>
-        </form>
-      </div>
+      <ExtensionDialogs sessionId={info.id} />
+      <Composer snapshot={snapshot} />
     </div>
   );
 }

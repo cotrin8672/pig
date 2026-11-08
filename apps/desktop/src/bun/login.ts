@@ -1,9 +1,5 @@
 import type { AuthInteraction } from "@earendil-works/pi-ai";
-import {
-  type LoginFrame,
-  type ProviderId,
-  providers,
-} from "../shared/rpc-schema";
+import type { AuthMethod, LoginFrame } from "../shared/rpc-schema";
 import { runtime } from "./pi-service";
 
 const logins = new Map<
@@ -22,13 +18,25 @@ export function cancelAllLogins() {
   for (const id of logins.keys()) cancelLogin(id);
 }
 export async function startLogin(
-  provider: ProviderId,
+  provider: string,
+  method: AuthMethod,
   loginId: string,
   push: (frame: LoginFrame) => void,
   open: (url: string) => void,
 ) {
-  if (!providers.some((p) => p.id === provider))
-    throw new Error("Invalid provider.");
+  const auth =
+    typeof provider === "string"
+      ? runtime.getProvider(provider)?.auth
+      : undefined;
+  if (!auth || (method === "oauth" ? !auth.oauth : !auth.apiKey?.login)) {
+    push({
+      loginId,
+      provider: String(provider),
+      kind: "error",
+      message: "This provider does not support that sign-in method.",
+    });
+    return;
+  }
   const login: {
     abort: AbortController;
     resolve?: (value: string | undefined) => void;
@@ -59,7 +67,7 @@ export async function startLogin(
       }),
   };
   try {
-    await runtime.login(provider, "oauth", interaction);
+    await runtime.login(provider, method, interaction);
     push({ loginId, provider, kind: "success" });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);

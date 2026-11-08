@@ -7,9 +7,11 @@ import {
 
 registerBunOAuthFlows();
 const runtime = await ModelRuntime.create();
-for (const provider of ["openai-codex", "anthropic"]) {
+await runtime.getAvailable();
+for (const provider of runtime.getProviders()) {
+  const status = runtime.getProviderAuthStatus(provider.id);
   console.log(
-    `${provider}: OAuth=${runtime.isUsingOAuth(provider)}, configured=${runtime.hasConfiguredAuth(provider)}`,
+    `${provider.id}: configured=${status.configured}${status.source ? ` (${status.label ?? status.source})` : ""}`,
   );
 }
 const { session } = await createAgentSession({
