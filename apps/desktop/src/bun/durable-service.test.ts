@@ -201,7 +201,7 @@ test("built-in coding tools execute against the project directory under Bun", as
       stopReason: "toolUse",
     }),
     fauxAssistantMessage(
-      fauxToolCall("bash", { command: "rtk --version", timeout: 10 }),
+      fauxToolCall("bash", { command: "echo ok", timeout: 10 }),
       { stopReason: "toolUse" },
     ),
     fauxAssistantMessage("Tools finished"),
