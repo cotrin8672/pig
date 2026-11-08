@@ -6,6 +6,7 @@ import {
   validateSessionFlags,
   validateUiPreferences,
 } from "../shared/desktop-state";
+import { validateProjectFlags } from "../shared/projects";
 
 export class DesktopStateStore {
   value: DesktopState = { sessions: {} };
@@ -58,6 +59,21 @@ export class DesktopStateStore {
       () => {},
     );
     return save;
+  }
+  setProject(cwd: string, value: unknown) {
+    const patch = validateProjectFlags(value);
+    return this.update((current) => {
+      const flags = { ...current.projects?.[cwd], ...patch };
+      const next = {
+        ...(flags.name ? { name: flags.name } : {}),
+        ...(flags.pinned ? { pinned: true } : {}),
+        ...(flags.archived ? { archived: true } : {}),
+      };
+      const projects = { ...current.projects };
+      if (Object.keys(next).length) projects[cwd] = next;
+      else delete projects[cwd];
+      return { ...current, projects };
+    });
   }
   setUiPreferences(value: unknown) {
     const patch = validateUiPreferences(value);

@@ -1,4 +1,5 @@
 import { clampChatWidth } from "./chat-width";
+import { type ProjectFlags, validateProjectFlags } from "./projects";
 
 export interface SessionFlags {
   pinned?: boolean;
@@ -12,6 +13,7 @@ export interface UiPreferences {
 }
 export interface DesktopState extends UiPreferences {
   sessions: Record<string, SessionFlags>;
+  projects?: Record<string, ProjectFlags>;
 }
 
 export function validateUiPreferences(value: unknown): UiPreferences {
@@ -78,8 +80,25 @@ export function validateDesktopState(value: unknown): DesktopState {
   const sessions = input.sessions ?? {};
   if (!sessions || typeof sessions !== "object" || Array.isArray(sessions))
     throw new Error("Invalid session states.");
+  const projects = input.projects;
+  if (
+    projects !== undefined &&
+    (!projects || typeof projects !== "object" || Array.isArray(projects))
+  )
+    throw new Error("Invalid project states.");
   return {
     ...validateUiPreferences(input),
+    ...(projects
+      ? {
+          projects: Object.fromEntries(
+            Object.entries(projects).map(([cwd, flags]) => {
+              if (!cwd || /[\p{Cc}]/u.test(cwd))
+                throw new Error("Invalid project path.");
+              return [cwd, validateProjectFlags(flags)];
+            }),
+          ),
+        }
+      : {}),
     sessions: Object.fromEntries(
       Object.entries(sessions).map(([id, flags]) => {
         if (!id || id.length > 128 || /[\\/\p{Cc}]/u.test(id))

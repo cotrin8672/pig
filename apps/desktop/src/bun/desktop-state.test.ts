@@ -196,3 +196,16 @@ test("completion persists, merges flags, emits committed states and rejects stal
   await store.forgetSession("chat");
   expect(store.value.sessions.chat).toBeUndefined();
 });
+
+test("Durable numeric string IDs persist pins and archive state independently", async () => {
+  const file = await fixture();
+  const store = new DesktopStateStore(file);
+  await store.setSession("1", { pinned: true });
+  await store.setSession("2", { archived: true });
+  const reopened = new DesktopStateStore(file);
+  await reopened.load();
+  expect(reopened.value.sessions["1"]).toEqual({ pinned: true });
+  expect(reopened.value.sessions["2"]).toEqual({ archived: true });
+  await reopened.forgetSession("1");
+  expect(reopened.value.sessions["2"]).toEqual({ archived: true });
+});
