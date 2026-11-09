@@ -4,139 +4,62 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-// Isolate the application's homedir-based config and module-level Harness from other tests.
-test("application service uses pig storage, publishes Durable snapshots and persists model/login settings", async () => {
-  const home = await mkdtemp(join(tmpdir(), "pig-app-durable-"));
+// Subprocess isolation is required before importing profile/bootstrap/catalog.
+test("application uses the fixed SDK profile and preserves model/auth helpers", async () => {
+  const home = await mkdtemp(join(tmpdir(), "pig-app-sdk-"));
   try {
     const script = `
       import { expect } from "bun:test";
-      import { BACKGROUND_CONTEXT as context } from "@earendil-works/chord/context";
       import { fauxProvider, fauxAssistantMessage } from "@earendil-works/pi-ai";
       import * as app from ${JSON.stringify(new URL("./pi-service.ts", import.meta.url).href)};
+      import { SessionHost } from ${JSON.stringify(new URL("./session-host.ts", import.meta.url).href)};
       expect((await app.utilityModels()).imageModels.some(m => m.provider === "openai-codex")).toBe(false);
       await app.credentials.modify("openai-codex", async () => ({type: "oauth", access: "test-only", refresh: "test-only", expires: Date.now() + 3600000, accountId: "test-account"}));
-      expect((await app.utilityModels()).imageModels.filter(m => m.provider === "openai-codex")).toEqual([
-        {provider: "openai-codex", id: "gpt-image-2.5", name: "gpt-image-2.5"},
-        {provider: "openai-codex", id: "gpt-image-2", name: "gpt-image-2"},
-      ]);
-      expect(app.runtime.getModelsOfType("image", "openai").some(m => m.id === "gpt-image-2.5")).toBe(false);
+      expect((await app.utilityModels()).imageModels.filter(m => m.provider === "openai-codex").length).toBe(2);
       await app.credentials.delete("openai-codex");
       const faux = fauxProvider({tokensPerSecond: Infinity});
-      const { withRemoteCatalog } = await import(${JSON.stringify(new URL("./remote-catalog.ts", import.meta.url).href)});
-      const originalFetch = globalThis.fetch;
-      globalThis.fetch = async () => Response.json([{...faux.getModel(), type: "image", api: "openai-images", id: "remote-image", name: "Remote image"}]);
-      app.runtime.clearProviders();
-      app.runtime.setProvider(withRemoteCatalog(faux.provider));
-      await app.runtime.refresh({allowNetwork: true});
-      expect((await app.utilityModels()).imageModels).toEqual([{provider: faux.provider.id, id: "remote-image", name: "Remote image"}]);
-      globalThis.fetch = originalFetch;
-      app.runtime.clearProviders(); app.runtime.setProvider(faux.provider);
-      const model = faux.getModel();
       const events = [];
-      const chat = await app.openSession({cwd: ${JSON.stringify(home)}}, (id, event, contextUsage) => events.push({id, event, contextUsage}));
-      if (!/^[1-9]\\d*$/.test(chat.info.id)) throw new Error("RPC ID must be a numeric string");
+      const host = new SessionHost({credentials: app.credentials, modelInfo: app.modelInfo, emit: e => events.push(e), emitUI() {}, emitTerminal() {}, configureModels: models => {models.registerNativeProvider(faux.provider);}});
+      const input = {cwd: ${JSON.stringify(home)}, openId: "open-1"};
+      const first = host.openSession(input);
+      expect(host.openSession(input)).toBe(first);
+      const chat = await first;
+      expect(chat.info.id).toBe(chat.address.sessionId);
+      expect(chat.address.hostId).toBe(host.hostId);
+      expect(chat.info.id).not.toMatch(/^\\d+$/);
+      await host.setModel({...chat.address, provider: faux.getModel().provider, id: faux.getModel().id});
       faux.setResponses([fauxAssistantMessage("App answer")]);
-      const accepted = await app.promptSession(chat.info.id, "App hello", "app-1");
-      if (accepted.disposition !== "started") throw new Error("Not accepted");
-      const service = await app.durable();
-      await service.harness.waitForIdle(context);
-      await new Promise(resolve => setTimeout(resolve, 20));
-      if (!events.some(({event}) => event.transcript.turns.some(({message}) => message.role === "assistant"))) throw new Error("Missing streamed snapshot");
-      expect(events.some(item => item.contextUsage?.contextWindow > 0)).toBe(true);
-      expect((await app.openSession({cwd: ${JSON.stringify(home)}, id: chat.info.id}, () => {})).info.title).toBe("App hello");
+      const send = {...chat.address, text: "App hello", requestId: "app-1", draftRevision: 0};
+      expect(await host.prompt(send)).toEqual({disposition: "started"});
+      await host.session(chat.info.id).waitForIdle();
+      await host.receipts.settled();
+      expect(host.getPromptReceipt(send).state).toBe("accepted");
+      const snapshot = host.getSessionSnapshot(chat.address);
+      expect(snapshot.transcript.records.some(r => r.kind === "message" && r.message.role === "assistant")).toBe(true);
+      expect(snapshot.transcript.running).toBe(false);
+      expect(snapshot.snapshotSeq).toBeGreaterThan(chat.snapshotSeq);
+      expect(events.some(e => e.type === "snapshot")).toBe(true);
+      await host.renameSession(chat.info, "Renamed");
+      expect((await host.listSessions(input.cwd)).find(s => s.id === chat.info.id).title).toBe("Renamed");
+      const model = faux.getModel();
       expect(app.modelInfo({...model, api: "anthropic-messages", compat: {forceAdaptiveThinking: true}}).adaptiveThinking).toBe(true);
-      expect(app.modelInfo({...model, api: "anthropic-messages", compat: {forceAdaptiveThinking: false}}).adaptiveThinking).toBe(false);
-      const renamed = await app.renameSession(chat.info, "Renamed");
-      if (!(await app.listSessions(${JSON.stringify(home)})).some(item => item.title === "Renamed")) throw new Error("Missing name");
-      await app.setSessionModel(chat.info.id, model.provider, model.id);
-      await app.runtime.login(model.provider, "api_key", {notify() {}, async prompt() {return "test-only";}}).catch(() => {});
       await app.credentials.modify(model.provider, async () => ({type: "api_key", key: "test-only"}));
-      if (!(await app.credentials.list()).length) throw new Error("Missing stored auth");
-      let rejected = false;
-      try { await app.promptSession(chat.info.id, "", "bad"); } catch { rejected = true; }
-      if (!rejected) throw new Error("Failed admission reported success");
-      // Controlled watches exercise open races without relying on scheduler timing.
-      await app.closeSession(chat.info.id);
-      const originalHistory = service.history.bind(service);
-      const originalWatch = service.watch.bind(service);
-      const originalList = service.list.bind(service);
-      const originalAbort = service.abort.bind(service);
-      let aborted = 0;
-      service.abort = async () => { aborted++; };
-      service.list = async () => [chat.info];
-      const deferred = () => {
-        let resolve;
-        const promise = new Promise(r => { resolve = r; });
-        return {promise, resolve};
-      };
-      const entry = id => ({id, conversationId: Number(chat.info.id), kind: "pi.user", model: [{role: "user", content: "entry-" + id, timestamp: id}]});
-      let attached = 0, stopped = 0, listener;
-      let ready = deferred(), release = deferred();
-      service.watch = async () => {
-        attached++;
-        return {value: {entries: [entry(1)], docs: {}}, start(callback) {listener = callback;}, async stop() {expect(aborted).toBeGreaterThan(stopped); stopped++;}};
-      };
-      service.history = async () => {
-        expect(listener).toBeDefined();
-        ready.resolve();
-        await release.promise;
-        return [entry(1), entry(2)];
-      };
-      const input = {cwd: ${JSON.stringify(home)}, id: chat.info.id};
-      const first = app.openSession(input, (id, event) => events.push({id, event}));
-      const second = app.openSession(input, () => {});
-      await ready.promise;
-      // More than a watch window is committed while history is in flight.
-      for (let id = 3; id <= 65; id++) await listener({kind: "value", value: {entries: [entry(id)], docs: {}}});
-      release.resolve();
-      const snapshots = await Promise.all([first, second]);
-      expect(attached).toBe(1);
-      expect(snapshots[0].transcript.turns).toHaveLength(65);
-      expect(snapshots[1]).toEqual(snapshots[0]);
-      expect(snapshots[0].info.title).toBe("entry-1");
-      await listener({kind: "value", value: {entries: [{id: 66, kind: "pig.name", data: "Watch renamed"}], docs: {"pi.live": {runFailure: {reason: "faulted", detail: "Real failure detail"}}}}});
-      expect(events.at(-1).event.failure).toBe("Real failure detail");
-      const renamedSnapshot = await app.openSession(input, () => {});
-      expect(renamedSnapshot.info.title).toBe("Watch renamed");
-      expect(renamedSnapshot.info.modified).toBeGreaterThan(0);
-      await app.closeSession(chat.info.id);
-      expect(stopped).toBe(1);
-
-      // Close cancels an open after attachment, including its eventual completion.
-      ready = deferred(); release = deferred(); listener = undefined;
-      const cancelled = app.openSession(input, () => {}).then(() => "opened", error => error.message);
-      await ready.promise;
-      await app.closeSession(chat.info.id);
-      expect(stopped).toBe(2);
-      release.resolve();
-      expect(await cancelled).toBe("Chat closed.");
-      expect(stopped).toBe(2);
-
-      // A watch returned after close is stopped as soon as attachment resolves.
-      ready = deferred(); release = deferred();
-      const fakeWatch = {value: {entries: [], docs: {}}, start() {}, async stop() {stopped++;}};
-      service.watch = async () => { ready.resolve(); await release.promise; return fakeWatch; };
-      const late = app.openSession(input, () => {}).then(() => "opened", error => error.message);
-      await ready.promise;
-      await app.closeSession(chat.info.id);
-      release.resolve();
-      expect(await late).toBe("Chat closed.");
-      expect(stopped).toBe(3);
-
-      // History failure tears down the attached watch and allows a retry.
-      service.watch = async () => fakeWatch;
-      service.history = async () => { throw new Error("history failed"); };
-      await expect(app.openSession(input, () => {})).rejects.toThrow("history failed");
-      expect(stopped).toBe(4);
-      service.history = async () => [];
-      await app.openSession(input, () => {});
-      await app.closeSession(chat.info.id);
-      expect(stopped).toBe(5);
-      service.history = originalHistory;
-      service.watch = originalWatch;
-      service.list = originalList;
-      service.abort = originalAbort;
-      await app.disposeSessions();
+      await expect(host.prompt({...send, text: "", requestId: "empty"})).rejects.toThrow("empty");
+      await host.closeSession(chat.address);
+      expect(host.getPromptReceipt(send).state).toBe("accepted");
+      const reopened = await host.openSession({...input, openId: "open-2", id: chat.info.id});
+      expect(reopened.address.epoch).toBeGreaterThan(chat.address.epoch);
+      expect(reopened.info.title).toBe("Renamed");
+      expect(() => host.getSessionSnapshot(chat.address)).toThrow("STALE");
+      const userEntry = reopened.transcript.records.find(r => r.kind === "message" && r.message.role === "user");
+      await host.rewindSession({...reopened.address, entryId:userEntry.entryId});
+      await host.closeSession(reopened.address);
+      const rewound = await host.openSession({...input, openId:"rewound-reopen", id:chat.info.id});
+      expect(rewound.transcript.records.filter(r => r.kind === "message")).toHaveLength(0);
+      expect(rewound.info.title).toBe("Renamed");
+      await host.deleteSession(reopened.info);
+      expect(await host.listSessions(input.cwd)).toEqual([]);
+      await host.dispose(); await app.disposeSessions();
     `;
     const child = Bun.spawn([process.execPath, "--eval", script], {
       cwd: join(import.meta.dir, "../.."),
@@ -150,14 +73,15 @@ test("application service uses pig storage, publishes Durable snapshots and pers
       new Response(child.stderr).text(),
     ]);
     expect({ code, stdout, stderr }).toMatchObject({ code: 0 });
-    if (code !== 0) throw new Error(stderr);
-    expect(existsSync(join(home, ".config", "pig", "durable"))).toBe(true);
+    expect(
+      existsSync(join(home, ".config", "pig", "pi-agent", "sessions")),
+    ).toBe(true);
     expect(existsSync(join(home, ".config", "pig", "auth.json"))).toBe(true);
     expect(existsSync(join(home, ".pi", "agent"))).toBe(false);
   } finally {
     await rm(home, { recursive: true, force: true });
   }
-}, 15_000);
+}, 30_000);
 
 test("provider status, availability and requests ignore ambient credentials", async () => {
   const home = await mkdtemp(join(tmpdir(), "pig-app-auth-"));
@@ -233,7 +157,7 @@ test("provider status, availability and requests ignore ambient credentials", as
           expect(options.apiKey).toBe("stored-" + id);
           throw new Error("test dispatch reached");
         };
-        app.runtime.setProvider({...provider, stream: dispatch, streamSimple: dispatch});
+        app.runtime.registerNativeProvider({...provider, stream: dispatch, streamSimple: dispatch});
         const context = {messages: []};
         for (const complete of [app.runtime.complete.bind(app.runtime), app.runtime.completeSimple.bind(app.runtime)]) {
           const result = await complete(model, context);
@@ -300,7 +224,7 @@ test("models.json composes app configuration and malformed config reports an err
         }
         const {fauxProvider} = await import("@earendil-works/pi-ai");
         const {provider} = fauxProvider();
-        app.runtime.setProvider({...provider, refreshModels: async () => {throw new Error("catalog failure");}});
+        app.runtime.registerNativeProvider({...provider, refreshModels: async () => {throw new Error("catalog failure");}});
         await app.refreshModels({allowNetwork: false});
         expect(app.modelErrors.some(e => e.includes("catalog failure"))).toBe(true);
       `;

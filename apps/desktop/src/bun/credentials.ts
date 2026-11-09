@@ -54,7 +54,26 @@ export class FileCredentials implements CredentialStore {
           await writeFile(temporary, JSON.stringify(values, null, 2), {
             mode: 0o600,
           });
-          await rename(temporary, this.file);
+          // Windows may briefly deny replacing a file while another runtime's
+          // availability check holds a read handle. Keep atomic replacement;
+          // never unlink the credential store to work around sharing violations.
+          for (let attempt = 0; ; attempt++) {
+            options?.signal?.throwIfAborted();
+            try {
+              await rename(temporary, this.file);
+              break;
+            } catch (error) {
+              if (
+                process.platform !== "win32" ||
+                attempt >= 8 ||
+                !["EPERM", "EACCES", "EBUSY"].includes(
+                  (error as NodeJS.ErrnoException).code ?? "",
+                )
+              )
+                throw error;
+              await Bun.sleep(10 * (attempt + 1));
+            }
+          }
         } finally {
           await rm(temporary, { force: true });
         }

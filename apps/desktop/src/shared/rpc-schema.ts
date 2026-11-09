@@ -1,20 +1,43 @@
-import type {
-  AuthEvent,
-  AuthPrompt,
-  ImageContent,
-} from "@earendil-works/pi-ai";
+import type { AuthEvent, AuthPrompt } from "@earendil-works/pi-ai";
 import type {
   DesktopState,
   SessionFlags,
   UiPreferences,
 } from "./desktop-state";
+import type { ExtensionUIEvent, UIReply } from "./extension-ui";
 import type { ModelOverride } from "./model-overrides";
+import type {
+  InstalledPackage,
+  PackageEvent,
+  PackageOperation,
+  PackageOperationResult,
+  PackageSearch,
+  PackageSearchResult,
+} from "./packages";
 import type { ProjectFlags } from "./projects";
+import type {
+  DraftSyncParams,
+  DraftSyncResult,
+  OpenSessionParams,
+  OpenState,
+  PromptAccepted,
+  PromptParams,
+  PromptReceipt,
+  RuntimeEvent,
+  RuntimeViewState,
+  SendKey,
+  SessionAddress,
+} from "./runtime-contract";
 import type { Settings, SettingsPatch } from "./settings";
+import type { TerminalClientCommand, TerminalHostEvent } from "./terminal-ui";
 import type { Transcript } from "./transcript";
+
+export type { PromptAccepted } from "./runtime-contract";
 
 export type WireEvent = {
   type: "snapshot";
+  address: SessionAddress;
+  snapshotSeq: number;
   transcript: Transcript;
   failure?: string;
   aborted?: boolean;
@@ -91,6 +114,8 @@ export interface ModelSelection {
   contextUsage?: ContextUsage | null;
 }
 export interface Snapshot extends ModelSelection {
+  address: SessionAddress;
+  snapshotSeq: number;
   info: SessionInfo;
   transcript: Transcript;
   failure?: string;
@@ -124,20 +149,25 @@ export type LoginFrame = { loginId: string; provider: string } & (
   | { kind: "success" | "cancelled" }
   | { kind: "error"; message: string }
 );
-export interface PromptAccepted {
-  disposition: "started" | "queued" | "handled";
-}
 
 export type RPCSchema = {
   bun: {
     requests: {
+      heartbeatUI: {
+        params: { clientId: string };
+        response: { connected: boolean };
+      };
+      // biome-ignore lint/suspicious/noConfusingVoidType: Electrobun convention.
+      packageProfile: { params: void; response: { agentDir: string } };
+      packageSearch: { params: PackageSearch; response: PackageSearchResult };
+      // biome-ignore lint/suspicious/noConfusingVoidType: Electrobun convention.
+      packageInstalled: { params: void; response: InstalledPackage[] };
+      packageOperate: {
+        params: PackageOperation;
+        response: PackageOperationResult;
+      };
       prompt: {
-        params: {
-          sessionId: string;
-          text: string;
-          requestId: string;
-          images?: ImageContent[];
-        };
+        params: PromptParams;
         response: PromptAccepted;
       };
       // biome-ignore lint/suspicious/noConfusingVoidType: Electrobun's parameterless RPC convention.
@@ -164,18 +194,40 @@ export type RPCSchema = {
       // biome-ignore lint/suspicious/noConfusingVoidType: Electrobun's empty response convention.
       setUiPreferences: { params: UiPreferences; response: void };
       openSession: {
-        params: { cwd: string; id?: string };
+        params: OpenSessionParams;
         response: Snapshot;
       };
-      // `timestamp` identifies a transcript message (user for rewind, assistant for fork).
       rewindSession: {
-        params: { sessionId: string; timestamp: number };
+        params: SessionAddress & { entryId: string };
         response: Snapshot;
       };
       forkSession: {
-        params: { sessionId: string; timestamp: number };
+        params: SessionAddress & { entryId: string };
         response: Snapshot;
       };
+      getOpenState: { params: { openId: string }; response: OpenState };
+      // biome-ignore lint/suspicious/noConfusingVoidType: Electrobun convention.
+      cancelOpen: { params: { openId: string }; response: void };
+      getSessionSnapshot: { params: SessionAddress; response: Snapshot };
+      getPromptReceipt: { params: SendKey; response: PromptReceipt };
+      syncDraft: { params: DraftSyncParams; response: DraftSyncResult };
+      // biome-ignore lint/suspicious/noConfusingVoidType: Electrobun convention.
+      resolveExtensionUI: { params: UIReply; response: void };
+      terminalCommand: {
+        params: TerminalClientCommand & SessionAddress;
+        // biome-ignore lint/suspicious/noConfusingVoidType: Electrobun convention.
+        response: void;
+      };
+      // biome-ignore lint/suspicious/noConfusingVoidType: Electrobun convention.
+      abort: { params: SessionAddress; response: void };
+      // biome-ignore lint/suspicious/noConfusingVoidType: Electrobun convention.
+      closeSession: { params: SessionAddress; response: void };
+      reloadSession: {
+        params: SessionAddress;
+        response: { state: "applied" | "pending" };
+      };
+      // biome-ignore lint/suspicious/noConfusingVoidType: Electrobun convention.
+      runtimeState: { params: void; response: RuntimeViewState };
       removeProject: { params: { cwd: string }; response: string[] };
       setProjectState: {
         params: { cwd: string } & ProjectFlags;
@@ -185,7 +237,7 @@ export type RPCSchema = {
       // biome-ignore lint/suspicious/noConfusingVoidType: Electrobun's empty response convention.
       logout: { params: { provider: string }; response: void };
       setModel: {
-        params: { sessionId: string; provider: string; id: string };
+        params: SessionAddress & { provider: string; id: string };
         response: ModelSelection;
       };
       setModelEnabled: {
@@ -207,7 +259,7 @@ export type RPCSchema = {
         response: void;
       };
       setEffort: {
-        params: { sessionId: string; effort: Effort };
+        params: SessionAddress & { effort: Effort };
         response: ModelSelection;
       };
       // biome-ignore lint/suspicious/noConfusingVoidType: Electrobun's empty response convention.
@@ -226,13 +278,18 @@ export type RPCSchema = {
       openExternal: { url: string };
       // src is a rendered image: a base64 data URL or an http(s) Markdown image URL.
       imageMenu: { src: string };
-      abort: { sessionId: string };
-      closeSession: { sessionId: string };
+      connectUI: { clientId: string };
+      disconnectUI: { clientId: string };
     };
   };
   webview: {
     requests: Record<never, never>;
     messages: {
+      runtimeEvent: RuntimeEvent;
+      extensionUIEvent: ExtensionUIEvent;
+      terminalEvent: TerminalHostEvent;
+      packageEvent: PackageEvent;
+      sessionEvent: WireEvent;
       projects: string[];
       desktopState: DesktopState;
       appearance: Appearance;

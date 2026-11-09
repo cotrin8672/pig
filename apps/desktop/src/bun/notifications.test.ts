@@ -5,10 +5,12 @@ import { createCompletionTracker } from "./notifications";
 
 const event = (running: boolean, rest: Partial<WireEvent> = {}): WireEvent => ({
   type: "snapshot",
+  address: { hostId: "fixture", sessionId: "opaque", epoch: 1 },
+  snapshotSeq: 1,
   transcript: { ...emptyTranscript(), running },
   ...rest,
 });
-test("Durable completion is emitted once after run settlement", () => {
+test("SDK completion is emitted once after agent_settled projection", () => {
   const track = createCompletionTracker();
   expect(track(event(false))).toBeUndefined();
   expect(track(event(true))).toBeUndefined();

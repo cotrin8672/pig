@@ -1,44 +1,104 @@
-import { BACKGROUND_CONTEXT as context } from "@earendil-works/chord/context";
 import {
-  createModels,
   fauxAssistantMessage,
   fauxProvider,
+  InMemoryCredentialStore,
+  InMemoryModelsStore,
 } from "@earendil-works/pi-ai";
-import { registerBunOAuthFlows } from "@earendil-works/pi-ai/bun-oauth";
+import { agentDir } from "../src/bun/runtime-profile";
 import {
-  createRegistry,
-  Harness,
-  MemoryStorage,
-} from "@earendil-works/pi-durable";
+  createAgentSessionFromServices,
+  createAgentSessionRuntime,
+  createAgentSessionServices,
+  ModelRuntime,
+  SessionManager,
+  SettingsManager,
+} from "../src/bun/sdk";
+import { SDKProjector } from "../src/bun/sdk-projector";
+import { SendReceipts } from "../src/bun/sdk-send-receipts";
 
-registerBunOAuthFlows();
 const faux = fauxProvider({ tokensPerSecond: Infinity });
-faux.setResponses([fauxAssistantMessage("Durable smoke OK")]);
-const models = createModels();
-models.setProvider(faux.provider);
-const harness = await Harness.open(
-  new MemoryStorage(),
-  { models, registry: createRegistry() },
-  context,
+faux.setResponses([fauxAssistantMessage("SDK smoke OK")]);
+const models = await ModelRuntime.create({
+  credentials: new InMemoryCredentialStore(),
+  modelsStore: new InMemoryModelsStore(),
+  modelsPath: null,
+  refreshOnCreate: false,
+  authContext: { env: async () => undefined, fileExists: async () => false },
+});
+models.registerNativeProvider(faux.provider);
+await models.refresh({ allowNetwork: false });
+const runtime = await createAgentSessionRuntime(
+  async ({ cwd, agentDir, sessionManager }) => {
+    const services = await createAgentSessionServices({
+      cwd,
+      agentDir,
+      modelRuntime: models,
+      settingsManager: SettingsManager.inMemory(
+        { cacheWarming: "off" },
+        { projectTrusted: false },
+      ),
+      resourceLoaderOptions: {
+        noExtensions: true,
+        noSkills: true,
+        noThemes: true,
+        noPromptTemplates: true,
+        noContextFiles: true,
+      },
+    });
+    return {
+      ...(await createAgentSessionFromServices({
+        services,
+        sessionManager,
+        model: faux.getModel(),
+        noTools: "all",
+      })),
+      services,
+      diagnostics: services.diagnostics,
+    };
+  },
+  {
+    cwd: process.cwd(),
+    agentDir,
+    sessionManager: SessionManager.inMemory(process.cwd()),
+  },
+);
+const projector = new SDKProjector(runtime.session.sessionManager, 1);
+const unsubscribe = runtime.session.subscribe((event) =>
+  projector.event(event),
 );
 try {
-  const model = faux.getModel();
-  const conversation = await harness.createConversation(
-    {
-      ownership: { kind: "ownerless" },
-      agent: { model: { provider: model.provider, modelId: model.id } },
+  const receipts = new SendReceipts("smoke");
+  const input = {
+    hostId: "smoke",
+    sessionId: runtime.session.sessionManager.getSessionId(),
+    epoch: 1,
+    requestId: "smoke",
+    draftRevision: 0,
+    text: "Smoke",
+  };
+  const accepted = await receipts.send(
+    input,
+    runtime.session,
+    async () => ({ text: input.text }),
+    (error) => {
+      throw error;
     },
-    context,
   );
-  const submission = await conversation.submit(
-    { type: "input", content: "Smoke", requestId: "smoke" },
-    context,
-  );
-  const result = await submission.wait(context);
-  if (result.status !== "done") throw new Error("Smoke submission failed");
+  if (accepted.disposition !== "started")
+    throw new Error("Missing SDK acceptance");
+  await receipts.settled();
+  const snapshot = projector.snapshot();
+  if (
+    snapshot.running ||
+    !snapshot.records.some(
+      (r) => r.kind === "message" && r.message.role === "assistant",
+    )
+  )
+    throw new Error("Missing settled SDK response");
   console.log(
-    "Durable smoke OK; no login, network, or persistent storage used.",
+    "SDK smoke OK; no login, network, project code, or persistent session storage used.",
   );
 } finally {
-  await harness.close(context);
+  unsubscribe();
+  await runtime.dispose();
 }

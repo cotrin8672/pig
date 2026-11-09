@@ -1,21 +1,49 @@
 import type { Message as ModelMessage } from "@earendil-works/pi-ai";
-import type { EntryRecord, LiveState } from "@earendil-works/pi-durable";
 import type { WireEvent } from "./rpc-schema";
-export type Message = ModelMessage;
+export type Message =
+  | ModelMessage
+  | {
+      role: "custom";
+      customType: string;
+      content: unknown;
+      display: boolean;
+      details?: unknown;
+      timestamp: number;
+    };
+export type TranscriptRecord = {
+  id: string;
+  entryId?: string;
+  parentId: string | null;
+  branchId: string;
+  order: number;
+  rendererKey?: string;
+} & (
+  | {
+      kind: "message";
+      message: Message;
+      customType?: string;
+      details?: unknown;
+      display?: boolean;
+    }
+  | { kind: "custom-entry"; customType: string; data: unknown }
+  | { kind: "session-entry"; entryType: string; data: unknown }
+);
 export interface Transcript {
-  turns: { id: number; message: Message }[];
+  records: TranscriptRecord[];
   tools: Record<
     string,
     { status: "running" | "done" | "error"; result?: unknown }
   >;
-  current: number | null;
+  current: string | null;
   running: boolean;
+  liveToEntry: Record<string, string>;
 }
 export const emptyTranscript = (): Transcript => ({
-  turns: [],
+  records: [],
   tools: {},
   current: null,
   running: false,
+  liveToEntry: {},
 });
 
 export function reduceTranscript(
@@ -33,32 +61,15 @@ export function hydrate(messages: Message[]): Transcript {
         status: message.isError ? "error" : "done",
         result: { content: message.content },
       };
-    else if (message.role === "user" || message.role === "assistant")
-      state.turns.push({ id: state.turns.length, message });
-  }
-  return state;
-}
-
-/** Rebuild from committed history and the Durable live document, never from SDK events. */
-export function durableTranscript(
-  entries: readonly EntryRecord[],
-  live: LiveState,
-): Transcript {
-  const state = hydrate(entries.flatMap((entry) => entry.model ?? []));
-  state.running = !!live.run;
-  if (live.generation?.message) {
-    state.current = state.turns.length;
-    state.turns.push({ id: state.current, message: live.generation.message });
-  }
-  for (const tool of live.tools ?? []) {
-    if (tool.status !== "done")
-      state.tools[tool.callId] = {
-        status: "running",
-        result: {
-          content: [{ type: "text", text: tool.output ?? "" }],
-          details: tool.details,
-        },
-      };
+    else
+      state.records.push({
+        id: `history:${state.records.length}`,
+        parentId: null,
+        branchId: "root",
+        order: state.records.length,
+        kind: "message",
+        message,
+      });
   }
   return state;
 }
@@ -80,7 +91,7 @@ export interface ResponseStats {
 
 /** Aggregates the assistant messages between the previous user turn and `end`. */
 export function responseStats(
-  turns: Transcript["turns"],
+  turns: readonly { message: Message }[],
   end: number,
 ): ResponseStats | undefined {
   const last = turns[end]?.message;

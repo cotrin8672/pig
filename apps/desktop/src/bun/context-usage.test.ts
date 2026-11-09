@@ -1,82 +1,85 @@
 import { expect, test } from "bun:test";
-import { fauxAssistantMessage, type Message } from "@earendil-works/pi-ai";
-import type { EntryRecord } from "@earendil-works/pi-durable";
+import {
+  fauxAssistantMessage,
+  fauxProvider,
+  InMemoryCredentialStore,
+  InMemoryModelsStore,
+} from "@earendil-works/pi-ai";
 import { projectedContextUsage } from "./context-usage";
+import {
+  createAgentSessionFromServices,
+  createAgentSessionServices,
+  ModelRuntime,
+  SessionManager,
+  SettingsManager,
+} from "./sdk";
 
-function view(messages: Message[], head?: number) {
-  const entries = messages.map(
-    (message, i) =>
-      ({
-        id: i + 1,
-        conversationId: 1,
-        kind: "message",
-        model: [message],
-      }) as unknown as EntryRecord,
-  );
-  return {
-    messages,
-    entries,
-    contributions: messages.map((m) => [m]),
-    head:
-      head === undefined
-        ? undefined
-        : ({
-            id: head,
-            conversationId: 1,
-            kind: "pi.compaction",
-            head: 1,
-          } as EntryRecord),
-  };
-}
-const user = (text: string): Message => ({
-  role: "user",
-  content: text,
-  timestamp: 1,
-});
-const assistant = () => ({
-  ...fauxAssistantMessage("answer"),
-  usage: {
-    ...fauxAssistantMessage("").usage,
-    input: 90,
-    output: 10,
-    totalTokens: 100,
-  },
-});
-
-test("context usage uses last valid projected assistant usage plus trailing estimates", () => {
-  expect(projectedContextUsage(view([user("12345678")]), 1000)).toEqual({
-    tokens: 2,
-    contextWindow: 1000,
-    percent: 0.2,
+test("SDK context projection uses valid response usage, trailing estimates, compaction and context edits", async () => {
+  const faux = fauxProvider({
+    models: [{ id: "context", contextWindow: 1000 }],
   });
-  expect(
-    projectedContextUsage(
-      view([user("hello"), assistant(), user("12345678")]),
-      1000,
+  const modelRuntime = await ModelRuntime.create({
+    credentials: new InMemoryCredentialStore(),
+    modelsStore: new InMemoryModelsStore(),
+    modelsPath: null,
+    refreshOnCreate: false,
+  });
+  modelRuntime.registerNativeProvider(faux.provider);
+  await modelRuntime.refresh({ allowNetwork: false });
+  const services = await createAgentSessionServices({
+    cwd: process.cwd(),
+    modelRuntime,
+    settingsManager: SettingsManager.inMemory(
+      { cacheWarming: "off" },
+      { projectTrusted: false },
     ),
-  ).toEqual({ tokens: 102, contextWindow: 1000, percent: 10.2 });
-  expect(projectedContextUsage(view([]), 0)).toBeNull();
-});
-
-test("compaction invalidates retained pre-compaction usage until a post-compaction response", () => {
-  expect(
-    projectedContextUsage(view([user("hello"), assistant()], 3), 1000),
-  ).toEqual({ tokens: null, contextWindow: 1000, percent: null });
-  expect(
-    projectedContextUsage(
-      view([user("hello"), assistant(), user("summary"), assistant()], 3),
-      1000,
-    )?.tokens,
-  ).toBe(100);
-  const failed = { ...assistant(), stopReason: "error" as const };
-  expect(projectedContextUsage(view([failed], 0), 1000)?.tokens).toBeNull();
-});
-
-test("later context edits invalidate usage without counting lifetime history", () => {
-  const projected = view([assistant(), user("12345678")]);
-  projected.entries[1] = {
-    ...projected.entries[1],
-    edits: [{ target: projected.entries[0].id, action: "omit" }],
-  } as EntryRecord;
-  expect(projectedContextUsage(projected, 1000)?.tokens).toBeLessThan(100);
+    resourceLoaderOptions: {
+      noExtensions: true,
+      noSkills: true,
+      noThemes: true,
+      noContextFiles: true,
+      noPromptTemplates: true,
+    },
+  });
+  const manager = SessionManager.inMemory();
+  const { session } = await createAgentSessionFromServices({
+    services,
+    sessionManager: manager,
+    model: faux.getModel(),
+    noTools: "all",
+  });
+  try {
+    manager.appendMessage({ role: "user", content: "12345678", timestamp: 1 });
+    expect(projectedContextUsage(session)?.tokens).toBeGreaterThan(0);
+    const assistant = {
+      ...fauxAssistantMessage("answer"),
+      usage: {
+        ...fauxAssistantMessage("").usage,
+        input: 90,
+        output: 10,
+        totalTokens: 100,
+      },
+    };
+    const answer = manager.appendMessage(assistant);
+    manager.appendMessage({ role: "user", content: "12345678", timestamp: 2 });
+    expect(projectedContextUsage(session)?.tokens).toBeGreaterThanOrEqual(100);
+    manager.appendContextEdit(answer, null);
+    expect(projectedContextUsage(session)?.tokens).toBeLessThan(100);
+    manager.appendCompaction("summary", null, 100);
+    expect(projectedContextUsage(session)).toEqual({
+      tokens: null,
+      contextWindow: 1000,
+      percent: null,
+    });
+    manager.appendMessage({ ...assistant, timestamp: 3 });
+    expect(projectedContextUsage(session)?.tokens).toBe(100);
+    manager.appendCompaction("again", null, 100);
+    manager.appendMessage({ ...assistant, stopReason: "error", timestamp: 4 });
+    expect(projectedContextUsage(session)?.tokens).toBeNull();
+    expect(
+      projectedContextUsage({ getContextUsage: () => undefined }),
+    ).toBeNull();
+  } finally {
+    session.dispose();
+  }
 });

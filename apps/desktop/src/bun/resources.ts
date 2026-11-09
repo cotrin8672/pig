@@ -1,9 +1,20 @@
 import { readdir, readFile, realpath, stat } from "node:fs/promises";
 import { basename, dirname, join, relative, resolve } from "node:path";
-import { defineExtension, section } from "@earendil-works/pi-durable";
-import type { Settings } from "../shared/settings";
+import type {
+  CreateAgentSessionServicesOptions,
+  PromptTemplate,
+} from "@earendil-works/pi-coding-agent";
+
+type DefaultResourceLoaderOptions = NonNullable<
+  CreateAgentSessionServicesOptions["resourceLoaderOptions"]
+>;
+
 import { desktopConfigDir } from "./desktop-config";
-import { currentSettings } from "./settings";
+import { agentDir } from "./runtime-profile";
+import {
+  createSyntheticSourceInfo,
+  loadSkillsFromDir as sdkSkillsFromDir,
+} from "./sdk";
 
 async function textFile(path: string) {
   try {
@@ -301,117 +312,99 @@ export async function expandInput(
     : substituteArgs(template, match[2] ?? "");
 }
 
-function xml(text: string) {
-  return text
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&apos;");
-}
-
-export function codingResources(
+/** Map desktop resources exactly once into the SDK loader, after trust approval. */
+export async function desktopResourceOptions(
+  cwd: string,
+  trusted: boolean,
   globalDir = desktopConfigDir,
-  settings: () => Settings = currentSettings,
-) {
-  async function custom(cwd: string | undefined, name: string) {
-    return (
-      (cwd ? await textFile(join(cwd, ".pi", name)) : undefined) ??
-      (await textFile(join(globalDir, name)))
-    );
-  }
-  return defineExtension({
-    name: "desktop-coding-prompt",
-    sections: [
-      section("shell", () =>
-        settings().shell === "powershell"
-          ? "The bash tool runs PowerShell, not Bash. Use PowerShell syntax and cmdlets (for example Write-Output, Get-ChildItem, $env:NAME); do not use POSIX shell syntax. Commands run with -NoProfile -NonInteractive -Command."
-          : "The bash tool runs Git Bash on Windows (Bash on other platforms). Use POSIX/Bash syntax.",
-      ),
-      section(
-        "preamble",
-        async ({ agent }) =>
-          (await custom(agent.cwd, "SYSTEM.md")) ||
-          "You are a coding assistant running inside pi, a coding agent harness. Help users inspect files, run commands, and modify code.",
-        { tag: false },
-      ),
-      section("tools", async ({ agent }) => {
-        if (await custom(agent.cwd, "SYSTEM.md")) return undefined;
-        return `${agent.tools.map((tool) => `- ${tool.name}: ${tool.description}`).join("\n")}\n\nAdditional tools may be available.`;
-      }),
-      section("rules", async ({ agent }) => {
-        if (await custom(agent.cwd, "SYSTEM.md")) return undefined;
-        const guidance: Record<string, string[]> = {
-          read: ["Use read to examine files instead of cat or sed."],
-          edit: [
-            "Use edit for targeted changes. Batch changes to one file in a single call.",
-            "Each edits[].oldText must exactly and uniquely match the original file. Keep matches short and non-overlapping; merge nearby changes without including large unchanged regions.",
-          ],
-          write: ["Use write only for new files or complete rewrites."],
-        };
-        return [
-          agent.tools.some((tool) => tool.name === "bash")
-            ? "Use the bash tool for shell commands, using the syntax specified in the shell section."
-            : "",
-          ...agent.tools.flatMap((tool) => guidance[tool.name] ?? []),
-          "Be concise in your responses",
-          "Show file paths clearly when working with files",
-        ]
-          .filter(Boolean)
-          .map((rule) => `- ${rule}`)
-          .join("\n");
-      }),
-      section("addendum", ({ agent }) => custom(agent.cwd, "APPEND_SYSTEM.md")),
-      section("project_context", async ({ agent }) => {
-        const files = await loadContextFiles(
-          agent.cwd ?? process.cwd(),
-          globalDir,
-        );
-        return files.length
-          ? [
-              "Project-specific instructions and guidelines:",
-              ...files.map(
-                ({ path, content }) =>
-                  `<project_instructions path="${path}">\n${content}\n</project_instructions>`,
-              ),
-            ].join("\n\n")
-          : undefined;
-      }),
-      section("skills", async ({ agent }) => {
-        const reader =
-          ["read", "bash"].find((name) =>
-            agent.tools.some((tool) => tool.name === name),
-          ) ??
-          (["read", "bash"].some((name) =>
-            agent.callable.some((tool) => tool.name === name),
-          )
-            ? "indirect"
-            : undefined);
-        if (!reader) return undefined;
-        const skills = (
-          await loadSkills(agent.cwd ?? process.cwd(), globalDir)
-        ).filter((skill) => !skill.hidden);
-        return skills.length
-          ? [
-              "The following skills provide specialized instructions for specific tasks.",
-              reader === "indirect"
-                ? "Load a skill's file when the task matches its description."
-                : `Use ${reader === "read" ? "the read tool" : "bash"} to load a skill's file when the task matches its description.`,
-              "Resolve relative paths against the skill's directory (parent of SKILL.md). Use absolute paths in tool calls.",
-              "<available_skills>",
-              ...skills.map(
-                (skill) =>
-                  `<skill>\n<name>${xml(skill.name)}</name>\n<description>${xml(skill.description)}</description>\n<location>${xml(skill.path)}</location>\n</skill>`,
-              ),
-              "</available_skills>",
-            ].join("\n")
-          : undefined;
-      }),
-      section("cwd", ({ agent }) => agent.cwd?.replace(/\\/g, "/")),
-      section(
-        "date",
-        () => `Current date: ${new Date().toISOString().slice(0, 10)}`,
-      ),
-    ],
+  profileDir = agentDir,
+): Promise<Partial<DefaultResourceLoaderOptions>> {
+  const custom = async (name: string) =>
+    (trusted ? await textFile(join(cwd, ".pi", name)) : undefined) ??
+    (await textFile(join(globalDir, name)));
+  const system = await custom("SYSTEM.md");
+  const append = await custom("APPEND_SYSTEM.md");
+  const globalContext = [
+    await contextFile(globalDir),
+    await contextFile(profileDir),
+  ].filter(
+    (file): file is { path: string; content: string } => file !== undefined,
+  );
+  const context = trusted ? await loadContextFiles(cwd, globalDir) : [];
+  const agentsFiles = [...globalContext, ...context].filter(
+    (file, i, all) => all.findIndex((other) => other.path === file.path) === i,
+  );
+  const globalSkills = sdkSkillsFromDir({
+    dir: join(globalDir, "skills"),
+    source: "desktop",
   });
+  const globalPrompts: PromptTemplate[] = [];
+  for (const entry of await directoryEntries(join(globalDir, "prompts"))) {
+    if (!entry.name.endsWith(".md")) continue;
+    const filePath = join(globalDir, "prompts", entry.name);
+    const text = await textFile(filePath);
+    if (text === undefined) continue;
+    try {
+      const { metadata, body } = frontmatter(text);
+      globalPrompts.push({
+        name: basename(entry.name, ".md"),
+        description:
+          typeof metadata.description === "string" ? metadata.description : "",
+        content: body,
+        filePath,
+        sourceInfo: createSyntheticSourceInfo(filePath, {
+          source: "desktop",
+          scope: "user",
+          origin: "top-level",
+          baseDir: globalDir,
+        }),
+      });
+    } catch {
+      /* Invalid desktop prompt frontmatter is not executable. */
+    }
+  }
+  const existing = async (name: string) => {
+    const path = join(globalDir, name);
+    try {
+      return (await stat(path)).isDirectory() ? [path] : [];
+    } catch {
+      return [];
+    }
+  };
+  return {
+    // SDK additionalExtensionPaths are entrypoints, not discovery roots.
+    // Enumerate names only; the SDK remains the sole code/module loader.
+    additionalExtensionPaths: (
+      await directoryEntries(join(globalDir, "extensions"))
+    )
+      .filter(
+        (entry) =>
+          !entry.name.startsWith(".") &&
+          entry.name !== "node_modules" &&
+          (entry.isDirectory() || /\.[cm]?[jt]s$/.test(entry.name)),
+      )
+      .map((entry) => join(globalDir, "extensions", entry.name)),
+    additionalSkillPaths: await existing("skills"),
+    additionalPromptTemplatePaths: await existing("prompts"),
+    noContextFiles: true,
+    agentsFilesOverride: () => ({ agentsFiles }),
+    systemPromptOverride: (base) => system ?? base,
+    appendSystemPromptOverride: (base) =>
+      append === undefined ? base : [append],
+    // Keep global-first collisions from the existing desktop resource convention.
+    skillsOverride: ({ skills, diagnostics }) => ({
+      skills: [...globalSkills.skills, ...skills].filter(
+        (skill, i, all) =>
+          all.findIndex((other) => other.name === skill.name) === i,
+      ),
+      diagnostics: [...globalSkills.diagnostics, ...diagnostics],
+    }),
+    promptsOverride: ({ prompts, diagnostics }) => ({
+      prompts: [...globalPrompts, ...prompts].filter(
+        (prompt, i, all) =>
+          all.findIndex((other) => other.name === prompt.name) === i,
+      ),
+      diagnostics,
+    }),
+  };
 }

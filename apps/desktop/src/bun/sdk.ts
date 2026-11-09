@@ -1,0 +1,26 @@
+import "./runtime-profile";
+// Dynamic import is intentional: SDK config reads PI_CODING_AGENT_DIR on import.
+export const {
+  ModelRuntime,
+  SessionManager,
+  SettingsManager,
+  DefaultResourceLoader,
+  createAgentSessionRuntime,
+  createAgentSessionServices,
+  createAgentSessionFromServices,
+  createBashTool,
+  createPowerShellTool,
+  createReadTool,
+  createEditTool,
+  createWriteTool,
+  createBashToolDefinition,
+  createPowerShellToolDefinition,
+  resizeImage,
+  formatDimensionNote,
+  defineTool,
+  Theme,
+  initTheme,
+  getAgentDir,
+  loadSkillsFromDir,
+  createSyntheticSourceInfo,
+} = await import("@earendil-works/pi-coding-agent");

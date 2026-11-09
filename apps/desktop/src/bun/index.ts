@@ -1,3 +1,4 @@
+import "./runtime-profile";
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import Electrobun, {
@@ -8,7 +9,7 @@ import Electrobun, {
 } from "electrobun/bun";
 import { dictionary } from "../shared/i18n";
 import { sanitizeOverride } from "../shared/model-overrides";
-import { isModelEnabled } from "../shared/models";
+import type { PackageChange } from "../shared/packages";
 import { knownProject, withoutProject } from "../shared/projects";
 import type {
   Appearance,
@@ -16,6 +17,7 @@ import type {
   RPCSchema,
   SessionTarget,
 } from "../shared/rpc-schema";
+import type { OpenSessionParams } from "../shared/runtime-contract";
 import { sessionIdFromLink } from "../shared/session-links";
 import { patchSettings } from "../shared/settings";
 import {
@@ -46,11 +48,13 @@ import {
   writeModelOverride,
 } from "./model-settings";
 import { createCompletionTracker } from "./notifications";
+import { createPackageService } from "./packages";
 import {
   abortSession,
   applyModelSettings,
   availableModels,
   closeSession,
+  configureSessionHost,
   deleteSession,
   disposeSessions,
   forkSession,
@@ -60,14 +64,17 @@ import {
   modelInfo,
   openSession,
   promptSession,
+  refreshUserCatalog,
   renameSession,
   rewindSession,
   runtime,
-  sessionCwd,
+  sessionHost,
+  setDisabledModels,
   setSessionEffort,
   setSessionModel,
   utilityModels,
 } from "./pi-service";
+import { agentDir } from "./runtime-profile";
 import { validateSessionScope } from "./session-scope";
 import { loadSettings, saveSettings } from "./settings";
 import { synchronizeClientArea } from "./window-layout";
@@ -137,37 +144,8 @@ async function resolveSession(input: SessionTarget) {
   return info;
 }
 let windowFocused = true;
-function openManagedSession(input: { cwd: string; id?: string }) {
-  const completion = createCompletionTracker();
-  return openSession(
-    input,
-    (sessionId, event, contextUsage) => {
-      rpc.send.agentEvent({ sessionId, event, contextUsage });
-      const outcome = completion(event);
-      if (event.transcript.running)
-        void desktopState.clearCompletion(sessionId).catch(report);
-      if (!outcome) return;
-      void desktopState.completeSession(sessionId, outcome).catch(report);
-      const t = dictionary(settings.language);
-      const notice: Notice = {
-        message:
-          outcome === "error"
-            ? (event.failure ?? t["Agent failed"])
-            : t["Agent finished"],
-        level: outcome,
-        session: { id: sessionId, cwd: input.cwd },
-      };
-      rpc.send.notification(notice);
-      if (!windowFocused || window.isMinimized()) {
-        try {
-          Utils.showNotification({ title: "pig", body: notice.message });
-        } catch (error) {
-          console.error("Cannot show desktop notification:", error);
-        }
-      }
-    },
-    modelPreferences.disabled,
-  );
+function openManagedSession(input: OpenSessionParams) {
+  return openSession(input);
 }
 const settingsFile = join(desktopConfigDir, "settings.json");
 let settings = await loadSettings(settingsFile);
@@ -196,14 +174,95 @@ const report = (error: unknown) => {
   rpc.send.error({ message: String(error) });
 };
 initImageMenu(report);
+const packageApplies = new Map<
+  string,
+  {
+    change: PackageChange;
+    pending: Set<string>;
+    catalog: boolean;
+    errors: string[];
+  }
+>();
+function finishPackageApply() {
+  for (const [id, application] of packageApplies) {
+    if (application.pending.size || application.catalog) continue;
+    packages.reportApply(application.change, {
+      status: application.errors.length ? "error" : "applied",
+      diagnostics: application.errors,
+    });
+    packageApplies.delete(id);
+  }
+}
+const packages = createPackageService({
+  agentDir,
+  onChanged(change) {
+    const targets = sessionHost.runtimeState().sessions;
+    const application = {
+      change,
+      pending: new Set(targets.map((s) => s.address.sessionId)),
+      catalog: true,
+      errors: [] as string[],
+    };
+    packageApplies.set(change.opId, application);
+    void refreshUserCatalog()
+      .then(
+        (diagnostics) => {
+          application.errors.push(...diagnostics);
+        },
+        (error) => {
+          application.errors.push(String(error));
+        },
+      )
+      .finally(() => {
+        application.catalog = false;
+        finishPackageApply();
+      });
+    for (const target of targets) {
+      if (target.phase !== "ready") {
+        application.errors.push(
+          `Session ${target.address.sessionId} is ${target.phase}; reopen to apply packages`,
+        );
+        application.pending.delete(target.address.sessionId);
+        continue;
+      }
+      void sessionHost
+        .reloadSession(target.address)
+        .then(
+          (result) => {
+            if (result.state === "applied")
+              application.pending.delete(target.address.sessionId);
+          },
+          (error) => {
+            application.errors.push(String(error));
+            application.pending.delete(target.address.sessionId);
+          },
+        )
+        .finally(finishPackageApply);
+    }
+    return { status: "pending", pendingSessionIds: [...application.pending] };
+  },
+});
 const rpc = BrowserView.defineRPC<RPCSchema>({
   maxRequestTime: 600_000,
   handlers: {
     requests: {
-      prompt: async ({ sessionId, text, requestId, images }) => {
-        await validateScope(await sessionCwd(sessionId));
-        return promptSession(sessionId, text, requestId, images);
-      },
+      packageProfile: () => ({ agentDir }),
+      packageSearch: (input) => packages.search(input),
+      packageInstalled: () => packages.listInstalled(),
+      packageOperate: (input) => packages.operate(input),
+      prompt: (input) => promptSession(input),
+      getOpenState: (input) => sessionHost.getOpenState(input),
+      cancelOpen: (input) => sessionHost.cancelOpen(input),
+      getSessionSnapshot: (input) => sessionHost.getSessionSnapshot(input),
+      getPromptReceipt: (input) => sessionHost.getPromptReceipt(input),
+      syncDraft: (input) => sessionHost.syncDraft(input),
+      resolveExtensionUI: (input) => sessionHost.resolveExtensionUI(input),
+      terminalCommand: (input) => sessionHost.terminalCommand(input),
+      runtimeState: () => sessionHost.runtimeState(),
+      heartbeatUI: (input) => sessionHost.heartbeatUI(input),
+      abort: (input) => abortSession(input),
+      closeSession: (input) => closeSession(input),
+      reloadSession: (input) => sessionHost.reloadSession(input),
       copyImage: ({ src }) => copyImage(src),
       saveImage: ({ src }) => saveImage(src),
       appearance: () => appearance,
@@ -273,7 +332,8 @@ const rpc = BrowserView.defineRPC<RPCSchema>({
           const info = (await listSessions(cwd)).find(
             (session) => session.id === id,
           );
-          if (info) return openManagedSession({ cwd, id });
+          if (info)
+            return openManagedSession({ cwd, id, openId: crypto.randomUUID() });
         }
         throw new Error(
           "Chat not found in registered projects or general chats.",
@@ -285,19 +345,14 @@ const rpc = BrowserView.defineRPC<RPCSchema>({
           const info = await resolveSession({ cwd: input.cwd, id: input.id });
           return openManagedSession({
             cwd: input.cwd,
+            openId: input.openId,
             id: info.id,
           });
         }
         return openManagedSession(input);
       },
-      rewindSession: async ({ sessionId, timestamp }) => {
-        await validateScope(await sessionCwd(sessionId));
-        return openManagedSession(await rewindSession(sessionId, timestamp));
-      },
-      forkSession: async ({ sessionId, timestamp }) => {
-        await validateScope(await sessionCwd(sessionId));
-        return openManagedSession(await forkSession(sessionId, timestamp));
-      },
+      rewindSession: (input) => rewindSession(input),
+      forkSession: (input) => forkSession(input),
       removeProject: (input) =>
         saveProjects((current) => withoutProject(current, input?.cwd)),
       setProjectState: (input) =>
@@ -309,15 +364,7 @@ const rpc = BrowserView.defineRPC<RPCSchema>({
           throw new Error("Invalid provider.");
         await logoutProvider(provider);
       },
-      setModel: async ({ sessionId, provider, id }) => {
-        await validateScope(await sessionCwd(sessionId));
-        const model = (await availableModels()).find(
-          (m) => m.provider === provider && m.id === id,
-        );
-        if (!model || !isModelEnabled(model, modelPreferences.disabled))
-          throw new Error("Model unavailable or hidden.");
-        return setSessionModel(sessionId, provider, id);
-      },
+      setModel: (input) => setSessionModel(input),
       setModelEnabled: async ({ provider, id, enabled }) => {
         if (
           typeof enabled !== "boolean" ||
@@ -326,7 +373,9 @@ const rpc = BrowserView.defineRPC<RPCSchema>({
           )
         )
           throw new Error("Invalid model preference.");
-        return modelPreferences.setEnabled(provider, id, enabled);
+        const next = await modelPreferences.setEnabled(provider, id, enabled);
+        setDisabledModels(next);
+        return next;
       },
       setModelsEnabled: async ({ provider, ids, enabled }) => {
         if (
@@ -347,7 +396,13 @@ const rpc = BrowserView.defineRPC<RPCSchema>({
           )
         )
           throw new Error("Invalid model preferences.");
-        return modelPreferences.setManyEnabled(provider, ids, enabled);
+        const next = await modelPreferences.setManyEnabled(
+          provider,
+          ids,
+          enabled,
+        );
+        setDisabledModels(next);
+        return next;
       },
       setModelOverride: async ({ provider, id, override }) => {
         if (
@@ -373,10 +428,7 @@ const rpc = BrowserView.defineRPC<RPCSchema>({
         await writeDefaultEffort(provider, id, effort);
         await applyModelSettings();
       },
-      setEffort: async ({ sessionId, effort }) => {
-        await validateScope(await sessionCwd(sessionId));
-        return setSessionEffort(sessionId, effort);
-      },
+      setEffort: (input) => setSessionEffort(input),
     },
     messages: {
       setSettings: (patch) => {
@@ -446,17 +498,78 @@ const rpc = BrowserView.defineRPC<RPCSchema>({
         const t = dictionary(settings.language);
         showImageMenu(src, { copy: t["Copy image"], save: t["Save image"] });
       },
-      abort: ({ sessionId }) => {
-        void Promise.resolve()
-          .then(() => abortSession(sessionId))
-          .catch(report);
-      },
-      closeSession: ({ sessionId }) => {
-        void closeSession(sessionId).catch(report);
-      },
+      connectUI: (input) => sessionHost.connectUI(input),
+      disconnectUI: (input) => sessionHost.disconnectUI(input),
     },
   },
 });
+const completions = new Map<
+  string,
+  ReturnType<typeof createCompletionTracker>
+>();
+packages.subscribe((event) => rpc.send.packageEvent(event));
+configureSessionHost(
+  {
+    ui: (event) => rpc.send.extensionUIEvent(event),
+    terminal: (event) => rpc.send.terminalEvent(event),
+    runtime: (event) => {
+      rpc.send.runtimeEvent(event);
+      if (event.type === "replaced" || event.type === "closed") {
+        const previous =
+          event.type === "replaced" ? event.previous : event.address;
+        for (const application of packageApplies.values())
+          application.pending.delete(previous.sessionId);
+        finishPackageApply();
+      }
+      if (event.type !== "snapshot") return;
+      const snapshot = event.snapshot;
+      const sessionId = snapshot.address.sessionId;
+      if (snapshot.failure?.startsWith("Reload failed:")) {
+        for (const application of packageApplies.values())
+          if (application.pending.delete(sessionId))
+            application.errors.push(snapshot.failure);
+        finishPackageApply();
+      }
+      const wire = {
+        type: "snapshot" as const,
+        address: snapshot.address,
+        snapshotSeq: snapshot.snapshotSeq,
+        transcript: snapshot.transcript,
+        failure: snapshot.failure,
+        aborted: snapshot.aborted,
+      };
+      rpc.send.sessionEvent(wire);
+      let completion = completions.get(sessionId);
+      if (!completion) {
+        completion = createCompletionTracker();
+        completions.set(sessionId, completion);
+      }
+      const outcome = completion(wire);
+      if (wire.transcript.running)
+        void desktopState.clearCompletion(sessionId).catch(report);
+      if (!outcome) return;
+      void desktopState.completeSession(sessionId, outcome).catch(report);
+      const t = dictionary(settings.language);
+      const notice: Notice = {
+        message:
+          outcome === "error"
+            ? (wire.failure ?? t["Agent failed"])
+            : t["Agent finished"],
+        level: outcome,
+        session: { id: sessionId, cwd: snapshot.info.cwd },
+      };
+      rpc.send.notification(notice);
+      if (!windowFocused || window.isMinimized()) {
+        try {
+          Utils.showNotification({ title: "pig", body: notice.message });
+        } catch (error) {
+          console.error("Cannot show desktop notification", error);
+        }
+      }
+    },
+  },
+  modelPreferences.disabled,
+);
 let url = "views://mainview/index.html";
 if ((await Updater.localInfo.channel()) === "dev") {
   setNativeEnvironment(
@@ -496,6 +609,9 @@ window.on("resize", () => {
   if (backdropApplied) synchronizeClientArea(window.ptr, window.webview);
   rpc.send.windowState({ maximized: window.isMaximized() });
 });
+// Native navigation invalidates the old Root even if its cooperative unload
+// message is lost. Do not disconnect at dom-ready after the new Root connects.
+window.webview.on("will-navigate", () => sessionHost.disconnectAll());
 window.webview.on("dom-ready", () => {
   rpc.send.windowState({ maximized: window.isMaximized() });
   try {
