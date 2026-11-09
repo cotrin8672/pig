@@ -1,450 +1,751 @@
-import { Download, Package, Search, ShieldAlert, Trash2 } from "lucide-react";
+import {
+  ArrowLeft,
+  ArrowUpCircle,
+  Check,
+  CircleAlert,
+  Copy,
+  Download,
+  ExternalLink,
+  LoaderCircle,
+  Package,
+  Puzzle,
+  Search,
+  ShieldAlert,
+  Trash2,
+  X,
+} from "lucide-react";
 import { useEffect, useRef, useState } from "react";
-import {
-  type InstalledPackage,
-  type MarketPackage,
-  npmName,
-  type PackageCompatibility,
-  type PackageOperation,
-  type PackageSearchResult,
-  type PackageService,
-} from "../shared/packages";
-import {
-  compatibilityLabel,
-  emptyPackageState,
-  receivePackageEvent,
-} from "./package-state";
+import { npmName } from "../shared/packages";
+import type {
+  InstalledPackage,
+  MarketPackage,
+  PackageOpStatus,
+  PackageType,
+} from "../shared/rpc-schema";
+import { getT, useT } from "./i18n";
+import { navigate } from "./navigation";
+import { rpc } from "./rpc";
+import { receivePackageOp, showError, useStore } from "./store";
 import "./extensions.css";
 
-export type ExtensionsProps = {
-  /** Root integration supplies an RPC-backed service; absent handlers never imply success. */
-  service?: PackageService;
-};
-const message = (error: unknown) =>
-  error instanceof Error ? error.message : String(error);
-
-function Compatibility({ value }: { value: PackageCompatibility }) {
-  // A tested badge without evidence must not claim verified compatibility.
-  const status = value.evidence
-    ? value.status
-    : value.status === "limited"
-      ? "limited"
-      : "unverified";
+function CopyCommand({ name }: { name: string }) {
+  const t = useT();
+  const [copied, setCopied] = useState(false);
+  const timer = useRef<ReturnType<typeof setTimeout>>(undefined);
+  useEffect(() => () => clearTimeout(timer.current), []);
+  async function copy() {
+    try {
+      if (!navigator.clipboard?.writeText)
+        throw new Error(t["Clipboard is unavailable."]);
+      await navigator.clipboard.writeText(`pi install npm:${name}`);
+      setCopied(true);
+      clearTimeout(timer.current);
+      timer.current = setTimeout(() => setCopied(false), 1500);
+    } catch (error) {
+      showError(t.copyError(String(error)));
+    }
+  }
   return (
-    <span className="package-badge" title={value.limitations ?? value.evidence}>
-      {compatibilityLabel(status)}
+    <button
+      type="button"
+      className="package-command"
+      title={t.copyInstall(name)}
+      aria-label={t.copyCommand(name)}
+      onClick={() => void copy()}
+    >
+      <span className="package-command-text">$ pi install npm:{name}</span>
+      <span
+        className={`package-copy-feedback ${copied ? "is-copied" : ""}`}
+        aria-live="polite"
+      >
+        {copied ? (
+          <>
+            <Check size={13} aria-hidden="true" />
+
+            {t.Copied}
+          </>
+        ) : (
+          <Copy size={13} aria-hidden="true" />
+        )}
+      </span>
+    </button>
+  );
+}
+
+// Package discovery should fail promptly even if an older main process lacks handlers.
+function request<T>(promise: Promise<T>): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(
+      () =>
+        reject(
+          new Error(getT()["Package service did not respond. Please retry."]),
+        ),
+      20000,
+    );
+    promise.then(resolve, reject).finally(() => clearTimeout(timer));
+  });
+}
+function downloads(n: number) {
+  return getT().downloads(
+    String(
+      n >= 1e6
+        ? `${+(n / 1e6).toFixed(1)}M`
+        : n >= 1000
+          ? `${+(n / 1000).toFixed(1)}k`
+          : n,
+    ),
+  );
+}
+function relative(date: string) {
+  const t = getT();
+  const days = Math.max(
+    0,
+    Math.floor((Date.now() - Date.parse(date)) / 86400000),
+  );
+  if (!Number.isFinite(days)) return t["Date unavailable"];
+  return days < 1
+    ? t.today
+    : days < 30
+      ? t.relativeDate(days, "d")
+      : days < 365
+        ? t.relativeDate(Math.floor(days / 30), "mo")
+        : t.relativeDate(Math.floor(days / 365), "y");
+}
+function Badges({ types }: { types: PackageType[] }) {
+  return (
+    <span className="package-badges">
+      {(types.length ? types : ["package"]).map((type) => (
+        <span key={type} className={`package-badge package-${type}`}>
+          {type}
+        </span>
+      ))}
     </span>
   );
 }
-function ConfirmPackage({
-  operation,
-  profile,
+function Link({ url, children }: { url: string; children: React.ReactNode }) {
+  return (
+    <a
+      href={url}
+      onClick={(e) => {
+        e.preventDefault();
+        rpc.send.openExternal({ url });
+      }}
+    >
+      {children}
+      <ExternalLink size={10} aria-hidden="true" />
+    </a>
+  );
+}
+function Preview({ url }: { url?: string | null }) {
+  const [failed, setFailed] = useState(false);
+  return (
+    <div className="package-preview">
+      {url && !failed ? (
+        <img
+          src={url}
+          alt=""
+          loading="lazy"
+          decoding="async"
+          onError={() => setFailed(true)}
+        />
+      ) : (
+        <Package size={28} strokeWidth={1.25} aria-hidden="true" />
+      )}
+    </div>
+  );
+}
+type Confirmation = {
+  action: "install" | "uninstall";
+  source: string;
+  name: string;
+};
+function Confirm({
+  value,
   close,
   confirm,
 }: {
-  operation: PackageOperation;
-  profile: string;
+  value: Confirmation;
   close: () => void;
   confirm: () => void;
 }) {
+  const t = useT();
   const dialog = useRef<HTMLDialogElement>(null);
-  const cancelButton = useRef<HTMLButtonElement>(null);
   useEffect(() => {
     const previous = document.activeElement as HTMLElement | null;
     dialog.current?.showModal();
-    cancelButton.current?.focus();
     return () => {
       previous?.focus();
     };
   }, []);
+  const install = value.action === "install";
   return (
     <dialog
       ref={dialog}
-      className="package-confirm"
+      className="package-dialog"
       aria-labelledby="package-confirm-title"
+      aria-describedby="package-confirm-description"
       onCancel={close}
     >
-      <h2 id="package-confirm-title">Confirm {operation.action}</h2>
-      <p>
-        {operation.action === "install" ? operation.name : operation.source}
+      <ShieldAlert
+        size={24}
+        className={install ? "package-warning" : "muted"}
+      />
+      <h2 id="package-confirm-title">
+        {install ? t.Install : t.Uninstall} {value.name}?
+      </h2>
+      <p id="package-confirm-description" className="muted">
+        {install
+          ? t[
+              "Packages can run code on your machine. Only install packages you trust."
+            ]
+          : t[
+              "This package will be removed from your pi configuration. Open chats will be reloaded."
+            ]}
       </p>
-      <p>
-        Pi packages execute arbitrary code with this app’s permissions. npm
-        listing is not a safety review. UI compatibility may be unverified.
-      </p>
-      <p>
-        User scope only: <code>{profile}</code>. Running or input-waiting
-        sessions must wait for safe application.
-      </p>
-      <div className="package-card-footer">
-        <button ref={cancelButton} type="button" onClick={close}>
-          Cancel
+      <div className="package-dialog-actions">
+        <button type="button" onClick={close}>
+          {t.Cancel}
         </button>
-        <button type="button" onClick={confirm}>
-          Confirm {operation.action}
+        <button type="button" className="primary" onClick={confirm}>
+          {install ? t.Install : t.Uninstall}
         </button>
       </div>
     </dialog>
   );
 }
-
-/** Keep this component mounted with a stable service; key by agentDir when changing profile. */
-export function Extensions({ service }: ExtensionsProps = {}) {
-  const [tab, setTab] = useState<"market" | "installed">("market");
+function operation(source: string, ops: Record<string, PackageOpStatus>) {
+  const matches = Object.values(ops).filter(
+    (op) =>
+      op.source === source ||
+      (npmName(source) && npmName(op.source) === npmName(source)),
+  );
+  return matches.find((op) => op.status === "running") ?? matches.at(-1);
+}
+function Progress({ op }: { op?: PackageOpStatus }) {
+  const t = useT();
+  if (op?.status === "running")
+    return (
+      <span className="status" role="status">
+        <LoaderCircle size={14} className="spinner" />
+        {op.action === "install"
+          ? t["Installing…"]
+          : op.action === "uninstall"
+            ? t["Removing…"]
+            : t["Updating…"]}
+      </span>
+    );
+  return null;
+}
+function OpError({ op }: { op?: PackageOpStatus }) {
+  return op?.status === "error" ? (
+    <p className="package-op-error error" role="alert">
+      <CircleAlert size={14} />
+      {op.message}
+    </p>
+  ) : null;
+}
+export function Extensions() {
+  const t = useT();
+  const installed = useStore((s) => s.installed);
+  const ops = useStore((s) => s.packageOps);
+  const [tab, setTab] = useState<"marketplace" | "installed">("marketplace");
   const [query, setQuery] = useState("");
-  const [result, setResult] = useState<PackageSearchResult>();
+  const [search, setSearch] = useState("");
+  const [retry, setRetry] = useState(0);
+  const [items, setItems] = useState<MarketPackage[]>([]);
+  const [previews, setPreviews] = useState<Record<string, string | null>>({});
   const [page, setPage] = useState(0);
-  const [searching, setSearching] = useState(false);
-  const [searchError, setSearchError] = useState("");
-  const [error, setError] = useState("");
-  const [state, setState] = useState(emptyPackageState);
-  const [confirmation, setConfirmation] = useState<PackageOperation>();
-  const [busy, setBusy] = useState(false);
-  const current = useRef(service);
-  current.current = service;
-  const searchGeneration = useRef(0);
-  const installedGeneration = useRef(0);
-  const loading = useRef(false);
-
+  const [total, setTotal] = useState(0);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string>();
+  const [installedLoading, setInstalledLoading] = useState(true);
+  const [installedError, setInstalledError] = useState<string>();
+  const [installedRetry, setInstalledRetry] = useState(0);
+  const [confirmation, setConfirmation] = useState<Confirmation>();
   useEffect(() => {
-    setState(emptyPackageState());
-    setResult(undefined);
-    setPage(0);
-    setError("");
-    setSearchError("");
-    setConfirmation(undefined);
-    setBusy(false);
-    setSearching(false);
-    searchGeneration.current++;
-    installedGeneration.current++;
-    if (!service) return;
-    const revision = ++installedGeneration.current;
-    const unsubscribe = service.subscribe((event) => {
-      if (current.current !== service) return;
-      if (event.type === "installed" && event.agentDir === service.agentDir)
-        installedGeneration.current++;
-      setState((old) => receivePackageEvent(old, service.agentDir, event));
-    });
-    void service
-      .listInstalled()
-      .then((installed) => {
-        if (
-          current.current === service &&
-          revision === installedGeneration.current
-        )
-          setState((old) => ({ ...old, installed }));
+    const timer = setTimeout(() => {
+      setSearch(query.trim());
+      setPage(0);
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [query]);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: Retry explicitly refreshes the request.
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    setError(undefined);
+    if (page === 0) setItems([]);
+    void request(rpc.request.searchPackages({ query: search, page }))
+      .then(async (result) => {
+        if (cancelled) return;
+        setItems((previous) =>
+          page === 0
+            ? result.items
+            : [
+                ...previous,
+                ...result.items.filter(
+                  (item) => !previous.some((p) => p.name === item.name),
+                ),
+              ],
+        );
+        setTotal(result.total);
+        setLoading(false);
+        for (let i = 0; i < result.items.length; i += 64) {
+          try {
+            const images = await request(
+              rpc.request.packagePreviews({
+                names: result.items.slice(i, i + 64).map((p) => p.name),
+              }),
+            );
+            if (!cancelled)
+              setPreviews((previous) => ({ ...previous, ...images }));
+          } catch {
+            /* Preview failure leaves a neutral placeholder. */
+          }
+        }
       })
-      .catch((failure) => {
-        if (current.current === service) setError(message(failure));
+      .catch((e: unknown) => {
+        if (!cancelled) {
+          setError(String(e));
+          setLoading(false);
+        }
       });
     return () => {
-      unsubscribe();
-      searchGeneration.current++;
-      installedGeneration.current++;
+      cancelled = true;
     };
-  }, [service]);
-
-  async function search(nextPage: number) {
-    if (!service) return;
-    const generation = ++searchGeneration.current;
-    setSearching(true);
-    setSearchError("");
-    try {
-      const found = await service.search({ query, page: nextPage });
-      if (
-        current.current !== service ||
-        generation !== searchGeneration.current
-      )
-        return;
-      setResult(found);
-      setPage(nextPage);
-    } catch (failure) {
-      if (
-        current.current === service &&
-        generation === searchGeneration.current
-      )
-        setSearchError(message(failure));
-      // Retain the last successful result; never replace it with an empty failure state.
-    } finally {
-      if (
-        current.current === service &&
-        generation === searchGeneration.current
-      )
-        setSearching(false);
-    }
-  }
-  async function refresh() {
-    if (!service) return;
-    const revision = ++installedGeneration.current;
-    setError("");
-    try {
-      const installed = await service.listInstalled();
-      if (
-        current.current === service &&
-        revision === installedGeneration.current
-      )
-        setState((old) => ({ ...old, installed }));
-    } catch (failure) {
-      if (current.current === service) setError(message(failure));
-    }
-  }
-  async function operate(operation: PackageOperation) {
-    if (!service || loading.current) return;
-    loading.current = true;
-    setBusy(true);
-    setConfirmation(undefined);
-    setError("");
-    try {
-      const response = await service.operate(operation);
-      if (current.current !== service) return;
-      setState((old) => {
-        const saved = receivePackageEvent(old, service.agentDir, {
-          type: "operation",
-          operation: response.operation,
-        });
-        return saved.applications.some(
-          (app) => app.change.opId === response.operation.opId,
-        )
-          ? saved
-          : receivePackageEvent(saved, service.agentDir, {
-              type: "apply",
-              change: response.operation,
-              report: response.apply,
-            });
+  }, [search, page, retry]);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: Retry explicitly refreshes the request.
+  useEffect(() => {
+    let cancelled = false;
+    const previous = useStore.getState().installed;
+    setInstalledLoading(true);
+    setInstalledError(undefined);
+    void request(rpc.request.listInstalled())
+      .then((next) => {
+        if (!cancelled && useStore.getState().installed === previous)
+          useStore.setState({ installed: next });
+      })
+      .catch((e: unknown) => {
+        if (!cancelled) setInstalledError(String(e));
+      })
+      .finally(() => {
+        if (!cancelled) setInstalledLoading(false);
       });
-    } catch (failure) {
-      if (current.current === service) setError(message(failure));
-    } finally {
-      loading.current = false;
-      if (current.current === service) setBusy(false);
+    return () => {
+      cancelled = true;
+    };
+  }, [installedRetry]);
+  function run(action: PackageOpStatus["action"], source: string) {
+    if (operation(source, useStore.getState().packageOps)?.status === "running")
+      return;
+    const opId = crypto.randomUUID();
+    receivePackageOp({ opId, source, action, status: "running" });
+    try {
+      if (action === "install")
+        rpc.send.installPackage({ opId, name: npmName(source) ?? source });
+      else if (action === "uninstall")
+        rpc.send.uninstallPackage({ opId, source });
+      else rpc.send.updatePackage({ opId, source });
+    } catch (e) {
+      receivePackageOp({
+        opId,
+        source,
+        action,
+        status: "error",
+        message: String(e),
+      });
     }
   }
-  const isInstalled = (name: string) =>
-    state.installed.some((pkg) => npmName(pkg.source) === name);
-  function ask(
-    action: PackageOperation["action"],
-    pkg: MarketPackage | InstalledPackage,
-  ) {
-    const opId = crypto.randomUUID();
-    setConfirmation(
-      action === "install"
-        ? { opId, action, name: pkg.name }
-        : { opId, action, source: (pkg as InstalledPackage).source },
-    );
+  function selectTab(next: typeof tab, focus = false) {
+    setTab(next);
+    if (focus) document.getElementById(`extensions-tab-${next}`)?.focus();
   }
   return (
-    <section className="extensions-page">
-      <h1>Pi Marketplace</h1>
-      <p className="package-description">
-        Discover ordinary Pi packages on npm. Manage packages for this app’s SDK
-        user profile only, not project packages or the Pi CLI profile.
+    <div className="extensions-page">
+      <button
+        className="back-button"
+        type="button"
+        onClick={() => navigate("chat")}
+      >
+        <ArrowLeft size={14} />
+
+        {t["Back to chat"]}
+      </button>
+      <h1>{t.Extensions}</h1>
+      <p className="muted page-description">
+        {t["Make pi your own with community packages."]}
       </p>
-      <p className="package-warning">
-        <ShieldAlert size={16} aria-hidden="true" /> Packages can execute
-        arbitrary code with your user permissions. npm availability does not
-        mean safe or GUI compatible.
-      </p>
-      <p className="package-scope">
-        SDK profile: <code>{service?.agentDir ?? "not connected"}</code> · User
-        scope
-      </p>
-      {!service && (
-        <p role="status">
-          Marketplace service is not connected. Search and package changes are
-          unavailable until SDK integration is enabled.
-        </p>
-      )}
-      <nav className="extensions-tabs" aria-label="Package views">
-        <button
-          type="button"
-          aria-pressed={tab === "market"}
-          onClick={() => setTab("market")}
-        >
-          Marketplace
-        </button>
-        <button
-          type="button"
-          aria-pressed={tab === "installed"}
-          onClick={() => setTab("installed")}
-        >
-          Installed ({state.installed.length})
-        </button>
-      </nav>
-      {error && (
-        <p className="package-error" role="alert">
-          {error}
-        </p>
-      )}
-      {tab === "market" ? (
-        <>
-          <form
-            className="package-search"
-            onSubmit={(event) => {
-              event.preventDefault();
-              void search(0);
-            }}
-          >
-            <Search size={16} aria-hidden="true" />
-            <input
-              aria-label="Search Pi packages"
-              placeholder="Search Pi packages"
-              maxLength={200}
-              value={query}
-              onChange={(event) => setQuery(event.target.value)}
-              disabled={!service}
-            />
-            <button type="submit" disabled={!service || searching}>
-              {searching ? "Searching…" : "Search"}
-            </button>
-          </form>
-          {searchError && (
-            <p role="alert" className="package-error">
-              {searchError} Previous results are retained.
-            </p>
-          )}
-          <p className="package-results" role="status">
-            {result
-              ? `${result.total} packages · Page ${page + 1}`
-              : "Search npm’s pi-package catalog to get started."}
-          </p>
-          <div className="package-list market-grid" aria-busy={searching}>
-            {result?.items.map((pkg) => (
-              <article className="market-card" key={pkg.name}>
-                <div className="package-card-heading">
-                  <Package size={24} aria-hidden="true" />
-                  <h2>{pkg.name}</h2>
-                </div>
-                <p className="package-meta">
-                  {pkg.version} · {pkg.monthlyDownloads.toLocaleString()}{" "}
-                  monthly downloads
-                </p>
-                <p className="package-description">{pkg.description}</p>
-                <div className="package-badges">
-                  <Compatibility value={pkg.compatibility} />
-                  {pkg.types.map((type) => (
-                    <span key={type} className="package-badge">
-                      {type}
-                    </span>
-                  ))}
-                </div>
-                <div className="package-card-footer">
-                  <button
-                    type="button"
-                    disabled={!service || busy || isInstalled(pkg.name)}
-                    onClick={() => ask("install", pkg)}
-                  >
-                    <Download size={14} aria-hidden="true" />
-                    {isInstalled(pkg.name) ? "Installed" : "Install"}
-                  </button>
-                </div>
-              </article>
-            ))}
-          </div>
-          {result && (
-            <div className="package-pagination">
-              <button
-                type="button"
-                disabled={searching || page === 0}
-                onClick={() => void search(page - 1)}
-              >
-                Previous
-              </button>
-              <button
-                type="button"
-                disabled={
-                  searching ||
-                  page >= 199 ||
-                  (page + 1) * result.pageSize >= result.total
-                }
-                onClick={() => void search(page + 1)}
-              >
-                Next
-              </button>
-            </div>
-          )}
-        </>
-      ) : (
-        <>
+      <div
+        className="extensions-tabs"
+        role="tablist"
+        aria-label={t.Extensions}
+        onKeyDown={(e) => {
+          if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(e.key))
+            return;
+          e.preventDefault();
+          selectTab(
+            e.key === "Home"
+              ? "marketplace"
+              : e.key === "End"
+                ? "installed"
+                : tab === "installed"
+                  ? "marketplace"
+                  : "installed",
+            true,
+          );
+        }}
+      >
+        {(["marketplace", "installed"] as const).map((name) => (
           <button
+            key={name}
             type="button"
-            disabled={!service || busy}
-            onClick={() => void refresh()}
+            id={`extensions-tab-${name}`}
+            role="tab"
+            aria-selected={tab === name}
+            aria-controls={`extensions-panel-${name}`}
+            tabIndex={tab === name ? 0 : -1}
+            onClick={() => selectTab(name)}
           >
-            Refresh Installed
-          </button>
-          {!state.installed.length && (
-            <p>
-              No user packages loaded. Refresh errors do not remove existing
-              entries.
-            </p>
-          )}
-          <div className="package-list">
-            {state.installed.map((pkg) => (
-              <article key={pkg.source} className="installed-card">
-                <h2>{pkg.name}</h2>
-                <p className="package-meta">
-                  {pkg.version ?? "Version unavailable"} · User scope ·{" "}
-                  {pkg.source}
-                </p>
-                <p className="package-description">{pkg.description}</p>
-                <Compatibility value={pkg.compatibility} />
-                <div className="package-card-footer">
-                  <button
-                    type="button"
-                    disabled={busy}
-                    onClick={() => ask("update", pkg)}
-                  >
-                    Update
-                  </button>
-                  <button
-                    type="button"
-                    disabled={busy}
-                    onClick={() => ask("uninstall", pkg)}
-                  >
-                    <Trash2 size={14} aria-hidden="true" />
-                    Remove
-                  </button>
-                </div>
-              </article>
-            ))}
-          </div>
-        </>
-      )}
-      <div className="package-status" aria-live="polite">
-        {state.operations.map((op) => (
-          <p key={op.opId}>
-            Package {op.action} · {op.source}:{" "}
-            <strong>{op.status === "done" ? "saved" : op.status}</strong>
-            {op.message && ` — ${op.message}`}
-          </p>
-        ))}
-        {state.applications.map(({ change, report }) => (
-          <div key={change.opId}>
-            <p>
-              Session application · {change.source}:{" "}
-              <strong>{report.status}</strong>
-              {report.message && ` — ${report.message}`}
-            </p>
-            {!!report.pendingSessionIds?.length && (
-              <p>Waiting sessions: {report.pendingSessionIds.join(", ")}</p>
+            {name === "marketplace" ? (
+              <Puzzle size={15} />
+            ) : (
+              <Download size={15} />
             )}
-            {[...new Set(report.diagnostics)].map((diagnostic) => (
-              <pre key={diagnostic}>{diagnostic}</pre>
-            ))}
-          </div>
-        ))}
-        {[...new Set(state.diagnostics)].map((diagnostic) => (
-          <pre key={diagnostic}>{diagnostic}</pre>
+            {name === "marketplace" ? t.Marketplace : t.Installed}
+            {name === "installed" && (
+              <span className="package-count">{installed.length}</span>
+            )}
+          </button>
         ))}
       </div>
-      {confirmation && service && (
-        <ConfirmPackage
-          operation={confirmation}
-          profile={service.agentDir}
+      <section
+        role="tabpanel"
+        id={`extensions-panel-${tab}`}
+        aria-labelledby={`extensions-tab-${tab}`}
+        // biome-ignore lint/a11y/noNoninteractiveTabindex: ARIA tab panels must be reachable by keyboard.
+        tabIndex={0}
+      >
+        {tab === "marketplace" ? (
+          <>
+            <div className="package-search">
+              <Search size={17} aria-hidden="true" />
+              <input
+                aria-label={t["Search packages"]}
+                placeholder={t["Search packages…"]}
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+              />
+              {query && (
+                <button
+                  type="button"
+                  aria-label={t["Clear search"]}
+                  onClick={() => setQuery("")}
+                >
+                  <X size={14} />
+                </button>
+              )}
+            </div>
+            <p className="package-results muted" role="status">
+              {loading && !items.length
+                ? t["Finding packages…"]
+                : error && !items.length
+                  ? t["Marketplace unavailable"]
+                  : t.packageResults(total, search)}
+            </p>
+            <div className="package-list market-grid" aria-busy={loading}>
+              {items.map((pkg) => {
+                const match = installed.find(
+                  (p) => npmName(p.source) === pkg.name,
+                );
+                const source = match?.source ?? `npm:${pkg.name}`;
+                const op = operation(source, ops);
+                const report = new URL(
+                  "https://github.com/earendil-works/pi/issues/new",
+                );
+                report.search = new URLSearchParams({
+                  template: "package-report.yml",
+                  labels: "package-report",
+                  title: `Package Report: ${pkg.name}`,
+                  "package-name": pkg.name,
+                  "package-version": pkg.version,
+                }).toString();
+                return (
+                  <article className="market-card" key={pkg.name}>
+                    <div className="package-card-heading">
+                      <Preview
+                        key={previews[pkg.name] ?? pkg.name}
+                        url={previews[pkg.name]}
+                      />
+                      <div className="package-content">
+                        <h2>{pkg.name}</h2>
+                        <p className="package-meta">
+                          {pkg.publisher || t["Unknown publisher"]} ·{" "}
+                          {downloads(pkg.monthlyDownloads)} ·{" "}
+                          {relative(pkg.date)}
+                        </p>
+                      </div>
+                    </div>
+                    <p
+                      className="package-description"
+                      title={pkg.description || t["No description provided."]}
+                    >
+                      {pkg.description || t["No description provided."]}
+                    </p>
+                    <div className="package-details">
+                      <Badges types={pkg.types} />
+                      <div className="package-links">
+                        {pkg.npmUrl && <Link url={pkg.npmUrl}>npm</Link>}
+                        {pkg.repoUrl && <Link url={pkg.repoUrl}>{t.repo}</Link>}
+                        <Link url={report.toString()}>{t.report}</Link>
+                      </div>
+                    </div>
+                    <div className="package-card-footer">
+                      <CopyCommand name={pkg.name} />
+                      <div className="package-actions">
+                        {op?.status === "running" ? (
+                          <Progress op={op} />
+                        ) : match ? (
+                          <>
+                            <span className="status connected">
+                              <Check size={14} />
+
+                              {t.Installed}
+                            </span>
+                            <button
+                              type="button"
+                              className="quiet"
+                              onClick={() =>
+                                setConfirmation({
+                                  action: "uninstall",
+                                  source,
+                                  name: pkg.name,
+                                })
+                              }
+                            >
+                              <Trash2 size={13} />
+
+                              {t.Uninstall}
+                            </button>
+                          </>
+                        ) : (
+                          <button
+                            type="button"
+                            className="primary"
+                            disabled={installedLoading || !!installedError}
+                            title={
+                              installedError
+                                ? t["Installed packages could not be checked"]
+                                : undefined
+                            }
+                            onClick={() =>
+                              setConfirmation({
+                                action: "install",
+                                source,
+                                name: pkg.name,
+                              })
+                            }
+                          >
+                            <Download size={14} />
+
+                            {t.Install}
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                    <OpError op={op} />
+                  </article>
+                );
+              })}
+              {loading &&
+                !items.length &&
+                [0, 1, 2].map((n) => (
+                  <div className="package-skeleton" key={n} aria-hidden="true">
+                    <div />
+                    <div>
+                      <span />
+                      <span />
+                      <span />
+                    </div>
+                  </div>
+                ))}
+            </div>
+            {error && (
+              <ErrorState
+                message={error}
+                retry={() => setRetry((n) => n + 1)}
+              />
+            )}
+            {!loading && !error && !items.length && (
+              <div className="package-empty">
+                <Search size={28} />
+                <h2>{t["No packages found"]}</h2>
+                <p className="muted">{t["Try a different name or keyword."]}</p>
+                <button type="button" onClick={() => setQuery("")}>
+                  {t["Clear search"]}
+                </button>
+              </div>
+            )}
+            {items.length > 0 && items.length < total && !error && (
+              <div className="package-load-more">
+                <button
+                  type="button"
+                  className="secondary"
+                  disabled={loading}
+                  onClick={() => setPage((n) => n + 1)}
+                >
+                  {loading ? (
+                    <LoaderCircle size={14} className="spinner" />
+                  ) : null}
+                  {loading ? t["Loading…"] : t["Load more"]}
+                </button>
+                <span className="muted">{t.countOf(items.length, total)}</span>
+              </div>
+            )}
+            {installedError && (
+              <ErrorState
+                message={t.installedError(installedError)}
+                retry={() => setInstalledRetry((n) => n + 1)}
+              />
+            )}
+          </>
+        ) : (
+          <>
+            <p className="package-results muted">
+              {t["Packages from your user and project configuration."]}
+            </p>
+            {installedLoading && (
+              <p className="status" role="status">
+                <LoaderCircle size={14} className="spinner" />
+
+                {t["Loading installed packages…"]}
+              </p>
+            )}
+            {installedError && (
+              <ErrorState
+                message={installedError}
+                retry={() => setInstalledRetry((n) => n + 1)}
+              />
+            )}
+            {!installedLoading && !installedError && !installed.length && (
+              <div className="package-empty">
+                <Package size={32} />
+                <h2>{t["No extensions installed"]}</h2>
+                <p className="muted">
+                  {t["Find a package to extend your workflow."]}
+                </p>
+                <button
+                  type="button"
+                  className="primary"
+                  onClick={() => selectTab("marketplace", true)}
+                >
+                  {t["Browse Marketplace"]}
+                </button>
+              </div>
+            )}
+            <div className="package-list">
+              {installed.map((pkg: InstalledPackage) => {
+                const name = npmName(pkg.source)
+                  ? (pkg.name ?? npmName(pkg.source) ?? pkg.source)
+                  : pkg.source;
+                const op = operation(pkg.source, ops);
+                return (
+                  <article
+                    className="installed-card"
+                    key={`${pkg.scope}:${pkg.source}`}
+                  >
+                    <div className="package-content">
+                      <div className="installed-heading">
+                        <h2>{name}</h2>
+                        <span className="package-scope">{pkg.scope}</span>
+                      </div>
+                      {pkg.version && (
+                        <span className="package-meta">v{pkg.version}</span>
+                      )}
+                      {pkg.description && (
+                        <p className="package-description">{pkg.description}</p>
+                      )}
+                      <Badges types={pkg.types} />
+                      {pkg.updateAvailable && (
+                        <span className="package-update">
+                          <ArrowUpCircle size={13} />
+
+                          {t["Update available"]}
+                        </span>
+                      )}
+                      <OpError op={op} />
+                    </div>
+                    <div className="package-actions">
+                      {op?.status === "running" ? (
+                        <Progress op={op} />
+                      ) : (
+                        <>
+                          {pkg.updateAvailable && (
+                            <button
+                              type="button"
+                              className="primary"
+                              onClick={() => run("update", pkg.source)}
+                            >
+                              <ArrowUpCircle size={14} />
+
+                              {t.Update}
+                            </button>
+                          )}
+                          <button
+                            type="button"
+                            className="quiet"
+                            onClick={() =>
+                              setConfirmation({
+                                action: "uninstall",
+                                source: pkg.source,
+                                name,
+                              })
+                            }
+                          >
+                            <Trash2 size={13} />
+
+                            {t.Uninstall}
+                          </button>
+                        </>
+                      )}
+                    </div>
+                  </article>
+                );
+              })}
+            </div>
+          </>
+        )}
+      </section>
+      {confirmation && (
+        <Confirm
+          value={confirmation}
           close={() => setConfirmation(undefined)}
-          confirm={() => void operate(confirmation)}
+          confirm={() => {
+            run(confirmation.action, confirmation.source);
+            setConfirmation(undefined);
+          }}
         />
       )}
-    </section>
+    </div>
+  );
+}
+function ErrorState({
+  message,
+  retry,
+}: {
+  message: string;
+  retry: () => void;
+}) {
+  const t = useT();
+  return (
+    <div className="package-error" role="alert">
+      <CircleAlert size={18} />
+      <div>
+        <h2>{t["Couldn’t load packages"]}</h2>
+        <p>{message}</p>
+      </div>
+      <button type="button" className="secondary" onClick={retry}>
+        {t.Retry}
+      </button>
+    </div>
   );
 }

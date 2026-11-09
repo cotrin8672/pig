@@ -161,10 +161,7 @@ export function App() {
         {state.page === "providers" ? (
           <Providers />
         ) : state.page === "extensions" ? (
-          <Extensions
-            key={state.packageService?.agentDir ?? "disconnected"}
-            service={state.packageService}
-          />
+          <Extensions />
         ) : state.page === "settings" ? (
           <Settings />
         ) : active ? (

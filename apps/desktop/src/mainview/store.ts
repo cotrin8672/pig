@@ -2,12 +2,14 @@ import type { AuthEvent, AuthPrompt } from "@earendil-works/pi-ai";
 import { create } from "zustand";
 import { defaultAppearance } from "../shared/appearance";
 import type { ExtensionStatus, UIRequest } from "../shared/extension-ui";
-import type { PackageService } from "../shared/packages";
+import { dictionary } from "../shared/i18n";
 import type {
   Appearance,
   AuthMethod,
   Bootstrap,
+  InstalledPackage,
   Notice,
+  PackageOpStatus,
   SessionInfo,
 } from "../shared/rpc-schema";
 import type { SessionAddress } from "../shared/runtime-contract";
@@ -46,7 +48,8 @@ export const useStore = create<{
   openingAddress?: SessionAddress;
   openId?: string;
   openMessage?: string;
-  packageService?: PackageService;
+  installed: InstalledPackage[];
+  packageOps: Record<string, PackageOpStatus>;
   notices: (Notice & { id: string })[];
   noticeHistory: NoticeRecord[];
   login?: LoginState;
@@ -76,6 +79,8 @@ export const useStore = create<{
   extensionStatuses: {},
   capabilities: {},
   page: "chat",
+  installed: [],
+  packageOps: {},
   notices: [],
   noticeHistory: loadNoticeHistory(),
   opening: false,
@@ -132,4 +137,21 @@ export function showNotice(notice: Notice) {
 }
 export function showError(error: unknown) {
   showNotice({ message: String(error), level: "error" });
+}
+
+export function receivePackageOp(op: PackageOpStatus) {
+  useStore.setState((s) => ({
+    packageOps: { ...s.packageOps, [op.opId]: op },
+  }));
+  if (op.status === "running") return;
+  showNotice({
+    message:
+      op.status === "error"
+        ? op.message
+        : dictionary(useStore.getState().settings.language).packageDone(
+            op.action,
+            op.source.replace(/^npm:/, ""),
+          ),
+    level: op.status === "error" ? "error" : "success",
+  });
 }

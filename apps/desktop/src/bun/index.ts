@@ -9,7 +9,6 @@ import Electrobun, {
 } from "electrobun/bun";
 import { dictionary } from "../shared/i18n";
 import { sanitizeOverride } from "../shared/model-overrides";
-import type { PackageChange } from "../shared/packages";
 import { knownProject, withoutProject } from "../shared/projects";
 import type {
   Appearance,
@@ -48,7 +47,12 @@ import {
   writeModelOverride,
 } from "./model-settings";
 import { createCompletionTracker } from "./notifications";
-import { createPackageService } from "./packages";
+import {
+  listInstalled,
+  packageOperation,
+  packagePreviews,
+  searchPackages,
+} from "./packages";
 import {
   abortSession,
   applyModelSettings,
@@ -74,7 +78,6 @@ import {
   setSessionModel,
   utilityModels,
 } from "./pi-service";
-import { agentDir } from "./runtime-profile";
 import { validateSessionScope } from "./session-scope";
 import { loadSettings, saveSettings } from "./settings";
 import { synchronizeClientArea } from "./window-layout";
@@ -174,82 +177,31 @@ const report = (error: unknown) => {
   rpc.send.error({ message: String(error) });
 };
 initImageMenu(report);
-const packageApplies = new Map<
-  string,
-  {
-    change: PackageChange;
-    pending: Set<string>;
-    catalog: boolean;
-    errors: string[];
-  }
->();
-function finishPackageApply() {
-  for (const [id, application] of packageApplies) {
-    if (application.pending.size || application.catalog) continue;
-    packages.reportApply(application.change, {
-      status: application.errors.length ? "error" : "applied",
-      diagnostics: application.errors,
-    });
-    packageApplies.delete(id);
-  }
+async function reloadPackages() {
+  const failures: string[] = [];
+  await Promise.all([
+    refreshUserCatalog().then(
+      (diagnostics) => failures.push(...diagnostics),
+      (error) => failures.push(String(error)),
+    ),
+    ...sessionHost
+      .runtimeState()
+      .sessions.filter((session) => session.phase === "ready")
+      .map((session) =>
+        sessionHost
+          .reloadSession(session.address)
+          .catch((error) => failures.push(String(error))),
+      ),
+  ]);
+  return failures;
 }
-const packages = createPackageService({
-  agentDir,
-  onChanged(change) {
-    const targets = sessionHost.runtimeState().sessions;
-    const application = {
-      change,
-      pending: new Set(targets.map((s) => s.address.sessionId)),
-      catalog: true,
-      errors: [] as string[],
-    };
-    packageApplies.set(change.opId, application);
-    void refreshUserCatalog()
-      .then(
-        (diagnostics) => {
-          application.errors.push(...diagnostics);
-        },
-        (error) => {
-          application.errors.push(String(error));
-        },
-      )
-      .finally(() => {
-        application.catalog = false;
-        finishPackageApply();
-      });
-    for (const target of targets) {
-      if (target.phase !== "ready") {
-        application.errors.push(
-          `Session ${target.address.sessionId} is ${target.phase}; reopen to apply packages`,
-        );
-        application.pending.delete(target.address.sessionId);
-        continue;
-      }
-      void sessionHost
-        .reloadSession(target.address)
-        .then(
-          (result) => {
-            if (result.state === "applied")
-              application.pending.delete(target.address.sessionId);
-          },
-          (error) => {
-            application.errors.push(String(error));
-            application.pending.delete(target.address.sessionId);
-          },
-        )
-        .finally(finishPackageApply);
-    }
-    return { status: "pending", pendingSessionIds: [...application.pending] };
-  },
-});
 const rpc = BrowserView.defineRPC<RPCSchema>({
   maxRequestTime: 600_000,
   handlers: {
     requests: {
-      packageProfile: () => ({ agentDir }),
-      packageSearch: (input) => packages.search(input),
-      packageInstalled: () => packages.listInstalled(),
-      packageOperate: (input) => packages.operate(input),
+      searchPackages: (input) => searchPackages(input),
+      packagePreviews: (input) => packagePreviews(input),
+      listInstalled: () => listInstalled(),
       prompt: (input) => promptSession(input),
       getOpenState: (input) => sessionHost.getOpenState(input),
       cancelOpen: (input) => sessionHost.cancelOpen(input),
@@ -500,6 +452,36 @@ const rpc = BrowserView.defineRPC<RPCSchema>({
       },
       connectUI: (input) => sessionHost.connectUI(input),
       disconnectUI: (input) => sessionHost.disconnectUI(input),
+      installPackage: (input) => {
+        void packageOperation(
+          "install",
+          input,
+          (event) => rpc.send.packageOp(event),
+          (items) => rpc.send.installed(items),
+          reloadPackages,
+          (message) => rpc.send.error({ message }),
+        ).catch(console.error);
+      },
+      uninstallPackage: (input) => {
+        void packageOperation(
+          "uninstall",
+          input,
+          (event) => rpc.send.packageOp(event),
+          (items) => rpc.send.installed(items),
+          reloadPackages,
+          (message) => rpc.send.error({ message }),
+        ).catch(console.error);
+      },
+      updatePackage: (input) => {
+        void packageOperation(
+          "update",
+          input,
+          (event) => rpc.send.packageOp(event),
+          (items) => rpc.send.installed(items),
+          reloadPackages,
+          (message) => rpc.send.error({ message }),
+        ).catch(console.error);
+      },
     },
   },
 });
@@ -507,29 +489,15 @@ const completions = new Map<
   string,
   ReturnType<typeof createCompletionTracker>
 >();
-packages.subscribe((event) => rpc.send.packageEvent(event));
 configureSessionHost(
   {
     ui: (event) => rpc.send.extensionUIEvent(event),
     terminal: (event) => rpc.send.terminalEvent(event),
     runtime: (event) => {
       rpc.send.runtimeEvent(event);
-      if (event.type === "replaced" || event.type === "closed") {
-        const previous =
-          event.type === "replaced" ? event.previous : event.address;
-        for (const application of packageApplies.values())
-          application.pending.delete(previous.sessionId);
-        finishPackageApply();
-      }
       if (event.type !== "snapshot") return;
       const snapshot = event.snapshot;
       const sessionId = snapshot.address.sessionId;
-      if (snapshot.failure?.startsWith("Reload failed:")) {
-        for (const application of packageApplies.values())
-          if (application.pending.delete(sessionId))
-            application.errors.push(snapshot.failure);
-        finishPackageApply();
-      }
       const wire = {
         type: "snapshot" as const,
         address: snapshot.address,

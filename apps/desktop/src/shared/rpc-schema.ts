@@ -6,14 +6,6 @@ import type {
 } from "./desktop-state";
 import type { ExtensionUIEvent, UIReply } from "./extension-ui";
 import type { ModelOverride } from "./model-overrides";
-import type {
-  InstalledPackage,
-  PackageEvent,
-  PackageOperation,
-  PackageOperationResult,
-  PackageSearch,
-  PackageSearchResult,
-} from "./packages";
 import type { ProjectFlags } from "./projects";
 import type {
   DraftSyncParams,
@@ -150,6 +142,35 @@ export type LoginFrame = { loginId: string; provider: string } & (
   | { kind: "error"; message: string }
 );
 
+export type PackageType = "extension" | "skill" | "theme" | "prompt";
+// One npm `pi-package` gallery card, mirroring https://pi.dev/packages.
+export interface MarketPackage {
+  name: string;
+  version: string;
+  description: string;
+  publisher?: string;
+  date: string;
+  monthlyDownloads: number;
+  types: PackageType[];
+  npmUrl?: string;
+  repoUrl?: string;
+}
+// One entry of the user's pi settings `packages` (npm, git or local source).
+export interface InstalledPackage {
+  source: string;
+  scope: "user" | "project";
+  name?: string;
+  version?: string;
+  description?: string;
+  types: PackageType[];
+  updateAvailable: boolean;
+}
+export type PackageOpStatus = {
+  opId: string;
+  source: string;
+  action: "install" | "uninstall" | "update";
+} & ({ status: "running" | "done" } | { status: "error"; message: string });
+
 export type RPCSchema = {
   bun: {
     requests: {
@@ -157,15 +178,17 @@ export type RPCSchema = {
         params: { clientId: string };
         response: { connected: boolean };
       };
-      // biome-ignore lint/suspicious/noConfusingVoidType: Electrobun convention.
-      packageProfile: { params: void; response: { agentDir: string } };
-      packageSearch: { params: PackageSearch; response: PackageSearchResult };
-      // biome-ignore lint/suspicious/noConfusingVoidType: Electrobun convention.
-      packageInstalled: { params: void; response: InstalledPackage[] };
-      packageOperate: {
-        params: PackageOperation;
-        response: PackageOperationResult;
+      searchPackages: {
+        params: { query: string; page: number };
+        response: { items: MarketPackage[]; total: number; pageSize: number };
       };
+      // name -> https image URL (null when the package has no preview).
+      packagePreviews: {
+        params: { names: string[] };
+        response: Record<string, string | null>;
+      };
+      // biome-ignore lint/suspicious/noConfusingVoidType: Electrobun's parameterless RPC convention.
+      listInstalled: { params: void; response: InstalledPackage[] };
       prompt: {
         params: PromptParams;
         response: PromptAccepted;
@@ -280,6 +303,9 @@ export type RPCSchema = {
       imageMenu: { src: string };
       connectUI: { clientId: string };
       disconnectUI: { clientId: string };
+      installPackage: { opId: string; name: string };
+      uninstallPackage: { opId: string; source: string };
+      updatePackage: { opId: string; source: string };
     };
   };
   webview: {
@@ -288,7 +314,8 @@ export type RPCSchema = {
       runtimeEvent: RuntimeEvent;
       extensionUIEvent: ExtensionUIEvent;
       terminalEvent: TerminalHostEvent;
-      packageEvent: PackageEvent;
+      packageOp: PackageOpStatus;
+      installed: InstalledPackage[];
       sessionEvent: WireEvent;
       projects: string[];
       desktopState: DesktopState;

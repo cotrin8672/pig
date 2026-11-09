@@ -1,404 +1,391 @@
 import { readFile } from "node:fs/promises";
 import { homedir } from "node:os";
-import { isAbsolute, join, resolve } from "node:path";
+import { join } from "node:path";
 import {
-  classify,
-  type InstalledPackage,
-  type MarketPackage,
-  npmName,
-  type PackageApplyReport,
-  type PackageChange,
-  type PackageEvent,
-  type PackageOperation,
-  type PackageOperationResult,
-  type PackageSearch,
-  type PackageService,
-  packageCompatibility,
-  validNpmName,
-} from "../shared/packages";
-import { packageProfileKey, withPackageLock } from "./package-queue";
+  DefaultPackageManager,
+  getAgentDir,
+  SettingsManager,
+} from "@earendil-works/pi-coding-agent";
+import { classify, npmName } from "../shared/packages";
+import type {
+  InstalledPackage,
+  MarketPackage,
+  PackageOpStatus,
+} from "../shared/rpc-schema";
+import { withPackageLock } from "./package-queue";
 
-const object = (value: unknown): Record<string, unknown> =>
-  value !== null && typeof value === "object"
-    ? (value as Record<string, unknown>)
-    : {};
+type ObjectValue = Record<string, unknown>;
+const object = (value: unknown): ObjectValue =>
+  value !== null && typeof value === "object" ? (value as ObjectValue) : {};
 const text = (value: unknown) => (typeof value === "string" ? value : "");
-const keywords = (value: unknown): string[] =>
+const keywords = (value: unknown) =>
   Array.isArray(value)
     ? value.filter((v): v is string => typeof v === "string")
     : [];
-const detail = (error: unknown) =>
-  error instanceof Error ? error.message : String(error);
-
-async function searchJson(response: Response): Promise<unknown> {
-  const limit = 5 * 1024 * 1024;
-  if (Number(response.headers.get("content-length")) > limit) {
-    await response.body?.cancel();
-    throw new Error("Package search response exceeds 5 MB");
-  }
-  const reader = response.body?.getReader();
-  if (!reader) throw new Error("Empty npm search response");
-  const decoder = new TextDecoder();
-  let bytes = 0;
-  let body = "";
+export function repoUrl(
+  repository: unknown,
+  homepage?: unknown,
+): string | undefined {
+  const candidate = text(repository)
+    .replace(/^git\+/, "")
+    .replace(/^git:\/\//, "https://")
+    .replace(/\.git$/, "");
   try {
-    while (true) {
-      const part = await reader.read();
-      if (part.done) break;
-      bytes += part.value.byteLength;
-      if (bytes > limit) {
-        await reader.cancel();
-        throw new Error("Package search response exceeds 5 MB");
-      }
-      body += decoder.decode(part.value, { stream: true });
-    }
-    return JSON.parse(body + decoder.decode()) as unknown;
-  } finally {
-    reader.releaseLock();
+    const url = new URL(candidate);
+    if (url.protocol === "https:" || url.protocol === "http:") return url.href;
+  } catch {
+    /* Fall back to the project's GitHub homepage. */
   }
+  try {
+    const url = new URL(text(homepage));
+    if (url.protocol === "https:" && url.hostname === "github.com")
+      return url.href;
+  } catch {
+    /* A repository link is optional. */
+  }
+  return undefined;
 }
-
-export function mapSearchItem(value: unknown): MarketPackage | undefined {
+export function mapSearchItem(value: unknown): MarketPackage {
   const item = object(value);
   const pkg = object(item.package);
-  if (!validNpmName(pkg.name)) return undefined;
-  const version = text(pkg.version);
-  const count = object(item.downloads).monthly;
+  const links = object(pkg.links);
+  const downloads = object(item.downloads).monthly;
   return {
-    name: pkg.name,
-    version,
+    name: text(pkg.name),
+    version: text(pkg.version),
     description: text(pkg.description),
-    types: classify(keywords(pkg.keywords)),
+    publisher: text(object(pkg.publisher).username) || undefined,
+    date: text(pkg.date),
     monthlyDownloads:
-      typeof count === "number" && Number.isFinite(count)
-        ? Math.max(0, count)
+      typeof downloads === "number" && Number.isFinite(downloads)
+        ? downloads
         : 0,
-    compatibility: packageCompatibility(pkg.name, version),
+    types: classify(keywords(pkg.keywords)),
+    npmUrl: text(links.npm) || undefined,
+    repoUrl: repoUrl(links.repository, links.homepage),
   };
 }
-
-export type ConfiguredPackage = {
-  source: string;
-  scope: "user" | "project";
-  installedPath?: string;
-};
-/** Structural SDK seam: fake managers never need npm, credentials, or a real HOME. */
-export type PackageManagerContext = {
-  settings: {
-    reload(): void | Promise<void>;
-    flush(): Promise<void>;
-    drainErrors(): { path?: string; scope: string; error: Error }[];
-    getProjectSettings(): { packages?: unknown[] };
-  };
-  pm: {
-    listConfiguredPackages(): ConfiguredPackage[];
-    installAndPersist(source: string, options: { local: false }): Promise<void>;
-    removeAndPersist(
-      source: string,
-      options: { local: false },
-    ): Promise<boolean>;
-    update(source: string): Promise<void>;
-  };
-};
-export type PackageProfile = {
-  agentDir: string;
-  cwd: string;
-  projectTrusted: false;
-};
-export type PackageServiceOptions = {
-  /** Required absolute path. Bootstrap fixes PI_CODING_AGENT_DIR before SDK import. */
-  agentDir: string;
-  createManager?: (
-    profile: PackageProfile,
-  ) => Promise<PackageManagerContext> | PackageManagerContext;
-  fetch?: typeof globalThis.fetch;
-  /** Schedule/defer application here. Never wait for an active session to become idle. */
-  onChanged?: (
-    change: PackageChange,
-  ) => Promise<PackageApplyReport | undefined> | PackageApplyReport | undefined;
-  warn?: (message: string) => void;
-};
-export interface PackageController extends PackageService {
-  /** Runtime publishes later deferred completion/errors, retaining loader diagnostics. */
-  reportApply(change: PackageChange, report: PackageApplyReport): void;
-}
-
-export async function createSdkPackageManager(
-  profile: PackageProfile,
-): Promise<PackageManagerContext> {
-  const { DefaultPackageManager, SettingsManager, getAgentDir } = await import(
-    "@earendil-works/pi-coding-agent"
+export function parsePreviews(
+  value: unknown,
+  names: string[],
+): Record<string, string | null> {
+  const result: Record<string, string | null> = Object.fromEntries(
+    names.map((name) => [name, null]),
   );
-  if (
-    packageProfileKey(getAgentDir()) !== packageProfileKey(profile.agentDir)
-  ) {
-    throw new Error(
-      "SDK profile mismatch: fix PI_CODING_AGENT_DIR at process bootstrap before importing the SDK",
-    );
+  const previews = object(value).previews;
+  if (!Array.isArray(previews)) return result;
+  for (const entry of previews) {
+    const preview = object(entry);
+    const name = text(preview.name);
+    const media = object(preview.media);
+    if (!Object.hasOwn(result, name) || media.type !== "image") continue;
+    try {
+      const url = new URL(text(media.url));
+      if (url.protocol === "https:") result[name] = url.href;
+    } catch {
+      /* Malformed media is equivalent to no preview. */
+    }
   }
-  const settings = SettingsManager.create(profile.cwd, profile.agentDir, {
-    projectTrusted: false,
-  });
+  return result;
+}
+async function getJson(url: URL): Promise<unknown> {
+  const response = await fetch(url, { signal: AbortSignal.timeout(15_000) });
+  if (!response.ok)
+    throw new Error(`Package service returned HTTP ${response.status}`);
+  const body = await response.text();
+  if (new TextEncoder().encode(body).byteLength > 5 * 1024 * 1024)
+    throw new Error("Package service response exceeds 5 MB");
+  return JSON.parse(body) as unknown;
+}
+async function search(query: string, size: number, from: number) {
+  const url = new URL("https://registry.npmjs.org/-/v1/search");
+  url.search = new URLSearchParams({
+    text: `keywords:pi-package${query ? ` ${query}` : ""}`,
+    size: String(size),
+    from: String(from),
+  }).toString();
+  const data = object(await getJson(url));
+  if (!Array.isArray(data.objects))
+    throw new Error("Invalid npm search response");
   return {
-    settings,
-    pm: new DefaultPackageManager({
-      cwd: profile.cwd,
-      agentDir: profile.agentDir,
-      settingsManager: settings,
-    }),
+    items: data.objects.map(mapSearchItem),
+    total: typeof data.total === "number" ? data.total : 0,
   };
 }
-
-/** No implicit CLI profile or selected workspace; all SDK operations are user-only. */
-export function createPackageService(
-  options: PackageServiceOptions,
-): PackageController {
-  if (!isAbsolute(options.agentDir))
-    throw new Error("An absolute SDK agentDir is required");
-  const agentDir = resolve(options.agentDir);
+let catalog: { expires: number; items: MarketPackage[] } | undefined;
+let catalogPending: Promise<MarketPackage[]> | undefined;
+export async function searchPackages(input: unknown) {
+  const { query, page } = object(input);
   if (
-    packageProfileKey(agentDir) ===
-    packageProfileKey(join(homedir(), ".pi", "agent"))
-  ) {
+    typeof query !== "string" ||
+    query.length > 200 ||
+    typeof page !== "number" ||
+    !Number.isInteger(page) ||
+    page < 0 ||
+    page > 199
+  )
     throw new Error(
-      "Marketplace cannot modify the legacy CLI profile ~/.pi/agent",
+      "Invalid package search: query must be at most 200 characters and page an integer from 0 to 199",
     );
-  }
-  // cwd is deliberately not a chat/project directory. Untrusted project settings stay empty.
-  const profile: PackageProfile = {
-    agentDir,
-    cwd: homedir(),
-    projectTrusted: false,
-  };
-  const listeners = new Set<(event: PackageEvent) => void>();
-  const warn = options.warn ?? console.warn;
-  function emit(event: PackageEvent) {
-    for (const listener of listeners) {
-      try {
-        listener(event);
-      } catch (error) {
-        warn(`Package event listener failed: ${detail(error)}`);
-      }
-    }
-  }
-  const diagnostic = (message: string) =>
-    emit({ type: "diagnostic", agentDir, message });
-  let manager: Promise<PackageManagerContext> | undefined;
-  function getManager() {
-    manager ??= Promise.resolve()
-      .then(() => (options.createManager ?? createSdkPackageManager)(profile))
-      .catch((error) => {
-        manager = undefined;
-        throw error;
+  if (query.trim())
+    return { ...(await search(query.trim(), 50, page * 50)), pageSize: 50 };
+  if (!catalog || catalog.expires <= Date.now()) {
+    // shortcut: top 1000 by npm relevance, re-sorted; upgrade when npm offers download-ranked pagination.
+    catalogPending ??= Promise.all(
+      [0, 250, 500, 750].map((from) => search("", 250, from)),
+    )
+      .then((pages) => {
+        const items = [
+          ...new Map(
+            pages.flatMap((p) => p.items).map((p) => [p.name, p]),
+          ).values(),
+        ].sort((a, b) => b.monthlyDownloads - a.monthlyDownloads);
+        catalog = { expires: Date.now() + 600_000, items };
+        return items;
+      })
+      .finally(() => {
+        catalogPending = undefined;
       });
-    return manager;
+    await catalogPending;
   }
-  function checkErrors(ctx: PackageManagerContext) {
-    const errors = ctx.settings.drainErrors();
-    if (errors.length)
-      throw new Error(
-        errors
-          .map((e) => `${e.path ?? e.scope}: ${e.error.message}`)
-          .join("; "),
-      );
-  }
-  async function configured(ctx: PackageManagerContext) {
-    await ctx.settings.reload();
-    checkErrors(ctx);
-    // SDK update() scans BOTH scopes. Fail closed even if a future adapter breaks trust isolation.
-    if (ctx.settings.getProjectSettings().packages?.length) {
-      throw new Error(
-        "Marketplace requires user-only settings (projectTrusted: false)",
-      );
-    }
-    const entries = ctx.pm.listConfiguredPackages();
-    if (entries.some((entry) => entry.scope !== "user")) {
-      throw new Error(
-        "Unexpected project package in user-only Marketplace context",
-      );
-    }
-    return entries;
-  }
-  async function installed(
-    entries: ConfiguredPackage[],
-  ): Promise<InstalledPackage[]> {
-    return Promise.all(
-      entries.map(async (entry) => {
-        let pkg: Record<string, unknown> = {};
-        if (npmName(entry.source) && entry.installedPath) {
-          try {
-            pkg = object(
-              JSON.parse(
-                await readFile(
-                  join(entry.installedPath, "package.json"),
-                  "utf8",
-                ),
-              ),
-            );
-          } catch {
-            // Keep configured packages visible even if a failed install left no manifest.
-          }
-        }
-        const name = text(pkg.name) || npmName(entry.source) || entry.source;
-        const version = text(pkg.version) || undefined;
-        return {
-          source: entry.source,
-          scope: "user",
-          name,
-          version,
-          description: text(pkg.description) || undefined,
-          types: classify(keywords(pkg.keywords)),
-          compatibility: packageCompatibility(name, version),
-        };
-      }),
-    );
-  }
-  function reportApply(change: PackageChange, report: PackageApplyReport) {
-    if (packageProfileKey(change.agentDir) !== packageProfileKey(agentDir)) {
-      throw new Error("Cannot report package application for another profile");
-    }
-    emit({ type: "apply", change, report });
-  }
+  const items = catalog?.items ?? [];
   return {
-    agentDir,
-    subscribe(listener) {
-      listeners.add(listener);
-      return () => {
-        listeners.delete(listener);
-      };
-    },
-    reportApply,
-    async search(input: PackageSearch) {
-      if (
-        typeof input?.query !== "string" ||
-        input.query.length > 200 ||
-        !Number.isInteger(input.page) ||
-        input.page < 0 ||
-        input.page > 199
-      ) {
-        throw new Error(
-          "Invalid package search (query <= 200 characters, page 0–199)",
-        );
-      }
-      // No lock or manager creation: network search cannot block chat/resource discovery.
-      const url = new URL("https://registry.npmjs.org/-/v1/search");
-      url.search = new URLSearchParams({
-        text: `keywords:pi-package ${input.query.trim()}`.trim(),
-        size: "50",
-        from: String(input.page * 50),
-      }).toString();
-      const response = await (options.fetch ?? globalThis.fetch)(url, {
-        signal: AbortSignal.timeout(15_000),
-        redirect: "error",
-        credentials: "omit",
-      });
-      if (!response.ok)
-        throw new Error(`Package search returned HTTP ${response.status}`);
-      const data = object(await searchJson(response));
-      if (!Array.isArray(data.objects))
-        throw new Error("Invalid npm search response");
-      return {
-        items: data.objects
-          .map(mapSearchItem)
-          .filter((item): item is MarketPackage => !!item),
-        total:
-          typeof data.total === "number" && Number.isFinite(data.total)
-            ? Math.max(0, data.total)
-            : 0,
-        pageSize: 50,
-      };
-    },
-    listInstalled() {
-      return withPackageLock(agentDir, async () =>
-        installed(await configured(await getManager())),
-      );
-    },
-    async operate(input: PackageOperation): Promise<PackageOperationResult> {
-      if (
-        !input ||
-        typeof input.opId !== "string" ||
-        !input.opId ||
-        input.opId.length > 200 ||
-        !["install", "update", "uninstall"].includes(input.action)
-      )
-        throw new Error("Invalid package operation");
-      const source =
-        input.action === "install" ? `npm:${input.name}` : input.source;
-      const change: PackageChange = {
-        agentDir,
-        opId: input.opId,
-        source,
-        action: input.action,
-      };
-      emit({ type: "operation", operation: { ...change, status: "queued" } });
-      await withPackageLock(agentDir, async () => {
-        try {
-          if (input.action === "install" && !validNpmName(input.name))
-            throw new Error("Invalid npm package name");
-          if (typeof source !== "string" || !source || source.length > 4096)
-            throw new Error("Invalid package source");
-          const ctx = await getManager();
-          const entries = await configured(ctx);
-          if (
-            input.action !== "install" &&
-            !entries.some((entry) => entry.source === source)
-          )
-            throw new Error(
-              "Package source is not configured in this user profile",
-            );
-          emit({
-            type: "operation",
-            operation: { ...change, status: "running" },
-          });
-          if (input.action === "install")
-            await ctx.pm.installAndPersist(source, { local: false });
-          else if (input.action === "uninstall") {
-            if (!(await ctx.pm.removeAndPersist(source, { local: false })))
-              throw new Error("Package was not removed from user settings");
-          } else await ctx.pm.update(source);
-          await ctx.settings.flush();
-          checkErrors(ctx);
-          // Refresh failure is NOT an installation failure. Keep prior UI state and expose it.
-          try {
-            emit({
-              type: "installed",
-              agentDir,
-              packages: await installed(await configured(ctx)),
-            });
-          } catch (error) {
-            diagnostic(
-              `Package changed, but Installed refresh failed: ${detail(error)}`,
-            );
-          }
-        } catch (error) {
-          const message = `Package ${input.action} failed for ${source}: ${detail(error)}. Profile: ${agentDir}. If npm is missing, install Node.js/npm or configure npmCommand in this profile's settings.json. State may be partially changed; refresh before retrying.`;
-          emit({
-            type: "operation",
-            operation: { ...change, status: "error", message },
-          });
-          throw new Error(message);
-        }
-      });
-      const operation = { ...change, status: "done" as const };
-      emit({ type: "operation", operation });
-      let apply: PackageApplyReport = {
-        status: "pending",
-        message: "Package saved. Session application is pending.",
-      };
-      reportApply(change, apply);
-      // Never reload inside the package queue; the SessionHost owns safe deferral/epochs.
-      if (options.onChanged) {
-        try {
-          apply = (await options.onChanged(change)) ?? apply;
-        } catch (error) {
-          apply = {
-            status: "error",
-            message: `Package saved, but session application failed: ${detail(error)}`,
-          };
-        }
-        reportApply(change, apply);
-      }
-      return { operation, apply };
-    },
+    items: items.slice(page * 50, (page + 1) * 50),
+    total: items.length,
+    pageSize: 50,
   };
+}
+const previews = new Map<string, { expires: number; url: string | null }>();
+const previewPending = new Map<string, Promise<void>>();
+export async function packagePreviews(input: unknown) {
+  const { names } = object(input);
+  if (
+    !Array.isArray(names) ||
+    names.length > 64 ||
+    !names.every(
+      (name) =>
+        typeof name === "string" && name.length > 0 && name.length <= 214,
+    )
+  )
+    throw new Error("Invalid preview names (maximum 64)");
+  const unique = [...new Set<string>(names)];
+  const missing = unique.filter(
+    (name) =>
+      (previews.get(name)?.expires ?? 0) <= Date.now() &&
+      !previewPending.has(name),
+  );
+  for (let i = 0; i < missing.length; i += 16) {
+    const batch = missing.slice(i, i + 16);
+    const pending = (async () => {
+      const url = new URL("https://pi.dev/api/packages/preview-media");
+      for (const name of batch) url.searchParams.append("name", name);
+      try {
+        const parsed = parsePreviews(await getJson(url), batch);
+        for (const name of batch)
+          previews.set(name, {
+            expires: Date.now() + 300_000,
+            url: parsed[name] ?? null,
+          });
+      } catch {
+        // Network failures are retryable, not negative cache entries.
+      } finally {
+        for (const name of batch) previewPending.delete(name);
+      }
+    })();
+    for (const name of batch) previewPending.set(name, pending);
+  }
+  await Promise.all(unique.map((name) => previewPending.get(name)));
+  return Object.fromEntries(
+    unique.map((name) => [name, previews.get(name)?.url ?? null]),
+  );
+}
+let manager:
+  | { settings: SettingsManager; pm: DefaultPackageManager }
+  | undefined;
+function packageManager() {
+  if (!manager) {
+    const cwd = homedir();
+    const agentDir = getAgentDir();
+    const settings = SettingsManager.create(cwd, agentDir, {
+      projectTrusted: false,
+    });
+    manager = {
+      settings,
+      pm: new DefaultPackageManager({
+        cwd,
+        agentDir,
+        settingsManager: settings,
+      }),
+    };
+  }
+  return manager;
+}
+function checkErrors(settings: SettingsManager) {
+  const errors = settings.drainErrors();
+  if (errors.length)
+    throw new Error(
+      errors.map((e) => `${e.path ?? e.scope}: ${e.error.message}`).join("; "),
+    );
+}
+async function configured() {
+  const { settings, pm } = packageManager();
+  await settings.reload();
+  checkErrors(settings);
+  return pm.listConfiguredPackages().filter((p) => p.scope === "user");
+}
+type Configured = Awaited<ReturnType<typeof configured>>;
+let updateCache: { expires: number; sources: Set<string> } | undefined;
+let updatePending: Promise<Set<string>> | undefined;
+let updateGeneration = 0;
+function invalidateUpdates() {
+  updateGeneration++;
+  updateCache = undefined;
+}
+async function availableUpdates() {
+  if (updateCache && updateCache.expires > Date.now())
+    return updateCache.sources;
+  if (!updatePending) {
+    const generation = updateGeneration;
+    updatePending = packageManager()
+      .pm.checkForAvailableUpdates()
+      .then((found) => {
+        const sources = new Set(found.map((p) => p.source));
+        if (generation === updateGeneration)
+          updateCache = { expires: Date.now() + 60_000, sources };
+        return sources;
+      })
+      .catch(() => new Set<string>())
+      .finally(() => {
+        updatePending = undefined;
+      });
+  }
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  return Promise.race([
+    updatePending,
+    new Promise<Set<string>>((resolve) => {
+      timer = setTimeout(() => resolve(new Set()), 8000);
+    }),
+  ]).finally(() => clearTimeout(timer));
+}
+async function installed(entries: Configured): Promise<InstalledPackage[]> {
+  const updates = await availableUpdates();
+  return Promise.all(
+    entries.map(async (entry) => {
+      let pkg: ObjectValue = {};
+      if (npmName(entry.source) && entry.installedPath) {
+        try {
+          pkg = object(
+            JSON.parse(
+              await readFile(join(entry.installedPath, "package.json"), "utf8"),
+            ),
+          );
+        } catch {
+          /* Missing or malformed manifests must not hide configured sources. */
+        }
+      }
+      return {
+        source: entry.source,
+        scope: entry.scope,
+        name: text(pkg.name) || npmName(entry.source) || entry.source,
+        version: text(pkg.version) || undefined,
+        description: text(pkg.description) || undefined,
+        types: classify(keywords(pkg.keywords)),
+        updateAvailable: updates.has(entry.source),
+      };
+    }),
+  );
+}
+export const listInstalled = async () =>
+  installed(await withPackageLock(configured));
+
+// Small dependency seam: tests never need a real agent directory or npm process.
+type OperationDependencies = {
+  configured: () => Promise<Configured>;
+  mutate: (action: PackageOpStatus["action"], source: string) => Promise<void>;
+  installed: (entries: Configured) => Promise<InstalledPackage[]>;
+};
+const operationDependencies: OperationDependencies = {
+  configured,
+  installed,
+  async mutate(action, source) {
+    const { settings, pm } = packageManager();
+    if (action === "install") await pm.installAndPersist(source);
+    else if (action === "uninstall") await pm.removeAndPersist(source);
+    else await pm.update(source);
+    await settings.flush();
+    checkErrors(settings);
+  },
+};
+export async function packageOperation(
+  action: PackageOpStatus["action"],
+  input: unknown,
+  emit: (event: PackageOpStatus) => void,
+  pushInstalled: (packages: InstalledPackage[]) => void,
+  reload: () => Promise<void> | Promise<string[]>,
+  warn: (message: string) => void = console.warn,
+  deps: OperationDependencies = operationDependencies,
+) {
+  const value = object(input);
+  if (typeof value.opId !== "string" || !value.opId || value.opId.length > 200)
+    throw new Error("Invalid package operation ID");
+  const opId = value.opId;
+  const source =
+    action === "install" ? `npm:${text(value.name)}` : text(value.source);
+  const frame = { opId, source, action };
+  const result = await withPackageLock(async () => {
+    try {
+      if (
+        action === "install" &&
+        (typeof value.name !== "string" ||
+          value.name.length > 214 ||
+          !/^(?:@[a-z0-9][a-z0-9._-]*\/)?[a-z0-9][a-z0-9._-]*$/.test(
+            value.name,
+          ))
+      )
+        throw new Error("Invalid npm package name");
+      const entries = await deps.configured();
+      if (action !== "install" && !entries.some((p) => p.source === source))
+        throw new Error("Package source is not configured");
+      emit({ ...frame, status: "running" });
+      try {
+        await deps.mutate(action, source);
+      } finally {
+        invalidateUpdates();
+      }
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : String(error);
+      const info = error as NodeJS.ErrnoException;
+      const npmMissing =
+        info?.code === "ENOENT" &&
+        /\bnpm(?:\.cmd|\.exe)?\b/i.test(
+          `${info.path ?? ""} ${info.syscall ?? ""} ${detail}`,
+        );
+      const message = npmMissing
+        ? "npm was not found. Install Node.js (npm) or set npmCommand in ~/.pi/agent/settings.json"
+        : `Package ${action} failed for ${source}: ${detail}`;
+      emit({ ...frame, status: "error", message });
+      throw new Error(message);
+    }
+    let failures: string[];
+    try {
+      failures = (await reload()) ?? [];
+    } catch (error) {
+      failures = [String(error)];
+    }
+    return { entries: await deps.configured(), failures };
+  });
+  // Manifest reads and npm view must never hold up prompts or session creation.
+  pushInstalled(await deps.installed(result.entries));
+  emit({ ...frame, status: "done" });
+  if (result.failures.length) {
+    const verb =
+      action === "install"
+        ? "Installed"
+        : action === "uninstall"
+          ? "Uninstalled"
+          : "Updated";
+    warn(
+      `${verb} ${source}, but reloading ${result.failures.length} open chat(s) failed: ${result.failures.join("; ")}`,
+    );
+  }
 }

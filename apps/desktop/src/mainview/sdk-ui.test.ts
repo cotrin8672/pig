@@ -1,12 +1,10 @@
 import { expect, test } from "bun:test";
-import type { PackageEvent } from "../shared/packages";
 import type { TranscriptRecord } from "../shared/transcript";
 import {
   customPresentation,
   dataText,
   rendererOrFallback,
 } from "./custom-data";
-import { createPackageAdapter } from "./package-rpc";
 
 const base = {
   id: "saved-entry",
@@ -74,45 +72,6 @@ test("custom fallback handles circular/unsupported JSON safely as text", () => {
   expect(dataText(value)).toContain("[Circular]");
   expect(dataText(value)).toContain("<img onerror=bad>");
   expect(dataText(1n)).toBe('"1"');
-});
-test("stable PackageService adapter forwards exact operation/events and filters profiles", async () => {
-  const operations: unknown[] = [];
-  const adapter = createPackageAdapter("/fixed/pi-agent", {
-    search: async (input) => ({ items: [], total: input.page, pageSize: 50 }),
-    listInstalled: async () => [],
-    operate: async (input) => {
-      operations.push(input);
-      return {
-        operation: {
-          ...input,
-          source: "npm:fixture",
-          agentDir: "/fixed/pi-agent",
-          status: "done",
-        },
-        apply: { status: "pending", pendingSessionIds: ["sdk"] },
-      };
-    },
-  });
-  const service = adapter.service;
-  const events: PackageEvent[] = [];
-  const unsubscribe = service.subscribe((event) => {
-    events.push(event);
-  });
-  const event: PackageEvent = {
-    type: "diagnostic",
-    agentDir: service.agentDir,
-    message: "Duplicate SDK module",
-  };
-  adapter.receive(event);
-  adapter.receive({ ...event, agentDir: "/other" });
-  expect(events).toEqual([event]);
-  expect(adapter.service).toBe(service);
-  const input = { opId: "id", action: "install" as const, name: "fixture" };
-  expect((await service.operate(input)).apply.status).toBe("pending");
-  expect(operations).toEqual([input]);
-  unsubscribe();
-  adapter.receive(event);
-  expect(events).toHaveLength(1);
 });
 test("App exposes only SDK UI without legacy detection or manual runtime reconnect", async () => {
   const source = await Bun.file(new URL("./App.tsx", import.meta.url)).text();

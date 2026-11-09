@@ -3,7 +3,6 @@ import {
   legacyUiPreferences,
   type UiPreferences,
 } from "../shared/desktop-state";
-import type { PackageEvent } from "../shared/packages";
 import type { Appearance, RPCSchema, Snapshot } from "../shared/rpc-schema";
 import {
   type SessionAddress,
@@ -20,7 +19,6 @@ import { sameAddress } from "./chat-snapshot";
 import { drafts } from "./draft-store";
 import { navigate, navigationRevision } from "./navigation";
 import { OpenController } from "./open-controller";
-import { createPackageAdapter } from "./package-rpc";
 import {
   liveAddress,
   receiveExtension,
@@ -34,28 +32,7 @@ import {
 } from "./runtime-events";
 import { SendController } from "./send-controller";
 import { visibleCompletion } from "./session-read";
-import { showError, showNotice, useStore } from "./store";
-
-const packageAdapters = new Map<
-  string,
-  ReturnType<typeof createPackageAdapter>
->();
-function receivePackageEvent(event: PackageEvent) {
-  for (const adapter of packageAdapters.values()) adapter.receive(event);
-}
-async function connectPackages() {
-  const { agentDir } = await rpc.request.packageProfile();
-  let adapter = packageAdapters.get(agentDir);
-  if (!adapter) {
-    adapter = createPackageAdapter(agentDir, {
-      search: (params) => rpc.request.packageSearch(params),
-      listInstalled: () => rpc.request.packageInstalled(),
-      operate: (params) => rpc.request.packageOperate(params),
-    });
-    packageAdapters.set(agentDir, adapter);
-  }
-  useStore.setState({ packageService: adapter.service });
-}
+import { receivePackageOp, showError, showNotice, useStore } from "./store";
 
 // Root event handlers below are installed before any session-opening RPC.
 let appearanceInFlight = false;
@@ -129,7 +106,8 @@ export const rpc = Electroview.defineRPC<RPCSchema>({
   handlers: {
     requests: {},
     messages: {
-      packageEvent: receivePackageEvent,
+      packageOp: receivePackageOp,
+      installed: (installed) => useStore.setState({ installed }),
       runtimeEvent: (event) => {
         const address =
           event.type === "ready" ||
@@ -347,7 +325,7 @@ export function connectRuntime() {
   return rootConnection;
 }
 export function initRuntimeConnection() {
-  void connectRuntime().then(connectPackages).catch(showError);
+  void connectRuntime().catch(showError);
   const disconnect = () => {
     clearInterval(heartbeatTimer);
     heartbeatTimer = undefined;
@@ -570,11 +548,9 @@ let reconnecting: Promise<void> | undefined;
 export function reconnectRuntime() {
   if (!reconnecting) {
     rootConnection = undefined;
-    reconnecting = connectRuntime()
-      .then(connectPackages)
-      .finally(() => {
-        reconnecting = undefined;
-      });
+    reconnecting = connectRuntime().finally(() => {
+      reconnecting = undefined;
+    });
   }
   return reconnecting;
 }
