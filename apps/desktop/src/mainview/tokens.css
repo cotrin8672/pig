@@ -9,6 +9,7 @@
   --ds-bg-composer: #414959e6;
   --ds-bg-elevated: #343d4df5;
   --ds-bg-elevated-opaque: #343d4d;
+  --ds-bg-popover: #343d4dcc;
   --ds-bg-hover: #ffffff0d;
   --ds-bg-inset: #252c39;
   --ds-bg-primary: #2b3443;
@@ -24,7 +25,6 @@
   --ds-focus: #d4e4ff;
   --ds-placeholder-ink: #b4bbc9;
   --ds-raised: #414959;
-  --ds-settings-field-bg: #333e50;
   --ds-shadow-composer: 0 6px 18px #1111163d, inset 0 1px 0 #ffffff08;
   --ds-shadow-dialog: 0 16px 48px #11111666;
   --ds-text-faint: #a0a9ba;

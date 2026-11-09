@@ -1191,7 +1191,10 @@ input:not([type="range"]) {
   z-index: 5;
 }
 .model-panel {
+  width: min(440px, calc(100vw - var(--ds-sidebar-width) - 64px));
   padding: 4px;
+  background: var(--ds-bg-popover);
+  backdrop-filter: blur(20px);
 }
 .model-search {
   display: flex;
@@ -1226,7 +1229,7 @@ input:not([type="range"]) {
   grid-template-columns: minmax(0, 1fr);
 }
 .model-browser[data-has-rail] {
-  grid-template-columns: 94px minmax(0, 1fr);
+  grid-template-columns: max-content minmax(0, 1fr);
 }
 .model-source-rail {
   display: flex;
@@ -1246,6 +1249,7 @@ input:not([type="range"]) {
   color: var(--ds-text-muted);
 }
 .model-source-rail button > span {
+  white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }

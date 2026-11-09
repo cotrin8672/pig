@@ -298,7 +298,16 @@ function KeyboardSettings() {
                   {capture === action ? (
                     t["Press keys…"]
                   ) : bindings[action] ? (
-                    bindings[action].split("+").map((key) => (
+                    bindings[action].split("+").flatMap((key, index) => [
+                      index ? (
+                        <span
+                          key={`${key}-separator`}
+                          className="settings-key-separator"
+                          aria-hidden="true"
+                        >
+                          +
+                        </span>
+                      ) : null,
                       <kbd key={key}>
                         {(
                           {
@@ -308,8 +317,8 @@ function KeyboardSettings() {
                             ArrowDown: "↓",
                           } as Record<string, string>
                         )[key] ?? key}
-                      </kbd>
-                    ))
+                      </kbd>,
+                    ])
                   ) : (
                     <span className="settings-unbound">{t.Unbound}</span>
                   )}

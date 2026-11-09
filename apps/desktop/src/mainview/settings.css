@@ -82,15 +82,49 @@
 }
 .settings-select select {
   appearance: none;
+  display: flex;
+  align-items: center;
   width: 100%;
   height: 34px;
   padding: 0 32px 0 12px;
-  background: var(--ds-settings-field-bg);
-  border: 1px solid var(--ds-border-strong);
+  max-width: none;
+  background: var(--ds-field-inset-bg);
+  border: 0;
+  box-shadow: var(--ds-elevation-stroke);
   border-radius: var(--radius-xs);
   color: var(--ds-text-primary);
   font: inherit;
   cursor: pointer;
+}
+.settings-select select,
+.settings-select select::picker(select) {
+  appearance: base-select;
+}
+/* Our chevron replaces the built-in icon. */
+.settings-select select::picker-icon {
+  display: none;
+}
+.settings-select select::picker(select) {
+  margin-top: 4px;
+  padding: 4px;
+  border: 1px solid #ffffff14;
+  border-radius: 10px;
+  background: var(--ds-bg-popover);
+  backdrop-filter: blur(20px);
+  box-shadow: 0 8px 24px #0003;
+  color: var(--ds-text-primary);
+}
+.settings-select option {
+  padding: 6px 10px;
+  border-radius: var(--radius-xs);
+}
+.settings-select option:hover,
+.settings-select option:focus-visible {
+  outline: none;
+  background: var(--ds-bg-hover);
+}
+.settings-select select:focus-visible {
+  outline-offset: 0;
 }
 .settings-select svg {
   position: absolute;
@@ -162,16 +196,24 @@
   min-width: 160px;
   min-height: 34px;
   padding: 5px 8px;
-  background: var(--ds-settings-field-bg);
-  border: 1px solid var(--ds-border-strong);
+  background: var(--ds-field-inset-bg);
+  border: 0;
+  box-shadow: var(--ds-elevation-stroke);
   border-radius: var(--radius-xs);
   white-space: nowrap;
   font-size: var(--text-sm);
+}
+.settings-recorder:hover {
+  background: #ffffff14;
 }
 .settings-recorder[data-recording="true"] {
   outline: 2px solid var(--ds-accent);
   outline-offset: 2px;
   color: var(--ds-accent);
+}
+.settings-key-separator {
+  color: var(--ds-text-muted);
+  font-size: var(--text-xs);
 }
 .settings-recorder kbd {
   display: inline-flex;
@@ -180,10 +222,10 @@
   height: 22px;
   min-width: 22px;
   padding: 0 5px;
-  background: var(--ds-raised);
+  background: #ffffff14;
   box-shadow:
-    var(--ds-elevation-stroke),
-    0 2px 0 var(--ds-bg-inset);
+    inset 0 0 0 0.5px #ffffff1f,
+    inset 0 -1px 0 #00000040;
   border-radius: var(--radius-3xs);
   font-family: var(--font-mono);
   font-size: var(--text-sm);
