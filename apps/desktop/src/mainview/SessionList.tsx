@@ -67,7 +67,10 @@ function SessionRow({ session, cwd }: { session: SessionInfo; cwd: string }) {
       !!s.snapshots[session.id]?.transcript.running ||
       (s.modelPending && s.active === session.id),
   );
-  const status = sessionStatus(running, false, flags);
+  const waiting = useStore((s) =>
+    s.pendingUI.some((request) => request.sessionId === session.id),
+  );
+  const status = sessionStatus(running, waiting, flags);
   const dialog = useRef<HTMLDialogElement>(null);
   const input = useRef<HTMLInputElement>(null);
   const cancel = useRef<HTMLButtonElement>(null);

@@ -23,11 +23,15 @@ function duration(ms: number) {
 
 export function ResponseFooter({
   sessionId,
+  entryId,
+  userEntryId,
   stats,
   user,
   canRegenerate,
 }: {
   sessionId: string;
+  entryId?: string;
+  userEntryId?: string;
   stats: ResponseStats;
   user?: Extract<Message, { role: "user" }>;
   canRegenerate: boolean;
@@ -88,16 +92,21 @@ export function ResponseFooter({
           type="button"
           title={t["Branch into new chat"]}
           aria-label={t["Branch into new chat"]}
-          onClick={() => void forkChat(sessionId, stats.timestamp)}
+          disabled={!entryId}
+          onClick={() => {
+            if (entryId) void forkChat(sessionId, entryId).catch(showError);
+          }}
         >
           <Split size={14} />
         </button>
-        {canRegenerate && user && (
+        {canRegenerate && user && userEntryId && (
           <button
             type="button"
             title={t.Regenerate}
             aria-label={t.Regenerate}
-            onClick={() => void regenerate(sessionId, user).catch(showError)}
+            onClick={() =>
+              void regenerate(sessionId, user, userEntryId).catch(showError)
+            }
           >
             <RefreshCw size={14} />
           </button>

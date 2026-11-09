@@ -1,38 +1,46 @@
-import type { LiveState } from "@earendil-works/pi-durable";
 import type { Snapshot, WireEvent } from "../shared/rpc-schema";
+import type { SessionAddress } from "../shared/runtime-contract";
 
-/** UI state also accepts failure details on hydrated snapshots when supplied. */
-export type ChatSnapshot = Snapshot & {
-  failure?: string;
-  aborted?: boolean;
-  live?: LiveState;
-};
+export type ChatSnapshot = Snapshot;
+export const addressKey = (address: SessionAddress) =>
+  JSON.stringify([address.hostId, address.sessionId, address.epoch]);
+export const sameAddress = (a: SessionAddress, b: SessionAddress) =>
+  a.hostId === b.hostId && a.sessionId === b.sessionId && a.epoch === b.epoch;
 
-export function hydrateChatSnapshot(snapshot: ChatSnapshot): ChatSnapshot {
-  const failure = snapshot.live?.runFailure;
-  const compaction = snapshot.live?.compactionFailure;
-  return {
-    ...snapshot,
-    failure:
-      snapshot.failure ??
-      (failure && failure.reason !== "aborted"
-        ? (failure.detail ?? failure.reason)
-        : undefined) ??
-      compaction?.error,
-    aborted: snapshot.aborted ?? failure?.reason === "aborted",
-  };
+export function hydrateChatSnapshot(snapshot: Snapshot): ChatSnapshot {
+  return snapshot;
 }
 
+/** Publications are monotonic within one epoch, never across owners. */
 export function applyChatEvent(
   snapshot: ChatSnapshot,
   event: WireEvent,
 ): ChatSnapshot {
+  if (
+    !sameAddress(snapshot.address, event.address) ||
+    event.snapshotSeq <= snapshot.snapshotSeq
+  )
+    return snapshot;
   return {
     ...snapshot,
+    snapshotSeq: event.snapshotSeq,
     transcript: event.transcript,
     failure: event.failure,
     aborted: event.aborted,
-    // The event is authoritative, including recovery from a previous failure.
-    live: undefined,
   };
+}
+
+export function newerSnapshot(
+  current: Snapshot | undefined,
+  incoming: Snapshot,
+): Snapshot {
+  if (!current) return incoming;
+  if (current.address.hostId !== incoming.address.hostId) return current;
+  if (incoming.address.epoch < current.address.epoch) return current;
+  if (
+    sameAddress(current.address, incoming.address) &&
+    incoming.snapshotSeq <= current.snapshotSeq
+  )
+    return current;
+  return incoming;
 }

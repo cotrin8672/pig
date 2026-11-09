@@ -1,6 +1,8 @@
 import type { AuthEvent, AuthPrompt } from "@earendil-works/pi-ai";
 import { create } from "zustand";
 import { defaultAppearance } from "../shared/appearance";
+import type { ExtensionStatus, UIRequest } from "../shared/extension-ui";
+import type { PackageService } from "../shared/packages";
 import type {
   Appearance,
   AuthMethod,
@@ -8,7 +10,9 @@ import type {
   Notice,
   SessionInfo,
 } from "../shared/rpc-schema";
+import type { SessionAddress } from "../shared/runtime-contract";
 import { defaultSettings, type Settings } from "../shared/settings";
+import type { TerminalOpenEvent } from "../shared/terminal-ui";
 import type { ChatSnapshot } from "./chat-snapshot";
 import {
   loadNoticeHistory,
@@ -33,6 +37,16 @@ export const useStore = create<{
   snapshots: Record<string, ChatSnapshot>;
   active?: string;
   page: "chat" | "providers" | "extensions" | "settings";
+  hostId?: string;
+  addresses: Record<string, SessionAddress>;
+  pendingUI: UIRequest[];
+  terminals: Record<string, TerminalOpenEvent>;
+  extensionStatuses: Record<string, ExtensionStatus>;
+  capabilities: Record<string, string[]>;
+  openingAddress?: SessionAddress;
+  openId?: string;
+  openMessage?: string;
+  packageService?: PackageService;
   notices: (Notice & { id: string })[];
   noticeHistory: NoticeRecord[];
   login?: LoginState;
@@ -56,6 +70,11 @@ export const useStore = create<{
   },
   sessions: {},
   snapshots: {},
+  addresses: {},
+  pendingUI: [],
+  terminals: {},
+  extensionStatuses: {},
+  capabilities: {},
   page: "chat",
   notices: [],
   noticeHistory: loadNoticeHistory(),

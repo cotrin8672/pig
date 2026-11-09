@@ -3,12 +3,12 @@ import {
   legacyUiPreferences,
   type UiPreferences,
 } from "../shared/desktop-state";
-import type {
-  Appearance,
-  RPCSchema,
-  Snapshot,
-  WireEvent,
-} from "../shared/rpc-schema";
+import type { PackageEvent } from "../shared/packages";
+import type { Appearance, RPCSchema, Snapshot } from "../shared/rpc-schema";
+import {
+  type SessionAddress,
+  UI_HEARTBEAT_INTERVAL_MS,
+} from "../shared/runtime-contract";
 import { sessionIdFromLink } from "../shared/session-links";
 import {
   patchSettings,
@@ -16,13 +16,48 @@ import {
   type SettingsPatch,
 } from "../shared/settings";
 import type { Message } from "../shared/transcript";
-import { applyChatEvent, hydrateChatSnapshot } from "./chat-snapshot";
+import { sameAddress } from "./chat-snapshot";
+import { drafts } from "./draft-store";
 import { navigate, navigationRevision } from "./navigation";
+import { OpenController } from "./open-controller";
+import { createPackageAdapter } from "./package-rpc";
+import {
+  liveAddress,
+  receiveExtension,
+  receiveRuntime,
+  receiveRuntimeState,
+  receiveSnapshot,
+  receiveTerminal,
+  receiveWire,
+  runtimeRevision,
+  subscribeOwnership,
+} from "./runtime-events";
+import { SendController } from "./send-controller";
 import { visibleCompletion } from "./session-read";
 import { showError, showNotice, useStore } from "./store";
 
-// Preserve watch publications racing the open-session response (including a fast final answer).
-const latestEvents = new Map<string, WireEvent>();
+const packageAdapters = new Map<
+  string,
+  ReturnType<typeof createPackageAdapter>
+>();
+function receivePackageEvent(event: PackageEvent) {
+  for (const adapter of packageAdapters.values()) adapter.receive(event);
+}
+async function connectPackages() {
+  const { agentDir } = await rpc.request.packageProfile();
+  let adapter = packageAdapters.get(agentDir);
+  if (!adapter) {
+    adapter = createPackageAdapter(agentDir, {
+      search: (params) => rpc.request.packageSearch(params),
+      listInstalled: () => rpc.request.packageInstalled(),
+      operate: (params) => rpc.request.packageOperate(params),
+    });
+    packageAdapters.set(agentDir, adapter);
+  }
+  useStore.setState({ packageService: adapter.service });
+}
+
+// Root event handlers below are installed before any session-opening RPC.
 let appearanceInFlight = false;
 let appearancePending = false;
 let appearanceTimer: ReturnType<typeof setTimeout> | undefined;
@@ -94,6 +129,33 @@ export const rpc = Electroview.defineRPC<RPCSchema>({
   handlers: {
     requests: {},
     messages: {
+      packageEvent: receivePackageEvent,
+      runtimeEvent: (event) => {
+        const address =
+          event.type === "ready" ||
+          event.type === "snapshot" ||
+          event.type === "replaced"
+            ? event.snapshot.address
+            : event.address;
+        if (
+          useStore.getState().hostId &&
+          useStore.getState().hostId !== address.hostId
+        ) {
+          void reconnectRuntime().catch(showError);
+          return;
+        }
+        receiveRuntime(event);
+        if (
+          event.type === "ready" ||
+          event.type === "replaced" ||
+          event.type === "closed" ||
+          (event.type === "snapshot" && !event.snapshot.transcript.running)
+        )
+          void refreshSessions().catch(showError);
+      },
+      extensionUIEvent: receiveExtension,
+      terminalEvent: receiveTerminal,
+      sessionEvent: receiveWire,
       appearance: receiveAppearance,
       settings: receiveSettings,
       windowState: ({ maximized }) => useStore.setState({ maximized }),
@@ -112,24 +174,24 @@ export const rpc = Electroview.defineRPC<RPCSchema>({
           },
         }));
       },
-      agentEvent: ({ sessionId, event, contextUsage }) => {
-        latestEvents.set(sessionId, event);
-        if (latestEvents.size > 100)
-          latestEvents.delete(latestEvents.keys().next().value ?? "");
-        useStore.setState((s) => {
-          const snapshot = s.snapshots[sessionId];
-          if (!snapshot) return {};
-          return {
-            snapshots: {
-              ...s.snapshots,
-              [sessionId]: {
-                ...applyChatEvent(snapshot, event),
-                ...(contextUsage !== undefined ? { contextUsage } : {}),
+      agentEvent: ({ event, contextUsage }) => {
+        receiveWire(event);
+        if (contextUsage !== undefined)
+          useStore.setState((s) => {
+            const snapshot = s.snapshots[event.address.sessionId];
+            if (
+              !snapshot ||
+              !sameAddress(snapshot.address, event.address) ||
+              snapshot.snapshotSeq !== event.snapshotSeq
+            )
+              return {};
+            return {
+              snapshots: {
+                ...s.snapshots,
+                [event.address.sessionId]: { ...snapshot, contextUsage },
               },
-            },
-          };
-        });
-        if (!event.transcript.running) void refreshSessions().catch(showError);
+            };
+          });
       },
       loginFrame: (frame) => {
         const login = useStore.getState().login;
@@ -236,67 +298,219 @@ export async function refresh() {
   }
   await refreshSessions();
 }
-export function openChat(cwd: string, id?: string, push = true) {
-  return openSnapshot(() => rpc.request.openSession({ cwd, id }), push);
+export const sends = new SendController(drafts, {
+  syncDraft: (params) => rpc.request.syncDraft(params),
+  prompt: (params) => rpc.request.prompt(params),
+  getPromptReceipt: (params) => rpc.request.getPromptReceipt(params),
+});
+subscribeOwnership((previous, next) => sends.transfer(previous, next));
+const clientId = crypto.randomUUID();
+let rootConnection: Promise<void> | undefined;
+let heartbeatTimer: ReturnType<typeof setInterval> | undefined;
+let heartbeatInFlight = false;
+function startHeartbeat() {
+  if (heartbeatTimer) return;
+  heartbeatTimer = setInterval(() => {
+    if (heartbeatInFlight) return;
+    heartbeatInFlight = true;
+    void rpc.request
+      .heartbeatUI({ clientId })
+      .then(({ connected }) => {
+        if (!connected) {
+          rootConnection = undefined;
+          void connectRuntime().catch(showError);
+        }
+      })
+      .catch(() => {
+        /* Host lease fails closed; never resend prompts here. */
+      })
+      .finally(() => {
+        heartbeatInFlight = false;
+      });
+  }, UI_HEARTBEAT_INTERVAL_MS);
 }
-export function openChatLink(url: string) {
-  return openSnapshot(() => rpc.request.openSessionLink({ url }));
+export function connectRuntime() {
+  if (!rootConnection) {
+    rpc.send.connectUI({ clientId });
+    startHeartbeat();
+    rootConnection = (async () => {
+      for (let attempt = 0; attempt < 3; attempt++) {
+        const revision = runtimeRevision;
+        const state = await rpc.request.runtimeState();
+        if (receiveRuntimeState(state, revision)) return;
+      }
+    })().catch((error) => {
+      rootConnection = undefined;
+      throw error;
+    });
+  }
+  return rootConnection;
 }
-export function forkChat(sessionId: string, timestamp: number) {
-  return openSnapshot(() => rpc.request.forkSession({ sessionId, timestamp }));
+export function initRuntimeConnection() {
+  void connectRuntime().then(connectPackages).catch(showError);
+  const disconnect = () => {
+    clearInterval(heartbeatTimer);
+    heartbeatTimer = undefined;
+    rootConnection = undefined;
+    rpc.send.disconnectUI({ clientId });
+  };
+  const reconnect = (event: PageTransitionEvent) => {
+    if (event.persisted) void reconnectRuntime().catch(showError);
+  };
+  window.addEventListener("pagehide", disconnect);
+  window.addEventListener("pageshow", reconnect);
+  return () => {
+    window.removeEventListener("pagehide", disconnect);
+    window.removeEventListener("pageshow", reconnect);
+    disconnect();
+  };
 }
-/** Rewind and resend within the same conversation and desktop identity. */
+const opens = new OpenController({
+  openSession: (params) => rpc.request.openSession(params),
+  getOpenState: (params) => rpc.request.getOpenState(params),
+  cancelOpen: (params) => rpc.request.cancelOpen(params),
+});
+export async function cancelOpening() {
+  const openId = useStore.getState().openId;
+  if (!openId) return;
+  const cancellation = opens.cancel(openId);
+  useStore.setState({
+    opening: false,
+    openingAddress: undefined,
+    openMessage: undefined,
+    openId: undefined,
+  });
+  await cancellation;
+}
+export async function openChat(
+  cwd: string,
+  id?: string,
+  push = true,
+): Promise<Snapshot | undefined> {
+  const current = id ? useStore.getState().snapshots[id] : undefined;
+  if (current && current.info.cwd === cwd && liveAddress(current.address)) {
+    if (push) navigate("chat", current.info.id);
+    else useStore.setState({ active: current.info.id });
+    return current;
+  }
+  const openId = crypto.randomUUID();
+  return openSnapshot(
+    () =>
+      opens.open({ openId, cwd, id }, (openMessage) => {
+        if (useStore.getState().openId === openId)
+          useStore.setState({ openMessage });
+      }),
+    push,
+    openId,
+  );
+}
+export async function openChatLink(url: string) {
+  const id = sessionIdFromLink(url);
+  if (!id) {
+    showError("Invalid session link");
+    return;
+  }
+  // Resolve only configured workspace membership, then use the SAME cancellable
+  // openId path as every sidebar open. A link never creates a lookalike session.
+  try {
+    await refreshSessions();
+    const target = Object.values(useStore.getState().sessions)
+      .flat()
+      .find((session) => session.id === id);
+    if (!target)
+      throw new Error(
+        "This session is not in the configured workspaces. Add its project before opening the link.",
+      );
+    return openChat(target.cwd, target.id);
+  } catch (error) {
+    showError(error);
+  }
+}
+function currentAddress(sessionId: string): SessionAddress {
+  const address = useStore.getState().snapshots[sessionId]?.address;
+  if (!address || !liveAddress(address))
+    throw new Error("Session is no longer open");
+  return address;
+}
+export function forkChat(sessionId: string, entryId: string) {
+  const previous = currentAddress(sessionId);
+  return openSnapshot(async () => {
+    const snapshot = await rpc.request.forkSession({ ...previous, entryId });
+    receiveRuntime({ type: "replaced", previous, snapshot });
+    return snapshot;
+  });
+}
+/** Rewind by exact persisted entry identity; timestamps are never identities. */
 export async function regenerate(
   sessionId: string,
   user: Extract<Message, { role: "user" }>,
+  entryId: string,
 ) {
-  const snapshot = hydrateChatSnapshot(
-    await rpc.request.rewindSession({
-      sessionId,
-      timestamp: user.timestamp,
-    }),
-  );
-  useStore.setState((s) => ({
-    active: sessionId,
-    snapshots: { ...s.snapshots, [sessionId]: snapshot },
-  }));
-  navigate("chat", sessionId);
+  const previous = currentAddress(sessionId);
+  const snapshot = await rpc.request.rewindSession({
+    ...previous,
+    entryId,
+  });
+  if (!liveAddress(snapshot.address))
+    throw new Error("The rewind response belongs to a replaced session");
+  receiveRuntime({ type: "replaced", previous, snapshot });
+  navigate("chat", snapshot.info.id);
   const blocks =
     typeof user.content === "string"
       ? [{ type: "text" as const, text: user.content }]
       : user.content;
-  const images = blocks.filter((b) => b.type === "image");
-  await rpc.request.prompt({
-    sessionId,
-    requestId: crypto.randomUUID(),
+  drafts.edit(snapshot.address, () => ({
     text: blocks
       .filter((b) => b.type === "text")
       .map((b) => b.text)
       .join("\n"),
-    images: images.length ? images : undefined,
-  });
+    pastes: [],
+    images: blocks
+      .filter((b) => b.type === "image")
+      .map((image) => ({ id: crypto.randomUUID(), image })),
+  }));
+  await sends.send(snapshot.address);
 }
-async function openSnapshot(load: () => Promise<Snapshot>, push = true) {
+async function openSnapshot(
+  load: () => Promise<Snapshot | undefined>,
+  push = true,
+  openId = crypto.randomUUID(),
+): Promise<Snapshot | undefined> {
   if (push && useStore.getState().opening) return;
   const revision = navigationRevision;
-  const beforeEvents = new Map(latestEvents);
-  useStore.setState({ opening: true });
+  useStore.setState({
+    opening: true,
+    openId,
+    openMessage: undefined,
+    openingAddress: undefined,
+  });
   try {
-    let snapshot = hydrateChatSnapshot(await load());
-    const latest = latestEvents.get(snapshot.info.id);
-    if (latest && latest !== beforeEvents.get(snapshot.info.id))
-      snapshot = applyChatEvent(snapshot, latest);
-    useStore.setState((s) => ({
-      ...(revision === navigationRevision ? { active: snapshot.info.id } : {}),
-      snapshots: { ...s.snapshots, [snapshot.info.id]: snapshot },
-    }));
-    if (push && revision === navigationRevision)
-      navigate("chat", snapshot.info.id);
+    await connectRuntime();
+    if (opens.isCancelled(openId)) return;
+    const snapshot = await load();
+    if (
+      !snapshot ||
+      opens.isCancelled(openId) ||
+      !liveAddress(snapshot.address)
+    )
+      return;
+    receiveSnapshot(snapshot);
+    if (revision === navigationRevision) {
+      useStore.setState({ active: snapshot.info.id });
+      if (push) navigate("chat", snapshot.info.id);
+    }
     await refreshSessions();
+    return useStore.getState().snapshots[snapshot.info.id];
   } catch (error) {
-    showError(error);
+    if (!opens.isCancelled(openId)) showError(error);
   } finally {
-    useStore.setState({ opening: false });
+    if (useStore.getState().openId === openId)
+      useStore.setState({
+        opening: false,
+        openId: undefined,
+        openingAddress: undefined,
+        openMessage: undefined,
+      });
   }
 }
 
@@ -350,4 +564,17 @@ export function initSessionReadTracking() {
     window.removeEventListener("focus", onFocus);
     document.removeEventListener("visibilitychange", onFocus);
   };
+}
+
+let reconnecting: Promise<void> | undefined;
+export function reconnectRuntime() {
+  if (!reconnecting) {
+    rootConnection = undefined;
+    reconnecting = connectRuntime()
+      .then(connectPackages)
+      .finally(() => {
+        reconnecting = undefined;
+      });
+  }
+  return reconnecting;
 }

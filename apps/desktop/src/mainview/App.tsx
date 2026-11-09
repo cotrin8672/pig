@@ -20,8 +20,13 @@ import { filterModels } from "../shared/models";
 import { responseStats } from "../shared/transcript";
 import { ChatWidthHandles, useChatWidth } from "./ChatWidth";
 import { Composer } from "./Composer";
+import { CustomRecord } from "./CustomRecord";
 import type { ChatSnapshot } from "./chat-snapshot";
+import { addressKey } from "./chat-snapshot";
+import { dataText } from "./custom-data";
+import { DraftRecovery } from "./DraftRecovery";
 import { Extensions } from "./Extensions";
+import { ExtensionStatusBar, workingLabel } from "./extension-status";
 import { getT, useT } from "./i18n";
 import { Markdown, ToolResultContent, UserMessage } from "./MessageContent";
 import { NotificationCenter } from "./NotificationCenter";
@@ -31,6 +36,8 @@ import { ProviderIcon, useProviderName } from "./ProviderIcon";
 import { Providers } from "./Providers";
 import { ResponseFooter } from "./ResponseFooter";
 import {
+  cancelOpening,
+  initRuntimeConnection,
   initSessionLinks,
   initSessionReadTracking,
   openChat,
@@ -42,6 +49,7 @@ import { Settings } from "./Settings";
 import { SidebarSessions } from "./SidebarSessions";
 import { initShortcuts } from "./shortcuts";
 import { type LoginState, showError, useStore } from "./store";
+import { UIRequestBroker } from "./UIRequestBroker";
 
 const basename = (path: string) =>
   path.split(/[\\/]/).filter(Boolean).pop() || path;
@@ -56,6 +64,7 @@ function isWindowDragTarget(target: EventTarget) {
 export function App() {
   const t = useT();
   const state = useStore();
+  useEffect(initRuntimeConnection, []);
   useEffect(() => {
     void refresh().catch(showError);
   }, []);
@@ -152,11 +161,14 @@ export function App() {
         {state.page === "providers" ? (
           <Providers />
         ) : state.page === "extensions" ? (
-          <Extensions />
+          <Extensions
+            key={state.packageService?.agentDir ?? "disconnected"}
+            service={state.packageService}
+          />
         ) : state.page === "settings" ? (
           <Settings />
         ) : active ? (
-          <Chat key={active.info.id} snapshot={active} />
+          <Chat key={addressKey(active.address)} snapshot={active} />
         ) : (
           <div className="welcome">
             <h1>{t["What shall we build?"]}</h1>
@@ -180,6 +192,8 @@ export function App() {
           </div>
         )}
       </main>
+      <DraftRecovery />
+      <UIRequestBroker />
       {/* Mouse clicks must not leave a focus ring behind, like native caption buttons. */}
       <div
         className="window-controls electrobun-webkit-app-region-no-drag"
@@ -216,7 +230,17 @@ export function App() {
       {state.login && (
         <OAuthLoginDialog key={state.login.loginId} login={state.login} />
       )}
-      {state.opening && <div className="loading">{t["Opening chat…"]}</div>}
+      {state.opening && (
+        <div className="loading">
+          {state.openMessage ?? t["Opening chat…"]}{" "}
+          <button
+            type="button"
+            onClick={() => void cancelOpening().catch(showError)}
+          >
+            Cancel opening
+          </button>
+        </div>
+      )}
       <Notifications />
     </div>
   );
@@ -440,19 +464,34 @@ function Chat({ snapshot }: { snapshot: ChatSnapshot }) {
   const models = filterModels(available, disabledModels);
   const { width, setWidth } = useChatWidth();
   const thread = useRef<HTMLDivElement>(null);
+  const status = useStore(
+    (s) => s.extensionStatuses[addressKey(snapshot.address)],
+  );
+  const turns = transcript.records.filter(
+    (record) => record.kind === "message",
+  );
   // A response ends where the next turn is not another assistant step.
   const footer = (index: number) => {
-    const next = transcript.turns[index + 1]?.message.role;
+    const record = transcript.records[index];
+    const messageIndex = turns.findIndex((turn) => turn.id === record.id);
+    if (messageIndex < 0) return null;
+    const next = turns
+      .slice(messageIndex + 1)
+      .find(
+        (turn) =>
+          turn.message.role === "assistant" || turn.message.role === "user",
+      )?.message.role;
     if (next ? next === "assistant" : transcript.running) return null;
-    const stats = responseStats(transcript.turns, index);
+    const stats = responseStats(turns, messageIndex);
     if (!stats) return null;
-    const user =
-      stats.userIndex === undefined
-        ? undefined
-        : transcript.turns[stats.userIndex].message;
+    const userRecord =
+      stats.userIndex === undefined ? undefined : turns[stats.userIndex];
+    const user = userRecord?.message;
     return (
       <ResponseFooter
         sessionId={info.id}
+        entryId={record.entryId}
+        userEntryId={userRecord?.entryId}
         stats={stats}
         user={user?.role === "user" ? user : undefined}
         canRegenerate={!transcript.running}
@@ -473,7 +512,7 @@ function Chat({ snapshot }: { snapshot: ChatSnapshot }) {
         <div className="chat-heading">
           <Folder size={14} />
           <span>{general ? t.Chats : basename(info.cwd)}</span>
-          <small>{info.title}</small>
+          <small>{status?.title ?? info.title}</small>
         </div>
         <div className="chat-header-actions">
           <button
@@ -489,23 +528,20 @@ function Chat({ snapshot }: { snapshot: ChatSnapshot }) {
             title={t["Close chat (history is kept)"]}
             aria-label={t["Close chat"]}
             onClick={() => {
-              rpc.send.closeSession({ sessionId: info.id });
-              useStore.setState((s) => {
-                const snapshots = { ...s.snapshots };
-                delete snapshots[info.id];
-                return { snapshots };
-              });
+              void rpc.request
+                .closeSession(snapshot.address)
+                .then(() => refreshSessions(), showError);
               navigate("chat", null);
-              void refreshSessions().catch(showError);
             }}
           >
             <X size={17} />
           </button>
         </div>
       </header>
+      <ExtensionStatusBar address={snapshot.address} />
       <div ref={thread} className="thread-scroll">
         <div className="transcript">
-          {!transcript.turns.length && (
+          {!transcript.records.length && (
             <div className="chat-empty">
               <h1>{t["What shall we build?"]}</h1>
               <p className="muted">
@@ -525,65 +561,83 @@ function Chat({ snapshot }: { snapshot: ChatSnapshot }) {
               )}
             </div>
           )}
-          {transcript.turns.map(({ id, message }, index) => (
-            <div key={id} className="response-turn">
-              <article className={`message ${message.role}`}>
-                {message.role === "user" ? (
-                  <UserMessage
-                    message={message}
-                    sessionId={info.id}
-                    disabled={transcript.running || !snapshot.model}
-                  />
-                ) : message.role === "assistant" ? (
-                  <>
-                    {message.content.map((content, index) => (
-                      // biome-ignore lint/suspicious/noArrayIndexKey: Streaming content blocks retain their SDK indexes.
-                      <div key={`${content.type}-${index}`}>
-                        {content.type === "text" ? (
-                          <div className="prose">
-                            <Markdown text={content.text} />
-                          </div>
-                        ) : content.type === "thinking" ? (
-                          <details className="thinking">
-                            <summary>{t.Thinking}</summary>
-                            <Markdown text={content.thinking} />
-                          </details>
-                        ) : content.type === "toolCall" ? (
-                          <details className="tool-card">
-                            <summary>
-                              <span>{content.name}</span>
-                              <code>
-                                {JSON.stringify(content.arguments).slice(
-                                  0,
-                                  100,
-                                )}
-                              </code>
-                              <small>
-                                {t.toolStatus(
-                                  transcript.tools[content.id]?.status ||
-                                    "pending",
-                                )}
-                              </small>
-                            </summary>
-                            <pre>
-                              {JSON.stringify(content.arguments, null, 2)}
-                            </pre>
-                            <ToolResultContent
-                              result={transcript.tools[content.id]?.result}
-                            />
-                          </details>
-                        ) : null}
-                      </div>
-                    ))}
-                    {message.errorMessage && (
-                      <p className="error">{message.errorMessage}</p>
-                    )}
-                  </>
-                ) : null}
-              </article>
-              {footer(index)}
-            </div>
-          ))}
+          {transcript.records.map((record, index) => {
+            if (record.kind !== "message" || record.message.role === "custom")
+              return <CustomRecord key={record.id} record={record} />;
+            const { id, message } = record;
+            return (
+              <div key={id} className="response-turn">
+                <article className={`message ${message.role}`}>
+                  {message.role === "user" ? (
+                    <UserMessage
+                      message={message}
+                      sessionId={info.id}
+                      entryId={record.entryId}
+                      disabled={transcript.running || !snapshot.model}
+                    />
+                  ) : message.role === "assistant" ? (
+                    <>
+                      {message.content.map((content, index) => (
+                        // biome-ignore lint/suspicious/noArrayIndexKey: Streaming content blocks retain their SDK indexes.
+                        <div key={`${content.type}-${index}`}>
+                          {content.type === "text" ? (
+                            <div className="prose">
+                              <Markdown text={content.text} />
+                            </div>
+                          ) : content.type === "thinking" ? (
+                            <details className="thinking">
+                              <summary>
+                                {status?.hiddenThinkingLabel ?? t.Thinking}
+                              </summary>
+                              <Markdown text={content.thinking} />
+                            </details>
+                          ) : content.type === "toolCall" ? (
+                            <details className="tool-card">
+                              <summary>
+                                <span>{content.name}</span>
+                                <code>
+                                  {JSON.stringify(content.arguments).slice(
+                                    0,
+                                    100,
+                                  )}
+                                </code>
+                                <small>
+                                  {t.toolStatus(
+                                    transcript.tools[content.id]?.status ||
+                                      "pending",
+                                  )}
+                                </small>
+                              </summary>
+                              <pre>
+                                {JSON.stringify(content.arguments, null, 2)}
+                              </pre>
+                              <ToolResultContent
+                                result={transcript.tools[content.id]?.result}
+                              />
+                            </details>
+                          ) : null}
+                        </div>
+                      ))}
+                      {message.errorMessage && (
+                        <p className="error">{message.errorMessage}</p>
+                      )}
+                    </>
+                  ) : message.role === "toolResult" ? (
+                    <ToolResultContent result={message} />
+                  ) : (
+                    <CustomRecord record={record} />
+                  )}
+                  {record.details !== undefined && (
+                    <details>
+                      <summary>Details</summary>
+                      <pre>{dataText(record.details)}</pre>
+                    </details>
+                  )}
+                </article>
+                {footer(index)}
+              </div>
+            );
+          })}
           {snapshot.failure && (
             <p className="error" role="alert">
               {snapshot.failure}
@@ -596,7 +650,7 @@ function Chat({ snapshot }: { snapshot: ChatSnapshot }) {
           )}
           {transcript.running && (
             <p className="muted running" role="status">
-              {t["Working…"]}
+              {workingLabel(status, t["Working…"])}
             </p>
           )}
         </div>

@@ -8,6 +8,7 @@ export function visibleCompletion(
     page: string;
     opening: boolean;
     modelPending: boolean;
+    pendingUI?: { sessionId: string }[];
     bootstrap: { desktop: { sessions: Record<string, SessionFlags> } };
     snapshots: Record<
       string,
@@ -23,6 +24,7 @@ export function visibleCompletion(
     state.page !== "chat" ||
     state.opening ||
     !state.active ||
+    state.pendingUI?.some((request) => request.sessionId === state.active) ||
     state.modelPending
   )
     return;

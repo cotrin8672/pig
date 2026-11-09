@@ -85,9 +85,9 @@ export function ModelPicker({ snapshot }: { snapshot: Snapshot }) {
   }, [snapshot.transcript.running, ref]);
   function select(model: ModelInfo) {
     close();
-    void changeSelection(snapshot.info.id, () =>
+    void changeSelection(snapshot.address, () =>
       rpc.request.setModel({
-        sessionId: snapshot.info.id,
+        ...snapshot.address,
         provider: model.provider,
         id: model.id,
       }),
@@ -123,7 +123,7 @@ export function ModelPicker({ snapshot }: { snapshot: Snapshot }) {
         className="picker-trigger"
         aria-label={t.chooseModel(
           snapshot.model?.name ?? t.None,
-          t[effortLabels[snapshot.effort]],
+          effortLabels[snapshot.effort],
         )}
         aria-disabled={disabled}
         onClick={(event) => {
@@ -147,7 +147,7 @@ export function ModelPicker({ snapshot }: { snapshot: Snapshot }) {
         </span>
         {snapshot.effortLevels.length > 1 && (
           <span className="picker-effort-label">
-            {t[effortLabels[snapshot.effort]]}
+            {effortLabels[snapshot.effort]}
           </span>
         )}
         <ChevronDown size={12} />

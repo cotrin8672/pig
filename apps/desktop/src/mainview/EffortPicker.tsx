@@ -14,8 +14,8 @@ export function EffortPicker({ snapshot }: { snapshot: Snapshot }) {
       disabled={snapshot.transcript.running || pending}
       onCommit={async (effort: Effort) => {
         // changeSelection reports errors itself; reject so the slider snaps back.
-        await changeSelection(id, () =>
-          rpc.request.setEffort({ sessionId: id, effort }),
+        await changeSelection(snapshot.address, () =>
+          rpc.request.setEffort({ ...snapshot.address, effort }),
         );
         if (useStore.getState().snapshots[id]?.effort !== effort)
           throw new Error("Effort not applied");

@@ -6,6 +6,7 @@ import remarkGfm from "remark-gfm";
 import { sessionIdFromLink } from "../shared/session-links";
 import type { Message } from "../shared/transcript";
 import { editUserMessage } from "../shared/user-message";
+import { dataText } from "./custom-data";
 import { ImageGallery } from "./ImageGallery";
 import { useT } from "./i18n";
 import { openChatLink, regenerate, rpc } from "./rpc";
@@ -66,10 +67,12 @@ const imageSources = (content: Content) =>
 export const UserMessage = memo(function UserMessage({
   message,
   sessionId,
+  entryId,
   disabled,
 }: {
   message: Extract<Message, { role: "user" }>;
   sessionId: string;
+  entryId?: string;
   disabled: boolean;
 }) {
   const { content } = message;
@@ -97,9 +100,15 @@ export const UserMessage = memo(function UserMessage({
           className="user-edit"
           onSubmit={(event) => {
             event.preventDefault();
-            if (disabled || busy || (!draft.trim() && !sources.length)) return;
+            if (
+              !entryId ||
+              disabled ||
+              busy ||
+              (!draft.trim() && !sources.length)
+            )
+              return;
             setBusy(true);
-            void regenerate(sessionId, editUserMessage(message, draft))
+            void regenerate(sessionId, editUserMessage(message, draft), entryId)
               .then(() => setEditing(false))
               .catch(showError)
               .finally(() => setBusy(false));
@@ -163,7 +172,7 @@ export const UserMessage = memo(function UserMessage({
           type="button"
           title={t["Edit message"]}
           aria-label={t["Edit message"]}
-          disabled={disabled || busy || editing}
+          disabled={!entryId || disabled || busy || editing}
           onClick={() => {
             setDraft(text);
             setEditing(true);
@@ -217,18 +226,25 @@ export const ToolResultContent = memo(function ToolResultContent({
 }: {
   result: unknown;
 }) {
-  if (!result || typeof result !== "object") return null;
-  if ("content" in result && Array.isArray(result.content))
-    return <MessageContent content={result.content} markdown={false} />;
-  if (!("details" in result)) return null;
-  // Malformed tool results must never dump embedded image payloads into the UI.
-  let fallback: string | undefined;
-  try {
-    fallback = JSON.stringify(result.details, (key, value) =>
-      key === "data" ? undefined : value,
-    );
-  } catch {
-    return null;
-  }
-  return fallback ? <pre>{fallback}</pre> : null;
+  if (!result || typeof result !== "object")
+    return result === undefined ? null : <pre>{dataText(result)}</pre>;
+  return (
+    <>
+      {"content" in result && Array.isArray(result.content) && (
+        <MessageContent content={result.content} markdown={false} />
+      )}
+      {"isError" in result && result.isError === true && (
+        <p className="error">Tool failed</p>
+      )}
+      {"details" in result && result.details !== undefined && (
+        <details>
+          <summary>Tool details</summary>
+          <pre>{dataText(result.details)}</pre>
+        </details>
+      )}
+      {!("content" in result) && !("details" in result) && (
+        <pre>{dataText(result)}</pre>
+      )}
+    </>
+  );
 });

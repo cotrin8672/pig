@@ -1,5 +1,7 @@
 import { useEffect, useRef } from "react";
 import type { ModelSelection } from "../shared/rpc-schema";
+import type { SessionAddress } from "../shared/runtime-contract";
+import { sameAddress } from "./chat-snapshot";
 import { showError, useStore } from "./store";
 
 export function usePicker() {
@@ -32,16 +34,20 @@ export function usePicker() {
 }
 
 export async function changeSelection(
-  sessionId: string,
+  address: SessionAddress,
   request: () => Promise<ModelSelection>,
 ) {
   if (useStore.getState().modelPending) return;
+  const sessionId = address.sessionId;
+  const sequence = useStore.getState().snapshots[sessionId]?.snapshotSeq;
   useStore.setState({ modelPending: true });
   try {
     const selection = await request();
     useStore.setState((state) => {
       const snapshot = state.snapshots[sessionId];
-      return snapshot
+      return snapshot &&
+        sameAddress(snapshot.address, address) &&
+        snapshot.snapshotSeq === sequence
         ? {
             snapshots: {
               ...state.snapshots,

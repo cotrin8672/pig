@@ -3,10 +3,13 @@ import { actionIds, matchesCombo, resolveBindings } from "../shared/keymap";
 import { navigate } from "./navigation";
 import { updateAppearance } from "./rpc";
 import { useStore } from "./store";
+import { isTerminalKeyboardEvent } from "./terminal-ui";
 
 export function initShortcuts() {
   const keydown = (event: KeyboardEvent) => {
     if (
+      isTerminalKeyboardEvent(event) ||
+      useStore.getState().pendingUI.length > 0 ||
       event.defaultPrevented ||
       event.isComposing ||
       event.keyCode === 229 ||
