@@ -1,0 +1,56 @@
+.terminal-dialog {
+  width: min(1100px, 94vw);
+  height: min(800px, 90vh);
+  max-width: 94vw;
+  max-height: 90vh;
+  padding: 16px;
+  color: #f1edf5;
+  background: #1e2430;
+  border: 1px solid #667080;
+  border-radius: 12px;
+  overflow: hidden;
+}
+.terminal-dialog[open] {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.terminal-dialog::backdrop {
+  background: rgb(0 0 0 / 55%);
+}
+.terminal-dialog > header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.terminal-dialog > header button {
+  display: grid;
+  place-items: center;
+  padding: 6px;
+  color: inherit;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  cursor: pointer;
+}
+.terminal-dialog > header button:focus-visible {
+  outline: 2px solid #abcdef;
+}
+.terminal-dialog .terminal-viewport {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+.terminal-dialog .terminal-viewport > .xterm {
+  height: 100%;
+}
+.terminal-dialog .terminal-hint {
+  margin: 0;
+  color: #b3bdce;
+  font-size: 12px;
+}
+.terminal-dialog [role="alert"] {
+  margin: 0;
+  color: #ffb3b3;
+}
