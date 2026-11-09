@@ -1,89 +1,193 @@
 import { expect, test } from "bun:test";
-import { PromptQueue, withPackageLock } from "./package-queue";
 import {
-  mapSearchItem,
-  packageOperation,
-  packagePreviews,
-  parsePreviews,
-  repoUrl,
-  searchPackages,
-} from "./packages";
+  catalogPreviews,
+  type DurableCatalogEntry,
+  durablePackageCatalog,
+  searchCatalog,
+} from "./durable-package-catalog";
+import { PackageManagerError } from "./durable-package-manager";
+import { PromptQueue, withPackageLock } from "./package-queue";
+import { packageOperation, packagePreviews, searchPackages } from "./packages";
 
-test("repository links normalize git transports and fall back only to GitHub", () => {
-  expect(repoUrl("git+https://github.com/a/b.git")).toBe(
-    "https://github.com/a/b",
-  );
-  expect(repoUrl("git://github.com/a/b.git")).toBe("https://github.com/a/b");
-  expect(repoUrl(undefined, "https://github.com/a/b")).toBe(
-    "https://github.com/a/b",
-  );
-  expect(repoUrl("javascript:alert(1)", "https://example.com")).toBeUndefined();
+const fakeDependencies = (
+  mutate = async (_action: string, _source: string) => {},
+) => ({ mutate, listInstalled: async () => [] });
+
+test("production catalog is empty; local search and previews never use the network", async () => {
+  const original = globalThis.fetch;
+  let calls = 0;
+  globalThis.fetch = (async () => {
+    calls++;
+    throw new Error("read paths must not fetch");
+  }) as unknown as typeof fetch;
+  try {
+    expect(durablePackageCatalog).toEqual([]);
+    for (const query of ["", "private"])
+      expect(await searchPackages({ query, page: 0 })).toEqual({
+        items: [],
+        total: 0,
+        pageSize: 50,
+      });
+    expect(
+      await packagePreviews({ names: ["example", "example", "__proto__"] }),
+    ).toEqual({ example: null, ["__proto__"]: null });
+    expect(calls).toBe(0);
+  } finally {
+    globalThis.fetch = original;
+  }
 });
-test("search cards map keywords, publisher and optional download counts", () => {
-  const card = mapSearchItem({
-    package: {
-      name: "example",
-      version: "1",
-      keywords: ["pi-extension", "skills"],
-      publisher: { username: "author" },
-      links: { npm: "https://npmjs.com/package/example" },
-    },
-    downloads: { monthly: 42 },
-  });
-  expect(card).toMatchObject({
-    name: "example",
-    version: "1",
-    types: ["extension", "skill"],
-    publisher: "author",
-    monthlyDownloads: 42,
-  });
-  expect(mapSearchItem({ package: {} }).monthlyDownloads).toBe(0);
-});
-test("previews accept only requested HTTPS images and fill missing names with null", () => {
-  expect(
-    parsePreviews(
-      {
-        previews: [
-          {
-            name: "a",
-            media: { type: "image", url: "https://example.com/a.png" },
-          },
-          {
-            name: "b",
-            media: { type: "image", url: "http://example.com/b.png" },
-          },
-          { name: "c", media: { type: "video", url: "https://example.com/c" } },
-          {
-            name: "extra",
-            media: { type: "image", url: "https://example.com" },
-          },
-        ],
+
+test("synthetic catalog filters case-insensitively, sorts deterministically and pages locally", () => {
+  const catalog = Array.from(
+    { length: 55 },
+    (_, index): DurableCatalogEntry => ({
+      nativeCore: "1.5.0",
+      target: `npm:example-${index}@1.0.0`,
+      preview: index === 0 ? "/marketplace/example.png" : undefined,
+      card: {
+        name: `example-${String(index).padStart(2, "0")}`,
+        version: "1.0.0",
+        description: index === 0 ? "Unique description" : "local",
+        publisher: "Author",
+        date: "",
+        monthlyDownloads: 0,
+        types: ["extension"],
       },
-      ["a", "b", "c", "missing"],
+    }),
+  ).reverse();
+  expect(
+    searchCatalog({ query: " AUTHOR ", page: 0 }, catalog).items,
+  ).toHaveLength(50);
+  expect(
+    searchCatalog({ query: "", page: 1 }, catalog).items.map(
+      (item) => item.name,
     ),
-  ).toEqual({
-    a: "https://example.com/a.png",
-    b: null,
-    c: null,
-    missing: null,
-  });
-  expect(parsePreviews(null, ["a"])).toEqual({ a: null });
+  ).toEqual([
+    "example-50",
+    "example-51",
+    "example-52",
+    "example-53",
+    "example-54",
+  ]);
+  expect(searchCatalog({ query: "unique", page: 0 }, catalog).total).toBe(1);
+  expect(searchCatalog({ query: "missing", page: 0 }, catalog).total).toBe(0);
+  expect(
+    catalogPreviews({ names: ["example-00", "missing"] }, catalog),
+  ).toEqual({ "example-00": "/marketplace/example.png", missing: null });
 });
-test("untrusted search and preview inputs fail before fetching", async () => {
-  await expect(
-    searchPackages({ query: "x".repeat(201), page: 0 }),
-  ).rejects.toThrow();
-  await expect(searchPackages({ query: "", page: -1 })).rejects.toThrow();
-  await expect(searchPackages({ query: "", page: 200 })).rejects.toThrow();
-  await expect(searchPackages(null)).rejects.toThrow();
-  await expect(
-    packagePreviews({ names: Array(65).fill("a") }),
-  ).rejects.toThrow();
+
+test("bounded read inputs reject malformed queries and preview requests", async () => {
+  for (const input of [
+    null,
+    { query: "x".repeat(201), page: 0 },
+    { query: "", page: -1 },
+    { query: "", page: 200 },
+    { query: "", page: 0.5 },
+  ])
+    await expect(searchPackages(input)).rejects.toThrow(
+      "Invalid package search",
+    );
+  for (const names of [Array(65).fill("a"), [""], [1], ["x".repeat(215)]])
+    await expect(packagePreviews({ names })).rejects.toThrow(
+      "Invalid preview names",
+    );
 });
-test("resource queue serializes work and recovers after errors", async () => {
+
+test("operation inputs fail before mutation and never echo credential-bearing URLs", async () => {
+  for (const name of [
+    "-x",
+    "../x",
+    "Uppercase",
+    "https://token-secret@github.com/a/b",
+  ]) {
+    const events: string[] = [];
+    await expect(
+      packageOperation(
+        "install",
+        { opId: "test", name },
+        (event) => {
+          events.push(event.status);
+          expect(JSON.stringify(event)).not.toContain("token-secret");
+        },
+        () => {},
+        () => {},
+        fakeDependencies(async () => {
+          throw new Error("must not mutate");
+        }),
+      ),
+    ).rejects.toThrow("Invalid package source");
+    expect(events).toEqual(["error"]);
+  }
+  for (const opId of [undefined, "", 1, "x".repeat(201)])
+    await expect(
+      packageOperation(
+        "install",
+        { opId, name: "x" },
+        () => {},
+        () => {},
+        () => {},
+        fakeDependencies(),
+      ),
+    ).rejects.toThrow("operation ID");
+});
+
+test("all actions preserve running/installed/done callbacks without loading code", async () => {
+  for (const action of ["install", "update", "uninstall"] as const) {
+    const events: string[] = [];
+    await packageOperation(
+      action,
+      { opId: "test", name: "x", source: "npm:x" },
+      (event) => {
+        events.push(event.status);
+        expect(event.source).toBe("npm:x");
+      },
+      () => {
+        events.push("installed");
+      },
+      () => {},
+      fakeDependencies(),
+    );
+    expect(events).toEqual(["running", "installed", "done"]);
+  }
+});
+
+test("mutation failure emits running/error and hides arbitrary exception details", async () => {
+  const events: string[] = [];
+  await expect(
+    packageOperation(
+      "install",
+      { opId: "test", name: "x" },
+      (event) => {
+        events.push(event.status);
+        expect(JSON.stringify(event)).not.toContain("token-secret");
+      },
+      () => {
+        throw new Error("must not push");
+      },
+      () => {},
+      fakeDependencies(async () => {
+        throw new Error("_authToken=token-secret");
+      }),
+    ),
+  ).rejects.toThrow("could not complete");
+  expect(events).toEqual(["running", "error"]);
+  await expect(
+    packageOperation(
+      "update",
+      { opId: "test", source: "npm:unknown" },
+      () => {},
+      () => {},
+      () => {},
+      fakeDependencies(async () => {
+        throw new PackageManagerError("Package source is not configured");
+      }),
+    ),
+  ).rejects.toThrow("not configured");
+});
+
+test("notifications can reenter the queue and recover after errors without deadlock", async () => {
   const events: number[] = [];
   const first = withPackageLock(async () => {
-    await Promise.resolve();
     events.push(1);
     throw new Error("expected");
   });
@@ -93,126 +197,40 @@ test("resource queue serializes work and recovers after errors", async () => {
   await expect(first).rejects.toThrow("expected");
   await second;
   expect(events).toEqual([1, 2]);
+  await packageOperation(
+    "install",
+    { opId: "test", name: "x" },
+    () => {},
+    () => {},
+    () => {},
+    {
+      mutate: () => withPackageLock(async () => {}),
+      listInstalled: () => withPackageLock(async () => []),
+    },
+  );
 });
 
-const fakeDependencies = (mutate = async () => {}) => ({
-  configured: async () => [],
-  mutate,
-  installed: async () => [],
-});
-test("package operations reject unsafe names, unconfigured sources and bad IDs", async () => {
-  for (const name of ["-x", "a@1", "../x", "Uppercase"]) {
-    await expect(
-      packageOperation(
-        "install",
-        { opId: "test", name },
-        () => {},
-        () => {},
-        async () => {},
-        () => {},
-        fakeDependencies(),
-      ),
-    ).rejects.toThrow("Invalid npm package name");
-  }
-  for (const action of ["update", "uninstall"] as const) {
-    await expect(
-      packageOperation(
-        action,
-        { opId: "test", source: "npm:unknown" },
-        () => {},
-        () => {},
-        async () => {},
-        () => {},
-        fakeDependencies(),
-      ),
-    ).rejects.toThrow("not configured");
-  }
-  for (const opId of [undefined, "", 1, "x".repeat(201)]) {
-    await expect(
-      packageOperation(
-        "install",
-        { opId, name: "x" },
-        () => {},
-        () => {},
-        async () => {},
-        () => {},
-        fakeDependencies(),
-      ),
-    ).rejects.toThrow("operation ID");
-  }
-});
-test("persisted mutations finish and warn after reload failures", async () => {
-  for (const reload of [
-    async () => ["chat: broken"],
-    async () => {
-      throw new Error("broken");
-    },
-  ]) {
-    const events: string[] = [];
-    await packageOperation(
-      "install",
-      { opId: "test", name: "x" },
-      (event) => events.push(event.status),
-      () => {
-        events.push("installed");
-      },
-      reload,
-      (warning) => {
-        events.push("warning");
-        expect(warning).toContain(
-          "Installed npm:x, but reloading 1 open chat(s) failed:",
-        );
-      },
-      fakeDependencies(),
-    );
-    expect(events).toEqual(["running", "installed", "done", "warning"]);
-  }
-});
-test("mutation failures emit running then error with action and source", async () => {
+test("a committed mutation still emits done if installed-list notification fails", async () => {
   const events: string[] = [];
-  await expect(
-    packageOperation(
-      "install",
-      { opId: "test", name: "x" },
-      (event) => events.push(event.status),
-      () => {
-        throw new Error("must not push");
-      },
-      async () => {
-        throw new Error("must not reload");
-      },
-      () => {},
-      fakeDependencies(async () => {
-        throw new Error("npm failed with code 1");
-      }),
-    ),
-  ).rejects.toThrow("install failed for npm:x: npm failed with code 1");
-  expect(events).toEqual(["running", "error"]);
+  await packageOperation(
+    "install",
+    { opId: "test", name: "x" },
+    (event) => {
+      events.push(event.status);
+    },
+    () => {
+      throw new Error("token-secret");
+    },
+    (message) => {
+      expect(message).not.toContain("token-secret");
+      events.push("warning");
+    },
+    fakeDependencies(),
+  );
+  expect(events).toEqual(["running", "warning", "done"]);
 });
-test("ENOENT only diagnoses npm when the missing command refers to npm", async () => {
-  for (const path of ["npm.cmd", "settings.json"]) {
-    const failure = Object.assign(new Error(`spawn ${path} ENOENT`), {
-      code: "ENOENT",
-      path,
-    });
-    await expect(
-      packageOperation(
-        "install",
-        { opId: "test", name: "x" },
-        () => {},
-        () => {},
-        async () => {},
-        () => {},
-        fakeDependencies(async () => {
-          throw failure;
-        }),
-      ),
-    ).rejects.toThrow(
-      path === "npm.cmd" ? "npm was not found" : "settings.json",
-    );
-  }
-});
-test("abort skips a queued prompt but allows a subsequent prompt", async () => {
+
+test("abort skips a queued prompt but permits a subsequent prompt", async () => {
   const queue = new PromptQueue();
   const session = {};
   let release = () => {};
@@ -237,69 +255,46 @@ test("abort skips a queued prompt but allows a subsequent prompt", async () => {
   });
   expect(calls).toBe(1);
 });
-test("installed enrichment does not hold the resource lock", async () => {
-  let release = () => {};
-  let started = () => {};
-  const ready = new Promise<void>((resolve) => {
-    started = resolve;
-  });
-  const operation = packageOperation(
-    "install",
-    { opId: "test", name: "x" },
-    () => {},
-    () => {},
-    async () => {},
-    () => {},
-    {
-      ...fakeDependencies(),
-      installed: async () => {
-        started();
-        await new Promise<void>((resolve) => {
-          release = resolve;
-        });
-        return [];
+
+test("manual URLs and explicit pins reach the install boundary without discovery or selector loss", async () => {
+  for (const [name, request, source] of [
+    [
+      "https://github.com/personal/private#feature/work",
+      "https://github.com/personal/private.git#feature/work",
+      "https://github.com/personal/private.git",
+    ],
+    [
+      "git@github.com:personal/private.git#v1.0.0",
+      "ssh://git@github.com/personal/private.git#v1.0.0",
+      "ssh://git@github.com/personal/private.git",
+    ],
+    [
+      "https://npmjs.com/package/@personal/private/v/1.2.3/",
+      "npm:@personal/private@1.2.3",
+      "npm:@personal/private",
+    ],
+    [
+      "npm:@personal/private@next",
+      "npm:@personal/private@next",
+      "npm:@personal/private",
+    ],
+  ]) {
+    const calls: string[][] = [];
+    const events: string[] = [];
+    await packageOperation(
+      "install",
+      { opId: "manual", name },
+      (event) => {
+        events.push(event.status);
+        expect(event.source).toBe(source);
       },
-    },
-  );
-  await ready;
-  await withPackageLock(async () => {
-    release();
-  });
-  await operation;
-});
-test("preview failures retry and overlapping requests share in-flight names", async () => {
-  const original = globalThis.fetch;
-  let calls = 0;
-  globalThis.fetch = (async () => {
-    calls++;
-    await Promise.resolve();
-    return calls === 1
-      ? new Response("unavailable", { status: 503 })
-      : Response.json({ previews: [] });
-  }) as unknown as typeof fetch;
-  try {
-    await Promise.all([
-      packagePreviews({ names: ["test-retry"] }),
-      packagePreviews({ names: ["test-retry"] }),
-    ]);
-    expect(calls).toBe(1);
-    await packagePreviews({ names: ["test-retry"] });
-    expect(calls).toBe(2);
-    await packagePreviews({ names: ["test-retry"] });
-    expect(calls).toBe(2);
-  } finally {
-    globalThis.fetch = original;
-  }
-});
-test("oversized registry responses are rejected", async () => {
-  const original = globalThis.fetch;
-  globalThis.fetch = (async () =>
-    new Response(" ".repeat(5 * 1024 * 1024 + 1))) as unknown as typeof fetch;
-  try {
-    await expect(
-      searchPackages({ query: "size-test", page: 0 }),
-    ).rejects.toThrow("exceeds 5 MB");
-  } finally {
-    globalThis.fetch = original;
+      () => {},
+      () => {},
+      fakeDependencies(async (action, input) => {
+        calls.push([action, input]);
+      }),
+    );
+    expect(calls).toEqual([["install", request]]);
+    expect(events).toEqual(["running", "done"]);
   }
 });

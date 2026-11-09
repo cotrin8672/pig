@@ -1,15 +1,18 @@
 import { toggleBackdrop } from "../shared/appearance";
-import { actionIds, matchesCombo, resolveBindings } from "../shared/keymap";
+import {
+  actionIds,
+  configReloadBinding,
+  matchesCombo,
+  resolveBindings,
+} from "../shared/keymap";
 import { adapterBinding } from "./adapter-keymap";
 import { navigate } from "./navigation";
 import { rpc, updateAppearance } from "./rpc";
 import { showError, useStore } from "./store";
-import { isTerminalKeyboardEvent } from "./terminal-ui";
 
 export function initShortcuts() {
   const keydown = (event: KeyboardEvent) => {
     if (
-      isTerminalKeyboardEvent(event) ||
       useStore.getState().pendingUI.length > 0 ||
       event.defaultPrevented ||
       event.isComposing ||
@@ -19,12 +22,15 @@ export function initShortcuts() {
       return;
     const state = useStore.getState();
     const bindings = resolveBindings(state.settings.keybindings);
-    const action = actionIds.find((id) => matchesCombo(event, bindings[id]));
+    const matches = actionIds.filter((id) => matchesCombo(event, bindings[id]));
+    const action =
+      matches.find((id) => Object.hasOwn(state.settings.keybindings, id)) ??
+      matches[0];
     const explicit =
       action && Object.hasOwn(state.settings.keybindings, action);
     const snapshot = state.active ? state.snapshots[state.active] : undefined;
     const target = event.target instanceof Element ? event.target : null;
-    const context = target?.closest("[role=dialog]")
+    const context = target?.closest("dialog, [role=dialog]")
       ? null
       : target?.closest(".composer")
         ? "composer"
@@ -49,7 +55,19 @@ export function initShortcuts() {
         .catch(showError);
       return;
     }
-    if (!action) return;
+    if (!action) {
+      if (
+        matchesCombo(event, configReloadBinding) &&
+        !target?.closest("dialog, [role=dialog]") &&
+        !document.querySelector(
+          'dialog[open], [role="dialog"][aria-modal="true"]',
+        )
+      ) {
+        event.preventDefault();
+        void rpc.request.reloadAdapterConfig().catch(showError);
+      }
+      return;
+    }
     event.preventDefault();
     switch (action) {
       case "appearance.toggleBackdrop":

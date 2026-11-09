@@ -3,14 +3,44 @@ import { watch } from "node:fs";
 // Dev loop: Vite serves the webview with HMR (index.ts loads it when :5173 answers).
 // Bun host changes restart the app here, not via `electrobun dev --watch`: on Windows
 // that kills only the launcher, so the still-running app keeps build/ locked (EACCES).
+const rtk = Bun.which("rtk");
+if (!rtk)
+  throw new Error(
+    "RTK is required. Run dev through mise exec -- rtk proxy pnpm dev.",
+  );
+const executable = (name: string) => {
+  const path = Bun.which(name);
+  if (!path)
+    throw new Error(`Development executable is missing from PATH: ${name}`);
+  return path;
+};
 const run = (cmd: string[]) =>
-  Bun.spawn([Bun.which(cmd[0]) ?? cmd[0], ...cmd.slice(1)], {
+  Bun.spawn([rtk, "proxy", executable(cmd[0]), ...cmd.slice(1)], {
     stdio: ["inherit", "inherit", "inherit"],
+    detached: process.platform !== "win32",
   });
-const killTree = (proc: Bun.Subprocess) =>
-  process.platform === "win32"
-    ? Bun.spawnSync(["taskkill", "/PID", String(proc.pid), "/T", "/F"])
-    : proc.kill();
+const killTree = (proc: Bun.Subprocess) => {
+  if (proc.exitCode !== null) return;
+  if (process.platform === "win32") {
+    const result = Bun.spawnSync(
+      [
+        rtk,
+        "proxy",
+        executable("taskkill"),
+        "/PID",
+        String(proc.pid),
+        "/T",
+        "/F",
+      ],
+      { stdio: ["ignore", "ignore", "inherit"] },
+    );
+    if (result.exitCode !== 0 && proc.exitCode === null)
+      throw new Error(`Could not stop development process tree ${proc.pid}`);
+  } else {
+    // RTK adds a supervisor: terminate the entire detached group, not only RTK.
+    process.kill(-proc.pid, "SIGTERM");
+  }
+};
 
 const vite = run(["vite"]);
 for (let tries = 0; ; tries++) {
@@ -19,7 +49,7 @@ for (let tries = 0; ; tries++) {
     break;
   } catch {
     if (tries > 300 || vite.exitCode !== null) {
-      vite.kill();
+      killTree(vite);
       throw new Error("Vite dev server did not start on :5173");
     }
     await Bun.sleep(100);
@@ -46,7 +76,7 @@ for (const dir of ["src/bun", "src/shared"])
 
 const stop = () => {
   killTree(app);
-  vite.kill();
+  killTree(vite);
   process.exit(0);
 };
 process.on("SIGINT", stop);
@@ -58,7 +88,7 @@ for (;;) {
   const code = await current.exited;
   if (current === app && !restarting) {
     if (code === 0) {
-      vite.kill();
+      killTree(vite);
       process.exit(0);
     }
     console.log(`[dev] App exited (${code}); waiting for the next change...`);

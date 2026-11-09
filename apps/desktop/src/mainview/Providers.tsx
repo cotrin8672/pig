@@ -1,23 +1,13 @@
-import {
-  ArrowLeft,
-  LoaderCircle,
-  LogIn,
-  LogOut,
-  Search,
-  X,
-} from "lucide-react";
+import { LoaderCircle, LogIn, LogOut, Search, X } from "lucide-react";
 import { type ReactNode, useId, useState } from "react";
 import type { AuthMethod, ProviderInfo } from "../shared/rpc-schema";
+import { ContentPage } from "./ContentPage";
 import { useT } from "./i18n";
-import { navigate } from "./navigation";
 import { ProviderIcon } from "./ProviderIcon";
 import { ProviderModels } from "./ProviderModels";
 import { refresh, rpc } from "./rpc";
 import { showError, useStore } from "./store";
-import {
-  ClassificationSettings,
-  ImageModelSettings,
-} from "./UtilityModelSettings";
+import { DecisionSettings, ImageModelSettings } from "./UtilityModelSettings";
 
 const filters = ["all", "connected", "oauth", "api_key", "extension"] as const;
 type Filter = (typeof filters)[number];
@@ -64,22 +54,15 @@ export function Providers() {
     extension: t.Extension,
   };
   return (
-    <div className="providers-page">
-      <button
-        className="back-button"
-        type="button"
-        onClick={() => navigate("chat")}
-      >
-        <ArrowLeft size={14} /> {t["Back to chat"]}
-      </button>
-      <h1>{t.Providers}</h1>
-      <p className="muted page-description">
-        {
-          t[
-            "Connect a subscription or API key. Credentials are stored by pig only."
-          ]
-        }
-      </p>
+    <ContentPage
+      className="providers-page"
+      title={t.Providers}
+      description={
+        t[
+          "Connect a subscription or API key. Credentials are stored by pig only."
+        ]
+      }
+    >
       <nav
         className="segmented-control provider-categories"
         aria-label={t.Providers}
@@ -87,7 +70,7 @@ export function Providers() {
         {[
           ["chat", "Agent"],
           ["images", "Image"],
-          ["classification", "Classification"],
+          ["decision", "Decision"],
         ].map(([id, label]) => (
           <button
             key={id}
@@ -104,9 +87,9 @@ export function Providers() {
         <div className="provider-utility-panel">
           <ImageModelSettings onConnect={() => setCategory("chat")} />
         </div>
-      ) : category === "classification" ? (
+      ) : category === "decision" ? (
         <div className="provider-utility-panel">
-          <ClassificationSettings />
+          <DecisionSettings />
         </div>
       ) : !providers.length ? (
         <p className="status" role="status">
@@ -201,7 +184,7 @@ export function Providers() {
           {current && <ProviderDetail key={current.id} provider={current} />}
         </div>
       )}
-    </div>
+    </ContentPage>
   );
 }
 

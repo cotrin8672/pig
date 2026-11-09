@@ -14,6 +14,7 @@ import type { SessionFlags } from "../shared/desktop-state";
 import type { SessionInfo } from "../shared/rpc-schema";
 import { sessionLink } from "../shared/session-links";
 import { ActionsMenu } from "./ActionsMenu";
+import { ConfirmButton } from "./ConfirmButton";
 import { useT } from "./i18n";
 import { navigate } from "./navigation";
 import { openChat, refreshSessions, rpc } from "./rpc";
@@ -73,27 +74,19 @@ function SessionRow({ session, cwd }: { session: SessionInfo; cwd: string }) {
   const status = sessionStatus(running, waiting, flags);
   const dialog = useRef<HTMLDialogElement>(null);
   const input = useRef<HTMLInputElement>(null);
-  const cancel = useRef<HTMLButtonElement>(null);
   const titleId = useId();
   const [copied, setCopied] = useState(false);
-  const [mode, setMode] = useState<"rename" | "delete">();
+  const [renaming, setRenaming] = useState(false);
   const [name, setName] = useState(session.title);
   const [error, setError] = useState<string>();
   const [busy, setBusy] = useState(false);
   const target = { cwd, id: session.id };
   useEffect(() => {
-    if (!mode) return;
+    if (!renaming) return;
     dialog.current?.showModal();
-    if (mode === "rename") {
-      input.current?.focus();
-      input.current?.select();
-    } else cancel.current?.focus();
-  }, [mode]);
-  function openDialog(next: "rename" | "delete") {
-    setName(session.title);
-    setError(undefined);
-    setMode(next);
-  }
+    input.current?.focus();
+    input.current?.select();
+  }, [renaming]);
   async function setFlags(patch: SessionFlags) {
     setBusy(true);
     try {
@@ -104,48 +97,55 @@ function SessionRow({ session, cwd }: { session: SessionInfo; cwd: string }) {
       setBusy(false);
     }
   }
-  async function submit() {
+  async function rename() {
     setBusy(true);
     setError(undefined);
     try {
-      if (mode === "rename") {
-        const info = await rpc.request.renameSession({ ...target, name });
-        useStore.setState((s) => ({
-          sessions: {
-            ...s.sessions,
-            [cwd]: (s.sessions[cwd] ?? []).map((item) =>
-              item.id === info.id ? info : item,
-            ),
-          },
-          snapshots: s.snapshots[info.id]
-            ? { ...s.snapshots, [info.id]: { ...s.snapshots[info.id], info } }
-            : s.snapshots,
-        }));
-        dialog.current?.close();
-      } else {
-        await rpc.request.deleteSession(target);
-        dialog.current?.close();
-        const wasActive = useStore.getState().active === session.id;
-        useStore.setState((s) => {
-          const snapshots = { ...s.snapshots };
-          delete snapshots[session.id];
-          return {
-            snapshots,
-            sessions: {
-              ...s.sessions,
-              [cwd]: (s.sessions[cwd] ?? []).filter(
-                (item) => item.id !== session.id,
-              ),
-            },
-            ...(s.active === session.id ? { active: undefined } : {}),
-          };
-        });
-        if (wasActive && useStore.getState().page === "chat")
-          navigate("chat", null);
-      }
+      const info = await rpc.request.renameSession({ ...target, name });
+      useStore.setState((s) => ({
+        sessions: {
+          ...s.sessions,
+          [cwd]: (s.sessions[cwd] ?? []).map((item) =>
+            item.id === info.id ? info : item,
+          ),
+        },
+        snapshots: s.snapshots[info.id]
+          ? { ...s.snapshots, [info.id]: { ...s.snapshots[info.id], info } }
+          : s.snapshots,
+      }));
+      dialog.current?.close();
       void refreshSessions().catch(showError);
     } catch (error) {
       setError(String(error));
+    } finally {
+      setBusy(false);
+    }
+  }
+  async function remove() {
+    if (busy || running || opening) return;
+    setBusy(true);
+    try {
+      await rpc.request.deleteSession(target);
+      const wasActive = useStore.getState().active === session.id;
+      useStore.setState((s) => {
+        const snapshots = { ...s.snapshots };
+        delete snapshots[session.id];
+        return {
+          snapshots,
+          sessions: {
+            ...s.sessions,
+            [cwd]: (s.sessions[cwd] ?? []).filter(
+              (item) => item.id !== session.id,
+            ),
+          },
+          ...(s.active === session.id ? { active: undefined } : {}),
+        };
+      });
+      if (wasActive && useStore.getState().page === "chat")
+        navigate("chat", null);
+      void refreshSessions().catch(showError);
+    } catch (error) {
+      showError(error);
     } finally {
       setBusy(false);
     }
@@ -188,7 +188,9 @@ function SessionRow({ session, cwd }: { session: SessionInfo; cwd: string }) {
               role="menuitem"
               onClick={() => {
                 closeMenu();
-                openDialog("rename");
+                setName(session.title);
+                setError(undefined);
+                setRenaming(true);
               }}
             >
               <Pencil size={13} />
@@ -240,19 +242,22 @@ function SessionRow({ session, cwd }: { session: SessionInfo; cwd: string }) {
               {copied ? <Check size={13} /> : <Link2 size={13} />}
               {copied ? t.Copied : t["Copy link"]}
             </button>
-            <button
-              type="button"
+            <ConfirmButton
               role="menuitem"
               className="session-menu-delete"
-              disabled={running}
-              onClick={() => {
+              disabled={busy || running || opening}
+              title={t["This permanently deletes this chat’s local history."]}
+              aria-description={
+                t["This permanently deletes this chat’s local history."]
+              }
+              onConfirm={() => {
                 closeMenu();
-                openDialog("delete");
+                void remove();
               }}
             >
               <Trash2 size={13} />
               {t.Delete}
-            </button>
+            </ConfirmButton>
           </>
         )}
       </ActionsMenu>
@@ -264,20 +269,18 @@ function SessionRow({ session, cwd }: { session: SessionInfo; cwd: string }) {
           if (busy) event.preventDefault();
         }}
         onClose={() => {
-          setMode(undefined);
+          setRenaming(false);
           setError(undefined);
         }}
       >
         <form
           onSubmit={(event) => {
             event.preventDefault();
-            void submit();
+            void rename();
           }}
         >
           <div className="dialog-heading">
-            <h2 id={titleId}>
-              {mode === "rename" ? t["Rename chat"] : t["Delete chat"]}
-            </h2>
+            <h2 id={titleId}>{t["Rename chat"]}</h2>
             <button
               type="button"
               aria-label={t.Close}
@@ -287,23 +290,14 @@ function SessionRow({ session, cwd }: { session: SessionInfo; cwd: string }) {
               <X size={14} />
             </button>
           </div>
-          {mode === "rename" ? (
-            <input
-              ref={input}
-              aria-label={t["Chat name"]}
-              value={name}
-              maxLength={512}
-              disabled={busy}
-              onChange={(event) => setName(event.target.value)}
-            />
-          ) : (
-            <>
-              <p className="session-dialog-name">{session.title}</p>
-              <p className="muted">
-                {t["This permanently deletes this chat’s local history."]}
-              </p>
-            </>
-          )}
+          <input
+            ref={input}
+            aria-label={t["Chat name"]}
+            value={name}
+            maxLength={512}
+            disabled={busy}
+            onChange={(event) => setName(event.target.value)}
+          />
           {error && (
             <p className="error" role="alert">
               {error}
@@ -311,7 +305,6 @@ function SessionRow({ session, cwd }: { session: SessionInfo; cwd: string }) {
           )}
           <div className="dialog-actions">
             <button
-              ref={cancel}
               type="button"
               disabled={busy}
               onClick={() => dialog.current?.close()}
@@ -320,10 +313,10 @@ function SessionRow({ session, cwd }: { session: SessionInfo; cwd: string }) {
             </button>
             <button
               type="submit"
-              className={mode === "rename" ? "primary" : "danger-button"}
-              disabled={busy || (mode === "rename" && !name.trim())}
+              className="primary"
+              disabled={busy || !name.trim()}
             >
-              {mode === "rename" ? t.Rename : t.Delete}
+              {t.Rename}
             </button>
           </div>
         </form>

@@ -888,24 +888,17 @@ select {
   background: var(--ds-accent-hover);
 }
 .providers-page {
+  overflow: hidden;
+}
+.providers-page .content-page-shell {
   display: flex;
   flex-direction: column;
-  /* Grid child with auto margins would shrink to content; keep width fixed. */
-  width: 100%;
-  max-width: 1320px;
-  padding: 32px 40px 24px;
   height: 100%;
-  overflow: hidden;
-  margin: 0 auto;
 }
 .back-button {
   margin: 0 0 28px -8px;
   color: var(--ds-text-muted);
   font-size: var(--text-sm);
-}
-.providers-page h1 {
-  font-size: var(--text-xl);
-  margin-bottom: 8px;
 }
 .page-description {
   margin-bottom: 24px;
@@ -1265,17 +1258,9 @@ input:not([type="range"]) {
     transform: rotate(360deg);
   }
 }
-@media (max-width: 960px) {
-  .providers-page {
-    padding: 24px;
-  }
-}
 @media (max-width: 640px) {
   .sidebar {
     width: 176px;
-  }
-  .providers-page {
-    padding: 20px 16px;
   }
 }
 @media (prefers-reduced-motion: reduce) {
@@ -2270,6 +2255,9 @@ input:not([type="range"]) {
 .user-turn:has(.user-edit) {
   width: 100%;
   max-width: 100%;
+}
+.user-turn:has(.user-edit) > .user-actions {
+  display: none;
 }
 .user-edit {
   display: flex;

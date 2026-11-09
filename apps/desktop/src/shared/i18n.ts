@@ -63,20 +63,19 @@ export const en = {
   Yes: "Yes",
   No: "No",
   "Image generation": "Image generation",
-  Classification: "Classification",
+  Decision: "Decision",
   "Image generation model": "Image generation model",
-  "Classification model": "Classification model",
-  "Classification providers": "Classification providers",
+  "Decision model": "Decision model",
+  "Decision providers": "Decision providers",
   "Model unavailable": "Model unavailable",
   "Reconnect the provider to use the saved model.":
     "Reconnect the provider to use the saved model.",
   "No connected models for this task.": "No connected models for this task.",
   "Choose an image generation model from connected providers.":
     "Choose an image generation model from connected providers.",
-  "Connect a classification provider, then choose a model such as Jev. Credentials are shared with Providers.":
-    "Connect a classification provider, then choose a model such as Jev. Credentials are shared with Providers.",
-  "No classification providers available.":
-    "No classification providers available.",
+  "Connect a decision provider, then choose a model such as Jev. Credentials are shared with Providers.":
+    "Connect a decision provider, then choose a model such as Jev. Credentials are shared with Providers.",
+  "No decision providers available.": "No decision providers available.",
   compactedFrom: (n: number) => `Compacted from ${n} tokens`,
   "Branch summary": "Branch summary",
   "Exit code": "Exit code",
@@ -249,10 +248,10 @@ export const en = {
   "Output speed · total tokens": "Output speed · total tokens",
   "Copy response": "Copy response",
   "Branch into new chat": "Branch into new chat",
-  Regenerate: "Regenerate",
+  Regenerate: "Regenerate in new chat (original kept)",
   "Copy message": "Copy message",
-  "Edit message": "Edit message",
-  "Save and resend": "Save and resend",
+  "Edit message": "Edit and resend in a new chat (original kept)",
+  "Save and resend": "Resend in new chat",
   "Copy link": "Copy link",
   "Open again": "Open again",
   "Enter this code on the verification page":
@@ -305,8 +304,17 @@ export const en = {
   Update: "Update",
   "Packages can run code on your machine. Only install packages you trust.":
     "Packages can run code on your machine. Only install packages you trust.",
-  "This package will be removed from your pi configuration. Open chats will be reloaded.":
-    "This package will be removed from your pi configuration. Open chats will be reloaded.",
+  packageRemoval:
+    "Remove this installed package. Active tasks may protect selected packages. Configuration reload applies changes only when safe.",
+  manualPackageSource: "Package source",
+  manualPackagePlaceholder: "npm package name/spec or GitHub repository URL",
+  manualPackageHelp:
+    "Installation does not enable packages; select them in TypeScript config. Private sources use existing Git/SSH/npm credentials. Token URLs are rejected.",
+  manualPackageInvalid:
+    "Use an npm name/spec, npmjs.com package URL or GitHub repository URL without credentials or tokens.",
+  manualPackageDispatchFailed:
+    "Could not send the package operation. Check the installed list before retrying.",
+  manualPackageInstalled: "Installed; not automatically enabled.",
   "Make pi your own with community packages.":
     "Make pi your own with community packages.",
   Marketplace: "Marketplace",
@@ -323,8 +331,8 @@ export const en = {
   "Try a different name or keyword.": "Try a different name or keyword.",
   "Loading…": "Loading…",
   "Load more": "Load more",
-  "Packages from your user and project configuration.":
-    "Packages from your user and project configuration.",
+  packageSelectionHelp:
+    "Installed does not mean selected. Select packages in your TypeScript config, then reload with Ctrl+Alt+R; changes apply only when safe.",
   "Loading installed packages…": "Loading installed packages…",
   "No extensions installed": "No extensions installed",
   "Find a package to extend your workflow.":
@@ -359,20 +367,19 @@ export const en = {
     `${count} ${results ? "results" : "models"}`,
   resizeEdge: (left: boolean) =>
     `Resize chat width from ${left ? "left" : "right"} edge`,
-  copyCommand: (name: string) => `Copy install command for ${name}`,
-  copyInstall: (name: string) => `Copy pi install npm:${name}`,
+  copySource: (source: string) => `Copy source ${source}`,
   packageResults: (count: number, search: string) =>
     `${count.toLocaleString()} packages${search ? ` matching “${search}”` : " in the marketplace"}`,
   countOf: (count: number, total: number) =>
     `${count} of ${total.toLocaleString()}`,
   installedError: (error: string) =>
     `Could not check installed packages. ${error}`,
-  copyError: (error: string) => `Could not copy command: ${error}`,
+  copyError: (error: string) => `Could not copy source: ${error}`,
   relativeDate: (count: number, unit: "d" | "mo" | "y") =>
     `${count}${unit} ago`,
   downloads: (count: string) => `${count}/mo`,
   packageDone: (action: "install" | "uninstall" | "update", source: string) =>
-    `${{ install: "Installed", uninstall: "Removed", update: "Updated" }[action]} ${source} — open chats were reloaded`,
+    `${{ install: "Installed", uninstall: "Removed", update: "Updated" }[action]} ${source} — reload config with Ctrl+Alt+R; selections apply only when safe`,
   trustTitle: "Trust this project?",
   trustBody:
     "This folder's extensions, settings and instruction files will be loaded. Extensions can run code with your user privileges.",
@@ -469,10 +476,10 @@ export const ja: Dictionary = {
   Yes: "はい",
   No: "いいえ",
   "Image generation": "画像生成",
-  Classification: "Classification（分類）",
+  Decision: "Decision（分類）",
   "Image generation model": "画像生成モデル",
-  "Classification model": "分類モデル",
-  "Classification providers": "分類用プロバイダー",
+  "Decision model": "分類モデル",
+  "Decision providers": "分類用プロバイダー",
   "Model unavailable": "利用不可",
   "Reconnect the provider to use the saved model.":
     "保存済みモデルを使うにはプロバイダーを再接続してください。",
@@ -480,9 +487,9 @@ export const ja: Dictionary = {
     "この用途で利用できる接続済みモデルはありません。",
   "Choose an image generation model from connected providers.":
     "接続済みプロバイダーの画像生成モデルから選択します。",
-  "Connect a classification provider, then choose a model such as Jev. Credentials are shared with Providers.":
+  "Connect a decision provider, then choose a model such as Jev. Credentials are shared with Providers.":
     "分類用プロバイダーを接続し、Jevなどのモデルを選択します。認証情報はProvidersと共通です。",
-  "No classification providers available.":
+  "No decision providers available.":
     "分類に対応するプロバイダーはありません。",
   compactedFrom: (n) => `${n}トークンから圧縮`,
   "Branch summary": "ブランチの要約",
@@ -656,10 +663,10 @@ export const ja: Dictionary = {
   "Output speed · total tokens": "出力速度 · 合計トークン",
   "Copy response": "応答をコピー",
   "Branch into new chat": "新しいチャットに分岐",
-  Regenerate: "再生成",
+  Regenerate: "新しいチャットで再生成（元の会話は保持）",
   "Copy message": "入力をコピー",
-  "Edit message": "入力を編集",
-  "Save and resend": "保存して再送信",
+  "Edit message": "編集して新しいチャットに再送信（元の会話は保持）",
+  "Save and resend": "新しいチャットに再送信",
   "Copy link": "リンクをコピー",
   "Open again": "もう一度開く",
   "Enter this code on the verification page":
@@ -712,8 +719,18 @@ export const ja: Dictionary = {
   Update: "更新",
   "Packages can run code on your machine. Only install packages you trust.":
     "パッケージはこの端末でコードを実行できます。信頼できるものだけをインストールしてください。",
-  "This package will be removed from your pi configuration. Open chats will be reloaded.":
-    "pi の設定からこのパッケージを削除します。開いているチャットは再読み込みされます。",
+  packageRemoval:
+    "インストール済みパッケージを削除します。実行中のタスクが使用するパッケージは保護される場合があります。設定の再読み込みは安全な場合にのみ適用されます。",
+  manualPackageSource: "パッケージのソース",
+  manualPackagePlaceholder:
+    "npm パッケージ名・バージョン指定、または GitHub URL",
+  manualPackageHelp:
+    "インストールでは有効化されません。TypeScript 設定で明示的に選択してください。非公開ソースには既存の Git/SSH/npm 認証情報を使います。トークン入り URL は拒否されます。",
+  manualPackageInvalid:
+    "認証情報やトークンを含まない npm パッケージ名・バージョン指定、npmjs.com のパッケージ URL、または GitHub リポジトリ URL を入力してください。",
+  manualPackageDispatchFailed:
+    "パッケージ操作を送信できませんでした。再試行前にインストール済み一覧を確認してください。",
+  manualPackageInstalled: "インストール済み（自動では有効化されません）。",
   "Make pi your own with community packages.":
     "コミュニティのパッケージで pi をカスタマイズ。",
   Marketplace: "マーケットプレイス",
@@ -730,8 +747,8 @@ export const ja: Dictionary = {
   "Try a different name or keyword.": "別の名前やキーワードを試してください。",
   "Loading…": "読み込み中…",
   "Load more": "さらに読み込む",
-  "Packages from your user and project configuration.":
-    "ユーザーとプロジェクトの設定にあるパッケージ。",
+  packageSelectionHelp:
+    "インストールと選択は別です。TypeScript 設定でパッケージを選択し、Ctrl+Alt+R で再読み込みしてください。変更は安全な場合にのみ適用されます。",
   "Loading installed packages…": "インストール済みパッケージを読み込み中…",
   "No extensions installed": "拡張機能はインストールされていません",
   "Find a package to extend your workflow.":
@@ -762,8 +779,7 @@ export const ja: Dictionary = {
   searchProviderModels: (name) => `${name} のモデルを検索`,
   modelCount: (count, results) => `${count} ${results ? "件" : "モデル"}`,
   resizeEdge: (left) => `${left ? "左" : "右"}端からチャット幅を変更`,
-  copyCommand: (name) => `${name} のインストールコマンドをコピー`,
-  copyInstall: (name) => `pi install npm:${name} をコピー`,
+  copySource: (source) => `ソースをコピー: ${source}`,
   packageResults: (count, search) =>
     search
       ? `「${search}」に一致するパッケージ ${count.toLocaleString()} 件`
@@ -771,12 +787,12 @@ export const ja: Dictionary = {
   countOf: (count, total) => `${total.toLocaleString()} 件中 ${count} 件`,
   installedError: (error) =>
     `インストール済みパッケージを確認できませんでした。${error}`,
-  copyError: (error) => `コマンドをコピーできませんでした: ${error}`,
+  copyError: (error) => `ソースをコピーできませんでした: ${error}`,
   relativeDate: (count, unit) =>
     `${count}${{ d: "日", mo: "か月", y: "年" }[unit]}前`,
   downloads: (count) => `${count}/月`,
   packageDone: (action, source) =>
-    `${source} を${{ install: "インストール", uninstall: "削除", update: "更新" }[action]}しました — チャットを再読み込みしました`,
+    `${source} を${{ install: "インストール", uninstall: "削除", update: "更新" }[action]}しました — Ctrl+Alt+R で設定を再読み込みしてください。選択の変更は安全な場合にのみ適用されます。`,
   trustTitle: "このプロジェクトを信頼しますか？",
   trustBody:
     "このフォルダの拡張機能・設定・指示ファイルを読み込みます。拡張機能はあなたの権限でコードを実行できます。",

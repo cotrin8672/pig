@@ -1,6 +1,8 @@
 import { expect, test } from "bun:test";
 import {
+  actionIds,
   comboFromEvent,
+  configReloadBinding,
   defaultBindings,
   matchesCombo,
   normalizeCombo,
@@ -52,4 +54,21 @@ test("captured punctuation and whitespace round trip through normalization", () 
     expect(normalizeCombo(combo ?? "")).toBe(combo);
     expect(matchesCombo(input, combo)).toBe(true);
   }
+});
+
+test("config reload is global without adding a fifth Settings shortcut row", () => {
+  expect(configReloadBinding).toBe("Ctrl+Alt+R");
+  expect(
+    matchesCombo(
+      event("r", { ctrlKey: true, altKey: true }),
+      configReloadBinding,
+    ),
+  ).toBe(true);
+  expect(actionIds).toEqual([
+    "appearance.toggleBackdrop",
+    "navigation.back",
+    "navigation.forward",
+    "settings.open",
+  ]);
+  expect(resolveBindings({})).toEqual(defaultBindings);
 });

@@ -153,8 +153,10 @@ test("credential mutations exclude other processes", async () => {
         return {type: "api_key", key: String(Number(current?.key ?? 0) + 1)};
       });
     `;
+    const rtk = Bun.which("rtk");
+    if (!rtk) throw new Error("RTK is required for credential-process tests");
     const children = Array.from({ length: 4 }, () =>
-      Bun.spawn([process.execPath, "--eval", script], {
+      Bun.spawn([rtk, "proxy", process.execPath, "--eval", script], {
         stdout: "pipe",
         stderr: "pipe",
       }),
@@ -165,8 +167,9 @@ test("credential mutations exclude other processes", async () => {
         stderr: await new Response(child.stderr).text(),
       })),
     );
-    expect(results).toEqual(
-      Array.from({ length: 4 }, () => ({ code: 0, stderr: "" })),
+    expect(results.map(({ code }) => code)).toEqual([0, 0, 0, 0]);
+    expect(results.every(({ stderr }) => !stderr.includes("Unhandled"))).toBe(
+      true,
     );
     expect(await new FileCredentials(file).read("counter")).toEqual({
       type: "api_key",

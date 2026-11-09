@@ -1,7 +1,7 @@
 import type { ToolCall } from "@earendil-works/pi-ai";
 import {
+  ArrowUp,
   Check,
-  Circle,
   CircleAlert,
   Copy,
   ExternalLink,
@@ -12,6 +12,7 @@ import {
   Plus,
   Puzzle,
   Settings2,
+  Settings as SettingsIcon,
   Square,
   X,
 } from "lucide-react";
@@ -33,7 +34,7 @@ import { getT, useT } from "./i18n";
 import { Markdown, UserMessage } from "./MessageContent";
 import { NotificationCenter } from "./NotificationCenter";
 import { Notifications } from "./Notifications";
-import { initNavigation, navigate } from "./navigation";
+import { initNavigation, navigate, navigationRevision } from "./navigation";
 import { ProviderIcon, useProviderName } from "./ProviderIcon";
 import { Providers } from "./Providers";
 import { ResponseFooter } from "./ResponseFooter";
@@ -53,6 +54,7 @@ import { SidebarSessions } from "./SidebarSessions";
 import { initShortcuts } from "./shortcuts";
 import { type LoginState, showError, useStore } from "./store";
 import { ThinkingBlock, ToolBlock, ToolGroup, WorkToggle } from "./ToolBlock";
+import "./chat-opening.css";
 import { UIRequestBroker } from "./UIRequestBroker";
 
 const basename = (path: string) =>
@@ -107,55 +109,37 @@ export function App() {
           <strong>pig</strong>
         </header>
         <SidebarSessions />
-        <button
-          type="button"
-          className={`providers-nav ${state.page === "providers" ? "active" : ""}`}
-          onClick={() => navigate("providers")}
-        >
-          <Settings2 size={16} />
-          <span className="nav-label">
-            {t.Providers}{" "}
-            <small
-              className={
-                state.login?.error
-                  ? "error"
-                  : state.login
-                    ? "muted"
-                    : connected
-                      ? "connected"
-                      : "muted"
-              }
-            >
-              {state.login?.error ? (
-                <CircleAlert size={12} />
-              ) : state.login ? (
-                <LoaderCircle size={12} className="spinner" />
-              ) : (
-                <Circle size={7} fill="currentColor" />
-              )}
-              {state.login?.error ||
-                (state.login
-                  ? t["Signing in…"]
-                  : connected
-                    ? t.Connected
-                    : t["Not connected"])}
-            </small>
-          </span>
-        </button>
-        <button
-          type="button"
-          className={`providers-nav ${state.page === "extensions" ? "active" : ""}`}
-          onClick={() => navigate("extensions")}
-        >
-          <Puzzle size={16} /> {t.Extensions}
-        </button>
         <div className="sidebar-footer">
           <button
             type="button"
-            className={`providers-nav ${state.page === "settings" ? "active" : ""}`}
+            className={`sidebar-icon ${state.page === "settings" ? "active" : ""}`}
+            aria-label={t.Settings}
+            title={t.Settings}
             onClick={() => navigate("settings")}
           >
-            <Settings2 size={16} /> {t.Settings}
+            <SettingsIcon size={16} aria-hidden="true" />
+          </button>
+          <button
+            type="button"
+            className={`sidebar-icon ${state.page === "providers" ? "active" : ""}`}
+            aria-label={`${t.Providers}: ${state.login?.error || (state.login ? t["Signing in…"] : connected ? t.Connected : t["Not connected"])}`}
+            title={`${t.Providers}: ${state.login?.error || (state.login ? t["Signing in…"] : connected ? t.Connected : t["Not connected"])}`}
+            onClick={() => navigate("providers")}
+          >
+            <Settings2 size={16} aria-hidden="true" />
+            <span
+              className={`sidebar-provider-dot ${state.login?.error ? "error" : state.login ? "busy" : connected ? "connected" : ""}`}
+              aria-hidden="true"
+            />
+          </button>
+          <button
+            type="button"
+            className={`sidebar-icon ${state.page === "extensions" ? "active" : ""}`}
+            aria-label={t.Extensions}
+            title={t.Extensions}
+            onClick={() => navigate("extensions")}
+          >
+            <Puzzle size={16} aria-hidden="true" />
           </button>
           <NotificationCenter />
         </div>
@@ -168,6 +152,29 @@ export function App() {
           <Extensions />
         ) : state.page === "settings" ? (
           <Settings />
+        ) : state.opening &&
+          state.openingViewRevision === navigationRevision ? (
+          state.openingNewCwd ? (
+            <NewChatOpening cwd={state.openingNewCwd} />
+          ) : (
+            <div className="chat-opening" role="status" aria-live="polite">
+              <div className="chat-opening-heading" aria-hidden="true" />
+              <div className="chat-opening-content" aria-hidden="true">
+                <span />
+                <span />
+                <span />
+              </div>
+              <div className="chat-opening-composer">
+                <span>{state.openMessage ?? t["Opening chat…"]}</span>
+                <button
+                  type="button"
+                  onClick={() => void cancelOpening().catch(showError)}
+                >
+                  {t.Cancel}
+                </button>
+              </div>
+            </div>
+          )
         ) : active ? (
           <Chat key={addressKey(active.address)} snapshot={active} />
         ) : (
@@ -231,18 +238,95 @@ export function App() {
       {state.login && (
         <OAuthLoginDialog key={state.login.loginId} login={state.login} />
       )}
-      {state.opening && (
-        <div className="loading">
-          {state.openMessage ?? t["Opening chat…"]}{" "}
-          <button
-            type="button"
-            onClick={() => void cancelOpening().catch(showError)}
-          >
-            Cancel opening
-          </button>
-        </div>
-      )}
       <Notifications />
+    </div>
+  );
+}
+
+function NewChatOpening({ cwd }: { cwd: string }) {
+  const t = useT();
+  const text = useStore((s) => s.newChatDrafts[cwd] ?? "");
+  const general = useStore((s) => s.bootstrap.generalCwd === cwd);
+  const input = useRef<HTMLTextAreaElement>(null);
+  useLayoutEffect(
+    () => () => {
+      if (document.activeElement !== input.current) return;
+      const start = input.current?.selectionStart ?? 0;
+      const end = input.current?.selectionEnd ?? start;
+      requestAnimationFrame(() => {
+        const next = document.querySelector<HTMLTextAreaElement>(
+          "main .composer textarea",
+        );
+        if (!next || document.activeElement !== document.body) return;
+        next.focus();
+        next.setSelectionRange(start, end);
+      });
+    },
+    [],
+  );
+  return (
+    <div className="chat-shell">
+      <header className="chat-header">
+        <div className="chat-heading">
+          <Folder size={14} />
+          <span>{general ? t.Chats : basename(cwd)}</span>
+          <small>{t["New chat"]}</small>
+        </div>
+        <button
+          type="button"
+          aria-label={t.Cancel}
+          title={t.Cancel}
+          onClick={() => void cancelOpening().catch(showError)}
+        >
+          <X size={16} />
+        </button>
+      </header>
+      <div className="thread-scroll">
+        <div className="transcript chat-empty">
+          <h1>{t["What shall we build?"]}</h1>
+          <p className="muted">
+            {general ? t["Chat without a project"] : t.workingIn(cwd)}
+          </p>
+        </div>
+      </div>
+      <div className="composer-dock">
+        <div className="composer">
+          <textarea
+            ref={input}
+            aria-label={t.Message}
+            placeholder={t["Ask anything, or describe what to build…"]}
+            rows={2}
+            value={text}
+            onChange={(event) => {
+              const value = event.target.value;
+              useStore.setState((s) => ({
+                newChatDrafts: { ...s.newChatDrafts, [cwd]: value },
+              }));
+            }}
+            onKeyDown={(event) => {
+              if (
+                event.key === "Enter" &&
+                !event.shiftKey &&
+                !event.nativeEvent.isComposing
+              )
+                event.preventDefault();
+            }}
+          />
+          <div className="composer-toolbar">
+            <span className="muted" role="status">
+              {t["Opening chat…"]}
+            </span>
+            <button
+              type="button"
+              className="send-button"
+              aria-label={t.Send}
+              disabled
+            >
+              <ArrowUp size={19} />
+            </button>
+          </div>
+        </div>
+      </div>
     </div>
   );
 }

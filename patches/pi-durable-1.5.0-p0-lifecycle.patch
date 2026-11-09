@@ -1,0 +1,97 @@
+diff --git a/dist/harness/harness.js b/dist/harness/harness.js
+index e286f00f872ebec79367a594938040c6a37a879f..ca63b14599d25cf6140d93f52e921d9d19ce92e5 100644
+--- a/dist/harness/harness.js
++++ b/dist/harness/harness.js
+@@ -1,4 +1,5 @@
+ import { withAbortSignal, withoutAbortSignal } from "@earendil-works/chord/context";
++import { cleanupSessionResources } from "@earendil-works/pi-ai";
+ import { mergeClientIdentity, PI_ATTRIBUTION, withClientIdentity, } from "@earendil-works/pi-ai/utils/identity";
+ import { createTypedMetrics, NOOP_TELEMETRY_CONTEXT, NOOP_TELEMETRY_METRICS, } from "@earendil-works/pi-telemetry";
+ import { ResetEntry } from "../entries.js";
+@@ -86,11 +87,25 @@ export const DEFAULT_HARNESS_IDENTITY = { attribution: PI_ATTRIBUTION };
+  * `HarnessOptions.models` as a function with `HarnessOptions.identity` applied. A plain `Models` is wrapped once; a
+  * function's result is wrapped at each call.
+  */
+-function currentModels(models, identity) {
++function currentModels(models, identity, sessions) {
+     const merged = mergeClientIdentity(DEFAULT_HARNESS_IDENTITY, identity) ?? DEFAULT_HARNESS_IDENTITY;
++    const wrap = (models) => {
++        const wrapped = withClientIdentity(models, merged);
++        // Track only identities actually passed to this Harness's model requests.
++        // Never invoke pi-ai's global (undefined-session) cleanup across workspaces.
++        for (const method of ["stream", "complete", "streamSimple", "completeSimple", "streamDeferred", "fetchDeferred", "cancelDeferred", "generateImages", "classify"]) {
++            const request = wrapped[method];
++            wrapped[method] = (model, input, options) => {
++                if (typeof options?.sessionId === "string")
++                    sessions.add(options.sessionId);
++                return request(model, input, options);
++            };
++        }
++        return wrapped;
++    };
+     if (typeof models === "function")
+-        return () => withClientIdentity(models(), merged);
+-    const wrapped = withClientIdentity(models, merged);
++        return () => wrap(models());
++    const wrapped = wrap(models);
+     return () => wrapped;
+ }
+ /** `HarnessOptions.settings` as a function: plain settings, or none, are returned at every call. */
+@@ -106,6 +121,7 @@ class HarnessImpl extends SessionImpl {
+     #tasks;
+     #submissions;
+     #taskGraph;
++    #providerSessions = new Set();
+     constructor(rawStorage, options, context) {
+         const report = safeReport(options.onReport, options.telemetry ?? NOOP_TELEMETRY_CONTEXT);
+         const now = safeNow(options.now, report);
+@@ -123,7 +139,7 @@ class HarnessImpl extends SessionImpl {
+             session: this,
+             storage,
+             registry: options.registry,
+-            models: currentModels(options.models, options.identity),
++            models: currentModels(options.models, options.identity, this.#providerSessions),
+             agent: (id, snapshot, callContext) => this.resolveAgent(id, snapshot, callContext),
+             settings,
+             env: (id, callContext) => this.buildEnv(id, callContext),
+@@ -260,8 +276,21 @@ class HarnessImpl extends SessionImpl {
+         return this.#tasks.membershipKeys(tx);
+     }
+     /** Signal and join task invocations after the close listeners and before Storage closes; writes no task outcome. */
+-    beforeClose() {
+-        return this.#tasks.join();
++    async beforeClose() {
++        await this.#tasks.join();
++        const errors = [];
++        for (const sessionId of this.#providerSessions) {
++            try {
++                cleanupSessionResources(sessionId);
++            }
++            catch (error) {
++                errors.push(error);
++            }
++        }
++        this.#providerSessions.clear();
++        // A failing provider callback must not prevent the underlying Storage from closing.
++        if (errors.length)
++            this.#report(new AggregateError(errors, "Provider resource cleanup failed"), { kind: "host_error", callback: "models" });
+     }
+     async #create(target, options, context) {
+         this.assertUsable();
+diff --git a/dist/harness/submissions.js b/dist/harness/submissions.js
+index 6e882a8c252dda942b8b45e5b1837cf2fee28341..7d6558767fe0edc9e12b5ffe01006cf556f8f96b 100644
+--- a/dist/harness/submissions.js
++++ b/dist/harness/submissions.js
+@@ -95,7 +95,11 @@ export class Submissions {
+             // Close rejects registered waiters synchronously and may begin during the read.
+             if (this.#closed)
+                 throw closedError(this.#session);
+-            return { promise: this.#waiters.add(id, context) };
++            const promise = this.#waiters.add(id, context);
++            // The delivery fence may fail before readOnLine returns this inner promise.
++            // Observe it now; callers still receive the original rejection when delivered.
++            promise.catch(() => { });
++            return { promise };
+         });
+         return found.promise;
+     }

@@ -1,5 +1,5 @@
-// Session creation and package changes share one queue: resource discovery must not
-// observe an installation halfway through. Rejections never poison the queue.
+// Serializes app-owned package mutations. Native host admission/safety is a separate
+// lease, not an implicit session-creation lock. Rejections never poison the queue.
 let queue = Promise.resolve();
 export function withPackageLock<T>(work: () => Promise<T>): Promise<T> {
   const result = queue.then(work);

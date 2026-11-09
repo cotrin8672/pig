@@ -1,5 +1,7 @@
 # SDK runtime 移行 — 検証記録と残りの受け入れ条件
 
+> 履歴資料: 現行実装は Pi Durable native Host へ置き換え済み。本書の SDK・TUI・旧配布物の結果は現行実装の受入証拠ではない。現在の範囲と未完了条件は [native 検証記録](native-runtime-verification.md) を参照。
+
 2026-11-09 時点。**通常会話ランタイムの SDK 移行と限定された自動検証は完了。全機能互換・native E2E・リリース完了ではない。** 契約は [実装計画](../.pi/plan/pi-sdk-return-implementation.md) を参照。本書は証拠の範囲を記録するもので、契約を緩和しない。
 
 ## 後続の削除要求（2026-11-09）

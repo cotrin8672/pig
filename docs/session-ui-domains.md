@@ -94,20 +94,21 @@ Pi SDK / Extension ← 正式なコマンド / EventBus ← Adapter ← 操作ID
 
 ## 初期公開契約
 
-- `defineConfig({apiVersion:1, sessionAdapters, keymaps})`。ユーザー単位 `~/.config/pig/config.ts` のみを読み込む。プロジェクトTSの自動実行はしない。
-- `sources.entries('branch'|'all')`、`tools()`、`subscribe()`、`onEvent()`、`onBus()`。保存/実行中の区別を保持。
-- `views.set/remove`。IDはAdapter内で名前空間化。表示revisionは削除後も再利用しない。
-- `commands.register`、`pi.commands/invoke/emit`。元Extension提供元を完全一致で確認してhandlerを呼ぶ。未登録ならエラー。通常promptへのfallbackやtool.execute直呼びはない。
-- `scope.signal/onDispose/interval`。接続終了で購読・表示・操作・管理対象timerを解除。Extension自身のjobは止めない。
-- WebViewはgeneration+adapterId+viewId+revision+actionIdを返す。入力内容はHostで検証。確定状態はExtensionの観測更新だけで変える。
-- 操作待ちと実際のmode/run状態は分離。toggleはsetとして公開しない。自動再送しない。
-- TS再読込は相対importもbundleし直す。構文・検証エラーでは前の設定を維持。個別Adapter例外は専用表示だけを撤去して診断。
-- キーはchat/composer/panelに限定し、IME・TUI・既存対話を保護。複数打鍵sequenceやmacroは含めない。
+- `defineConfig({apiVersion:2, runtime, commands, sessionAdapters, keymaps})`。明示ユーザー単位 `~/.config/pig/config.ts` のみ。v1は移行診断付きで拒否し、SDK互換・プロジェクトTS自動実行はしない。
+- runtimeはnative Durable `Extension[]`、pi-ai `Provider[]`、明示extensions/tools/modelToolsのprofile。installedとselectedは別で、WorkspaceごとのRegistry/ModelsとHarnessSettingsのselectionをHostが所有する。read-onlyはnested-callを含む実効toolsのallowlistで検査し、指示/modelToolsだけで保証しない。
+- `sources.conversation()` はbefore付きwindowとbuiltin docsのみ、`taskGraph()` はWorkspaceのlive graph。custom TODO/Mode/Delegation/Documentはnative tokenの `snapshot/watchDocument` で読む。不在はundefined、retirementを通知し、Task消失を成功と推測しない。終端outcomeはentry/domain docに永続化する。
+- `views.set/remove`。既存9 domain/DTOとvalidationを維持。IDはAdapter内tupleで名前空間化し、表示revisionは削除後も再利用しない。
+- Adapterのlocal `commands.register` と、namespace付きglobal/conversation Host commandは別契約。`controller.configure/commit` は対象会話・cancellation・Host policyに束縛し、明示操作中だけ利用する。commit内はtxだけで読む。ctx.pi、EventBus、SDK branch/all、slash fallback、Tool.execute直呼びはない。
+- Host commandはbounded JSONと明示validator（省略時はinputなし）、enabled理由、scope/streaming/busy/generation、必要なconfirmationを検査する。confirmationは権限承認ではない。`config.reload` とbuiltin IDは予約。
+- `scope.signal/onDispose/interval` は購読・表示・操作・timerを解放し、遅いnative watch取得後もcleanupする。runtime Taskのabortではない。WebViewのgeneration+adapterId+viewId+revision+actionId、固定input/fields、consumed revision、二重要求拒否を維持する。状態は観測更新だけで変え、自動再送しない。
+- TS再読込はprepare/validateとacceptを分離し、相対import再bundle、source 1MiB/bundle 4MiB、cache cleanup成功後の受理を維持する。構造/native Registry/core peer・version・realpath不整合はlast-goodを保持。Runtime変更はTask/Doc互換性・全live/保留/子/background Task・承認を確認するHost gateがなければ候補全体をpendingにする。JSON比較や存在しないextension.versionは互換証明ではない。
+- managed package moduleRoot/resolve hookは明示portで、install成功をload/selectと混同しない。外部package内部のcore重複は入口aliasで解消したことにしない。自動install/discoveryはない。
+- 既存AdapterKeymap DTOとHost-command bindingは分離。chat/composer/panel、GUI override > TS > default、IME/既存対話保護を維持する。空Dockからのglobal reload到達性とHost shortcut配線は別途承認対象で、この契約更新に新UIは含めない。
 
 ## 初期版の限界
 
 - これは**表示投影モデル**であり、各Harnessの実行DBの完全複製ではない。nativeの追加情報はfacts・description・ResourceRef・能力別操作・Statusに残せる。未知状態を成功やpendingへ勝手に正規化しない。
-- Pi以外のHarnessをpigへ直接接続する実装ではない。比較は抽象化を検証するため。Pi公式の接続例を実装し、その他の互換性は個別Adapterで検証する。
+- Pi以外のHarnessをpigへ直接接続する実装ではない。比較は抽象化を検証するため。native Durable接続例は `examples/session-ui/durable-adapters.ts` にあり、他Extensionとの互換性は個別Adapterで検証する。
 - Annotation初期版は版・範囲・引用・thread表示と登録操作。DOM上の自動再anchor、全ファイル/diffへの行内editor、汎用リソースresolverは提供しない。
 - ログは上限付きテキストsnapshot。PTY操作、耐久spool、汎用cursor APIは対象Extensionとの契約が必要。
 - 信頼されたTS設定は任意のHostコード。sandboxではなく、API外で作ったprocess/timerまで強制回収できない。

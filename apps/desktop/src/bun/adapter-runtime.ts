@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import {
   type AdapterContext,
+  type AdapterKeymap,
   type Json,
   type PigConfig,
   type SessionActionRequest,
@@ -13,7 +14,7 @@ import {
   validateJson,
   validateView,
 } from "../../../../packages/config/src/validate";
-import type { AdapterBackend } from "./adapter-source";
+import type { AdapterBackend } from "./adapter-backend";
 
 type Command = Parameters<AdapterContext["commands"]["register"]>[0];
 type StoredView = {
@@ -30,6 +31,7 @@ type Scope = {
   commands: Map<string, Command>;
   views: Map<string, StoredView>;
   running?: Command;
+  operation?: AbortController;
 };
 
 const MAX_COMMANDS = 256;
@@ -51,7 +53,7 @@ export class AdapterRuntime {
   readonly generation = randomUUID();
   private readonly scopes = new Map<string, Scope>();
   private readonly diagnostics = new Map<string, string>();
-  private readonly keymaps: NonNullable<PigConfig["keymaps"]>;
+  private readonly keymaps: AdapterKeymap[];
   private started = false;
   private disposed = false;
   private revision = 0;
@@ -61,7 +63,12 @@ export class AdapterRuntime {
     private readonly backend: AdapterBackend,
     private readonly changed: () => void,
   ) {
-    this.keymaps = structuredClone(config.keymaps ?? []);
+    this.keymaps = structuredClone(
+      (config.keymaps ?? []).filter(
+        (binding): binding is AdapterKeymap =>
+          typeof binding.adapter === "string",
+      ),
+    );
   }
 
   get busy(): boolean {
@@ -208,11 +215,15 @@ export class AdapterRuntime {
         throw new Error("KEYBOARD_COMMAND_UNAVAILABLE");
     }
     scope.running = command;
+    const operation = new AbortController();
+    scope.operation = operation;
     try {
       this.changed();
       this.assert(scope);
       await command.run(input);
     } finally {
+      operation.abort();
+      if (scope.operation === operation) scope.operation = undefined;
       if (scope.running === command) scope.running = undefined;
       if (!this.disposed) this.changed();
     }
@@ -247,6 +258,7 @@ export class AdapterRuntime {
     if (!scope.alive) return;
     scope.alive = false;
     scope.controller.abort();
+    scope.operation?.abort();
     scope.commands.clear();
     scope.views.clear();
     for (const cleanup of [...scope.cleanups].reverse()) cleanup();
@@ -278,7 +290,7 @@ export class AdapterRuntime {
     return once;
   }
 
-  /** Coalesce snapshot invalidations only; raw events retain order in a bounded queue. */
+  /** Serialized snapshot deliveries; invalidations coalesce, document retirement retains order. */
   private listener<T>(
     scope: Scope,
     callback: (value: T) => void | Promise<void>,
@@ -326,6 +338,29 @@ export class AdapterRuntime {
     };
   }
 
+  private assertToken(token: unknown): void {
+    const definition = (
+      token as {
+        definition?: { scope?: unknown; kind?: unknown; version?: unknown };
+      } | null
+    )?.definition;
+    if (
+      definition?.scope !== "conversation" ||
+      typeof definition.kind !== "string" ||
+      !definition.kind.trim() ||
+      !Number.isSafeInteger(definition.version) ||
+      (definition.version as number) < 1
+    )
+      throw new Error("INVALID_DOCUMENT_TOKEN");
+  }
+
+  private operationSignal(scope: Scope): AbortSignal {
+    this.assert(scope);
+    if (!scope.running || !scope.operation || scope.operation.signal.aborted)
+      throw new Error("ADAPTER_COMMAND_REQUIRED");
+    return scope.operation.signal;
+  }
+
   private context(scope: Scope): AdapterContext {
     const subscribe = <T>(
       callback: (value: T) => void | Promise<void>,
@@ -351,13 +386,13 @@ export class AdapterRuntime {
     return {
       session: structuredClone(this.backend.session),
       sources: {
-        entries: (selection) => {
+        conversation: () => {
           this.assert(scope);
-          return structuredClone(this.backend.entries(selection));
+          return structuredClone(this.backend.conversation());
         },
-        tools: () => {
+        taskGraph: () => {
           this.assert(scope);
-          return structuredClone(this.backend.tools());
+          return structuredClone(this.backend.taskGraph());
         },
         subscribe: (callback) =>
           subscribe(
@@ -365,13 +400,47 @@ export class AdapterRuntime {
             (dispatch) => this.backend.subscribe(() => dispatch(undefined)),
             true,
           ),
-        onEvent: (callback) =>
-          subscribe(callback, (dispatch) => this.backend.onEvent(dispatch)),
-        onBus: (channel, callback) => {
-          boundedText(channel, 256);
-          return subscribe(callback, (dispatch) =>
-            this.backend.onBus(channel, dispatch),
+        snapshot: async (token) => {
+          this.assert(scope);
+          this.assertToken(token);
+          const value = await this.backend.snapshot(
+            token,
+            scope.controller.signal,
           );
+          this.assert(scope);
+          return value === undefined ? undefined : structuredClone(value);
+        },
+        watchDocument: async (token, callback) => {
+          this.assert(scope);
+          this.assertToken(token);
+          const listener = this.listener(scope, callback);
+          let active = true;
+          let detach: Unsubscribe | undefined;
+          const unsubscribe = this.track(scope, () => {
+            active = false;
+            listener.stop();
+            detach?.();
+          });
+          try {
+            const cleanup = await this.backend.watchDocument(
+              token,
+              listener.dispatch,
+              scope.controller.signal,
+            );
+            if (!active) {
+              if (cleanup) this.track(scope, cleanup);
+              return undefined;
+            }
+            detach = cleanup;
+            if (!detach) {
+              unsubscribe();
+              return undefined;
+            }
+            return unsubscribe;
+          } catch (error) {
+            unsubscribe();
+            throw error;
+          }
         },
       },
       views: {
@@ -417,19 +486,18 @@ export class AdapterRuntime {
           this.changed();
         },
       },
-      pi: {
-        commands: () => {
-          this.assert(scope);
-          return structuredClone(this.backend.commands());
+      controller: {
+        configure: async (change) => {
+          const signal = this.operationSignal(scope);
+          await this.backend.configure(change, signal);
         },
-        invoke: async (command) => {
-          this.assert(scope);
-          await this.backend.invoke(structuredClone(command));
-        },
-        emit: (channel, data) => {
-          this.assert(scope);
-          boundedText(channel, 256);
-          this.backend.emit(channel, jsonCopy(data));
+        commit: async (change) => {
+          const signal = this.operationSignal(scope);
+          return this.backend.commit((tx) => {
+            this.assert(scope);
+            if (signal.aborted) throw new Error("ADAPTER_COMMAND_REQUIRED");
+            return change(tx);
+          }, signal);
         },
       },
       scope: {

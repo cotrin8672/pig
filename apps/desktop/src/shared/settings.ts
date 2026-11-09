@@ -12,7 +12,7 @@ export interface Settings {
   blockImages: boolean;
   keybindings: KeyOverrides;
   imageGenerationModel: UtilityModelSelection | null;
-  classificationModel: UtilityModelSelection | null;
+  decisionModel: UtilityModelSelection | null;
 }
 export type SettingsPatch = Partial<Settings>;
 export const defaultSettings: Settings = {
@@ -22,7 +22,7 @@ export const defaultSettings: Settings = {
   blockImages: false,
   keybindings: {},
   imageGenerationModel: null,
-  classificationModel: null,
+  decisionModel: null,
 };
 function validateModelSelection(value: unknown): UtilityModelSelection | null {
   if (value === undefined || value === null) return null;
@@ -81,7 +81,7 @@ export function validateSettings(value: unknown): Settings {
     blockImages,
     keybindings,
     imageGenerationModel: validateModelSelection(input.imageGenerationModel),
-    classificationModel: validateModelSelection(input.classificationModel),
+    decisionModel: validateModelSelection(input.decisionModel),
   };
 }
 export function patchSettings(

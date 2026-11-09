@@ -4,32 +4,17 @@ import type { UIReply, UIRequest } from "../shared/extension-ui";
 import { addressKey, sameAddress } from "./chat-snapshot";
 import { useT } from "./i18n";
 import { cancelOpening, rpc } from "./rpc";
-import {
-  liveAddress,
-  ownedTerminalCommand,
-  subscribeTerminal,
-} from "./runtime-events";
+import { liveAddress } from "./runtime-events";
 import { showError, useStore } from "./store";
-import { TerminalDialog } from "./TerminalDialog";
 import { focusedRequest, uiKey, validReply } from "./ui-request-state";
 import "./sdk-ui.css";
 
 /** Root-owned: startup/trust UI must not depend on a Chat or Composer mounting. */
 export function UIRequestBroker() {
   const requests = useStore((s) => s.pendingUI);
-  const terminals = useStore((s) => s.terminals);
   const [selected, setSelected] = useState<string>();
-  const [started, setStarted] = useState<Set<string>>(() => new Set());
   const focus = focusedRequest(requests, selected);
   const focusKey = focus && uiKey(focus);
-  useEffect(() => {
-    if (focus?.kind === "terminal" && terminals[uiKey(focus)]) {
-      const key = uiKey(focus);
-      setStarted((previous) =>
-        previous.has(key) ? previous : new Set([...previous, key]),
-      );
-    }
-  }, [focus, terminals]);
   return (
     <>
       {focus && requests.length > 1 && (
@@ -39,53 +24,13 @@ export function UIRequestBroker() {
           select={setSelected}
         />
       )}
-      {requests.map((request) => {
-        const key = uiKey(request);
-        if (request.kind !== "terminal")
-          return (
-            <NativeRequest
-              key={key}
-              request={request}
-              active={key === focusKey}
-            />
-          );
-        const terminal = terminals[key];
-        if (!terminal || (!started.has(key) && key !== focusKey)) return null;
-        return (
-          <TerminalDialog
-            key={key}
-            request={terminal}
-            active={key === focusKey}
-            subscribe={subscribeTerminal}
-            onError={showError}
-            openExternal={(url) => rpc.send.openExternal({ url })}
-            send={(command) => {
-              try {
-                void rpc.request
-                  .terminalCommand(ownedTerminalCommand(request, command))
-                  .catch(showError);
-              } catch (error) {
-                showError(error);
-              }
-            }}
-          />
-        );
-      })}
-      {focus?.kind === "terminal" && !terminals[uiKey(focus)] && (
-        <div className="ui-starting" role="status">
-          Preparing {focus.title}…{" "}
-          <button
-            type="button"
-            onClick={() => {
-              void rpc.request
-                .terminalCommand({ ...focus, type: "cancel" })
-                .catch(showError);
-            }}
-          >
-            Cancel
-          </button>
-        </div>
-      )}
+      {requests.map((request) => (
+        <NativeRequest
+          key={uiKey(request)}
+          request={request}
+          active={uiKey(request) === focusKey}
+        />
+      ))}
     </>
   );
 }
@@ -93,7 +38,7 @@ function NativeRequest({
   request,
   active,
 }: {
-  request: Exclude<UIRequest, { kind: "terminal" }>;
+  request: UIRequest;
   active: boolean;
 }) {
   const dialog = useRef<HTMLDialogElement>(null);
@@ -335,9 +280,7 @@ function RequestQueue({
   const focus = requests.find((request) => uiKey(request) === focusKey);
   useEffect(() => {
     const update = () =>
-      setTarget(
-        document.querySelector(".sdk-request[open], [data-terminal-ui][open]"),
-      );
+      setTarget(document.querySelector(".sdk-request[open]"));
     update();
     const observer = new MutationObserver(update);
     observer.observe(document.body, {

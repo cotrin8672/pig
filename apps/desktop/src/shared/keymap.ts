@@ -8,6 +8,9 @@ export type ActionId = keyof typeof defaultBindings;
 export const actionIds = Object.keys(defaultBindings) as ActionId[];
 export type KeyOverrides = Partial<Record<ActionId, string | null>>;
 
+// Global command, deliberately separate from the four Settings shortcut rows.
+export const configReloadBinding = "Ctrl+Alt+R";
+
 function keyName(key: string) {
   if (key === "+") return "Plus";
   if (key.length === 1) return key === " " ? "Space" : key.toUpperCase();
