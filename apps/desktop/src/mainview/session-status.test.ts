@@ -1,6 +1,10 @@
 import { afterEach, expect, test } from "bun:test";
 import type { SessionFlags } from "../shared/desktop-state";
-import { visibleCompletion } from "./session-read";
+import {
+  isInlineResultVisible,
+  isViewedCompletion,
+  visibleCompletion,
+} from "./session-read";
 import { hasUnreadCompletion, sessionStatus } from "./session-status";
 import { clearNotices, markNoticeRead, useStore } from "./store";
 
@@ -86,4 +90,62 @@ test("notification reads and deletion never acknowledge chat completion", () => 
   markNoticeRead();
   clearNotices();
   expect(useStore.getState().bootstrap.desktop.sessions.chat).toEqual(complete);
+});
+
+test("only successful completion of the chat being watched is silent", () => {
+  const notice = {
+    kind: "completion" as const,
+    level: "success" as const,
+    message: "Done",
+    session: { id: "chat", cwd: "general" },
+  };
+  expect(isViewedCompletion(notice, state(), true, true)).toBe(true);
+  // Notification and snapshot publications may arrive in either order.
+  const streaming = state();
+  streaming.snapshots.chat.transcript.running = true;
+  expect(isViewedCompletion(notice, streaming, true, true)).toBe(true);
+  expect(isViewedCompletion(notice, state(), false, true)).toBe(false);
+  expect(isViewedCompletion(notice, state(), true, false)).toBe(false);
+  for (const patch of [
+    { active: "other" },
+    { page: "settings" },
+    { opening: true },
+    { snapshots: {} },
+    { pendingUI: [{ sessionId: "chat" }] },
+  ]) {
+    expect(
+      isViewedCompletion(notice, { ...state(), ...patch }, true, true),
+    ).toBe(false);
+  }
+  expect(
+    isViewedCompletion(
+      { ...notice, session: { id: "chat", cwd: "other" } },
+      state(),
+      true,
+      true,
+    ),
+  ).toBe(false);
+  expect(
+    isViewedCompletion({ ...notice, level: "error" }, state(), true, true),
+  ).toBe(false);
+  expect(
+    isViewedCompletion({ ...notice, kind: undefined }, state(), true, true),
+  ).toBe(false);
+});
+
+test("inline operation errors notify globally only when their own form cannot be seen", () => {
+  const form = { isConnected: true, getClientRects: () => ({ length: 1 }) };
+  expect(isInlineResultVisible(form, true, true)).toBe(true);
+  expect(isInlineResultVisible(form, false, true)).toBe(false);
+  expect(isInlineResultVisible(form, true, false)).toBe(false);
+  expect(
+    isInlineResultVisible({ ...form, isConnected: false }, true, true),
+  ).toBe(false);
+  expect(
+    isInlineResultVisible(
+      { ...form, getClientRects: () => ({ length: 0 }) },
+      true,
+      true,
+    ),
+  ).toBe(false);
 });

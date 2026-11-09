@@ -78,6 +78,11 @@ import {
   setSessionModel,
   utilityModels,
 } from "./pi-service";
+import {
+  discoverProjectResources,
+  isProjectTrusted,
+  persistProjectTrust,
+} from "./project-trust";
 import { validateSessionScope } from "./session-scope";
 import { loadSettings, saveSettings } from "./settings";
 import { synchronizeClientArea } from "./window-layout";
@@ -215,6 +220,8 @@ const rpc = BrowserView.defineRPC<RPCSchema>({
       abort: (input) => abortSession(input),
       closeSession: (input) => closeSession(input),
       reloadSession: (input) => sessionHost.reloadSession(input),
+      invokeSessionAction: (input) => sessionHost.invokeSessionAction(input),
+      reloadAdapterConfig: () => sessionHost.reloadAdapterConfig(),
       copyImage: ({ src }) => copyImage(src),
       saveImage: ({ src }) => saveImage(src),
       appearance: () => appearance,
@@ -423,10 +430,28 @@ const rpc = BrowserView.defineRPC<RPCSchema>({
               allowsMultipleSelection: false,
             })
           ).join(",");
-          if (folder)
+          if (folder && !projects.includes(folder)) {
+            // Ask once per folder here so opening a chat never interrupts with Trust.
+            if (
+              (await discoverProjectResources(folder)).length &&
+              !(await isProjectTrusted(folder))
+            ) {
+              const t = dictionary(settings.language);
+              const { response } = await Utils.showMessageBox({
+                type: "question",
+                title: t.trustTitle,
+                message: t.trustTitle,
+                detail: `${folder}\n\n${t.trustBody}`,
+                buttons: [t.trustYes, t.trustNo],
+                defaultId: 0,
+                cancelId: 1,
+              });
+              if (response === 0) await persistProjectTrust(folder);
+            }
             await saveProjects((current) =>
               current.includes(folder) ? current : [...current, folder],
             );
+          }
           rpc.send.projects(projects);
         })().catch(report);
       },
@@ -519,6 +544,7 @@ configureSessionHost(
       void desktopState.completeSession(sessionId, outcome).catch(report);
       const t = dictionary(settings.language);
       const notice: Notice = {
+        kind: "completion",
         message:
           outcome === "error"
             ? (wire.failure ?? t["Agent failed"])

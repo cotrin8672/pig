@@ -1,8 +1,9 @@
 import { toggleBackdrop } from "../shared/appearance";
 import { actionIds, matchesCombo, resolveBindings } from "../shared/keymap";
+import { adapterBinding } from "./adapter-keymap";
 import { navigate } from "./navigation";
-import { updateAppearance } from "./rpc";
-import { useStore } from "./store";
+import { rpc, updateAppearance } from "./rpc";
+import { showError, useStore } from "./store";
 import { isTerminalKeyboardEvent } from "./terminal-ui";
 
 export function initShortcuts() {
@@ -16,8 +17,38 @@ export function initShortcuts() {
       event.repeat
     )
       return;
-    const bindings = resolveBindings(useStore.getState().settings.keybindings);
+    const state = useStore.getState();
+    const bindings = resolveBindings(state.settings.keybindings);
     const action = actionIds.find((id) => matchesCombo(event, bindings[id]));
+    const explicit =
+      action && Object.hasOwn(state.settings.keybindings, action);
+    const snapshot = state.active ? state.snapshots[state.active] : undefined;
+    const target = event.target instanceof Element ? event.target : null;
+    const context = target?.closest("[role=dialog]")
+      ? null
+      : target?.closest(".composer")
+        ? "composer"
+        : target?.closest("input, textarea, select, [contenteditable=true]")
+          ? null
+          : target?.closest(".session-panel")
+            ? "panel"
+            : "chat";
+    const binding =
+      state.page === "chat" && !explicit
+        ? adapterBinding(snapshot?.sessionUI, event, context)
+        : undefined;
+    if (binding && snapshot?.sessionUI) {
+      event.preventDefault();
+      void rpc.request
+        .invokeSessionAction({
+          ...snapshot.address,
+          generation: snapshot.sessionUI.generation,
+          adapterId: binding.adapter,
+          commandId: binding.command,
+        })
+        .catch(showError);
+      return;
+    }
     if (!action) return;
     event.preventDefault();
     switch (action) {

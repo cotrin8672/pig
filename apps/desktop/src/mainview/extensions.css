@@ -170,8 +170,7 @@
 .package-theme {
   color: var(--ds-purple);
 }
-.package-prompt,
-.package-warning {
+.package-prompt {
   color: var(--ds-warning);
 }
 .package-links {
@@ -341,30 +340,6 @@
 }
 .package-skeleton span:last-child {
   width: 65%;
-}
-.package-dialog {
-  margin: auto;
-  width: min(440px, calc(100% - 32px));
-  padding: 28px;
-  color: var(--ds-text-primary);
-  background: var(--ds-bg-elevated-opaque);
-  border: 1px solid var(--ds-border-strong);
-  border-radius: var(--radius-lg);
-  box-shadow: var(--ds-shadow-dialog);
-}
-.package-dialog::backdrop {
-  background: #10172380;
-  backdrop-filter: blur(6px);
-}
-.package-dialog h2 {
-  margin: 16px 0 12px;
-  overflow-wrap: anywhere;
-}
-.package-dialog-actions {
-  display: flex;
-  justify-content: flex-end;
-  gap: 8px;
-  margin-top: 24px;
 }
 .extensions-page [role="tabpanel"]:focus:not(:focus-visible) {
   outline: none;

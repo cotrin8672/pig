@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import type { UIReply, UIRequest } from "../shared/extension-ui";
 import { addressKey, sameAddress } from "./chat-snapshot";
+import { useT } from "./i18n";
 import { cancelOpening, rpc } from "./rpc";
 import {
   liveAddress,
@@ -31,7 +32,7 @@ export function UIRequestBroker() {
   }, [focus, terminals]);
   return (
     <>
-      {focus && (
+      {focus && requests.length > 1 && (
         <RequestQueue
           requests={requests}
           focusKey={focusKey}
@@ -102,6 +103,8 @@ function NativeRequest({
   const [submitting, setSubmitting] = useState(false);
   const submitted = useRef(false);
   const [error, setError] = useState<string>();
+  const [remember, setRemember] = useState(true);
+  const t = useT();
   async function reply(answer: UIReply) {
     if (submitted.current || !validReply(request, answer)) return;
     submitted.current = true;
@@ -175,10 +178,7 @@ function NativeRequest({
         cancel();
       }}
     >
-      <h2>{request.title}</h2>
-      <small className="muted">
-        Session {request.sessionId} · epoch {request.epoch}
-      </small>
+      <h2>{request.kind === "project-trust" ? t.trustTitle : request.title}</h2>
       {request.expiresAt && (
         <p className="muted">
           Expires {new Date(request.expiresAt).toLocaleTimeString()}
@@ -187,26 +187,28 @@ function NativeRequest({
       {request.kind === "confirm" && <p>{request.message}</p>}
       {request.kind === "project-trust" && (
         <>
-          <p>
-            Allow this project's resources to load? Extensions can execute code
-            with your user privileges. Trust is not an OS sandbox.
-          </p>
+          <p>{t.trustBody}</p>
           <p>
             <code>{request.cwd}</code>
           </p>
-          <small>Fingerprint: {request.fingerprint}</small>
-          <ul>
-            {request.resources.map((resource) => (
-              <li key={`${resource.kind}:${resource.path}`}>
-                <strong>{resource.kind}</strong> {resource.path}
-              </li>
-            ))}
-          </ul>
-          <p>
-            Open safe omits untrusted project
-            code/settings/instructions/skills/prompts. You can explicitly trust
-            and reload later.
-          </p>
+          <details>
+            <summary>{t.trustFiles(request.resources.length)}</summary>
+            <ul>
+              {request.resources.map((resource) => (
+                <li key={`${resource.kind}:${resource.path}`}>
+                  <strong>{resource.kind}</strong> {resource.path}
+                </li>
+              ))}
+            </ul>
+          </details>
+          <label className="sdk-check">
+            <input
+              type="checkbox"
+              checked={remember}
+              onChange={(event) => setRemember(event.target.checked)}
+            />
+            {t.trustRemember}
+          </label>
         </>
       )}
       {request.kind === "select" && (
@@ -259,7 +261,7 @@ function NativeRequest({
       )}
       <div className="dialog-actions">
         <button type="button" onClick={cancel} disabled={submitting}>
-          Cancel
+          {t.cancel}
         </button>
         {request.kind === "confirm" && (
           <>
@@ -292,29 +294,21 @@ function NativeRequest({
                 void reply({ ...request, kind: "project-trust", value: "safe" })
               }
             >
-              Open safe
+              {t.trustOpenSafe}
             </button>
             <button
               type="button"
-              disabled={submitting}
-              onClick={() =>
-                void reply({ ...request, kind: "project-trust", value: "once" })
-              }
-            >
-              Trust once
-            </button>
-            <button
-              type="button"
+              className="primary"
               disabled={submitting}
               onClick={() =>
                 void reply({
                   ...request,
                   kind: "project-trust",
-                  value: "persist",
+                  value: remember ? "persist" : "once",
                 })
               }
             >
-              Trust and remember
+              {t.trustAccept}
             </button>
           </>
         )}

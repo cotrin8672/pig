@@ -1,4 +1,5 @@
 import { afterEach, expect, jest, test } from "bun:test";
+import { emptyTranscript } from "../shared/transcript";
 import {
   NOTICE_HISTORY_LIMIT,
   parseNoticeHistory,
@@ -7,14 +8,33 @@ import {
   clearNotices,
   dismissNotice,
   markNoticeRead,
+  readViewedNotices,
+  receivePackageOp,
   showError,
   showNotice,
   useStore,
 } from "./store";
 
+const original = useStore.getState();
+const originalDocument = Object.getOwnPropertyDescriptor(
+  globalThis,
+  "document",
+);
+function viewDocument(visible = true, focused = true) {
+  Object.defineProperty(globalThis, "document", {
+    configurable: true,
+    value: {
+      visibilityState: visible ? "visible" : "hidden",
+      hasFocus: () => focused,
+    },
+  });
+}
 afterEach(() => {
   jest.useRealTimers();
-  useStore.setState({ notices: [], noticeHistory: [] });
+  if (originalDocument)
+    Object.defineProperty(globalThis, "document", originalDocument);
+  else Reflect.deleteProperty(globalThis, "document");
+  useStore.setState({ ...original, notices: [], noticeHistory: [] }, true);
 });
 
 test("identical notices coexist and expire independently, including before session load", () => {
@@ -61,6 +81,7 @@ test("history supports individual and bulk read, retains the newest 200, and cle
   }
   const history = useStore.getState().noticeHistory;
   expect(history).toHaveLength(NOTICE_HISTORY_LIMIT);
+  expect(useStore.getState().notices).toHaveLength(3);
   expect(history[0].message).toBe("1");
   expect(history.at(-1)?.message).toBe("200");
   markNoticeRead(history[0].id);
@@ -109,4 +130,110 @@ test("stored history round-trips and ignores corrupt or invalid entries", () => 
       ),
     ),
   ).toHaveLength(NOTICE_HISTORY_LIMIT);
+});
+
+test("returning to a chat clears only its successful completion toast and marks its history read", () => {
+  jest.useFakeTimers();
+  useStore.setState({
+    active: "chat",
+    page: "chat",
+    opening: false,
+    modelPending: false,
+    pendingUI: [],
+    snapshots: {
+      chat: {
+        address: { hostId: "host", sessionId: "chat", epoch: 1 },
+        snapshotSeq: 1,
+        info: { id: "chat", cwd: "project", title: "Chat", modified: 1 },
+        transcript: emptyTranscript(),
+        effort: "off",
+        effortLevels: [],
+      },
+    },
+  });
+  const notice = {
+    kind: "completion" as const,
+    level: "success" as const,
+    message: "Done",
+    session: { id: "chat", cwd: "project" },
+  };
+  showNotice(notice);
+  showNotice({ ...notice, level: "error" });
+  showNotice({ ...notice, kind: undefined });
+  readViewedNotices(true, false);
+  expect(useStore.getState().notices).toHaveLength(3);
+  readViewedNotices(true, true);
+  expect(useStore.getState().notices).toHaveLength(2);
+  expect(useStore.getState().noticeHistory.map((n) => n.read)).toEqual([
+    true,
+    false,
+    false,
+  ]);
+  const history = useStore.getState().noticeHistory;
+  readViewedNotices(true, true);
+  expect(useStore.getState().noticeHistory).toBe(history);
+  viewDocument();
+  showNotice(notice);
+  expect(useStore.getState().noticeHistory.at(-1)?.read).toBe(true);
+  expect(useStore.getState().notices).toHaveLength(2);
+});
+
+test.each([
+  "install",
+  "update",
+  "uninstall",
+] as const)("visible %s success is recorded as read without a toast", (action) => {
+  jest.useFakeTimers();
+  viewDocument();
+  useStore.setState({ page: "extensions" });
+  const op = { opId: "test-op", source: "npm:example", action };
+  receivePackageOp({ ...op, status: "running" });
+  expect(useStore.getState().noticeHistory).toHaveLength(0);
+  receivePackageOp({ ...op, status: "done" });
+  expect(useStore.getState().notices).toHaveLength(0);
+  expect(useStore.getState().noticeHistory).toHaveLength(1);
+  expect(useStore.getState().noticeHistory[0]).toMatchObject({
+    kind: "package",
+    level: "success",
+    read: true,
+  });
+  jest.advanceTimersByTime(7000);
+  expect(
+    parseNoticeHistory(JSON.stringify(useStore.getState().noticeHistory))[0]
+      .read,
+  ).toBe(true);
+});
+
+test("unseen package results remain unread; returning reads successes but not failures or extension messages", () => {
+  jest.useFakeTimers();
+  const op = {
+    opId: "test-op",
+    source: "npm:example",
+    action: "install" as const,
+  };
+  for (const [page, visible, focused] of [
+    ["chat", true, true],
+    ["extensions", false, true],
+    ["extensions", true, false],
+  ] as const) {
+    clearNotices();
+    useStore.setState({ page });
+    viewDocument(visible, focused);
+    receivePackageOp({ ...op, status: "done" });
+    expect(useStore.getState().notices).toHaveLength(1);
+    expect(useStore.getState().noticeHistory[0].read).toBe(false);
+  }
+  viewDocument();
+  receivePackageOp({ ...op, status: "error", message: "Install failed" });
+  showNotice({ level: "info", message: "Extension requires attention" });
+  readViewedNotices(true, true);
+  expect(useStore.getState().notices.map((n) => n.level)).toEqual([
+    "error",
+    "info",
+  ]);
+  expect(useStore.getState().noticeHistory.map((n) => n.read)).toEqual([
+    true,
+    false,
+    false,
+  ]);
 });

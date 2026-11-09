@@ -11,6 +11,7 @@ import {
 import { useEffect, useId, useRef, useState } from "react";
 import type { ProjectFlags } from "../shared/projects";
 import { ActionsMenu } from "./ActionsMenu";
+import { ConfirmButton } from "./ConfirmButton";
 import { useT } from "./i18n";
 import { refresh, rpc } from "./rpc";
 import { showError, useStore } from "./store";
@@ -26,25 +27,17 @@ export function ProjectMenu({
   const flags = useStore((s) => s.bootstrap.desktop.projects?.[cwd]);
   const dialog = useRef<HTMLDialogElement>(null);
   const input = useRef<HTMLInputElement>(null);
-  const cancel = useRef<HTMLButtonElement>(null);
   const titleId = useId();
-  const [mode, setMode] = useState<"rename" | "delete">();
+  const [renaming, setRenaming] = useState(false);
   const [name, setName] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string>();
   useEffect(() => {
-    if (!mode) return;
+    if (!renaming) return;
     dialog.current?.showModal();
-    if (mode === "rename") {
-      input.current?.focus();
-      input.current?.select();
-    } else cancel.current?.focus();
-  }, [mode]);
-  function openDialog(next: "rename" | "delete") {
-    setName(flags?.name ?? "");
-    setError(undefined);
-    setMode(next);
-  }
+    input.current?.focus();
+    input.current?.select();
+  }, [renaming]);
   async function setFlags(patch: ProjectFlags) {
     setBusy(true);
     try {
@@ -55,12 +48,22 @@ export function ProjectMenu({
       setBusy(false);
     }
   }
+  async function remove() {
+    setBusy(true);
+    try {
+      await rpc.request.removeProject({ cwd });
+      await refresh();
+    } catch (error) {
+      showError(error);
+    } finally {
+      setBusy(false);
+    }
+  }
   async function submit() {
     setBusy(true);
     setError(undefined);
     try {
-      if (mode === "rename") await rpc.request.setProjectState({ cwd, name });
-      else await rpc.request.removeProject({ cwd });
+      await rpc.request.setProjectState({ cwd, name });
       dialog.current?.close();
       await refresh();
     } catch (error) {
@@ -98,7 +101,9 @@ export function ProjectMenu({
               role="menuitem"
               onClick={() => {
                 close();
-                openDialog("rename");
+                setName(flags?.name ?? "");
+                setError(undefined);
+                setRenaming(true);
               }}
             >
               <Pencil size={13} />
@@ -130,18 +135,22 @@ export function ProjectMenu({
               )}
               {flags?.archived ? t["Unarchive project"] : t["Archive project"]}
             </button>
-            <button
-              type="button"
+            <ConfirmButton
               role="menuitem"
               className="session-menu-delete"
-              onClick={() => {
+              title={
+                t[
+                  "Only removes this project from pig’s list. Files on disk and its chats are NOT deleted."
+                ]
+              }
+              onConfirm={() => {
                 close();
-                openDialog("delete");
+                void remove();
               }}
             >
               <Trash2 size={13} />
               {t.Delete}
-            </button>
+            </ConfirmButton>
           </>
         )}
       </ActionsMenu>
@@ -153,7 +162,7 @@ export function ProjectMenu({
           if (busy) event.preventDefault();
         }}
         onClose={() => {
-          setMode(undefined);
+          setRenaming(false);
           setError(undefined);
         }}
       >
@@ -164,9 +173,7 @@ export function ProjectMenu({
           }}
         >
           <div className="dialog-heading">
-            <h2 id={titleId}>
-              {mode === "rename" ? t["Edit name"] : t["Delete project"]}
-            </h2>
+            <h2 id={titleId}>{t["Edit name"]}</h2>
             <button
               type="button"
               aria-label={t.Close}
@@ -176,33 +183,16 @@ export function ProjectMenu({
               <X size={14} />
             </button>
           </div>
-          {mode === "rename" ? (
-            <>
-              <input
-                ref={input}
-                aria-label={t["Project name"]}
-                placeholder={displayName}
-                value={name}
-                maxLength={512}
-                disabled={busy}
-                onChange={(event) => setName(event.target.value)}
-              />
-              <p className="muted">
-                {t["Leave empty to use the folder name."]}
-              </p>
-            </>
-          ) : (
-            <>
-              <p className="session-dialog-name">{displayName}</p>
-              <p className="muted">
-                {
-                  t[
-                    "Only removes this project from pig’s list. Files on disk and its chats are NOT deleted."
-                  ]
-                }
-              </p>
-            </>
-          )}
+          <input
+            ref={input}
+            aria-label={t["Project name"]}
+            placeholder={displayName}
+            value={name}
+            maxLength={512}
+            disabled={busy}
+            onChange={(event) => setName(event.target.value)}
+          />
+          <p className="muted">{t["Leave empty to use the folder name."]}</p>
           {error && (
             <p className="error" role="alert">
               {error}
@@ -210,19 +200,14 @@ export function ProjectMenu({
           )}
           <div className="dialog-actions">
             <button
-              ref={cancel}
               type="button"
               disabled={busy}
               onClick={() => dialog.current?.close()}
             >
               {t.Cancel}
             </button>
-            <button
-              type="submit"
-              className={mode === "rename" ? "primary" : "danger-button"}
-              disabled={busy}
-            >
-              {mode === "rename" ? t.Rename : t.Delete}
+            <button type="submit" className="primary" disabled={busy}>
+              {t.Rename}
             </button>
           </div>
         </form>

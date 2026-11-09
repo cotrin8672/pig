@@ -47,10 +47,14 @@ export function ExtensionStatusBar({ address }: { address: SessionAddress }) {
           <button
             type="button"
             onClick={() => {
+              const info =
+                useStore.getState().snapshots[address.sessionId]?.info;
               void rpc.request.reloadSession(address).then(
                 (result) =>
                   showNotice({
-                    level: "info",
+                    kind: "completion",
+                    session: info ? { id: info.id, cwd: info.cwd } : undefined,
+                    level: result.state === "pending" ? "warning" : "success",
                     message:
                       result.state === "pending"
                         ? "Reload pending — stop work and close extension UI first."

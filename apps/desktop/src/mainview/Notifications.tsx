@@ -30,15 +30,17 @@ export function Notifications() {
                 : "status"
             }
           >
-            <Icon size={16} aria-hidden="true" />
+            <Icon size={14} aria-hidden="true" />
             <div className="notification-content">
-              <div>{notice.message}</div>
+              <div title={notice.message}>{notice.message}</div>
               {session && (
                 <button
                   type="button"
                   className="notification-session"
+                  title={snapshots[session.id]?.info.title}
                   onClick={() => {
                     markNoticeRead(notice.id);
+                    dismissNotice(notice.id);
                     void openChatLink(sessionLink(session.id)).catch(showError);
                   }}
                 >
@@ -51,7 +53,7 @@ export function Notifications() {
               aria-label={t["Dismiss notification"]}
               onClick={() => dismissNotice(notice.id)}
             >
-              <X size={16} aria-hidden="true" />
+              <X size={14} aria-hidden="true" />
             </button>
           </div>
         );

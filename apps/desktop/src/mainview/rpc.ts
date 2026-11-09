@@ -32,7 +32,13 @@ import {
 } from "./runtime-events";
 import { SendController } from "./send-controller";
 import { visibleCompletion } from "./session-read";
-import { receivePackageOp, showError, showNotice, useStore } from "./store";
+import {
+  readViewedNotices,
+  receivePackageOp,
+  showError,
+  showNotice,
+  useStore,
+} from "./store";
 
 // Root event handlers below are installed before any session-opening RPC.
 let appearanceInFlight = false;
@@ -515,6 +521,10 @@ export function initSessionReadTracking() {
   const attempted = new Map<string, string>();
   const check = () => {
     frame = 0;
+    readViewedNotices(
+      document.visibilityState === "visible",
+      document.hasFocus(),
+    );
     const target = visibleCompletion(
       useStore.getState(),
       document.visibilityState === "visible",

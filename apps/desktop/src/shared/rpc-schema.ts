@@ -1,5 +1,9 @@
 import type { AuthEvent, AuthPrompt } from "@earendil-works/pi-ai";
 import type {
+  SessionActionRequest,
+  SessionUIState,
+} from "../../../../packages/config/src";
+import type {
   DesktopState,
   SessionFlags,
   UiPreferences,
@@ -33,6 +37,8 @@ export type WireEvent = {
   transcript: Transcript;
   failure?: string;
   aborted?: boolean;
+  sessionUI?: SessionUIState;
+  configError?: string;
 };
 
 // Provider catalog and authentication status supplied by pi-ai.
@@ -82,6 +88,7 @@ export interface SessionTarget {
   id: string;
 }
 export interface Notice {
+  kind?: "completion" | "package";
   message: string;
   level: "info" | "success" | "warning" | "error";
   session?: SessionTarget;
@@ -112,6 +119,8 @@ export interface Snapshot extends ModelSelection {
   transcript: Transcript;
   failure?: string;
   aborted?: boolean;
+  sessionUI?: SessionUIState;
+  configError?: string;
 }
 // WezTerm-style window appearance: `opacity` stores background alpha per mode
 // (0..1), `backdrop` the Windows 11 DWM system backdrop behind it.
@@ -174,6 +183,16 @@ export type PackageOpStatus = {
 export type RPCSchema = {
   bun: {
     requests: {
+      invokeSessionAction: {
+        params: SessionAddress & SessionActionRequest;
+        // biome-ignore lint/suspicious/noConfusingVoidType: Electrobun convention.
+        response: void;
+      };
+      reloadAdapterConfig: {
+        // biome-ignore lint/suspicious/noConfusingVoidType: Electrobun convention.
+        params: void;
+        response: { state: "pending" | "applied" | "failed" };
+      };
       heartbeatUI: {
         params: { clientId: string };
         response: { connected: boolean };

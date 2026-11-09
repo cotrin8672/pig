@@ -27,6 +27,8 @@ export function applyChatEvent(
     transcript: event.transcript,
     failure: event.failure,
     aborted: event.aborted,
+    sessionUI: event.sessionUI,
+    configError: event.configError,
   };
 }
 

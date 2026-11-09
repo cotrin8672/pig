@@ -2,7 +2,12 @@ import { afterEach, expect, test } from "bun:test";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { discoverProjectResources, resolveProjectTrust } from "./project-trust";
+import {
+  discoverProjectResources,
+  isProjectTrusted,
+  persistProjectTrust,
+  resolveProjectTrust,
+} from "./project-trust";
 import { UIRequestBroker } from "./ui-request-broker";
 
 const paths: string[] = [];
@@ -146,6 +151,20 @@ test("pending trust obeys cancellation; persisted trust is explicit and corrupt 
       )
     ).trusted,
   ).toBe(true);
+  // Folder-scoped: editing project files keeps persisted trust.
+  await writeFile(join(cwd, ".pi/SYSTEM.md"), "edited after trust");
+  expect(await isProjectTrusted(cwd, profile)).toBe(true);
+  expect(
+    (
+      await resolveProjectTrust(
+        cwd,
+        address,
+        broker,
+        new AbortController().signal,
+        profile,
+      )
+    ).trusted,
+  ).toBe(true);
   await writeFile(join(profile, "desktop-trust.json"), "null");
   await expect(
     resolveProjectTrust(
@@ -158,7 +177,7 @@ test("pending trust obeys cancellation; persisted trust is explicit and corrupt 
   ).rejects.toThrow("cancelled");
 });
 
-test("F3: .agents-only project asks Trust, fingerprints skills/themes and stops .agents at Git root", async () => {
+test("F3: .agents-only project asks Trust once (persisted trust survives skill/theme edits) and stops .agents at Git root", async () => {
   const root = await mkdtemp(join(tmpdir(), "pig-trust-agents-"));
   paths.push(root);
   const repo = join(root, "repo"),
@@ -221,7 +240,7 @@ test("F3: .agents-only project asks Trust, fingerprints skills/themes and stops 
     new AbortController().signal,
     profile,
   );
-  expect(requests).toBe(2);
+  expect(requests).toBe(1);
   await mkdir(join(cwd, ".pi/themes"), { recursive: true });
   await writeFile(join(cwd, ".pi/themes/custom.json"), "{}");
   await resolveProjectTrust(
@@ -231,7 +250,7 @@ test("F3: .agents-only project asks Trust, fingerprints skills/themes and stops 
     new AbortController().signal,
     profile,
   );
-  expect(requests).toBe(3);
+  expect(requests).toBe(1);
   await writeFile(join(cwd, ".pi/themes/custom.json"), '{"changed":true}');
   await resolveProjectTrust(
     cwd,
@@ -240,7 +259,7 @@ test("F3: .agents-only project asks Trust, fingerprints skills/themes and stops 
     new AbortController().signal,
     profile,
   );
-  expect(requests).toBe(4);
+  expect(requests).toBe(1);
 });
 
 test("F4: explicit global context is not listed as omitted; safe mode excludes home ancestors", async () => {
@@ -272,4 +291,19 @@ test("F4: explicit global context is not listed as omitted; safe mode excludes h
   expect(
     files.some((file) => found.some((omitted) => omitted.path === file.path)),
   ).toBe(false);
+});
+
+test("trust granted when adding a project skips the chat-open prompt", async () => {
+  const { cwd, profile } = await fixture();
+  expect(await isProjectTrusted(cwd, profile)).toBe(false);
+  await persistProjectTrust(cwd, profile);
+  const unavailable = new UIRequestBroker(() => {});
+  const result = await resolveProjectTrust(
+    cwd,
+    address,
+    unavailable,
+    new AbortController().signal,
+    profile,
+  );
+  expect(result.trusted).toBe(true);
 });

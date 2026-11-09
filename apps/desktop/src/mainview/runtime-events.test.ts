@@ -244,3 +244,18 @@ test("reconnect response racing newer root events cannot restore ended requests"
   expect(applied).toBe(false);
   expect(useStore.getState().pendingUI).toHaveLength(0);
 });
+
+test.each([
+  "close",
+  "cancelled",
+  "failed",
+] as const)("runtime %s only notifies an actual failure, not an intentional close/cancel", (reason) => {
+  const { address } = fixture();
+  useStore.setState({ notices: [], noticeHistory: [] });
+  receiveRuntime({ type: "opening", address, cwd: "/fixture" });
+  receiveRuntime({ type: "closed", address, reason, message: "Session ended" });
+  expect(useStore.getState().notices).toHaveLength(reason === "failed" ? 1 : 0);
+  expect(useStore.getState().noticeHistory).toHaveLength(
+    reason === "failed" ? 1 : 0,
+  );
+});

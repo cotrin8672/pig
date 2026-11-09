@@ -1,4 +1,10 @@
 import "./runtime-profile";
+import { join } from "node:path";
+import type { SessionActionRequest } from "../../../../packages/config/src";
+import { AdapterRuntime } from "./adapter-runtime";
+import { createAdapterSource } from "./adapter-source";
+import { ConfigLoader } from "./config-loader";
+
 function required<T>(value: T | undefined): T {
   if (value === undefined) throw new Error("Session runtime is not ready");
   return value;
@@ -13,6 +19,7 @@ import {
 import type {
   AgentSession,
   AgentSessionRuntime,
+  EventBusController,
   ModelRuntime,
   SessionManager as SDKSessionManager,
 } from "@earendil-works/pi-coding-agent";
@@ -65,6 +72,7 @@ import {
   createAgentSessionFromServices,
   createAgentSessionRuntime,
   createAgentSessionServices,
+  createEventBus,
   DefaultResourceLoader,
   defineTool,
   SessionManager,
@@ -94,6 +102,9 @@ type Managed = {
   projector?: SDKProjector;
   ui: ExtensionUIHost;
   unsubscribe?: () => void;
+  eventBus: EventBusController;
+  adapterSource?: ReturnType<typeof createAdapterSource>;
+  adapters?: AdapterRuntime;
   disposing?: Promise<void>;
   closing?: Promise<void>;
   operation: Promise<unknown>;
@@ -122,6 +133,7 @@ type Options = {
   disabled?: () => readonly string[];
   settings?: () => Settings;
   resourceDir?: string;
+  configFile?: string;
   configureModels?: (runtime: ModelRuntime) => void | Promise<void>;
   connectionNow?: () => number;
 };
@@ -151,7 +163,15 @@ export class SessionHost {
   private shuttingDown = false;
   private disposal?: Promise<void>;
   private invalidated = new WeakSet<AgentSession>();
+  private readonly configLoader: ConfigLoader;
+  private readonly configReady: Promise<boolean>;
+  private configReloading = false;
+  private configReloadPending = false;
   constructor(private readonly options: Options) {
+    this.configLoader = new ConfigLoader(
+      options.configFile ?? join(desktopConfigDir, "config.ts"),
+    );
+    this.configReady = this.configLoader.reload();
     initializeRuntimeTheme();
     this.broker = new UIRequestBroker(options.emitUI);
     this.drafts = new ComposerBridge(options.emitUI);
@@ -261,6 +281,7 @@ export class SessionHost {
       })
       .finally(() => {
         if (m.transition === controller) m.transition = undefined;
+        this.maybeReloadAdapterConfig();
       });
   }
   getOpenState({ openId }: { openId: string }): OpenState {
@@ -357,6 +378,7 @@ export class SessionHost {
         manager,
         controller,
         ui,
+        eventBus: createEventBus(),
         images: createQueuedImagePolicy({
           blockImages: () => this.settings.blockImages,
           processing: () => {
@@ -433,6 +455,7 @@ export class SessionHost {
                 trust.trusted,
                 this.options.resourceDir ?? desktopConfigDir,
               )),
+              eventBus: managed.eventBus,
               extensionFactories: [managed.images.extension],
             },
             resourceLoaderReloadOptions: {
@@ -462,6 +485,7 @@ export class SessionHost {
               nextTrust.trusted,
               this.options.resourceDir ?? desktopConfigDir,
             )),
+            eventBus: managed.eventBus,
             extensionFactories: [managed.images.extension],
           });
           await next.reload({
@@ -533,6 +557,7 @@ export class SessionHost {
       });
       managed.runtime.setBeforeSessionInvalidate(() => {
         this.invalidated.add(required(managed.runtime).session);
+        this.detachAdapters(managed);
         managed.unsubscribe?.();
         managed.unsubscribe = undefined;
         managed.ui.cancelAll("reload");
@@ -636,6 +661,18 @@ export class SessionHost {
       return setModel(model, options);
     };
     this.subscribe(m, session);
+    this.detachAdapters(m);
+    const address = { ...m.address };
+    m.adapterSource = createAdapterSource(
+      session,
+      m.eventBus,
+      () => {
+        this.current(address, false);
+      },
+      () => {
+        this.current(address);
+      },
+    );
     await session.bindExtensions({
       uiContext: m.ui.uiContext,
       mode: "tui",
@@ -663,7 +700,11 @@ export class SessionHost {
             required(m.runtime).switchSession(known.path, options),
           );
         },
-        navigateTree: (id, options) => session.navigateTree(id, options),
+        navigateTree: async (id, options) => {
+          const result = await session.navigateTree(id, options);
+          if (!result.cancelled) this.attachAdapters(m);
+          return result;
+        },
         reload: async () => {
           await this.reloadSession(m.address);
         },
@@ -673,6 +714,8 @@ export class SessionHost {
       if (extension.shortcuts.size)
         m.ui.reportUnsupported("registerShortcut", extension.path);
     this.diagnostics(m, session);
+    await this.configReady;
+    this.attachAdapters(m);
   }
   private subscribe(m: Managed, session: AgentSession) {
     m.unsubscribe = session.subscribe((event) => {
@@ -694,6 +737,71 @@ export class SessionHost {
           this.failure(m, `Reload failed: ${String(error)}`),
         );
     });
+  }
+  private detachAdapters(m: Managed) {
+    m.adapters?.dispose();
+    m.adapters = undefined;
+    m.adapterSource?.dispose();
+    m.adapterSource = undefined;
+  }
+  private attachAdapters(m: Managed) {
+    m.adapters?.dispose();
+    if (!m.adapterSource || m.phase === "closing") return;
+    m.adapters = new AdapterRuntime(
+      this.configLoader.config,
+      m.adapterSource.backend,
+      () => {
+        this.publish(m);
+        if (m.reloadPending && !m.adapters?.busy) this.maybeReload(m);
+        this.maybeReloadAdapterConfig();
+      },
+    );
+    m.adapters.start();
+  }
+  async invokeSessionAction(input: SessionAddress & SessionActionRequest) {
+    if (this.configReloading) throw new Error("CONFIG_RELOAD_IN_PROGRESS");
+    const m = this.current(input);
+    if (!m.adapters) throw new Error("ADAPTER_UNAVAILABLE");
+    await m.adapters.invoke(input);
+  }
+  private maybeReloadAdapterConfig() {
+    if (
+      !this.configReloadPending ||
+      this.configReloading ||
+      this.shuttingDown ||
+      [...this.sessions.values()].some((m) => m.adapters?.busy || m.transition)
+    )
+      return;
+    this.configReloadPending = false;
+    queueMicrotask(() => {
+      void this.reloadAdapterConfig().catch((error) =>
+        console.error("Adapter config reload", error),
+      );
+    });
+  }
+  async reloadAdapterConfig(): Promise<{
+    state: "pending" | "applied" | "failed";
+  }> {
+    await this.configReady;
+    if (
+      this.configReloading ||
+      [...this.sessions.values()].some((m) => m.adapters?.busy || m.transition)
+    ) {
+      this.configReloadPending = true;
+      return { state: "pending" };
+    }
+    this.configReloading = true;
+    try {
+      const applied = await this.configLoader.reload();
+      for (const m of this.sessions.values()) {
+        if (applied) this.attachAdapters(m);
+        this.publish(m);
+      }
+      return { state: applied ? "applied" : "failed" };
+    } finally {
+      this.configReloading = false;
+      this.maybeReloadAdapterConfig();
+    }
   }
   private diagnostics(m: Managed, session: AgentSession) {
     const extensions = session.resourceLoader.getExtensions();
@@ -725,6 +833,8 @@ export class SessionHost {
       transcript: snapshot.transcript,
       failure: snapshot.failure,
       aborted: snapshot.aborted,
+      sessionUI: snapshot.sessionUI,
+      configError: snapshot.configError,
     });
   }
   private selection(m: Managed): ModelSelection {
@@ -784,6 +894,8 @@ export class SessionHost {
       transcript: projector.snapshot(),
       failure: projector.failure,
       aborted: projector.aborted,
+      sessionUI: m.adapters?.snapshot(),
+      configError: this.configLoader.error,
       ...this.selection(m),
     };
     return this.settings.blockImages ? scrubImages(snapshot) : snapshot;
@@ -939,6 +1051,7 @@ export class SessionHost {
   private destroy(m: Managed) {
     m.disposing ??= Promise.resolve().then(async () => {
       const errors: unknown[] = [];
+      this.detachAdapters(m);
       try {
         await m.runtime?.session.abort();
       } catch (error) {
@@ -964,6 +1077,7 @@ export class SessionHost {
       } catch (error) {
         errors.push(error);
       }
+      m.eventBus.clear();
       if (m.models) releaseModelRuntime(m.models);
       if (this.sessions.get(m.address.sessionId) === m)
         this.sessions.delete(m.address.sessionId);
@@ -978,6 +1092,7 @@ export class SessionHost {
       session = required(m.runtime).session;
     if (
       session.isStreaming ||
+      m.adapters?.busy ||
       m.projector?.running ||
       this.receipts.pending(address) ||
       this.broker.pending().some((r) => addressKey(r) === addressKey(address))
@@ -989,6 +1104,7 @@ export class SessionHost {
       this.serialize(m, async () => {
         m.reloadPending = false;
         const previous = m.address;
+        this.detachAdapters(m);
         m.ui.cancelAll("reload");
         try {
           await loadExclusive(() =>
@@ -1001,6 +1117,17 @@ export class SessionHost {
                 m.unsubscribe?.();
                 m.projector = new SDKProjector(m.manager, m.address.epoch);
                 this.subscribe(m, session);
+                const address = { ...m.address };
+                m.adapterSource = createAdapterSource(
+                  session,
+                  m.eventBus,
+                  () => {
+                    this.current(address, false);
+                  },
+                  () => {
+                    this.current(address);
+                  },
+                );
                 this.options.emit({
                   type: "opening",
                   previous,
@@ -1015,6 +1142,7 @@ export class SessionHost {
             throw new Error("One or more extensions failed to reload");
           signal.throwIfAborted();
           this.invalidated.delete(session);
+          this.attachAdapters(m);
           this.options.emit({
             type: "replaced",
             previous,
@@ -1059,7 +1187,7 @@ export class SessionHost {
   async forkSession(params: SessionAddress & { entryId: string }) {
     const m = this.current(params);
     if (!m.manager.getEntry(params.entryId)) throw new Error("Entry not found");
-    if (this.receipts.pending(params))
+    if (this.receipts.pending(params) || m.adapters?.busy)
       throw new Error("SESSION_TRANSITION_BUSY");
     return this.transition(m, () =>
       this.serialize(m, async () => {
@@ -1070,30 +1198,36 @@ export class SessionHost {
   }
   async rewindSession(params: SessionAddress & { entryId: string }) {
     const m = this.current(params);
-    return this.serialize(m, async () => {
-      const entry = m.manager.getEntry(params.entryId);
-      if (!entry || entry.type !== "message" || entry.message.role !== "user")
-        throw new Error("Select a user entry to rewind");
-      await required(m.runtime).session.abort();
-      if (entry.parentId) {
-        const result = await required(m.runtime).session.navigateTree(
-          entry.parentId,
-          {
-            summarize: false,
-          },
-        );
-        if (result.cancelled) throw new Error("Rewind cancelled");
-      } else {
-        m.manager.resetLeaf();
-        required(m.runtime).session.agent.reset();
-      }
-      // branch()/resetLeaf() move only the in-memory cursor. A real SDK custom
-      // entry persists the selected leaf without inventing a model message.
-      m.manager.appendCustomEntry("piris.rewind", { entryId: params.entryId });
-      m.projector = new SDKProjector(m.manager, m.address.epoch);
-      this.publish(m);
-      return this.snapshot(m);
-    });
+    if (m.adapters?.busy) throw new Error("SESSION_TRANSITION_BUSY");
+    return this.transition(m, () =>
+      this.serialize(m, async () => {
+        const entry = m.manager.getEntry(params.entryId);
+        if (!entry || entry.type !== "message" || entry.message.role !== "user")
+          throw new Error("Select a user entry to rewind");
+        await required(m.runtime).session.abort();
+        if (entry.parentId) {
+          const result = await required(m.runtime).session.navigateTree(
+            entry.parentId,
+            {
+              summarize: false,
+            },
+          );
+          if (result.cancelled) throw new Error("Rewind cancelled");
+        } else {
+          m.manager.resetLeaf();
+          required(m.runtime).session.agent.reset();
+        }
+        // branch()/resetLeaf() move only the in-memory cursor. A real SDK custom
+        // entry persists the selected leaf without inventing a model message.
+        m.manager.appendCustomEntry("piris.rewind", {
+          entryId: params.entryId,
+        });
+        m.projector = new SDKProjector(m.manager, m.address.epoch);
+        this.attachAdapters(m);
+        this.publish(m);
+        return this.snapshot(m);
+      }),
+    );
   }
   async listSessions(cwd: string) {
     const records = new Map(

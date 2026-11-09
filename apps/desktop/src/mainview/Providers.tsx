@@ -85,9 +85,9 @@ export function Providers() {
         aria-label={t.Providers}
       >
         {[
-          ["chat", t.Models],
-          ["images", t["Image generation"]],
-          ["classification", t.Classification],
+          ["chat", "Agent"],
+          ["images", "Image"],
+          ["classification", "Classification"],
         ].map(([id, label]) => (
           <button
             key={id}

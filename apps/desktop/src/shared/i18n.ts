@@ -1,6 +1,48 @@
 import type { Settings } from "./settings";
 
 export const en = {
+  dockTitle: "Session activity",
+  dockProgress: "Progress",
+  dockTasks: "Tasks",
+  dockInfo: "Info",
+  dockExpand: "Expand session activity",
+  dockCollapse: "Collapse session activity",
+  dockConnections: "Connection details",
+  dockProblem: "UI connection needs attention",
+  dockReload: "Reload UI config",
+  dockReloading: "Reloading UI config…",
+  dockDetails: "Details",
+  dockDismiss: "Dismiss",
+  dockNoOutput: "No output reported yet",
+  dockSaved: "Saved state",
+  dockUnknown: "Unconfirmed state",
+  dockPending: "Request pending",
+  dockRequired: "required",
+  dockConfirm: (label: string) => `Confirm ${label}`,
+  dockCancel: (label: string) => `Cancel ${label}`,
+  dockTodoProgress: (done: number, total: number) => `${done}/${total} done`,
+  dockTaskCount: (count: number) =>
+    `${count} ${count === 1 ? "task" : "tasks"}`,
+  dockRunningCount: (count: number) => `${count} active`,
+  dockMoreActive: (count: number) => `+${count} in progress`,
+  dockState: (state: string) =>
+    (
+      ({
+        queued: "Queued",
+        running: "Running",
+        waiting: "Waiting",
+        paused: "Paused",
+        finished: "Finished",
+        success: "Succeeded",
+        error: "Failed",
+        cancelled: "Cancelled",
+        interrupted: "Interrupted",
+        unknown: "Unknown",
+        pending: "Pending",
+        active: "In progress",
+        completed: "Completed",
+      }) as Record<string, string>
+    )[state] ?? state,
   "Sending…": "Sending…",
   "Extension terminal": "Extension terminal",
   "Close terminal": "Close terminal",
@@ -70,7 +112,6 @@ export const en = {
   "Unarchive project": "Unarchive project",
   "Archived projects": "Archived projects",
   "Back to projects": "Back to projects",
-  "Delete project": "Delete project",
   "Leave empty to use the folder name.": "Leave empty to use the folder name.",
   "Only removes this project from pig’s list. Files on disk and its chats are NOT deleted.":
     "Only removes this project from pig’s list. Files on disk and its chats are NOT deleted.",
@@ -93,7 +134,6 @@ export const en = {
   "Clipboard is unavailable.": "Clipboard is unavailable.",
   "Package service did not respond. Please retry.":
     "Package service did not respond. Please retry.",
-  toolStatus: (status: string) => status,
   Settings: "Settings",
   General: "General",
   "Search shortcuts": "Search shortcuts",
@@ -213,8 +253,6 @@ export const en = {
   "Copy message": "Copy message",
   "Edit message": "Edit message",
   "Save and resend": "Save and resend",
-  "Resending replaces the following conversation in this view. Files are not reverted.":
-    "Resending replaces the following conversation in this view. Files are not reverted.",
   "Copy link": "Copy link",
   "Open again": "Open again",
   "Enter this code on the verification page":
@@ -335,9 +373,82 @@ export const en = {
   downloads: (count: string) => `${count}/mo`,
   packageDone: (action: "install" | "uninstall" | "update", source: string) =>
     `${{ install: "Installed", uninstall: "Removed", update: "Updated" }[action]} ${source} — open chats were reloaded`,
+  trustTitle: "Trust this project?",
+  trustBody:
+    "This folder's extensions, settings and instruction files will be loaded. Extensions can run code with your user privileges.",
+  trustFiles: (n: number) => `Files to load (${n})`,
+  trustRemember: "Don't ask again",
+  trustOpenSafe: "Open without trust",
+  trustAccept: "Trust and open",
+  trustYes: "Trust",
+  trustNo: "Don't trust",
+  cancel: "Cancel",
+  "Thinking…": "Thinking…",
+  Read: "Read",
+  Search: "Search",
+  "Find files": "Find files",
+  List: "List",
+  Edit: "Edit",
+  Write: "Write",
+  Explored: "Explored",
+  "No output": "(no output)",
+  exploreSummary: (reads: number, searches: number, lists: number) =>
+    [
+      reads && `read ${reads} ${reads === 1 ? "file" : "files"}`,
+      searches && `${searches} ${searches === 1 ? "search" : "searches"}`,
+      lists && `listed ${lists} ${lists === 1 ? "folder" : "folders"}`,
+    ]
+      .filter(Boolean)
+      .join(", "),
+  "Show work": "Show work",
+  Confirm: "Confirm",
+  "Press again to confirm": "Press again to confirm",
+  "Hide work": "Hide work",
+  toolCalls: (n: number) => `${n} tool ${n === 1 ? "call" : "calls"}`,
 };
 type Dictionary = { [K in keyof typeof en]: (typeof en)[K] };
 export const ja: Dictionary = {
+  dockTitle: "セッションの作業状況",
+  dockProgress: "進捗",
+  dockTasks: "実行",
+  dockInfo: "情報",
+  dockExpand: "作業状況を展開",
+  dockCollapse: "作業状況を折り畳む",
+  dockConnections: "接続情報",
+  dockProblem: "UI接続の確認が必要です",
+  dockReload: "UI設定を再読み込み",
+  dockReloading: "UI設定を再読み込み中…",
+  dockDetails: "詳細",
+  dockDismiss: "閉じる",
+  dockNoOutput: "出力はまだありません",
+  dockSaved: "保存された状態",
+  dockUnknown: "未確認の状態",
+  dockPending: "操作を受け付けています",
+  dockRequired: "必須",
+  dockConfirm: (label: string) => `${label}を確認して実行`,
+  dockCancel: (label: string) => `${label}をキャンセル`,
+  dockTodoProgress: (done: number, total: number) => `${done}/${total} 完了`,
+  dockTaskCount: (count: number) => `${count}件の実行`,
+  dockRunningCount: (count: number) => `${count}件 稼働中`,
+  dockMoreActive: (count: number) => `ほか${count}件が進行中`,
+  dockState: (state: string) =>
+    (
+      ({
+        queued: "待機中",
+        running: "実行中",
+        waiting: "応答待ち",
+        paused: "一時停止",
+        finished: "終了",
+        success: "成功",
+        error: "失敗",
+        cancelled: "キャンセル済み",
+        interrupted: "中断",
+        unknown: "不明",
+        pending: "未着手",
+        active: "進行中",
+        completed: "完了",
+      }) as Record<string, string>
+    )[state] ?? state,
   "Sending…": "送信を受け付けています…",
   "Extension terminal": "拡張機能の Terminal",
   "Close terminal": "Terminal を閉じる",
@@ -408,7 +519,6 @@ export const ja: Dictionary = {
   "Unarchive project": "プロジェクトのアーカイブを解除",
   "Archived projects": "アーカイブ済みプロジェクト",
   "Back to projects": "プロジェクト一覧に戻る",
-  "Delete project": "プロジェクトを削除",
   "Leave empty to use the folder name.": "空欄にするとフォルダー名に戻ります。",
   "Only removes this project from pig’s list. Files on disk and its chats are NOT deleted.":
     "pigの一覧からのみ削除します。ディスク上のファイルとチャットは削除されません。",
@@ -463,10 +573,6 @@ export const ja: Dictionary = {
   "Clipboard is unavailable.": "クリップボードを利用できません。",
   "Package service did not respond. Please retry.":
     "パッケージサービスが応答しませんでした。再試行してください。",
-  toolStatus: (status) =>
-    ({ pending: "待機中", running: "実行中", done: "完了", error: "エラー" })[
-      status
-    ] ?? status,
   "Acrylic/Mica need Windows 11. Lower opacity to see the desktop.":
     "アクリル・マイカには Windows 11 が必要です。不透明度を下げるとデスクトップが透けます。",
   "Add project": "プロジェクトを追加",
@@ -554,8 +660,6 @@ export const ja: Dictionary = {
   "Copy message": "入力をコピー",
   "Edit message": "入力を編集",
   "Save and resend": "保存して再送信",
-  "Resending replaces the following conversation in this view. Files are not reverted.":
-    "再送信すると、これ以降の会話は現在の表示から外れます。ファイルの変更は元に戻りません。",
   "Copy link": "リンクをコピー",
   "Open again": "もう一度開く",
   "Enter this code on the verification page":
@@ -569,7 +673,7 @@ export const ja: Dictionary = {
   "Close chat (history is kept)": "チャットを閉じる（履歴は保持）",
   "Close chat": "チャットを閉じる",
   "Enable models": "モデルを有効化",
-  Thinking: "思考",
+  Thinking: "Thinking",
   "Working…": "処理中…",
   Message: "メッセージ",
   "Send a follow-up…": "追加のメッセージを送信…",
@@ -673,6 +777,38 @@ export const ja: Dictionary = {
   downloads: (count) => `${count}/月`,
   packageDone: (action, source) =>
     `${source} を${{ install: "インストール", uninstall: "削除", update: "更新" }[action]}しました — チャットを再読み込みしました`,
+  trustTitle: "このプロジェクトを信頼しますか？",
+  trustBody:
+    "このフォルダの拡張機能・設定・指示ファイルを読み込みます。拡張機能はあなたの権限でコードを実行できます。",
+  trustFiles: (n) => `読み込まれるファイル (${n})`,
+  trustRemember: "次回から確認しない",
+  trustOpenSafe: "信頼せずに開く",
+  trustAccept: "信頼して開く",
+  trustYes: "信頼する",
+  trustNo: "信頼しない",
+  cancel: "キャンセル",
+  "Thinking…": "Thinking…",
+  Read: "読み取り",
+  Search: "検索",
+  "Find files": "ファイル検索",
+  List: "一覧",
+  Edit: "編集",
+  Write: "作成",
+  Explored: "探索",
+  "No output": "（出力なし）",
+  exploreSummary: (reads, searches, lists) =>
+    [
+      reads && `${reads}ファイルを読み取り`,
+      searches && `${searches}回検索`,
+      lists && `${lists}フォルダを一覧`,
+    ]
+      .filter(Boolean)
+      .join("、"),
+  "Show work": "作業内容を表示",
+  Confirm: "確定",
+  "Press again to confirm": "もう一度押すと実行します",
+  "Hide work": "作業内容を隠す",
+  toolCalls: (n) => `ツール ${n}回`,
 };
 export function dictionary(language: Settings["language"]): Dictionary {
   return language === "ja" ? ja : en;

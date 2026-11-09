@@ -1,4 +1,6 @@
 .sdk-request {
+  /* global `* { margin: 0 }` reset pins showModal dialogs to the top-left */
+  margin: auto;
   width: min(680px, calc(100vw - 48px));
   max-height: calc(100vh - 64px);
   overflow: auto;
@@ -30,8 +32,32 @@
 .sdk-request .dialog-actions {
   display: flex;
   flex-wrap: wrap;
+  justify-content: flex-end;
   gap: 8px;
   margin-top: 24px;
+}
+.sdk-request code {
+  font-size: var(--text-sm);
+}
+.sdk-request details {
+  font-size: var(--text-sm);
+  color: var(--ds-text-secondary);
+}
+.sdk-request summary {
+  cursor: pointer;
+}
+.sdk-request details ul {
+  margin: 8px 0 0;
+}
+.sdk-check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 16px;
+  font-size: var(--text-sm);
+}
+.sdk-request .sdk-check input {
+  width: auto;
 }
 .ui-waiting,
 .ui-starting {

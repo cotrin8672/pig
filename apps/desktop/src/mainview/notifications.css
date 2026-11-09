@@ -1,19 +1,24 @@
-.sidebar header {
-  position: relative;
-}
 .sidebar:has(.notification-center[open]) {
   z-index: 20;
 }
-.sidebar-actions {
+.sidebar-footer {
+  position: relative;
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: 8px;
+}
+.sidebar-footer > .providers-nav {
+  flex: 1;
+}
+.notification-center {
+  flex-shrink: 0;
+  margin-right: 6px;
 }
 .notification-bell {
   position: relative;
   justify-content: center;
-  width: 30px;
-  height: 30px;
+  width: 32px;
+  height: 32px;
 }
 .notification-center[open] > summary {
   background: var(--ds-bg-active);
@@ -21,11 +26,11 @@
 }
 .notification-badge {
   position: absolute;
-  top: -4px;
-  right: -6px;
-  min-width: 15px;
-  padding: 1px 3px;
-  border-radius: 8px;
+  top: 1px;
+  right: 0;
+  min-width: 14px;
+  padding: 0 3px;
+  border-radius: 7px;
   background: var(--ds-accent);
   color: var(--ds-bg-elevated-opaque);
   font-size: 9px;
@@ -34,9 +39,9 @@
 }
 .notification-panel {
   position: absolute;
-  top: 100%;
+  bottom: calc(100% + 8px);
   left: 0;
-  width: min(360px, calc(100vw - 36px));
+  width: min(340px, calc(100vw - 36px));
   background: var(--ds-bg-popover);
   backdrop-filter: blur(20px);
   border: 1px solid var(--ds-border-strong);
@@ -69,7 +74,6 @@
   min-width: 0;
   display: flex;
   gap: 4px;
-  padding-bottom: 8px;
 }
 .notification-filters button {
   min-width: 64px;
@@ -112,6 +116,12 @@
   width: 100%;
   text-align: left;
   font-size: 12px;
+}
+.notification-entry.read {
+  color: var(--ds-text-secondary);
+}
+.notification-entry:hover {
+  background: var(--ds-bg-active);
 }
 .notification-entry + .notification-entry {
   border-top: 1px solid var(--ds-border);

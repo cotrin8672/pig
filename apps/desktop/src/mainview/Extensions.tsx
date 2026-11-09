@@ -10,7 +10,6 @@ import {
   Package,
   Puzzle,
   Search,
-  ShieldAlert,
   Trash2,
   X,
 } from "lucide-react";
@@ -22,6 +21,7 @@ import type {
   PackageOpStatus,
   PackageType,
 } from "../shared/rpc-schema";
+import { ConfirmButton } from "./ConfirmButton";
 import { getT, useT } from "./i18n";
 import { navigate } from "./navigation";
 import { rpc } from "./rpc";
@@ -154,65 +154,6 @@ function Preview({ url }: { url?: string | null }) {
     </div>
   );
 }
-type Confirmation = {
-  action: "install" | "uninstall";
-  source: string;
-  name: string;
-};
-function Confirm({
-  value,
-  close,
-  confirm,
-}: {
-  value: Confirmation;
-  close: () => void;
-  confirm: () => void;
-}) {
-  const t = useT();
-  const dialog = useRef<HTMLDialogElement>(null);
-  useEffect(() => {
-    const previous = document.activeElement as HTMLElement | null;
-    dialog.current?.showModal();
-    return () => {
-      previous?.focus();
-    };
-  }, []);
-  const install = value.action === "install";
-  return (
-    <dialog
-      ref={dialog}
-      className="package-dialog"
-      aria-labelledby="package-confirm-title"
-      aria-describedby="package-confirm-description"
-      onCancel={close}
-    >
-      <ShieldAlert
-        size={24}
-        className={install ? "package-warning" : "muted"}
-      />
-      <h2 id="package-confirm-title">
-        {install ? t.Install : t.Uninstall} {value.name}?
-      </h2>
-      <p id="package-confirm-description" className="muted">
-        {install
-          ? t[
-              "Packages can run code on your machine. Only install packages you trust."
-            ]
-          : t[
-              "This package will be removed from your pi configuration. Open chats will be reloaded."
-            ]}
-      </p>
-      <div className="package-dialog-actions">
-        <button type="button" onClick={close}>
-          {t.Cancel}
-        </button>
-        <button type="button" className="primary" onClick={confirm}>
-          {install ? t.Install : t.Uninstall}
-        </button>
-      </div>
-    </dialog>
-  );
-}
 function operation(source: string, ops: Record<string, PackageOpStatus>) {
   const matches = Object.values(ops).filter(
     (op) =>
@@ -261,7 +202,6 @@ export function Extensions() {
   const [installedLoading, setInstalledLoading] = useState(true);
   const [installedError, setInstalledError] = useState<string>();
   const [installedRetry, setInstalledRetry] = useState(0);
-  const [confirmation, setConfirmation] = useState<Confirmation>();
   useEffect(() => {
     const timer = setTimeout(() => {
       setSearch(query.trim());
@@ -511,44 +451,37 @@ export function Extensions() {
 
                               {t.Installed}
                             </span>
-                            <button
-                              type="button"
+                            <ConfirmButton
                               className="quiet"
-                              onClick={() =>
-                                setConfirmation({
-                                  action: "uninstall",
-                                  source,
-                                  name: pkg.name,
-                                })
+                              title={
+                                t[
+                                  "This package will be removed from your pi configuration. Open chats will be reloaded."
+                                ]
                               }
+                              onConfirm={() => run("uninstall", source)}
                             >
                               <Trash2 size={13} />
 
                               {t.Uninstall}
-                            </button>
+                            </ConfirmButton>
                           </>
                         ) : (
-                          <button
-                            type="button"
+                          <ConfirmButton
                             className="primary"
                             disabled={installedLoading || !!installedError}
                             title={
                               installedError
                                 ? t["Installed packages could not be checked"]
-                                : undefined
+                                : t[
+                                    "Packages can run code on your machine. Only install packages you trust."
+                                  ]
                             }
-                            onClick={() =>
-                              setConfirmation({
-                                action: "install",
-                                source,
-                                name: pkg.name,
-                              })
-                            }
+                            onConfirm={() => run("install", source)}
                           >
                             <Download size={14} />
 
                             {t.Install}
-                          </button>
+                          </ConfirmButton>
                         )}
                       </div>
                     </div>
@@ -690,21 +623,19 @@ export function Extensions() {
                               {t.Update}
                             </button>
                           )}
-                          <button
-                            type="button"
+                          <ConfirmButton
                             className="quiet"
-                            onClick={() =>
-                              setConfirmation({
-                                action: "uninstall",
-                                source: pkg.source,
-                                name,
-                              })
+                            title={
+                              t[
+                                "This package will be removed from your pi configuration. Open chats will be reloaded."
+                              ]
                             }
+                            onConfirm={() => run("uninstall", pkg.source)}
                           >
                             <Trash2 size={13} />
 
                             {t.Uninstall}
-                          </button>
+                          </ConfirmButton>
                         </>
                       )}
                     </div>
@@ -715,16 +646,6 @@ export function Extensions() {
           </>
         )}
       </section>
-      {confirmation && (
-        <Confirm
-          value={confirmation}
-          close={() => setConfirmation(undefined)}
-          confirm={() => {
-            run(confirmation.action, confirmation.source);
-            setConfirmation(undefined);
-          }}
-        />
-      )}
     </div>
   );
 }

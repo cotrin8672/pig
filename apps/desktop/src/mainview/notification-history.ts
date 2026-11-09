@@ -21,6 +21,9 @@ export function parseNoticeHistory(raw: string | null): NoticeRecord[] {
           typeof item.id === "string" &&
           item.id.length > 0 &&
           typeof item.message === "string" &&
+          (item.kind === undefined ||
+            item.kind === "completion" ||
+            item.kind === "package") &&
           ["info", "success", "warning", "error"].includes(item.level) &&
           typeof item.createdAt === "number" &&
           Number.isFinite(item.createdAt) &&

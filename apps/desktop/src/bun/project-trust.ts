@@ -107,31 +107,17 @@ export async function resolveProjectTrust(
   const resources = await discoverProjectResources(cwd);
   signal.throwIfAborted();
   if (!resources.length) return { trusted: true, omitted: [] as Resource[] };
+  const canonical = await realpath(cwd);
+  if ((await readTrust(directory))[canonical] !== undefined)
+    return { trusted: true, omitted: [] as Resource[] };
   const hash = createHash("sha256");
   for (const resource of resources) {
     hash.update(resource.path);
     hash.update(await readFile(resource.path));
   }
   const fingerprint = hash.digest("hex");
-  const file = join(directory, "desktop-trust.json");
-  let saved: Record<string, string> = {};
-  try {
-    const value: unknown = JSON.parse(await readFile(file, "utf8"));
-    if (
-      value &&
-      typeof value === "object" &&
-      !Array.isArray(value) &&
-      Object.values(value).every((item) => typeof item === "string")
-    )
-      saved = value as Record<string, string>;
-  } catch {
-    /* No implicit trust on corrupt store. */
-  }
-  const canonical = await realpath(cwd);
-  if (
-    saved[canonical] === fingerprint ||
-    once.get(approvalScope)?.get(canonical) === fingerprint
-  )
+  // Session-only trust stays content-bound; persisted trust is folder-scoped.
+  if (once.get(approvalScope)?.get(canonical) === fingerprint)
     return { trusted: true, omitted: [] as Resource[] };
   signal.throwIfAborted();
   const reply = await broker.request(
@@ -149,11 +135,7 @@ export async function resolveProjectTrust(
   signal.throwIfAborted();
   if (reply.kind !== "project-trust")
     throw new Error("Project opening cancelled");
-  if (reply.value === "persist") {
-    saved[canonical] = fingerprint;
-    await mkdir(directory, { recursive: true });
-    await writeFile(file, JSON.stringify(saved), "utf8");
-  }
+  if (reply.value === "persist") await persistProjectTrust(cwd, directory);
   if (reply.value !== "safe") {
     let approved = once.get(approvalScope);
     if (!approved) {
@@ -166,4 +148,35 @@ export async function resolveProjectTrust(
     trusted: reply.value !== "safe",
     omitted: reply.value === "safe" ? resources : [],
   };
+}
+async function readTrust(directory: string) {
+  try {
+    const value: unknown = JSON.parse(
+      await readFile(join(directory, "desktop-trust.json"), "utf8"),
+    );
+    if (
+      value &&
+      typeof value === "object" &&
+      !Array.isArray(value) &&
+      Object.values(value).every((item) => typeof item === "string")
+    )
+      return value as Record<string, string>;
+  } catch {
+    /* No implicit trust on corrupt store. */
+  }
+  return {} as Record<string, string>;
+}
+/** Folder-scoped like VS Code/Claude Code: editing project files does not revoke trust. */
+export async function isProjectTrusted(cwd: string, directory = agentDir) {
+  return (await readTrust(directory))[await realpath(cwd)] !== undefined;
+}
+export async function persistProjectTrust(cwd: string, directory = agentDir) {
+  const saved = await readTrust(directory);
+  saved[await realpath(cwd)] = "trusted";
+  await mkdir(directory, { recursive: true });
+  await writeFile(
+    join(directory, "desktop-trust.json"),
+    JSON.stringify(saved),
+    "utf8",
+  );
 }

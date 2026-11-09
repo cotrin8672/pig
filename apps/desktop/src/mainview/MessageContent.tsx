@@ -2,7 +2,10 @@ import type { ImageContent, TextContent } from "@earendil-works/pi-ai";
 import { Check, Copy, Pencil } from "lucide-react";
 import { memo, useCallback, useState } from "react";
 import ReactMarkdown, { defaultUrlTransform } from "react-markdown";
+import rehypeKatex from "rehype-katex";
 import remarkGfm from "remark-gfm";
+import remarkMath from "remark-math";
+import { normalizeMath } from "../shared/math";
 import { sessionIdFromLink } from "../shared/session-links";
 import type { Message } from "../shared/transcript";
 import { editUserMessage } from "../shared/user-message";
@@ -15,7 +18,9 @@ import { showError } from "./store";
 export const Markdown = memo(function Markdown({ text }: { text: string }) {
   return (
     <ReactMarkdown
-      remarkPlugins={[remarkGfm]}
+      remarkPlugins={[remarkGfm, remarkMath]}
+      // Invalid TeX renders as red source text instead of throwing.
+      rehypePlugins={[[rehypeKatex, { throwOnError: false }]]}
       urlTransform={(url) =>
         sessionIdFromLink(url) ? url : defaultUrlTransform(url)
       }
@@ -40,7 +45,7 @@ export const Markdown = memo(function Markdown({ text }: { text: string }) {
           ) : null,
       }}
     >
-      {text}
+      {normalizeMath(text)}
     </ReactMarkdown>
   );
 });
@@ -97,7 +102,8 @@ export const UserMessage = memo(function UserMessage({
       {sources.length > 0 && <ImageGallery sources={sources} />}
       {editing ? (
         <form
-          className="user-edit"
+          className="user-edit user-bubble"
+          aria-busy={busy || undefined}
           onSubmit={(event) => {
             event.preventDefault();
             if (
@@ -120,16 +126,9 @@ export const UserMessage = memo(function UserMessage({
             ref={focusEditor}
             onChange={(event) => setDraft(event.target.value)}
             disabled={busy}
-            rows={4}
+            rows={Math.min(12, Math.max(3, draft.split("\n").length))}
           />
-          <p className="muted">
-            {
-              t[
-                "Resending replaces the following conversation in this view. Files are not reverted."
-              ]
-            }
-          </p>
-          <div className="inline-actions">
+          <div className="user-edit-actions">
             <button
               type="button"
               disabled={busy}
@@ -139,6 +138,7 @@ export const UserMessage = memo(function UserMessage({
             </button>
             <button
               type="submit"
+              className="primary"
               disabled={disabled || busy || (!draft.trim() && !sources.length)}
             >
               {t["Save and resend"]}

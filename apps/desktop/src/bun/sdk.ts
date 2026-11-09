@@ -6,6 +6,7 @@ export const {
   SettingsManager,
   DefaultResourceLoader,
   createAgentSessionRuntime,
+  createEventBus,
   createAgentSessionServices,
   createAgentSessionFromServices,
   createBashTool,

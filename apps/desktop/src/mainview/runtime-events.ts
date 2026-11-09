@@ -146,7 +146,8 @@ export function receiveRuntime(event: RuntimeEvent) {
         delete snapshots[event.address.sessionId];
       return { snapshots };
     });
-    if (event.message) showNotice({ level: "error", message: event.message });
+    if (event.reason === "failed" && event.message)
+      showNotice({ level: "error", message: event.message });
   }
 }
 export function receiveExtension(event: ExtensionUIEvent) {

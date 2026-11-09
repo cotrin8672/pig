@@ -22,6 +22,7 @@ import {
   NOTICE_HISTORY_LIMIT,
   type NoticeRecord,
 } from "./notification-history";
+import { isViewedNotice } from "./session-read";
 
 export interface LoginState {
   loginId: string;
@@ -116,24 +117,48 @@ export function dismissNotice(id: string) {
     notices: s.notices.filter((notice) => notice.id !== id),
   }));
 }
+export function readViewedNotices(visible: boolean, focused: boolean) {
+  const state = useStore.getState();
+  const viewed = (notice: Notice) =>
+    isViewedNotice(notice, state, visible, focused);
+  if (
+    !state.notices.some(viewed) &&
+    !state.noticeHistory.some((n) => !n.read && viewed(n))
+  )
+    return;
+  useStore.setState({
+    notices: state.notices.filter((n) => !viewed(n)),
+    noticeHistory: state.noticeHistory.map((n) =>
+      !n.read && viewed(n) ? { ...n, read: true } : n,
+    ),
+  });
+}
 export function showNotice(notice: Notice) {
+  const read =
+    typeof document !== "undefined" &&
+    isViewedNotice(
+      notice,
+      useStore.getState(),
+      document.visibilityState === "visible",
+      document.hasFocus(),
+    );
   const id = crypto.randomUUID();
   useStore.setState((s) => ({
-    notices: [...s.notices, { ...notice, id }],
+    notices: read ? s.notices : [...s.notices, { ...notice, id }].slice(-3),
     noticeHistory: [
       ...s.noticeHistory,
       {
         ...notice,
         id,
         createdAt: Date.now(),
-        read: false,
+        read,
         title: notice.session
           ? s.snapshots[notice.session.id]?.info.title
           : undefined,
       },
     ].slice(-NOTICE_HISTORY_LIMIT),
   }));
-  setTimeout(() => dismissNotice(id), 7000);
+  if (!read) setTimeout(() => dismissNotice(id), 7000);
 }
 export function showError(error: unknown) {
   showNotice({ message: String(error), level: "error" });
@@ -145,6 +170,7 @@ export function receivePackageOp(op: PackageOpStatus) {
   }));
   if (op.status === "running") return;
   showNotice({
+    kind: "package",
     message:
       op.status === "error"
         ? op.message
