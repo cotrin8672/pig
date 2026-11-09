@@ -154,7 +154,7 @@ export function ModelSettings({ model }: { model: ModelInfo }) {
           <div className="model-setting-chips">
             {effortLevels.map((level) => (
               <span className="provider-tag" key={level}>
-                {t[effortLabels[level]]}
+                {effortLabels[level]}
               </span>
             ))}
           </div>

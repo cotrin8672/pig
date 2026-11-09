@@ -53,7 +53,7 @@ export function EffortSlider({
           {levels.map((level, stop) => (
             <span
               key={level}
-              title={t[effortLabels[level]]}
+              title={effortLabels[level]}
               style={{ left: `${(stop / (levels.length - 1)) * 100}%` }}
               data-filled={stop <= index}
             />
@@ -69,8 +69,8 @@ export function EffortSlider({
           value={index}
           disabled={disabled}
           aria-label={t["Reasoning effort"]}
-          aria-valuetext={t[effortLabels[draft]]}
-          title={t[effortLabels[draft]]}
+          aria-valuetext={effortLabels[draft]}
+          title={effortLabels[draft]}
           onChange={(event) => setDraft(levels[Number(event.target.value)])}
           onPointerDown={(event) => {
             if (event.button === 0) {
@@ -112,7 +112,7 @@ export function EffortSlider({
         />
       </div>
       <output className="effort-value" htmlFor={id}>
-        {t[effortLabels[draft]]}
+        {effortLabels[draft]}
       </output>
     </div>
   );
