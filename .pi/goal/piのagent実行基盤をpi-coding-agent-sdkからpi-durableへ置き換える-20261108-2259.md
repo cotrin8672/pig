@@ -1,3 +1,5 @@
+> **SUPERSEDED / 失効（2026-11-09）**: ユーザー承認により実行基盤を Pi Coding Agent SDK 1.5.0 へ一本化し、通常アプリの pi-durable 依存をすべて撤去する方針に置き換えた。現行の実装指示・Gate・共有契約は [Pi SDK return implementation plan](../plan/pi-sdk-return-implementation.md) を参照。本書の以下の内容は歴史的記録として保持するものであり、旧 Acceptance criteria を新規作業へ適用しない。
+
 # Goal
 
 `apps/desktop`のAgent実行基盤を`@earendil-works/pi-coding-agent` SDKから`@earendil-works/pi-durable@1.5.0`へ置き換える。既存のチャットUI（新規チャット・送信・ストリーミング表示・停止・会話一覧・履歴表示・Fork・モデル選択・ログイン）は、Durableを使って動作するようにする。Runtimeの切替機構や旧SDKとの二重運用は残さない。
