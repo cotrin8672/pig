@@ -80,11 +80,6 @@ import {
   setSessionModel,
   utilityModels,
 } from "./pi-service";
-import {
-  discoverProjectResources,
-  isProjectTrusted,
-  persistProjectTrust,
-} from "./project-trust";
 import { validateSessionScope } from "./session-scope";
 import { loadSettings, saveSettings } from "./settings";
 import { synchronizeClientArea } from "./window-layout";
@@ -435,23 +430,8 @@ const rpc = BrowserView.defineRPC<RPCSchema>({
             })
           ).join(",");
           if (folder && !projects.includes(folder)) {
-            // Ask once per folder here so opening a chat never interrupts with Trust.
-            if (
-              (await discoverProjectResources(folder)).length &&
-              !(await isProjectTrusted(folder))
-            ) {
-              const t = dictionary(settings.language);
-              const { response } = await Utils.showMessageBox({
-                type: "question",
-                title: t.trustTitle,
-                message: t.trustTitle,
-                detail: `${folder}\n\n${t.trustBody}`,
-                buttons: [t.trustYes, t.trustNo],
-                defaultId: 0,
-                cancelId: 1,
-              });
-              if (response === 0) await persistProjectTrust(folder);
-            }
+            // Adding a folder does not grant trust or load its resources.
+            // SessionHost asks through the app's UIRequestBroker on first open.
             await saveProjects((current) =>
               current.includes(folder) ? current : [...current, folder],
             );

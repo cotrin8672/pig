@@ -293,7 +293,42 @@ test("F4: explicit global context is not listed as omitted; safe mode excludes h
   ).toBe(false);
 });
 
-test("trust granted when adding a project skips the chat-open prompt", async () => {
+test("untrusted folders wait for in-app approval; cancelling does not persist trust", async () => {
+  const { cwd, profile } = await fixture();
+  const broker = new UIRequestBroker(() => {});
+  broker.setAvailable(true);
+  const pending = resolveProjectTrust(
+    cwd,
+    address,
+    broker,
+    new AbortController().signal,
+    profile,
+  );
+  let settled = false;
+  void pending.then(
+    () => {
+      settled = true;
+    },
+    () => {
+      settled = true;
+    },
+  );
+  while (!broker.pending().length) await Bun.sleep(1);
+  const request = broker.pending()[0];
+  expect(request).toMatchObject({
+    ...address,
+    kind: "project-trust",
+    cwd,
+  });
+  expect(settled).toBe(false);
+  expect(await isProjectTrusted(cwd, profile)).toBe(false);
+  broker.resolve({ ...request, kind: "cancel" });
+  await expect(pending).rejects.toThrow("cancelled");
+  expect(await isProjectTrusted(cwd, profile)).toBe(false);
+  expect(broker.pending()).toEqual([]);
+});
+
+test("previously persisted folder trust skips the chat-open prompt", async () => {
   const { cwd, profile } = await fixture();
   expect(await isProjectTrusted(cwd, profile)).toBe(false);
   await persistProjectTrust(cwd, profile);
