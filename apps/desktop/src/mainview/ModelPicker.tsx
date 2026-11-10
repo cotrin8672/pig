@@ -37,7 +37,7 @@ export function ModelPicker({ snapshot }: { snapshot: Snapshot }) {
   const list = useRef<HTMLDivElement>(null);
   const listId = useId();
   const { ref, close } = usePicker();
-  const disabled = snapshot.transcript.running || pending;
+  const disabled = pending;
   const enabled = filterModels(models, disabledModels);
   const recentModels = recent.flatMap((key) => {
     const model = enabled.find((entry) => modelKey(entry) === key);
@@ -80,9 +80,6 @@ export function ModelPicker({ snapshot }: { snapshot: Snapshot }) {
         ?.querySelector(`[data-model-index="${activeIndex}"]`)
         ?.scrollIntoView({ block: "nearest" });
   }, [open, activeIndex]);
-  useEffect(() => {
-    if (snapshot.transcript.running && ref.current) ref.current.open = false;
-  }, [snapshot.transcript.running, ref]);
   function select(model: ModelInfo) {
     close();
     void changeSelection(snapshot.address, () =>
