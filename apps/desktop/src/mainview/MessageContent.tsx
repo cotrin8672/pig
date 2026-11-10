@@ -246,12 +246,6 @@ export const ToolResultContent = memo(function ToolResultContent({
       {"isError" in result && result.isError === true && (
         <p className="error">Tool failed</p>
       )}
-      {"details" in result && result.details !== undefined && (
-        <details>
-          <summary>Tool details</summary>
-          <pre>{dataText(result.details)}</pre>
-        </details>
-      )}
       {!("content" in result) && !("details" in result) && (
         <pre>{dataText(result)}</pre>
       )}

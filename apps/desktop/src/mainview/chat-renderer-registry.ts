@@ -19,6 +19,13 @@ let state: RendererState = {
   diagnostics: [],
 };
 const listeners = new Set<() => void>();
+let builtins: readonly ChatRenderer[] = [];
+export function registerBuiltinChatRenderers(
+  renderers: readonly ChatRenderer[],
+) {
+  builtins = [...renderers];
+  publish({ ...state, generation: state.generation + 1 });
+}
 export const rendererSnapshot = () => state;
 export function subscribeRenderers(listener: () => void) {
   listeners.add(listener);
@@ -99,7 +106,7 @@ export function selectChatRenderer<K extends ChatRenderKind>(
   data: ChatRenderData[K],
   snapshot = state,
 ) {
-  for (const entry of snapshot.renderers) {
+  for (const entry of [...snapshot.renderers, ...builtins]) {
     if (entry.kind !== kind) continue;
     // kind is the discriminator for both the predicate and the component props.
     const renderer = entry as {
