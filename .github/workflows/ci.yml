@@ -22,20 +22,7 @@ jobs:
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: 1.4.2
-      # Upstream v0.42.0 README documents this native Windows release ZIP.
-      - name: Install RTK 0.42.0 (verified release archive)
-        shell: pwsh
-        run: |
-          $ErrorActionPreference = 'Stop'
-          $archive = Join-Path $env:RUNNER_TEMP 'rtk-0.42.0.zip'
-          Invoke-WebRequest 'https://github.com/rtk-ai/rtk/releases/download/v0.42.0/rtk-x86_64-pc-windows-msvc.zip' -OutFile $archive
-          if ((Get-FileHash $archive -Algorithm SHA256).Hash.ToLowerInvariant() -ne '527552ec419988ff4a862415ba28d5aa7c1148ef3dc926ae11a4c133e63a7491') { throw 'RTK archive checksum mismatch' }
-          $directory = Join-Path $env:RUNNER_TEMP 'rtk-0.42.0'
-          Expand-Archive -Path $archive -DestinationPath $directory
-          $version = & "$directory/rtk.exe" --version
-          if ($LASTEXITCODE -ne 0 -or $version -ne 'rtk 0.42.0') { throw 'Unexpected RTK executable' }
-          $directory >> $env:GITHUB_PATH
-      - run: rtk proxy pnpm install --frozen-lockfile
+      - run: pnpm install --frozen-lockfile
       # electrobun downloads its CLI/core binaries from GitHub Releases on first build; cache them.
       - uses: actions/cache@v4
         with:
@@ -44,29 +31,7 @@ jobs:
             node_modules/.pnpm/electrobun@*/node_modules/electrobun/.cache
             node_modules/.pnpm/electrobun@*/node_modules/electrobun/dist-win-x64
           key: electrobun-${{ runner.os }}-${{ hashFiles('pnpm-workspace.yaml', 'patches/electrobun@*.patch') }}
-      - run: rtk proxy pnpm typecheck
-      - run: rtk proxy pnpm lint
-      # Root test covers desktop src + scripts (staging/P0) + packages/config/src.
-      - run: rtk proxy pnpm test
-      - name: Native Durable smoke (tooling Bun)
-        run: rtk proxy bun --no-install apps/desktop/scripts/smoke.ts
-      - run: rtk proxy pnpm build
-      - name: Native Durable smoke (relocated closure, bundled Bun)
-        shell: pwsh
-        run: |
-          $ErrorActionPreference = 'Stop'
-          $app = (Resolve-Path 'apps/desktop/build/dev-win-x64/pig-dev').Path
-          $smoke = Join-Path $env:RUNNER_TEMP 'durable-packaged-smoke'
-          New-Item -ItemType Directory $smoke | Out-Null
-          rtk proxy bun --no-install build apps/desktop/scripts/smoke.ts --target=bun --packages=external --outfile "$smoke/smoke.mjs"
-          if ($LASTEXITCODE -ne 0) { throw 'Cannot bundle native smoke' }
-          Copy-Item "$app/Resources/app/node_modules" "$smoke/node_modules" -Recurse
-          Copy-Item "$app/Resources/app/durable-runtime-manifest.json" $smoke
-          # Electrobun 1.18.1 ships Bun 1.3.13, not the tooling Bun above.
-          rtk proxy "$app/bin/bun.exe" --version
-          if ($LASTEXITCODE -ne 0) { throw 'Cannot run bundled Bun' }
-          Push-Location $smoke
-          try {
-            rtk proxy "$app/bin/bun.exe" --no-install ./smoke.mjs
-            if ($LASTEXITCODE -ne 0) { throw 'Packaged native smoke failed' }
-          } finally { Pop-Location }
+      - run: pnpm typecheck
+      - run: pnpm lint
+      - run: pnpm test
+      - run: pnpm build

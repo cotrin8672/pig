@@ -1,83 +1,87 @@
-# @pig/config — Config API v2
+# @pig/config — session UI API v1
 
-信頼されたユーザーTSから、native Durable Extension / Provider / profile、Host command、Session Adapterを組み立てます。SDK/TUI互換、独自Tool DSL、sandboxは提供しません。`apiVersion: 1` は移行診断付きで拒否し、部分実行しません。
+Pi Extensionの状態をpigのネイティブUIへ投影する、Host側のTS設定APIです。実行エンジンや権限管理を置き換えません。
 
 ## 設定
 
-明示したユーザーの `~/.config/pig/config.ts`（Windows: `%USERPROFILE%\.config\pig\config.ts`）だけを読みます。プロジェクトTSやインストール済みpackageを自動探索・実行しません。
+ユーザーの `~/.config/pig/config.ts`（Windows: `%USERPROFILE%\.config\pig\config.ts`）に保存します。プロジェクト内のTS設定は自動実行しません。
 
 ```ts
 import { defineConfig } from "@pig/config";
-import { defineExtension, section } from "@earendil-works/pi-durable";
-
-const Policy = defineExtension({
-  name: "example.policy",
-  sections: [section("policy", () => "Observe, then explain your findings.")],
-});
 
 export default defineConfig({
-  apiVersion: 2,
-  runtime: {
-    extensions: [Policy], // インストール定義。選択とは別。
-    profiles: {
-      main: { extensions: [Policy], tools: [], thinkingLevel: "high", maxTurns: 4 },
-    },
-    defaultProfile: "main",
-  },
+  apiVersion: 1,
   sessionAdapters: [{
-    id: "example.status",
+    id: "my-extension",
     connect(ctx) {
-      return ctx.sources.subscribe(() => ctx.views.set({
-        kind: "status", id: "window", title: "Conversation window",
-        source: { label: "Native view", scope: { kind: "session", id: ctx.session.id }, freshness: "live" },
-        text: `${ctx.sources.conversation().entries.length} visible entries (not full history)`,
-        tone: "info",
-      }));
+      ctx.sources.onBus("my-extension:state", data => {
+        // dataはunknown。接続先のスキーマを検証してから投影する。
+        if (typeof data !== "string") throw new Error("Invalid extension state");
+        ctx.views.set({
+          kind: "status", id: "status", title: "My extension",
+          source: { label: "My extension", scope: { kind: "session", id: ctx.session.id }, freshness: "live" },
+          text: data, tone: "info",
+        });
+      });
     },
   }],
 });
 ```
 
-`runtime.providers` はnative pi-ai `Provider[]`、`runtime.extensions` はnative Durable `Extension[]`。profileの `extensions` と `tools` は必須の明示配列、`modelTools` は任意配列です。`model` は `{provider, modelId}`。`thinkingLevel / instructions / cwd / maxTurns` はConversationのagentへ渡す設定で、HarnessSettingsへ誤配置しません。モデルはofflineロード時に必須ではありません。
+チャットのSession欄から **Reload TS config** で適用。Pi Extensionをreloadする操作とは別です。相対importの変更も読み直します。構文・設定検証の失敗時は以前の設定を維持します。操作中なら適用を保留します。
 
-HostはWorkspaceごとにRegistry/Modelsを所有し、HarnessSettingsのextension selectionも明示します（未指定ならnativeは全installedを選ぶため）。優先順位は builtin → user TS → 明示Conversation override。reloadでGUIの明示選択を上書きしません。read-onlyは実効 `tools` からwrite/edit/任意shellを除外してください。`modelTools` や指示だけではnested call権限を制限できません。任意JSのread-only sandbox保証ではありません。
+設定は信頼されたローカルコードであり、sandboxではありません。top-levelは宣言だけにし、購読・timer等はconnect内で登録してください。API外の副作用は自動回収できません。相対モジュールはbundleされるため、元ファイルに対するimport.meta.url依存のasset探索や後からの動的importは避けてください。npm依存はユーザー設定ディレクトリから通常のnode_modules解決を使います。
 
-## 読み込み・再読込
+## 型補完
 
-- source上限1 MiB、bundle上限4 MiB。相対importは毎回bundleし直します。構文・構造・native Registry検証の失敗でlast-goodを維持します。
-- Loaderの `prepare()` は `ConfigCandidate{config,revision,dependencies,diagnostics}` を返すだけで適用しません。`accept(candidate, canApply)` はHost安全gateとcache cleanupの成功後だけ受理します。`reload()` はその直列化された組み合わせです。
-- Runtimeの追加・変更・削除にはHost gateが必須。未接続なら候補全体をpendingにし、旧Adapter世代/Registry/configを維持します。Hostはpending/waiting/sleeping/background/子Task、承認待ち、Task/Doc version・schema依存も検査します。idle/runningだけ、`extension.version`、関数を消すJSON比較は互換証明ではありません。
-- gateのreadyは非同期staging後の同期atomic `apply()` と安全leaseの `release()` を渡せます。cleanup成功前にpublishしないこと、applyがthrowしたら旧Host状態を維持することはHost側の契約です。互換性不明のresumeは拒否してください。
-- `config.reload` は予約済みglobal commandです。backend契約と、空Dockからの到達性/Host shortcutのUI配線は別です。このパッケージは新toolbarやshortcutを追加しません。
+このパッケージは公開APIの型と実装を含みます。現時点でnpm公開はしていません。設定ディレクトリで、このリポジトリの `packages/config` をローカル依存としてインストールするとTypeScript補完が使えます。
 
-TSは任意のHostコードです。top-levelは宣言だけにし、購読/timerはconnect内で管理します。API外の副作用はrollbackできません。相対moduleの `import.meta.url` asset探索や計算されたdynamic importはbundle後の位置に依存するため避けてください。
+```powershell
+mise exec -- pnpm add -D 'C:\path\to\pig\packages\config'
+```
 
-## Package / core解決
+実行時の `@pig/config` はpigのLoaderが提供するため、基本的なconfigを実行するだけならインストール不要です。APIバージョンは `apiVersion: 1` で明示します。公開契約は `src/index.ts` と `src/models.ts`。
 
-native peerはpi-ai / pi-durable **1.5.0**。実行時のpi-durable / pi-ai / chordはversionだけでなくHostと同じrealpathである必要があります。Loaderは外部package内の静的importとcore peer/dependency解決も検査し、入口aliasだけで内部の重複copyを直したとは扱いません。これは任意dynamic codeの完全検証やsandboxではありません。
+## 接続例
 
-`ConfigLoaderOptions.moduleRoot`（文字列または毎prepareで読む関数）は明示したmanaged dependency workspace用です。`resolveModule(specifier, fromDirectory)` はbundle入口の解決hookで、外部npm内部のresolverを書き換えません。自動install・package discoveryはしません。manual install成功とload/selectは別です。外部npmはBunのprocess module cacheを使うため、更新を相対module reloadと同一視しません。
+リポジトリの `examples/session-ui/pi-adapters.ts` に公式Pi TODO／plan-mode／subagentの接続例があります。コピーして使うときは型importを `@pig/config` に変更してください。`config.ts` は利用例です。
 
-入口/相対bundleの `@pig/config` value exportは `defineConfig` と `viewActions` だけです。外部npmからのvalue-importには、Hostと同じ実packageと一致するcore peerが必要です。型補完用にはこのrepoの `packages/config` を明示的なローカル依存として使えます。公開型は `src/index.ts`、表示DTOは `src/models.ts`。
+- TODO: branchのtoolResult.detailsから復元。読み取り専用。ツールexecuteをGUIから直呼びしません。
+- plan-mode: 全entryのcustom stateから復元。提供元の絶対パスを指定した `/plan` 相当のtoggle。TODO消去を明示し、setに偽装しません。
+- subagent: 一つのtool callに含まれる複数runを表示。子ごとの失敗、chain順序、保存結果と現在の稼働を区別。
+- Schedule／Backgroundは、それぞれのExtensionが公開するstate/events/controllerへ同じ方法で接続します。汎用の停止・再開APIがあるとは仮定しません。
 
-## Adapter / command契約
+## 主要契約
 
-- `sources.conversation()`: detached native window、`before`、**builtinのみ**のdocs。全履歴やcustom TODOではありません。
-- `sources.taskGraph()`: Workspace全体のlive graph。消失を完了/成功と推測しません。終端outcomeはentry/domain docに永続化します。
-- `sources.snapshot(token)` / `watchDocument(token, listener)`: native ConversationDocToken。不存在はundefined。watchは初回valueとretiredを通知し、取得中のdisposeでも後で必ず解放します。必要docは `runtime.conversationCreated(tx, conversation)` 等の作成commitで生成します。
-- `sources.subscribe`: 初回即時＋集約した再取得通知。`views.set/remove`: 既存9 domainのJSON snapshot。不正値・循環・過大JSON・重複nested actionを拒否します。
-- `commands.register`: Adapter内local ID。内部は `(adapterId, localId)` のtupleで分離します。Hostのnamespaced command IDとは別です。
-- `controller.configure(AgentChange)` / `commit(txCallback)`: 明示command実行中だけ利用できるHost束縛port。commit内ではtxだけで読みます。snapshot/watchを呼ぶとmutation lineがdeadlockし得ます。native numeric ConversationIdは `sources.conversation().conversation.id`、表示用 `session.id` は文字列です。
-- `scope.signal/onDispose/interval`: 設定/会話世代の寿命。disposeはruntime Taskのabortではありません。`ctx.pi`、branch/all sources、EventBus、汎用Tool.execute経路はありません。
+- `sources.entries('branch'|'all')`: 復元規則はExtensionに合わせて選ぶ。読み取りは複製され、履歴再生は操作を呼ばない。
+- `sources.tools()`: 保存済みの結果と現runtimeの途中更新。`origin`で履歴とliveを区別。再起動後の古い結果をrunningへ復活させない。
+- `sources.subscribe(fn)`: 初回即時＋更新通知。再取得型なので連続通知を集約する。
+- `sources.onEvent/onBus`: 生イベントは順序付きで配送。過大backlogは診断して当該Adapterを止める。
+- `views.set(view)`: 表示snapshot全体を置換。9種のdiscriminated union。不正なnested値・重複ID・関数・循環・過大JSONを拒否。
+- `commands.register`: Hostの操作。ボタンとkeymapは同じID。処理中は同Adapterへの二重要求を拒否。
+- `pi.commands()`: 利用可能な名前・invocationName・提供元パス。`pi.invoke({name,source,...})`は完全一致した登録handlerだけを呼ぶ。例外は呼出元へ返し、未登録ならモデルに送らない。
+- `pi.emit`: 対象Extensionの公開EventBus契約へ接続する。独自chの名前・データ形式はAdapterとExtension間の契約。
+- `scope.signal/onDispose/interval`: セッション・設定世代に属する寿命。表示を閉じるだけではdisposeしない。disposeはExtensionのタスク停止ではない。
 
-Host commandは `{id,title,scope,validateInput?,enabled?,confirmation?,allowWhileStreaming?,run}`。IDは `example.refresh` 等のnamespace付き、`config.reload` とapp builtinは予約です。常にbounded JSON検証を行い、validator未指定ならinputなしだけを許します。enabledは無効理由を返します。confirmation transportがなければ拒否し、確認をruntime権限承認の代用にしません。scope/streaming/generation/busy/cancellationもHostで検査します。
+表示のsourceには `live / saved / unknown`、提供元、scopeを指定します。共有TODO等は `shared` scopeも可能ですが、Adapter接続自体はセッション単位です。共有リソースの競合制御は正本側が担当します。
 
-view actionの固定inputはHostの値が正本。fieldsは正確な名前・必須・文字列上限を検査し `{value, fields}` をhandlerへ渡します。generation/revision/action IDを検査し、使った表示revisionは消費します。二重実行・自動再送・楽観的な状態変更はしません。
+## 操作とフォーム
 
-キーは `chat / composer / panel` の単一combo。同surfaceの重複はエラー。既存 `{keys,adapter,command,when}` はAdapterKeymap DTOのまま、Host用 `{keys,command,when}` は別契約で、SessionUIStateへ混ぜません。Host bindingのrenderer配線は別途承認対象です。既存GUI override → TS → defaultとIME/対話保護を維持します。
+viewまたは項目のactionsには `{id,label,command,input?,disabled?,confirmation?,fields?}` を渡します。IDはview全体で一意。非対応の操作を登録しなければ同じUIが閲覧専用になります。
 
-## Native例
+- 固定inputはHost側の登録値が正本。クライアントから値を差し替えられません。
+- fieldsは名前・ラベル・required・multilineで定義。操作handlerへ `{value: 固定inputまたはnull, fields: {名前:文字列}}` を渡します。
+- generation、view revision、action IDを検査し、使用済みの表示要求を再実行しません。タイムアウト等で自動再送しません。
+- 操作成功は、Extensionの状態変化を観測したこととは別です。GUIは楽観的に実状態を変えません。
 
-`examples/session-ui/config.ts` と `durable-adapters.ts`: TODO、独立したworkflow Mode、owned Delegationのlive graph＋永続outcome、Artifact Document。repo内typecheck用の相対importはコピー時に `@pig/config` / `@earendil-works/pi-durable` へ変更します。例はDelegationの**観測契約**であり、独立Agent通信や汎用subagent起動APIを提供しません。
+## キー
 
-UI/DTOの9 domainは変更しません。任意React注入、汎用tool実行、cron、プロセス起動、旧履歴変換は含めません。詳細は `docs/session-ui-domains.md`。
+```ts
+keymaps: [{ keys: "Ctrl+Shift+P", adapter: "planning", command: "toggle", when: "composer" }]
+```
+
+chat / composer / panel、単一コンボのみ。同surface・同コンボの重複は設定エラー。UIで明示した既存キー設定が優先され、次にTS設定、次に既定キーです。IME変換中・TUI・既存UI要求中は発火しません。Pi内部の独自TUIキーまで変更するAPIではありません。
+
+## 意図的に含めないもの
+
+自動widget隠し、任意のReact実行、任意ファイル/URLの自動読込、汎用ツール実行、cron評価、プロセス起動、Goal継続ループ、注釈の自動再anchorは含めません。モデルの調査根拠・反例・具体的な限界は `docs/session-ui-domains.md` を参照してください。

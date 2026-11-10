@@ -36,30 +36,17 @@ jobs:
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: 1.4.2
-      # Upstream v0.42.0 README documents this native Windows release ZIP.
-      - name: Install RTK 0.42.0 (verified release archive)
-        shell: pwsh
-        run: |
-          $ErrorActionPreference = 'Stop'
-          $archive = Join-Path $env:RUNNER_TEMP 'rtk-0.42.0.zip'
-          Invoke-WebRequest 'https://github.com/rtk-ai/rtk/releases/download/v0.42.0/rtk-x86_64-pc-windows-msvc.zip' -OutFile $archive
-          if ((Get-FileHash $archive -Algorithm SHA256).Hash.ToLowerInvariant() -ne '527552ec419988ff4a862415ba28d5aa7c1148ef3dc926ae11a4c133e63a7491') { throw 'RTK archive checksum mismatch' }
-          $directory = Join-Path $env:RUNNER_TEMP 'rtk-0.42.0'
-          Expand-Archive -Path $archive -DestinationPath $directory
-          $version = & "$directory/rtk.exe" --version
-          if ($LASTEXITCODE -ne 0 -or $version -ne 'rtk 0.42.0') { throw 'Unexpected RTK executable' }
-          $directory >> $env:GITHUB_PATH
       - name: Identify release
         id: release
         run: |
           set -euo pipefail
           echo "RELEASE_DIR=$RUNNER_TEMP/release" >> "$GITHUB_ENV"
-          sha=$(rtk proxy git rev-parse HEAD)
-          version=$(rtk proxy node -p "require('./apps/desktop/package.json').version")
+          sha=$(git rev-parse HEAD)
+          version=$(node -p "require('./apps/desktop/package.json').version")
           if [[ "$GITHUB_EVENT_NAME" == push && "$GITHUB_REF" == refs/tags/v* ]]; then
             [[ "$GITHUB_REF_NAME" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo 'Use a stable vX.Y.Z tag'; exit 1; }
             [[ "$GITHUB_REF_NAME" == "v$version" ]] || { echo 'Tag must match apps/desktop/package.json'; exit 1; }
-            rtk proxy bun --no-install -e 'import config from "./apps/desktop/electrobun.config.ts"; if (config.app.version !== process.env.GITHUB_REF_NAME.slice(1)) throw new Error("Tag must match electrobun.config.ts");'
+            bun -e 'import config from "./apps/desktop/electrobun.config.ts"; if (config.app.version !== process.env.GITHUB_REF_NAME.slice(1)) throw new Error("Tag must match electrobun.config.ts");'
             echo "tag=$GITHUB_REF_NAME" >> "$GITHUB_OUTPUT"
             echo "version=$version" >> "$GITHUB_OUTPUT"
           else
@@ -67,7 +54,7 @@ jobs:
             echo "version=$version-nightly.$(date -u +%Y%m%d).${sha:0:7}" >> "$GITHUB_OUTPUT"
           fi
           echo "sha=$sha" >> "$GITHUB_OUTPUT"
-      - run: rtk proxy pnpm install --frozen-lockfile
+      - run: pnpm install --frozen-lockfile
       # electrobun downloads its CLI/core binaries from GitHub Releases on first build; cache them.
       - uses: actions/cache@v4
         with:
@@ -76,39 +63,17 @@ jobs:
             node_modules/.pnpm/electrobun@*/node_modules/electrobun/.cache
             node_modules/.pnpm/electrobun@*/node_modules/electrobun/dist-win-x64
           key: electrobun-${{ runner.os }}-${{ hashFiles('pnpm-workspace.yaml', 'patches/electrobun@*.patch') }}
-      - run: rtk proxy pnpm typecheck
-      - run: rtk proxy pnpm lint
-      # Root test covers desktop src + scripts (staging/P0) + packages/config/src.
-      - run: rtk proxy pnpm test
-      - name: Native Durable smoke (tooling Bun)
-        run: rtk proxy bun --no-install apps/desktop/scripts/smoke.ts
+      - run: pnpm typecheck
+      - run: pnpm lint
+      - run: pnpm test
       - name: Build portable app (shared stable profile)
         run: |
           set -euo pipefail
-          rtk proxy pnpm --filter @pig/desktop exec vite build
-          rtk proxy pnpm --filter @pig/desktop exec electrobun build --env=stable
+          pnpm --filter @pig/desktop exec vite build
+          pnpm --filter @pig/desktop exec electrobun build --env=stable
       - name: Package ZIP and checksum
         shell: pwsh
         run: ./.github/scripts/package.ps1 -OutputDirectory $env:RELEASE_DIR
-      - name: Native Durable smoke (relocated portable closure, bundled Bun)
-        shell: pwsh
-        run: |
-          $ErrorActionPreference = 'Stop'
-          $app = Join-Path $env:RELEASE_DIR 'portable/pig'
-          $smoke = Join-Path $env:RUNNER_TEMP 'durable-packaged-smoke'
-          New-Item -ItemType Directory $smoke | Out-Null
-          rtk proxy bun --no-install build apps/desktop/scripts/smoke.ts --target=bun --packages=external --outfile "$smoke/smoke.mjs"
-          if ($LASTEXITCODE -ne 0) { throw 'Cannot bundle native smoke' }
-          Copy-Item "$app/Resources/app/node_modules" "$smoke/node_modules" -Recurse
-          Copy-Item "$app/Resources/app/durable-runtime-manifest.json" $smoke
-          # Gate the actual deployed Bun, not only the tooling Bun above.
-          rtk proxy "$app/bin/bun.exe" --version
-          if ($LASTEXITCODE -ne 0) { throw 'Cannot run bundled Bun' }
-          Push-Location $smoke
-          try {
-            rtk proxy "$app/bin/bun.exe" --no-install ./smoke.mjs
-            if ($LASTEXITCODE -ne 0) { throw 'Packaged native smoke failed' }
-          } finally { Pop-Location }
       - name: Publish release
         env:
           TAG: ${{ steps.release.outputs.tag }}

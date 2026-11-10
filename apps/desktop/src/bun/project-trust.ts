@@ -1,188 +1,176 @@
 import { createHash } from "node:crypto";
-import { mkdir, readFile, realpath, writeFile } from "node:fs/promises";
-import { join } from "node:path";
+import type { Dirent } from "node:fs";
+import {
+  mkdir,
+  readdir,
+  readFile,
+  realpath,
+  stat,
+  writeFile,
+} from "node:fs/promises";
+import { homedir } from "node:os";
+import { dirname, join, resolve } from "node:path";
 import type { UIRequest } from "../shared/extension-ui";
 import type { SessionAddress } from "../shared/runtime-contract";
 import { desktopConfigDir } from "./desktop-config";
-import {
-  contentBoundResourcePaths,
-  inspectResourceSelection,
-  RESOURCE_LIMITS,
-  type ResourceSelection,
-  ResourceSelectionError,
-  readSelectedResource,
-  resourcePathWithin,
-} from "./resources";
+import { agentDir } from "./runtime-profile";
 import type { UIRequestBroker } from "./ui-request-broker";
+
+const once = new WeakMap<AbortSignal, Map<string, string>>();
 
 type Resource = Extract<
   UIRequest,
   { kind: "project-trust" }
 >["resources"][number];
-const once = new WeakMap<AbortSignal, Map<string, string>>();
-
-/** The host passes ONLY the selected project portion, not implicit or user-global roots. */
-export async function selectedProjectResources(
+/** Discovery reads bytes and names only: never imports project code/settings. */
+export async function discoverProjectResources(
   cwd: string,
-  selection: ResourceSelection,
-  signal?: AbortSignal,
+  globalDirs: readonly string[] = [desktopConfigDir, agentDir],
 ): Promise<Resource[]> {
-  const selected = await inspectResourceSelection(selection, { signal });
-  if (!selected.length) return [];
-  const canonical = await realpath(cwd);
-  const outside = selected.filter(
-    (file) => !resourcePathWithin(canonical, file.path),
-  );
-  if (outside.length)
-    throw new ResourceSelectionError(
-      outside.map((file) => ({
-        path: file.path,
-        code: "escape",
-        message:
-          "Selected project resource is outside the project; authorize it separately",
-      })),
+  const resources: Resource[] = [];
+  const seen = new Set<string>();
+  const isGlobal = (directory: string) =>
+    globalDirs.some(
+      (global) =>
+        resolve(global).toLowerCase() === resolve(directory).toLowerCase(),
     );
-  return selected
-    .map((file) => ({ path: file.path, kind: file.kind }))
-    .sort((a, b) => a.path.localeCompare(b.path));
-}
-async function fingerprint(
-  resources: readonly Resource[],
-  signal: AbortSignal,
-) {
-  const hash = createHash("sha256");
-  const files: { path: string; sha256: string }[] = [];
-  let total = 0;
-  for (const resource of resources) {
-    const bytes = await readSelectedResource(resource.path, signal);
-    total += bytes.length;
-    if (total > RESOURCE_LIMITS.totalBytes)
-      throw new ResourceSelectionError([
-        {
-          path: resource.path,
-          code: "limit",
-          message: "Project resources exceed total byte limit",
-        },
-      ]);
-    files.push({
-      path: resource.path,
-      sha256: createHash("sha256").update(bytes).digest("hex"),
-    });
-    hash.update(JSON.stringify([resource.kind, resource.path, bytes.length]));
-    hash.update(bytes);
+  async function walk(path: string, kind: Resource["kind"], depth = 0) {
+    if (depth > 16 || resources.length >= 2000)
+      throw new Error("Project resource discovery limit exceeded");
+    let canonical: string;
+    try {
+      canonical = await realpath(path);
+    } catch {
+      return;
+    }
+    if (seen.has(canonical)) return;
+    seen.add(canonical);
+    let entries: Dirent[];
+    try {
+      entries = await readdir(path, { withFileTypes: true });
+    } catch {
+      resources.push({ path, kind });
+      return;
+    }
+    for (const entry of entries) {
+      if (entry.name === "node_modules" || entry.name === ".git") continue;
+      await walk(join(path, entry.name), kind, depth + 1);
+    }
   }
-  signal.throwIfAborted();
-  return { hash: hash.digest("hex"), files };
+  for (const [name, kind] of [
+    ["settings.json", "settings"],
+    ["extensions", "code"],
+    ["skills", "skill"],
+    ["prompts", "prompt"],
+    ["themes", "settings"],
+    ["SYSTEM.md", "instructions"],
+    ["APPEND_SYSTEM.md", "instructions"],
+  ] as const)
+    await walk(join(cwd, ".pi", name), kind);
+  let scanAgents = true;
+  for (let directory = resolve(cwd); ; ) {
+    // SDK also discovers ancestor .agents skills; they cannot bypass Trust.
+    // The HOME .agents root is SDK user-scope and is disclosed as a global source.
+    if (scanAgents && directory !== resolve(homedir()))
+      await walk(join(directory, ".agents", "skills"), "skill");
+    if (scanAgents) {
+      try {
+        await stat(join(directory, ".git"));
+        scanAgents = false;
+      } catch {
+        /* SDK walks to filesystem root without .git. */
+      }
+    }
+    for (const name of [
+      "AGENTS.override.md",
+      "AGENTS.md",
+      "AGENTS.MD",
+      "CLAUDE.md",
+      "CLAUDE.MD",
+    ])
+      if (!isGlobal(directory))
+        await walk(join(directory, name), "instructions");
+    const parent = dirname(directory);
+    if (parent === directory) break;
+    directory = parent;
+  }
+  return resources.sort((a, b) => a.path.localeCompare(b.path));
 }
-export type ProjectTrustResult = {
-  trusted: boolean;
-  /** Exact approved files, not a grant for future additions under a directory. */
-  trustedProjectPaths: readonly string[];
-  omitted: readonly Resource[];
-};
 export async function resolveProjectTrust(
   cwd: string,
-  selection: ResourceSelection,
   address: SessionAddress,
   broker: UIRequestBroker,
   signal: AbortSignal,
-  options: { directory: string; approvalScope?: AbortSignal },
-): Promise<ProjectTrustResult> {
-  const resources = await selectedProjectResources(cwd, selection, signal);
+  directory = agentDir,
+  approvalScope = signal,
+) {
+  const resources = await discoverProjectResources(cwd);
   signal.throwIfAborted();
-  const approved = (
-    paths: readonly string[] = resources.map((file) => file.path),
-  ): ProjectTrustResult => ({
-    trusted: true,
-    trustedProjectPaths: paths,
-    omitted: [],
-  });
-  if (!resources.length) return approved();
+  if (!resources.length) return { trusted: true, omitted: [] as Resource[] };
   const canonical = await realpath(cwd);
-  if ((await readTrust(options.directory))[canonical] !== undefined)
-    return approved();
-  const initial = await fingerprint(resources, signal),
-    approvalScope = options.approvalScope ?? signal;
-  if (once.get(approvalScope)?.get(canonical) === initial.hash)
-    return approved(contentBoundResourcePaths(initial.files));
+  if ((await readTrust(directory))[canonical] !== undefined)
+    return { trusted: true, omitted: [] as Resource[] };
+  const hash = createHash("sha256");
+  for (const resource of resources) {
+    hash.update(resource.path);
+    hash.update(await readFile(resource.path));
+  }
+  const fingerprint = hash.digest("hex");
+  // Session-only trust stays content-bound; persisted trust is folder-scoped.
+  if (once.get(approvalScope)?.get(canonical) === fingerprint)
+    return { trusted: true, omitted: [] as Resource[] };
+  signal.throwIfAborted();
   const reply = await broker.request(
     {
       ...address,
       uiId: crypto.randomUUID(),
-      title: "Trust selected project resources?",
+      title: "Trust project resources?",
       kind: "project-trust",
       cwd,
-      fingerprint: initial.hash,
+      fingerprint,
       resources,
     },
     { signal },
   );
   signal.throwIfAborted();
-  if (
-    reply.kind !== "project-trust" ||
-    !["once", "persist", "safe"].includes(reply.value)
-  )
+  if (reply.kind !== "project-trust")
     throw new Error("Project opening cancelled");
-  if (reply.value === "safe")
-    return { trusted: false, trustedProjectPaths: [], omitted: resources };
-  const current = await selectedProjectResources(cwd, selection, signal);
-  if ((await fingerprint(current, signal)).hash !== initial.hash)
-    throw new ResourceSelectionError([
-      {
-        path: cwd,
-        code: "invalid",
-        message: "Selected resources changed during trust approval; retry",
-      },
-    ]);
-  if (reply.value === "persist")
-    await persistProjectTrust(cwd, options.directory);
-  let trustedOnce = once.get(approvalScope);
-  if (!trustedOnce) {
-    trustedOnce = new Map();
-    once.set(approvalScope, trustedOnce);
+  if (reply.value === "persist") await persistProjectTrust(cwd, directory);
+  if (reply.value !== "safe") {
+    let approved = once.get(approvalScope);
+    if (!approved) {
+      approved = new Map();
+      once.set(approvalScope, approved);
+    }
+    approved.set(canonical, fingerprint);
   }
-  trustedOnce.set(canonical, initial.hash);
-  return approved(
-    reply.value === "persist"
-      ? undefined
-      : contentBoundResourcePaths(initial.files),
-  );
+  return {
+    trusted: reply.value !== "safe",
+    omitted: reply.value === "safe" ? resources : [],
+  };
 }
-async function readTrust(directory: string): Promise<Record<string, string>> {
-  let text: string;
+async function readTrust(directory: string) {
   try {
-    text = await readFile(join(directory, "desktop-trust.json"), "utf8");
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "ENOENT") return {};
-    throw error;
+    const value: unknown = JSON.parse(
+      await readFile(join(directory, "desktop-trust.json"), "utf8"),
+    );
+    if (
+      value &&
+      typeof value === "object" &&
+      !Array.isArray(value) &&
+      Object.values(value).every((item) => typeof item === "string")
+    )
+      return value as Record<string, string>;
+  } catch {
+    /* No implicit trust on corrupt store. */
   }
-  let value: unknown;
-  try {
-    value = JSON.parse(text);
-  } catch (error) {
-    if (error instanceof SyntaxError) return {};
-    throw error;
-  }
-  if (
-    value &&
-    typeof value === "object" &&
-    !Array.isArray(value) &&
-    Object.values(value).every((item) => typeof item === "string")
-  )
-    return value as Record<string, string>;
-  return {};
+  return {} as Record<string, string>;
 }
-/** Explicit persisted folder grant; no legacy agent profile lookup. */
-export async function isProjectTrusted(
-  cwd: string,
-  directory = desktopConfigDir,
-) {
+/** Folder-scoped like VS Code/Claude Code: editing project files does not revoke trust. */
+export async function isProjectTrusted(cwd: string, directory = agentDir) {
   return (await readTrust(directory))[await realpath(cwd)] !== undefined;
 }
-export async function persistProjectTrust(
-  cwd: string,
-  directory = desktopConfigDir,
-) {
+export async function persistProjectTrust(cwd: string, directory = agentDir) {
   const saved = await readTrust(directory);
   saved[await realpath(cwd)] = "trusted";
   await mkdir(directory, { recursive: true });

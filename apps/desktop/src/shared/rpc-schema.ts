@@ -25,6 +25,7 @@ import type {
   SessionAddress,
 } from "./runtime-contract";
 import type { Settings, SettingsPatch } from "./settings";
+import type { TerminalClientCommand, TerminalHostEvent } from "./terminal-ui";
 import type { Transcript } from "./transcript";
 
 export type { PromptAccepted } from "./runtime-contract";
@@ -135,8 +136,8 @@ export interface Bootstrap {
   providers: ProviderInfo[];
   models: ModelInfo[];
   imageModels: UtilityModelInfo[];
-  decisionModels: UtilityModelInfo[];
-  decisionProviders: string[];
+  classificationModels: UtilityModelInfo[];
+  classificationProviders: string[];
   disabledModels: string[];
   // pi models.json modelOverrides keyed by modelKey.
   modelOverrides: Record<string, ModelOverride>;
@@ -254,6 +255,11 @@ export type RPCSchema = {
       syncDraft: { params: DraftSyncParams; response: DraftSyncResult };
       // biome-ignore lint/suspicious/noConfusingVoidType: Electrobun convention.
       resolveExtensionUI: { params: UIReply; response: void };
+      terminalCommand: {
+        params: TerminalClientCommand & SessionAddress;
+        // biome-ignore lint/suspicious/noConfusingVoidType: Electrobun convention.
+        response: void;
+      };
       // biome-ignore lint/suspicious/noConfusingVoidType: Electrobun convention.
       abort: { params: SessionAddress; response: void };
       // biome-ignore lint/suspicious/noConfusingVoidType: Electrobun convention.
@@ -326,6 +332,7 @@ export type RPCSchema = {
     messages: {
       runtimeEvent: RuntimeEvent;
       extensionUIEvent: ExtensionUIEvent;
+      terminalEvent: TerminalHostEvent;
       packageOp: PackageOpStatus;
       installed: InstalledPackage[];
       sessionEvent: WireEvent;

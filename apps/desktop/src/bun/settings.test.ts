@@ -28,7 +28,7 @@ test("missing and corrupt settings default without overwriting; valid saves roun
       shell: "git-bash",
       blockImages: false,
       imageGenerationModel: null,
-      decisionModel: null,
+      classificationModel: null,
     });
     const next = patchSettings(defaultSettings, {
       language: "ja",
@@ -37,13 +37,13 @@ test("missing and corrupt settings default without overwriting; valid saves roun
       blockImages: true,
       keybindings: { "settings.open": null },
       imageGenerationModel: { provider: "disconnected-image", id: "image-1" },
-      decisionModel: { provider: "typesafe", id: "jev-latest" },
+      classificationModel: { provider: "typesafe", id: "jev-latest" },
     });
     await saveSettings(file, next);
     expect(await loadSettings(file)).toEqual(next);
     const cleared = patchSettings(next, {
       imageGenerationModel: null,
-      decisionModel: null,
+      classificationModel: null,
     });
     await saveSettings(file, cleared);
     expect(await loadSettings(file)).toEqual(cleared);

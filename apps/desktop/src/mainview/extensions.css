@@ -1,3 +1,15 @@
+.extensions-page {
+  width: 100%;
+  max-width: 1440px;
+  height: 100%;
+  margin: 0 auto;
+  padding: 24px 16px 40px;
+  overflow-y: auto;
+}
+.extensions-page h1 {
+  font-size: var(--text-xl);
+  margin-bottom: 8px;
+}
 .extensions-tabs {
   display: flex;
   gap: 8px;
@@ -337,6 +349,9 @@
   outline-offset: 4px;
 }
 @media (max-width: 640px) {
+  .extensions-page {
+    padding: 20px 16px;
+  }
   .market-grid {
     grid-template-columns: minmax(0, 1fr);
   }
@@ -346,24 +361,4 @@
   .package-error {
     flex-wrap: wrap;
   }
-}
-
-.package-manual-install {
-  display: grid;
-  gap: 8px;
-  margin-bottom: 24px;
-  font-size: var(--text-sm);
-}
-.package-manual-source-row {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px;
-}
-.package-manual-source-row input {
-  flex: 1 1 240px;
-  min-width: 0;
-}
-.package-manual-install p {
-  margin: 0;
 }

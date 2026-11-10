@@ -44,12 +44,14 @@ type EndReason = Extract<ExtensionUIEvent, { type: "requestEnd" }>["reason"];
 type Entry = {
   request: UIRequest;
   finish: (reply: UIReply) => void;
+  cancelTerminal?: () => void;
   timer?: ReturnType<typeof setTimeout>;
   unlisten?: () => void;
+  foreground?: (active: boolean) => void;
 };
 export type UIRequestOptions = { signal?: AbortSignal };
 
-/** Root-owned native dialog requests, independent of any extension instance.
+/** Root-owned, including requests made before AgentSession/ExtensionUIHost exists.
  * Availability is opt-in: the RPC connection owner must call setAvailable(true).
  * Every request is published; pending() is ordered with the foreground first.
  */
@@ -99,7 +101,7 @@ export class UIRequestBroker {
   isForeground(address: UIAddress): boolean {
     return this.active === key(address);
   }
-  /** A validated reply is an explicit Root selection,
+  /** A validated reply or terminal interaction is an explicit Root selection,
    * unlike a new request, which must never steal another session's focus. */
   activate(address: UIAddress): boolean {
     const id = key(address);
@@ -115,7 +117,7 @@ export class UIRequestBroker {
     return entries.map(([, entry]) => structuredClone(entry.request));
   }
   request(
-    request: UIRequest,
+    request: Exclude<UIRequest, { kind: "terminal" }>,
     options: UIRequestOptions = {},
   ): Promise<UIReply> {
     this.validate(request);
@@ -128,6 +130,31 @@ export class UIRequestBroker {
       };
       this.add(entry, options.signal);
     });
+  }
+  registerTerminal(
+    request: UIRequest & { kind: "terminal" },
+    cancel: () => void,
+    foreground?: (active: boolean) => void,
+  ): void {
+    this.validate(request);
+    if (!this.isAvailable(request)) {
+      cancel();
+      throw new Error("Extension UI unavailable");
+    }
+    this.add({
+      request: structuredClone(request),
+      finish: () => {},
+      cancelTerminal: cancel,
+      foreground,
+    });
+  }
+  endTerminal(
+    address: UIAddress,
+    reason: "done" | "cancelled" | "failed",
+  ): void {
+    const entry = this.entries.get(key(address));
+    if (entry?.request.kind === "terminal")
+      this.end(entry, reason, undefined, false);
   }
   resolve(reply: UIReply): void {
     const entry = this.entries.get(key(reply));
@@ -235,6 +262,8 @@ export class UIRequestBroker {
             throw new TypeError("Invalid trust resource");
         }
         break;
+      case "terminal":
+        break;
       default:
         throw new TypeError("Unknown UI request kind");
     }
@@ -252,6 +281,7 @@ export class UIRequestBroker {
       entry.request.parentUiId &&
       key({ ...entry.request, uiId: entry.request.parentUiId });
     if (!this.active || parent === this.active) this.focus(id);
+    else entry.foreground?.(false);
     const deadline = entry.request.expiresAt;
     if (deadline !== undefined) {
       if (deadline <= Date.now()) {
@@ -293,9 +323,17 @@ export class UIRequestBroker {
       selected = child;
     }
     if (id === this.active) return;
+    const previous = this.active ? this.entries.get(this.active) : undefined;
     this.active = id;
+    previous?.foreground?.(false);
+    if (id) this.entries.get(id)?.foreground?.(true);
   }
-  private end(entry: Entry, reason: EndReason, reply?: UIReply): void {
+  private end(
+    entry: Entry,
+    reason: EndReason,
+    reply?: UIReply,
+    cancelTerminal = true,
+  ): void {
     const id = key(entry.request);
     if (this.entries.get(id) !== entry) return;
     // Remove first: cancellation callbacks and event sinks may re-enter.
@@ -320,20 +358,26 @@ export class UIRequestBroker {
           : this.entries.keys().next().value,
       );
     }
-    entry.finish(reply ?? { ...entry.request, kind: "cancel" });
     try {
-      this.emit({
-        type: "requestEnd",
-        address: {
-          hostId: entry.request.hostId,
-          sessionId: entry.request.sessionId,
-          epoch: entry.request.epoch,
-          uiId: entry.request.uiId,
-        },
-        reason,
-      });
+      if (cancelTerminal) entry.cancelTerminal?.();
     } catch {
-      /* A lost view must not prevent cancellation/settlement. */
+      /* A broken terminal disposer must not strand other sessions. */
+    } finally {
+      entry.finish(reply ?? { ...entry.request, kind: "cancel" });
+      try {
+        this.emit({
+          type: "requestEnd",
+          address: {
+            hostId: entry.request.hostId,
+            sessionId: entry.request.sessionId,
+            epoch: entry.request.epoch,
+            uiId: entry.request.uiId,
+          },
+          reason,
+        });
+      } catch {
+        /* A lost view must not prevent cancellation/settlement. */
+      }
     }
   }
 }

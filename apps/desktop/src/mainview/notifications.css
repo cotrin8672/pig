@@ -7,31 +7,8 @@
   align-items: center;
   gap: 8px;
 }
-.sidebar-icon {
-  position: relative;
-  justify-content: center;
-  width: 32px;
-  height: 32px;
-  padding: 0;
-  color: var(--ds-text-secondary);
-}
-.sidebar-provider-dot {
-  position: absolute;
-  right: 3px;
-  bottom: 3px;
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: var(--ds-text-muted);
-}
-.sidebar-provider-dot.connected {
-  background: var(--ds-success);
-}
-.sidebar-provider-dot.error {
-  background: var(--ds-error);
-}
-.sidebar-provider-dot.busy {
-  background: var(--ds-warning);
+.sidebar-footer > .providers-nav {
+  flex: 1;
 }
 .notification-center {
   flex-shrink: 0;

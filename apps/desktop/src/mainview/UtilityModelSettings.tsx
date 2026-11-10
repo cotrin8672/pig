@@ -129,17 +129,17 @@ export function ImageModelSettings({ onConnect }: { onConnect: () => void }) {
   );
 }
 
-export function DecisionSettings() {
+export function ClassificationSettings() {
   const t = useT();
   const {
     providers,
-    decisionModels = [],
-    decisionProviders = [],
+    classificationModels = [],
+    classificationProviders = [],
   } = useStore((s) => s.bootstrap);
-  const model = useStore((s) => s.settings.decisionModel ?? null);
+  const model = useStore((s) => s.settings.classificationModel ?? null);
   const [selected, setSelected] = useState<string>();
   const candidates = providers
-    .filter((p) => decisionProviders.includes(p.id))
+    .filter((p) => classificationProviders.includes(p.id))
     .sort(
       (a, b) =>
         Number(b.configured) - Number(a.configured) ||
@@ -151,19 +151,24 @@ export function DecisionSettings() {
   return (
     <>
       <ModelSelect
-        label={t["Decision model"]}
-        models={decisionModels}
+        label={t["Classification model"]}
+        models={classificationModels}
         value={model}
-        onChange={(decisionModel) => updateSettings({ decisionModel })}
+        onChange={(classificationModel) =>
+          updateSettings({ classificationModel })
+        }
       />
       <p className="settings-hint">
         {
           t[
-            "Connect a decision provider, then choose a model such as Jev. Credentials are shared with Providers."
+            "Connect a classification provider, then choose a model such as Jev. Credentials are shared with Providers."
           ]
         }
       </p>
-      <nav className="decision-providers" aria-label={t["Decision providers"]}>
+      <nav
+        className="classification-providers"
+        aria-label={t["Classification providers"]}
+      >
         {candidates.map((provider) => (
           <button
             key={provider.id}
@@ -190,7 +195,9 @@ export function DecisionSettings() {
           </ProviderDetail>
         </div>
       ) : (
-        <p className="settings-hint">{t["No decision providers available."]}</p>
+        <p className="settings-hint">
+          {t["No classification providers available."]}
+        </p>
       )}
     </>
   );

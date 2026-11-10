@@ -5,6 +5,10 @@ import type {
   RuntimeViewState,
   SessionAddress,
 } from "../shared/runtime-contract";
+import type {
+  TerminalClientCommand,
+  TerminalHostEvent,
+} from "../shared/terminal-ui";
 import {
   addressKey,
   applyChatEvent,
@@ -28,6 +32,7 @@ export function subscribeOwnership(
 }
 const retired = new Set<string>();
 const latest = new Map<string, WireEvent>();
+const terminalListeners = new Set<(event: TerminalHostEvent) => void>();
 export let runtimeRevision = 0;
 export function liveAddress(address: SessionAddress) {
   const state = useStore.getState();
@@ -49,6 +54,12 @@ function register(address: SessionAddress) {
 function removeSurfaces(address: SessionAddress) {
   useStore.setState((s) => ({
     pendingUI: s.pendingUI.filter((request) => !sameAddress(request, address)),
+    terminals: Object.fromEntries(
+      Object.entries(s.terminals).filter(
+        ([key]) =>
+          !s.pendingUI.some((r) => sameAddress(r, address) && uiKey(r) === key),
+      ),
+    ),
     extensionStatuses: Object.fromEntries(
       Object.entries(s.extensionStatuses).filter(
         ([key]) => key !== addressKey(address),
@@ -152,6 +163,11 @@ export function receiveExtension(event: ExtensionUIEvent) {
       pendingUI: s.pendingUI.filter(
         (request) => uiKey(request) !== uiKey(event.address),
       ),
+      terminals: Object.fromEntries(
+        Object.entries(s.terminals).filter(
+          ([key]) => key !== uiKey(event.address),
+        ),
+      ),
     }));
   if (event.type === "draft") drafts.receive(event.address, event.draft);
   if (event.type === "status")
@@ -186,6 +202,7 @@ export function receiveRuntimeState(state: RuntimeViewState, since: number) {
       snapshots: {},
       addresses: {},
       pendingUI: [],
+      terminals: {},
       extensionStatuses: {},
       capabilities: {},
     });
@@ -217,7 +234,16 @@ export function receiveRuntimeState(state: RuntimeViewState, since: number) {
         session.address,
       ]),
     ),
-    pendingUI: [],
+    pendingUI: s.pendingUI.filter(
+      (request) =>
+        request.kind === "terminal" &&
+        state.pendingUI.some((pending) => uiKey(pending) === uiKey(request)),
+    ),
+    terminals: Object.fromEntries(
+      Object.entries(s.terminals).filter(([key]) =>
+        state.pendingUI.some((request) => uiKey(request) === key),
+      ),
+    ),
     extensionStatuses: {},
     capabilities: Object.fromEntries(
       Object.entries(s.capabilities).filter(([key]) => present.has(key)),
@@ -232,7 +258,53 @@ export function receiveRuntimeState(state: RuntimeViewState, since: number) {
     if (liveAddress(item.address)) drafts.receive(item.address, item.draft);
   for (const item of state.statuses)
     receiveExtension({ type: "status", ...item });
-  for (const request of state.pendingUI)
-    receiveExtension({ type: "request", request });
+  for (const request of state.pendingUI) {
+    // A disconnected terminal has no replay/resume protocol.
+    if (request.kind !== "terminal")
+      receiveExtension({ type: "request", request });
+  }
   return true;
+}
+export function receiveTerminal(event: TerminalHostEvent) {
+  // Terminal transport may omit hostId. Bind it only to an exact already registered
+  // Broker owner, never the active tab or a guessed current session.
+  const matches = useStore
+    .getState()
+    .pendingUI.filter(
+      (request) =>
+        request.kind === "terminal" &&
+        request.sessionId === event.sessionId &&
+        request.epoch === event.epoch &&
+        request.uiId === event.uiId &&
+        liveAddress(request),
+    );
+  if (matches.length !== 1) return;
+  const owner = matches[0];
+  if ("hostId" in event && event.hostId !== owner.hostId) return;
+  if (event.type === "open")
+    useStore.setState((s) => ({
+      terminals: { ...s.terminals, [uiKey(owner)]: event },
+    }));
+  for (const listener of terminalListeners) listener(event);
+}
+export function subscribeTerminal(
+  listener: (event: TerminalHostEvent) => void,
+) {
+  terminalListeners.add(listener);
+  return () => {
+    terminalListeners.delete(listener);
+  };
+}
+export function ownedTerminalCommand(
+  owner: SessionAddress & { uiId: string },
+  command: TerminalClientCommand,
+): TerminalClientCommand & SessionAddress {
+  if (
+    !liveAddress(owner) ||
+    command.sessionId !== owner.sessionId ||
+    command.epoch !== owner.epoch ||
+    command.uiId !== owner.uiId
+  )
+    throw new Error("Stale terminal UI owner");
+  return { ...command, ...owner };
 }

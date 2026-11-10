@@ -5,12 +5,15 @@ import { emptyTranscript } from "../shared/transcript";
 import { addressKey } from "./chat-snapshot";
 import { drafts, emptyContent } from "./draft-store";
 import {
+  ownedTerminalCommand,
   receiveExtension,
   receiveRuntime,
   receiveRuntimeState,
   receiveSnapshot,
+  receiveTerminal,
   receiveWire,
   runtimeRevision,
+  subscribeTerminal,
 } from "./runtime-events";
 import { useStore } from "./store";
 import {
@@ -43,7 +46,7 @@ function fixture() {
   };
   return { address, snapshot };
 }
-test("startup Trust and native UI appear at root before any chat snapshot exists", () => {
+test("startup Trust and native/custom UI appear at root before any chat snapshot exists", () => {
   const { address } = fixture();
   receiveRuntime({ type: "opening", address, cwd: "/fixture", openId: "open" });
   const request: UIRequest = {
@@ -74,9 +77,8 @@ test("one waiting list prioritizes same-owner child without unrelated focus thef
   const parent: UIRequest = {
     ...address,
     uiId: "p",
-    title: "parent",
-    kind: "confirm",
-    message: "Continue?",
+    title: "terminal",
+    kind: "terminal",
   };
   const parallel: UIRequest = {
     ...address,
@@ -151,18 +153,11 @@ test("subscriptions retain inactive draft, status and snapshots across all navig
   );
   expect(useStore.getState().snapshots[address.sessionId].snapshotSeq).toBe(4);
 });
-test("replaced remaps active tab/draft and rejects old epoch status, snapshots and requests", () => {
+test("replaced remaps active tab/draft and rejects old epoch status, snapshots and terminal", () => {
   const { address, snapshot } = fixture();
   receiveSnapshot(snapshot);
   useStore.setState({ active: address.sessionId });
   drafts.edit(address, () => ({ ...emptyContent(), text: "unsynced" }));
-  const request: UIRequest = {
-    ...address,
-    uiId: "native",
-    kind: "input",
-    title: "Input",
-  };
-  receiveExtension({ type: "request", request });
   const next = { ...address, sessionId: `${address.sessionId}-fork`, epoch: 2 };
   receiveRuntime({
     type: "replaced",
@@ -179,14 +174,56 @@ test("replaced remaps active tab/draft and rejects old epoch status, snapshots a
     address,
     status: { statuses: [], widgets: [], title: "stale" },
   });
-  receiveExtension({ type: "request", request });
-  expect(useStore.getState().pendingUI).toHaveLength(0);
   expect(useStore.getState().active).toBe(next.sessionId);
   expect(useStore.getState().snapshots[address.sessionId]).toBeUndefined();
   expect(drafts.read(next).content.text).toBe("unsynced");
   expect(
     useStore.getState().extensionStatuses[addressKey(address)],
   ).toBeUndefined();
+});
+test("terminal boundary adds host owner even before ready snapshot and never uses active tab", () => {
+  const { address } = fixture();
+  const request: UIRequest = {
+    ...address,
+    uiId: "terminal",
+    kind: "terminal",
+    title: "TUI",
+  };
+  receiveExtension({ type: "request", request });
+  useStore.setState({ active: "unrelated" });
+  const events: string[] = [];
+  const unsubscribe = subscribeTerminal((event) => {
+    events.push(event.type);
+  });
+  receiveTerminal({
+    type: "open",
+    sessionId: address.sessionId,
+    epoch: address.epoch,
+    uiId: request.uiId,
+  });
+  expect(useStore.getState().terminals[uiKey(request)]).toBeDefined();
+  const command = ownedTerminalCommand(request, {
+    type: "ready",
+    sessionId: request.sessionId,
+    epoch: request.epoch,
+    uiId: request.uiId,
+    cols: 80,
+    rows: 24,
+  });
+  expect(command.hostId).toBe(address.hostId);
+  expect(command.sessionId).toBe(address.sessionId);
+  receiveTerminal({
+    type: "data",
+    sessionId: address.sessionId,
+    epoch: 0,
+    uiId: request.uiId,
+    seq: 1,
+    data: "stale",
+  });
+  expect(events).toEqual(["open"]);
+  unsubscribe();
+  receiveRuntime({ type: "closed", address, reason: "close" });
+  expect(() => ownedTerminalCommand(request, command)).toThrow("Stale");
 });
 test("reconnect response racing newer root events cannot restore ended requests", () => {
   const { address } = fixture();
@@ -198,70 +235,14 @@ test("reconnect response racing newer root events cannot restore ended requests"
       sessions: [],
       drafts: [],
       statuses: [],
-      pendingUI: [{ ...address, uiId: "late", kind: "input", title: "stale" }],
+      pendingUI: [
+        { ...address, uiId: "late", kind: "terminal", title: "stale" },
+      ],
     },
     before,
   );
   expect(applied).toBe(false);
   expect(useStore.getState().pendingUI).toHaveLength(0);
-});
-
-test("reconnect replays every native pending request and drops ended requests without navigation or revision rollback", () => {
-  const { address, snapshot } = fixture();
-  receiveSnapshot(snapshot);
-  useStore.setState({ page: "settings", active: "unrelated" });
-  drafts.receive(address, { ...emptyContent(), text: "newer", revision: 4 });
-  const pendingUI: UIRequest[] = [
-    {
-      ...address,
-      uiId: "confirm",
-      kind: "confirm",
-      title: "Confirm",
-      message: "?",
-    },
-    { ...address, uiId: "input", kind: "input", title: "Input" },
-    { ...address, uiId: "editor", kind: "editor", title: "Editor" },
-    {
-      ...address,
-      uiId: "select",
-      kind: "select",
-      title: "Select",
-      options: ["ok"],
-    },
-    {
-      ...address,
-      uiId: "trust",
-      kind: "project-trust",
-      title: "Trust",
-      cwd: "/fixture",
-      fingerprint: "fp",
-      resources: [],
-    },
-  ];
-  receiveExtension({ type: "request", request: pendingUI[0] });
-  receiveExtension({
-    type: "request",
-    request: { ...address, uiId: "ended", kind: "input", title: "Ended" },
-  });
-  expect(
-    receiveRuntimeState(
-      {
-        hostId: address.hostId,
-        sessions: [{ address, phase: "ready", snapshot }],
-        drafts: [
-          { address, draft: { ...emptyContent(), text: "older", revision: 2 } },
-        ],
-        statuses: [],
-        pendingUI,
-      },
-      runtimeRevision,
-    ),
-  ).toBe(true);
-  expect(useStore.getState().pendingUI).toEqual(pendingUI);
-  expect(focusedRequest(useStore.getState().pendingUI)?.uiId).toBe("confirm");
-  expect(useStore.getState().page).toBe("settings");
-  expect(useStore.getState().active).toBe("unrelated");
-  expect(drafts.read(address).content.text).toBe("newer");
 });
 
 test.each([

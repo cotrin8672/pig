@@ -88,15 +88,21 @@ test("reply validates host/session/epoch/id, kind, selected membership, UTF-8 si
   expect(events.filter((event) => event.type === "requestEnd")).toHaveLength(1);
 });
 
-test("native dialog list: independent sessions cannot steal focus; nested child wins", async () => {
+test("one native/terminal list: independent sessions cannot steal focus; nested child wins", async () => {
   const { broker } = fixture();
   const parent = {
     ...a,
-    uiId: "editor",
-    title: "Edit",
-    kind: "editor" as const,
+    uiId: "terminal",
+    title: "Custom",
+    kind: "terminal" as const,
   };
-  const parentPending = broker.request(parent);
+  let cancelled = 0;
+  const foreground: boolean[] = [];
+  broker.registerTerminal(
+    parent,
+    () => cancelled++,
+    (active) => foreground.push(active),
+  );
   const independent = broker.request(confirm("independent", b));
   const childRequest = { ...confirm("child"), parentUiId: parent.uiId };
   const child = broker.withContext(parent, () => {
@@ -107,7 +113,7 @@ test("native dialog list: independent sessions cannot steal focus; nested child 
   expect(broker.currentParent(a)).toBeUndefined();
   expect(broker.pending().map((request) => request.uiId)).toEqual([
     "child",
-    "editor",
+    "terminal",
     "independent",
   ]);
   expect(broker.isForeground(childRequest)).toBe(true);
@@ -115,15 +121,15 @@ test("native dialog list: independent sessions cannot steal focus; nested child 
   broker.resolve({ ...childRequest, kind: "confirm", value: false });
   expect(await child).toMatchObject({ value: false });
   expect(broker.isForeground(parent)).toBe(true);
-  broker.resolve({ ...parent, kind: "editor", value: "Edited" });
-  expect(await parentPending).toMatchObject({ value: "Edited" });
+  broker.endTerminal(parent, "done");
+  expect(cancelled).toBe(0);
   broker.resolve({
     ...confirm("independent", b),
     kind: "confirm",
     value: true,
   });
   expect(await independent).toMatchObject({ value: true });
-  expect(broker.pending()).toEqual([]);
+  expect(foreground).toEqual([true, false, true]);
 });
 
 test("queued parent promotes its waiting descendants, cancellation cascades only addressed session", async () => {
@@ -158,15 +164,17 @@ test("AbortSignal/deadline/disconnect settle once and clean pending state", asyn
     expect.objectContaining({ type: "requestEnd", reason: "timeout" }),
   );
   const three = broker.request(confirm("disconnect"));
-  const four = broker.request({
-    ...b,
-    uiId: "editor",
-    kind: "editor",
-    title: "Edit",
-  });
+  let terminalCancelled = 0;
+  broker.registerTerminal(
+    { ...b, uiId: "terminal", kind: "terminal", title: "Custom" },
+    () => {
+      terminalCancelled++;
+      throw new Error("bad disposer");
+    },
+  );
   broker.setAvailable(false);
   expect(await three).toMatchObject({ kind: "cancel" });
-  expect(await four).toMatchObject({ kind: "cancel" });
+  expect(terminalCancelled).toBe(1);
   expect(broker.pending()).toHaveLength(0);
   expect(events.filter((event) => event.type === "requestEnd")).toHaveLength(4);
 });
@@ -230,20 +238,4 @@ test("cancelling A blocks reentrant A requests without denying B startup", async
   ]);
   broker.resolve({ ...confirm("startup-b", b), kind: "confirm", value: true });
   expect(await startupB).toMatchObject({ kind: "confirm", value: true });
-});
-
-test("a failed requestEnd sink cannot strand other native dialogs on disconnect", async () => {
-  const broker = new UIRequestBroker((event) => {
-    if (event.type === "requestEnd") throw new Error("lost view");
-  });
-  broker.setAvailable(true);
-  const pending = [
-    broker.request(confirm("a")),
-    broker.request(confirm("b", b)),
-  ];
-  broker.setAvailable(false);
-  expect(
-    (await Promise.all(pending)).every((reply) => reply.kind === "cancel"),
-  ).toBe(true);
-  expect(broker.pending()).toEqual([]);
 });

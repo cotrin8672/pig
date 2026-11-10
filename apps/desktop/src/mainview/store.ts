@@ -14,6 +14,7 @@ import type {
 } from "../shared/rpc-schema";
 import type { SessionAddress } from "../shared/runtime-contract";
 import { defaultSettings, type Settings } from "../shared/settings";
+import type { TerminalOpenEvent } from "../shared/terminal-ui";
 import type { ChatSnapshot } from "./chat-snapshot";
 import {
   loadNoticeHistory,
@@ -42,14 +43,12 @@ export const useStore = create<{
   hostId?: string;
   addresses: Record<string, SessionAddress>;
   pendingUI: UIRequest[];
+  terminals: Record<string, TerminalOpenEvent>;
   extensionStatuses: Record<string, ExtensionStatus>;
   capabilities: Record<string, string[]>;
   openingAddress?: SessionAddress;
   openId?: string;
   openMessage?: string;
-  openingViewRevision?: number;
-  openingNewCwd?: string;
-  newChatDrafts: Record<string, string>;
   installed: InstalledPackage[];
   packageOps: Record<string, PackageOpStatus>;
   notices: (Notice & { id: string })[];
@@ -67,8 +66,8 @@ export const useStore = create<{
     providers: [],
     models: [],
     imageModels: [],
-    decisionModels: [],
-    decisionProviders: [],
+    classificationModels: [],
+    classificationProviders: [],
     disabledModels: [],
     modelOverrides: {},
     desktop: { sessions: {} },
@@ -77,13 +76,13 @@ export const useStore = create<{
   snapshots: {},
   addresses: {},
   pendingUI: [],
+  terminals: {},
   extensionStatuses: {},
   capabilities: {},
   page: "chat",
   installed: [],
   packageOps: {},
   notices: [],
-  newChatDrafts: {},
   noticeHistory: loadNoticeHistory(),
   opening: false,
   maximized: false,
@@ -134,8 +133,8 @@ export function readViewedNotices(visible: boolean, focused: boolean) {
     ),
   });
 }
-export function showNotice(notice: Notice, acknowledged = false) {
-  const silent =
+export function showNotice(notice: Notice) {
+  const read =
     typeof document !== "undefined" &&
     isViewedNotice(
       notice,
@@ -143,10 +142,9 @@ export function showNotice(notice: Notice, acknowledged = false) {
       document.visibilityState === "visible",
       document.hasFocus(),
     );
-  const read = silent || acknowledged;
   const id = crypto.randomUUID();
   useStore.setState((s) => ({
-    notices: silent ? s.notices : [...s.notices, { ...notice, id }].slice(-3),
+    notices: read ? s.notices : [...s.notices, { ...notice, id }].slice(-3),
     noticeHistory: [
       ...s.noticeHistory,
       {
@@ -160,15 +158,10 @@ export function showNotice(notice: Notice, acknowledged = false) {
       },
     ].slice(-NOTICE_HISTORY_LIMIT),
   }));
-  if (!silent) setTimeout(() => dismissNotice(id), 7000);
+  if (!read) setTimeout(() => dismissNotice(id), 7000);
 }
 export function showError(error: unknown) {
-  showNotice(
-    { message: String(error), level: "error" },
-    typeof document !== "undefined" &&
-      document.visibilityState === "visible" &&
-      document.hasFocus(),
-  );
+  showNotice({ message: String(error), level: "error" });
 }
 
 export function receivePackageOp(op: PackageOpStatus) {

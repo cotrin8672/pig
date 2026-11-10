@@ -237,26 +237,3 @@ test("unseen package results remain unread; returning reads successes but not fa
     false,
   ]);
 });
-
-test("foreground operation errors remain visible but do not add unread badges", () => {
-  jest.useFakeTimers();
-  viewDocument();
-  showError(new Error("Delete failed"));
-  expect(useStore.getState().notices).toHaveLength(1);
-  expect(useStore.getState().noticeHistory[0]).toMatchObject({
-    level: "error",
-    read: true,
-  });
-  expect(useStore.getState().noticeHistory.filter((n) => !n.read)).toHaveLength(
-    0,
-  );
-  jest.advanceTimersByTime(7000);
-  expect(useStore.getState().notices).toHaveLength(0);
-  expect(useStore.getState().noticeHistory[0].read).toBe(true);
-  viewDocument(true, false);
-  showError("Unseen failure");
-  expect(useStore.getState().noticeHistory.at(-1)?.read).toBe(false);
-  viewDocument();
-  showNotice({ level: "error", message: "Extension failure" });
-  expect(useStore.getState().noticeHistory.at(-1)?.read).toBe(false);
-});

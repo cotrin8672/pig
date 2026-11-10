@@ -1,3 +1,4 @@
+import "./runtime-profile";
 import { join } from "node:path";
 import {
   type Api,
@@ -15,32 +16,39 @@ import type {
   RuntimeEvent,
   SessionAddress,
 } from "../shared/runtime-contract";
-import { createApplicationConfigLoader } from "./application-config";
-import { createApplicationRuntime } from "./application-runtime";
+import type { TerminalHostEvent } from "../shared/terminal-ui";
 import { FileCredentials } from "./credentials";
 import { desktopConfigDir } from "./desktop-config";
-import { getPackageManager } from "./durable-package-manager";
 import {
   applyRuntimeModelSettings,
   createModelRuntime,
   isExtensionProvider,
   modelRuntimeErrors,
   refreshAllModelRuntimes,
-  releaseModelRuntime,
 } from "./model-runtime";
 import { defaultEffort, loadEfforts } from "./model-settings";
 import { REMOTE_CATALOG_REFRESH_INTERVAL_MS } from "./remote-catalog";
-import { currentSettings } from "./settings";
+import { loadExclusive, SessionHost } from "./session-host";
+import { reloadUserCatalog } from "./user-catalog";
 
 registerBunOAuthFlows();
 export const credentials = new FileCredentials(
   join(desktopConfigDir, "auth.json"),
 );
-// The UI catalog is not a conversation runtime. Each Workspace owns another fresh
-// Models collection, registry, Harness, writer lock and SQLite storage.
 export const runtime = await createModelRuntime(credentials);
 export const modelErrors = modelRuntimeErrors;
-export const modelNetworkEnabled = process.env.PI_OFFLINE === undefined;
+export async function refreshUserCatalog() {
+  const services = await loadExclusive(() => reloadUserCatalog(runtime));
+  const extensions = services.resourceLoader.getExtensions();
+  for (const error of extensions.errors)
+    modelErrors.push(`${error.path}: ${error.error}`);
+  for (const warning of extensions.warnings ?? [])
+    modelErrors.push(`${warning.path}: ${warning.warning}`);
+  return services.diagnostics.map((diagnostic) => diagnostic.message);
+}
+await refreshUserCatalog()
+  .then((diagnostics) => modelErrors.push(...diagnostics))
+  .catch((error) => modelErrors.push(`User extensions: ${String(error)}`));
 export async function refreshModels(
   options?: Parameters<typeof runtime.refresh>[0],
 ) {
@@ -48,16 +56,16 @@ export async function refreshModels(
     ...options,
     allowNetwork: options?.allowNetwork ?? modelNetworkEnabled,
   });
-  for (const result of results) {
-    for (const [provider, error] of result.errors) {
-      const message = `Model catalog ${provider}: ${error.message}`;
-      modelErrors.push(message);
-      console.error(message);
-    }
+  const result = results[0];
+  for (const [provider, error] of result?.errors ?? []) {
+    const message = `Model catalog ${provider}: ${error.message}`;
+    modelErrors.push(message);
+    console.error(message);
   }
-  return results[0];
+  return result;
 }
 await loadEfforts();
+export const modelNetworkEnabled = process.env.PI_OFFLINE === undefined;
 export async function applyModelSettings(selected?: readonly string[]) {
   await applyRuntimeModelSettings(runtime, selected);
   await refreshAllModelRuntimes({ providers: selected, allowNetwork: false });
@@ -88,14 +96,15 @@ export async function utilityModels() {
   }) => ({ provider, id, name });
   return {
     imageModels: (await runtime.getAvailableOfType("image")).map(project),
-    decisionModels: (await runtime.getAvailableOfType("classifier")).map(
+    classificationModels: (await runtime.getAvailableOfType("classifier")).map(
       project,
     ),
-    decisionProviders: [
+    classificationProviders: [
       ...new Set(runtime.getModelsOfType("classifier").map((m) => m.provider)),
     ],
   };
 }
+// pi-ai labels the subscription Codex provider "legacy"; name both by what they sign in to.
 const providerNames: Record<string, string> = {
   "openai-codex": "OpenAI Codex",
   openai: "OpenAI ChatGPT",
@@ -156,14 +165,15 @@ export function modelInfo(model: Model<Api>) {
 type EventSinks = {
   runtime: (event: RuntimeEvent) => void;
   ui: (event: ExtensionUIEvent) => void;
+  terminal: (event: TerminalHostEvent) => void;
 };
 let sinks: EventSinks | undefined;
 function transport() {
-  if (!sinks) throw new Error("Application event transport is not configured");
+  if (!sinks) throw new Error("Session host event transport is not configured");
   return sinks;
 }
 let disabled: readonly string[] = [];
-export function configureApplication(
+export function configureSessionHost(
   events: EventSinks,
   hidden: readonly string[] = [],
 ) {
@@ -173,81 +183,42 @@ export function configureApplication(
 export function setDisabledModels(hidden: readonly string[]) {
   disabled = hidden;
 }
-const packages = getPackageManager();
-export const configLoader = createApplicationConfigLoader(
-  join(desktopConfigDir, "config.ts"),
-  packages,
-  runtime,
-);
-export const application = createApplicationRuntime({
-  dataRoot: desktopConfigDir,
-  modelDirectory: desktopConfigDir,
+export const sessionHost = new SessionHost({
   credentials,
-  configLoader,
-  settings: currentSettings,
   modelInfo,
-  defaultEffort: (model) => defaultEffort(model.provider, model.id),
-  research: { inheritParent: true },
   emit: (event) => transport().runtime(event),
   emitUI: (event) => transport().ui(event),
+  emitTerminal: (event) => transport().terminal(event),
   disabled: () => disabled,
-  onFailure: (error) => modelErrors.push(`Native workspace: ${String(error)}`),
 });
-export const host = application.host;
-let initialization: Promise<void> | undefined;
-/** Called by the trusted desktop bootstrap AFTER configuration, settings and scopes are ready.
- * Reads only the new agent-v2 namespace. Failed recovery also prevents package replacement. */
-export function initializeApplication(
-  authorizedWorkspaces: readonly string[],
-): Promise<void> {
-  if (initialization) return initialization;
-  initialization = (async () => {
-    const result = await application.reload();
-    if (result.state !== "applied")
-      modelErrors.push(`Native config: ${result.reason ?? result.state}`);
-    const opened = await Promise.allSettled(
-      [...new Set(authorizedWorkspaces)].map((cwd) => host.workspace(cwd)),
-    );
-    const failures = opened.flatMap((entry) =>
-      entry.status === "rejected" ? [entry.reason] : [],
-    );
-    if (failures.length)
-      throw new AggregateError(
-        failures,
-        "Native workspace initialization/recovery failed; package replacement is blocked",
-      );
-  })();
-  void initialization.catch(() => {});
-  return initialization;
-}
-packages.setMutationGuard(async () => {
-  if (!initialization) throw new Error("AUTHORIZED_WORKSPACES_NOT_INITIALIZED");
-  await initialization;
-  return host.acquirePackageMutationLease();
-});
-export const openSession = (input: OpenSessionParams) => host.open(input);
-export const listSessions = (cwd: string) => host.list(cwd);
-export const promptSession = (input: PromptParams) => host.prompt(input);
+export const openSession = (input: OpenSessionParams) =>
+  sessionHost.openSession(input);
+export const listSessions = (cwd: string) => sessionHost.listSessions(cwd);
+export const promptSession = (input: PromptParams) => sessionHost.prompt(input);
 export const abortSession = (address: SessionAddress) =>
-  application.abort(address);
-export const closeSession = (address: SessionAddress) => host.close(address);
+  sessionHost.abort(address);
+export const closeSession = (address: SessionAddress) =>
+  sessionHost.closeSession(address);
 export const setSessionModel = (
   input: SessionAddress & { provider: string; id: string },
-) => host.setModel(input);
+) => sessionHost.setModel(input);
 export const setSessionEffort = (input: SessionAddress & { effort: Effort }) =>
-  host.setEffort(input);
+  sessionHost.setEffort(input);
 export const forkSession = (input: SessionAddress & { entryId: string }) =>
-  host.fork(input);
+  sessionHost.forkSession(input);
 export const rewindSession = (input: SessionAddress & { entryId: string }) =>
-  host.regenerateFrom(input);
+  sessionHost.rewindSession(input);
 export const renameSession = (info: SessionInfo, name: string) =>
-  host.rename(info, name);
-export const deleteSession = (info: SessionInfo) => host.delete(info);
+  sessionHost.renameSession(info, name);
+export const deleteSession = (info: SessionInfo) =>
+  sessionHost.deleteSession(info);
+export const modelSelection = async (id: string) =>
+  sessionHost.getSessionSnapshot(sessionHost.sessionAddress(id));
+export const contextUsage = async (id: string) =>
+  (await modelSelection(id)).contextUsage;
+export const sessionCwd = async (id: string) =>
+  (await modelSelection(id)).info.cwd;
 export async function disposeSessions() {
   clearInterval(catalogRefreshTimer);
-  try {
-    await application.dispose();
-  } finally {
-    releaseModelRuntime(runtime);
-  }
+  await sessionHost.dispose();
 }

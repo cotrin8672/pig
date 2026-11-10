@@ -3,4 +3,4 @@ dist/
 build/
 artifacts/
 *.log
-rtk/
+apps/desktop/rtk/

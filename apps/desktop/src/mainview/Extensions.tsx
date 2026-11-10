@@ -1,4 +1,5 @@
 import {
+  ArrowLeft,
   ArrowUpCircle,
   Check,
   CircleAlert,
@@ -21,19 +22,13 @@ import type {
   PackageType,
 } from "../shared/rpc-schema";
 import { ConfirmButton } from "./ConfirmButton";
-import { ContentPage } from "./ContentPage";
 import { getT, useT } from "./i18n";
-import { ManualPackageInstall } from "./ManualPackageInstall";
-import {
-  dispatchPackageOperation,
-  findPackageOperation as operation,
-  type PackageDispatchResult,
-} from "./manual-package-install";
+import { navigate } from "./navigation";
 import { rpc } from "./rpc";
 import { receivePackageOp, showError, useStore } from "./store";
 import "./extensions.css";
 
-function CopySource({ source }: { source: string }) {
+function CopyCommand({ name }: { name: string }) {
   const t = useT();
   const [copied, setCopied] = useState(false);
   const timer = useRef<ReturnType<typeof setTimeout>>(undefined);
@@ -42,7 +37,7 @@ function CopySource({ source }: { source: string }) {
     try {
       if (!navigator.clipboard?.writeText)
         throw new Error(t["Clipboard is unavailable."]);
-      await navigator.clipboard.writeText(source);
+      await navigator.clipboard.writeText(`pi install npm:${name}`);
       setCopied(true);
       clearTimeout(timer.current);
       timer.current = setTimeout(() => setCopied(false), 1500);
@@ -54,11 +49,11 @@ function CopySource({ source }: { source: string }) {
     <button
       type="button"
       className="package-command"
-      title={t.copySource(source)}
-      aria-label={t.copySource(source)}
+      title={t.copyInstall(name)}
+      aria-label={t.copyCommand(name)}
       onClick={() => void copy()}
     >
-      <span className="package-command-text">{source}</span>
+      <span className="package-command-text">$ pi install npm:{name}</span>
       <span
         className={`package-copy-feedback ${copied ? "is-copied" : ""}`}
         aria-live="polite"
@@ -159,6 +154,14 @@ function Preview({ url }: { url?: string | null }) {
     </div>
   );
 }
+function operation(source: string, ops: Record<string, PackageOpStatus>) {
+  const matches = Object.values(ops).filter(
+    (op) =>
+      op.source === source ||
+      (npmName(source) && npmName(op.source) === npmName(source)),
+  );
+  return matches.find((op) => op.status === "running") ?? matches.at(-1);
+}
 function Progress({ op }: { op?: PackageOpStatus }) {
   const t = useT();
   if (op?.status === "running")
@@ -199,15 +202,6 @@ export function Extensions() {
   const [installedLoading, setInstalledLoading] = useState(true);
   const [installedError, setInstalledError] = useState<string>();
   const [installedRetry, setInstalledRetry] = useState(0);
-  const [manualSource, setManualSource] = useState("");
-  const [manualResult, setManualResult] = useState<PackageDispatchResult>();
-  const manualPending = operation(manualSource, ops);
-  const manualOp =
-    manualPending?.status === "running"
-      ? manualPending
-      : manualResult && "opId" in manualResult
-        ? ops[manualResult.opId]
-        : undefined;
   useEffect(() => {
     const timer = setTimeout(() => {
       setSearch(query.trim());
@@ -282,29 +276,45 @@ export function Extensions() {
     };
   }, [installedRetry]);
   function run(action: PackageOpStatus["action"], source: string) {
-    const result = dispatchPackageOperation(action, source, {
-      operations: () => useStore.getState().packageOps,
-      emit: receivePackageOp,
-      send: rpc.send,
-      newOpId: () => crypto.randomUUID(),
-      messages: {
-        invalid: t.manualPackageInvalid,
-        transport: t.manualPackageDispatchFailed,
-      },
-    });
-    if (result.status === "invalid") showError(result.message);
-    return result;
+    if (operation(source, useStore.getState().packageOps)?.status === "running")
+      return;
+    const opId = crypto.randomUUID();
+    receivePackageOp({ opId, source, action, status: "running" });
+    try {
+      if (action === "install")
+        rpc.send.installPackage({ opId, name: npmName(source) ?? source });
+      else if (action === "uninstall")
+        rpc.send.uninstallPackage({ opId, source });
+      else rpc.send.updatePackage({ opId, source });
+    } catch (e) {
+      receivePackageOp({
+        opId,
+        source,
+        action,
+        status: "error",
+        message: String(e),
+      });
+    }
   }
   function selectTab(next: typeof tab, focus = false) {
     setTab(next);
     if (focus) document.getElementById(`extensions-tab-${next}`)?.focus();
   }
   return (
-    <ContentPage
-      className="extensions-page"
-      title={t.Extensions}
-      description={t["Make pi your own with community packages."]}
-    >
+    <div className="extensions-page">
+      <button
+        className="back-button"
+        type="button"
+        onClick={() => navigate("chat")}
+      >
+        <ArrowLeft size={14} />
+
+        {t["Back to chat"]}
+      </button>
+      <h1>{t.Extensions}</h1>
+      <p className="muted page-description">
+        {t["Make pi your own with community packages."]}
+      </p>
       <div
         className="extensions-tabs"
         role="tablist"
@@ -357,20 +367,6 @@ export function Extensions() {
       >
         {tab === "marketplace" ? (
           <>
-            <ManualPackageInstall
-              source={manualSource}
-              onSourceChange={(source) => {
-                setManualSource(source);
-                setManualResult(undefined);
-              }}
-              onInstall={() => setManualResult(run("install", manualSource))}
-              operation={manualOp}
-              error={
-                manualResult?.status === "invalid"
-                  ? manualResult.message
-                  : undefined
-              }
-            />
             <div className="package-search">
               <Search size={17} aria-hidden="true" />
               <input
@@ -444,7 +440,7 @@ export function Extensions() {
                       </div>
                     </div>
                     <div className="package-card-footer">
-                      <CopySource source={`npm:${pkg.name}@${pkg.version}`} />
+                      <CopyCommand name={pkg.name} />
                       <div className="package-actions">
                         {op?.status === "running" ? (
                           <Progress op={op} />
@@ -457,7 +453,11 @@ export function Extensions() {
                             </span>
                             <ConfirmButton
                               className="quiet"
-                              title={t.packageRemoval}
+                              title={
+                                t[
+                                  "This package will be removed from your pi configuration. Open chats will be reloaded."
+                                ]
+                              }
                               onConfirm={() => run("uninstall", source)}
                             >
                               <Trash2 size={13} />
@@ -476,9 +476,7 @@ export function Extensions() {
                                     "Packages can run code on your machine. Only install packages you trust."
                                   ]
                             }
-                            onConfirm={() =>
-                              run("install", `npm:${pkg.name}@${pkg.version}`)
-                            }
+                            onConfirm={() => run("install", source)}
                           >
                             <Download size={14} />
 
@@ -545,7 +543,9 @@ export function Extensions() {
           </>
         ) : (
           <>
-            <p className="package-results muted">{t.packageSelectionHelp}</p>
+            <p className="package-results muted">
+              {t["Packages from your user and project configuration."]}
+            </p>
             {installedLoading && (
               <p className="status" role="status">
                 <LoaderCircle size={14} className="spinner" />
@@ -625,7 +625,11 @@ export function Extensions() {
                           )}
                           <ConfirmButton
                             className="quiet"
-                            title={t.packageRemoval}
+                            title={
+                              t[
+                                "This package will be removed from your pi configuration. Open chats will be reloaded."
+                              ]
+                            }
                             onConfirm={() => run("uninstall", pkg.source)}
                           >
                             <Trash2 size={13} />
@@ -642,7 +646,7 @@ export function Extensions() {
           </>
         )}
       </section>
-    </ContentPage>
+    </div>
   );
 }
 function ErrorState({

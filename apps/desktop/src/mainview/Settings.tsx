@@ -1,4 +1,5 @@
 import {
+  ArrowLeft,
   ChevronDown,
   Keyboard,
   Palette,
@@ -16,8 +17,8 @@ import {
   normalizeCombo,
   resolveBindings,
 } from "../shared/keymap";
-import { ContentPage } from "./ContentPage";
 import { useT } from "./i18n";
+import { navigate } from "./navigation";
 import { updateAppearance, updateSettings } from "./rpc";
 import { useStore } from "./store";
 import "./settings.css";
@@ -51,134 +52,152 @@ export function Settings() {
     { id: "keyboard", label: t["Keyboard shortcuts"], icon: Keyboard },
   ];
   return (
-    <ContentPage className="settings-page" title={t.Settings}>
-      <div className="settings-layout">
-        <nav className="settings-nav" aria-label={t.Settings}>
-          {categories.map(({ id, label, icon: Icon }, index) => (
-            <button
-              key={id}
-              id={`settings-category-${id}`}
-              type="button"
-              aria-current={category === id ? "page" : undefined}
-              aria-controls="settings-content"
-              tabIndex={category === id ? 0 : -1}
-              onClick={() => setCategory(id)}
-              onKeyDown={(event) => {
-                let next = index;
-                if (["ArrowDown", "ArrowRight"].includes(event.key))
-                  next = (index + 1) % categories.length;
-                else if (["ArrowUp", "ArrowLeft"].includes(event.key))
-                  next = (index + categories.length - 1) % categories.length;
-                else if (event.key === "Home") next = 0;
-                else if (event.key === "End") next = categories.length - 1;
-                else return;
-                event.preventDefault();
-                event.stopPropagation();
-                setCategory(categories[next].id);
-                document
-                  .getElementById(`settings-category-${categories[next].id}`)
-                  ?.focus();
-              }}
-            >
-              <Icon size={16} aria-hidden="true" />
-              {label}
-            </button>
-          ))}
-        </nav>
-        <section
-          id="settings-content"
-          className="settings-content"
-          aria-labelledby={`settings-category-${category}`}
-        >
-          <h2>{categories.find(({ id }) => id === category)?.label}</h2>
-          {category === "general" && (
-            <SettingsSection>
-              <SettingsRow
-                label={<label htmlFor="settings-language">{t.Language}</label>}
+    <div className="settings-page">
+      <div className="settings-shell">
+        <header className="settings-header">
+          <button
+            className="back-button"
+            type="button"
+            onClick={() => navigate("chat")}
+          >
+            <ArrowLeft size={14} aria-hidden="true" /> {t["Back to chat"]}
+          </button>
+          <h1>{t.Settings}</h1>
+        </header>
+        <div className="settings-layout">
+          <nav className="settings-nav" aria-label={t.Settings}>
+            {categories.map(({ id, label, icon: Icon }, index) => (
+              <button
+                key={id}
+                id={`settings-category-${id}`}
+                type="button"
+                aria-current={category === id ? "page" : undefined}
+                aria-controls="settings-content"
+                tabIndex={category === id ? 0 : -1}
+                onClick={() => setCategory(id)}
+                onKeyDown={(event) => {
+                  let next = index;
+                  if (["ArrowDown", "ArrowRight"].includes(event.key))
+                    next = (index + 1) % categories.length;
+                  else if (["ArrowUp", "ArrowLeft"].includes(event.key))
+                    next = (index + categories.length - 1) % categories.length;
+                  else if (event.key === "Home") next = 0;
+                  else if (event.key === "End") next = categories.length - 1;
+                  else return;
+                  event.preventDefault();
+                  event.stopPropagation();
+                  setCategory(categories[next].id);
+                  document
+                    .getElementById(`settings-category-${categories[next].id}`)
+                    ?.focus();
+                }}
               >
-                <div className="settings-select">
-                  <select
-                    id="settings-language"
-                    value={settings.language}
-                    onChange={(e) =>
-                      updateSettings({
-                        language: e.target.value as "en" | "ja",
-                      })
-                    }
-                  >
-                    <option value="en">English</option>
-                    <option value="ja">日本語</option>
-                  </select>
-                  <ChevronDown size={14} aria-hidden="true" />
-                </div>
-              </SettingsRow>
-              <SettingsRow
-                label={
-                  <label htmlFor="settings-agent-shell">
-                    {t["Agent shell"]}
-                  </label>
-                }
-              >
-                <div className="settings-select">
-                  <select
-                    id="settings-agent-shell"
-                    value={settings.shell}
-                    onChange={(event) =>
-                      updateSettings({
-                        shell: event.target.value as "git-bash" | "powershell",
-                      })
-                    }
-                  >
-                    <option value="git-bash">{t["Git Bash"]}</option>
-                    <option value="powershell">{t.PowerShell}</option>
-                  </select>
-                  <ChevronDown size={14} aria-hidden="true" />
-                </div>
-              </SettingsRow>
-              <SettingsRow
-                label={
-                  <label htmlFor="settings-block-images">
-                    {t["Block images"]}
-                  </label>
-                }
-              >
-                <input
-                  id="settings-block-images"
-                  type="checkbox"
-                  checked={settings.blockImages}
-                  onChange={(event) =>
-                    updateSettings({ blockImages: event.target.checked })
+                <Icon size={16} aria-hidden="true" />
+                {label}
+              </button>
+            ))}
+          </nav>
+          <section
+            id="settings-content"
+            className="settings-content"
+            aria-labelledby={`settings-category-${category}`}
+          >
+            <h2>{categories.find(({ id }) => id === category)?.label}</h2>
+            {category === "general" && (
+              <SettingsSection>
+                <SettingsRow
+                  label={
+                    <label htmlFor="settings-language">{t.Language}</label>
                   }
-                />
-              </SettingsRow>
-              <SettingsRow
-                label={
-                  <span id="context-display-label">{t["Context display"]}</span>
-                }
-              >
-                <fieldset
-                  className="segmented-control"
-                  aria-labelledby="context-display-label"
                 >
-                  {(["remaining", "used"] as const).map((mode) => (
-                    <button
-                      key={mode}
-                      type="button"
-                      aria-pressed={settings.contextDisplay === mode}
-                      onClick={() => updateSettings({ contextDisplay: mode })}
+                  <div className="settings-select">
+                    <select
+                      id="settings-language"
+                      value={settings.language}
+                      onChange={(e) =>
+                        updateSettings({
+                          language: e.target.value as "en" | "ja",
+                        })
+                      }
                     >
-                      {mode === "remaining" ? t.Remaining : t.Used}
-                    </button>
-                  ))}
-                </fieldset>
-              </SettingsRow>
-            </SettingsSection>
-          )}
-          {category === "appearance" && <AppearanceSettings />}
-          {category === "keyboard" && <KeyboardSettings />}
-        </section>
+                      <option value="en">English</option>
+                      <option value="ja">日本語</option>
+                    </select>
+                    <ChevronDown size={14} aria-hidden="true" />
+                  </div>
+                </SettingsRow>
+                <SettingsRow
+                  label={
+                    <label htmlFor="settings-agent-shell">
+                      {t["Agent shell"]}
+                    </label>
+                  }
+                >
+                  <div className="settings-select">
+                    <select
+                      id="settings-agent-shell"
+                      value={settings.shell}
+                      onChange={(event) =>
+                        updateSettings({
+                          shell: event.target.value as
+                            | "git-bash"
+                            | "powershell",
+                        })
+                      }
+                    >
+                      <option value="git-bash">{t["Git Bash"]}</option>
+                      <option value="powershell">{t.PowerShell}</option>
+                    </select>
+                    <ChevronDown size={14} aria-hidden="true" />
+                  </div>
+                </SettingsRow>
+                <SettingsRow
+                  label={
+                    <label htmlFor="settings-block-images">
+                      {t["Block images"]}
+                    </label>
+                  }
+                >
+                  <input
+                    id="settings-block-images"
+                    type="checkbox"
+                    checked={settings.blockImages}
+                    onChange={(event) =>
+                      updateSettings({ blockImages: event.target.checked })
+                    }
+                  />
+                </SettingsRow>
+                <SettingsRow
+                  label={
+                    <span id="context-display-label">
+                      {t["Context display"]}
+                    </span>
+                  }
+                >
+                  <fieldset
+                    className="segmented-control"
+                    aria-labelledby="context-display-label"
+                  >
+                    {(["remaining", "used"] as const).map((mode) => (
+                      <button
+                        key={mode}
+                        type="button"
+                        aria-pressed={settings.contextDisplay === mode}
+                        onClick={() => updateSettings({ contextDisplay: mode })}
+                      >
+                        {mode === "remaining" ? t.Remaining : t.Used}
+                      </button>
+                    ))}
+                  </fieldset>
+                </SettingsRow>
+              </SettingsSection>
+            )}
+            {category === "appearance" && <AppearanceSettings />}
+            {category === "keyboard" && <KeyboardSettings />}
+          </section>
+        </div>
       </div>
-    </ContentPage>
+    </div>
   );
 }
 

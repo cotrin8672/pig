@@ -11,9 +11,5 @@
   "files": [
     "src",
     "README.md"
-  ],
-  "peerDependencies": {
-    "@earendil-works/pi-ai": "1.5.0",
-    "@earendil-works/pi-durable": "1.5.0"
-  }
+  ]
 }

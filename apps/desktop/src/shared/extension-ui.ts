@@ -18,6 +18,7 @@ export type UIRequest = UIAddress & {
           kind: "code" | "settings" | "instructions" | "skill" | "prompt";
         }[];
       }
+    | { kind: "terminal" }
   );
 export type UIReply = UIAddress &
   (

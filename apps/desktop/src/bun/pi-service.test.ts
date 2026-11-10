@@ -1,95 +1,116 @@
 import { expect, test } from "bun:test";
+import { existsSync } from "node:fs";
 import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { isolatedP0Env } from "../../scripts/durable-p0";
-import { runCommand } from "./command-executor";
 
-const service = JSON.stringify(
-  new URL("./pi-service.ts", import.meta.url).href,
-);
-
-// Native/bootstrap imports must happen AFTER the RTK child receives isolated HOME.
-async function runServiceScript(script: string) {
-  const scratch = process.env.PI_SCRATCH_DIR;
-  if (!scratch) throw new Error("PI_SCRATCH_DIR required");
-  const home = await mkdtemp(join(scratch, "pig-app-native-"));
+// Subprocess isolation is required before importing profile/bootstrap/catalog.
+test("application uses the fixed SDK profile and preserves model/auth helpers", async () => {
+  const home = await mkdtemp(join(tmpdir(), "pig-app-sdk-"));
   try {
-    const result = await runCommand(process.execPath, ["--eval", script], {
-      cwd: import.meta.dir,
-      env: { ...isolatedP0Env(home), PI_OFFLINE: "1" },
-      timeout: 25_000,
-    });
-    expect(result, `${result.stdout}\n${result.stderr}`).toMatchObject({
-      exitCode: 0,
-    });
-    expect(result.stderr).not.toContain("Unhandled");
-  } finally {
-    await rm(home, { recursive: true, force: true });
-  }
-}
-
-test("native application preserves service exports, model/auth helpers and metadata-only reopen", async () => {
-  await runServiceScript(`
-    import { expect } from "bun:test";
-    import { existsSync } from "node:fs";
-    import { join } from "node:path";
-    import { fauxProvider } from "@earendil-works/pi-ai";
-    const app = await import(${service});
-    try {
-      expect(app.application.host).toBe(app.host);
-      const events = [];
-      app.configureApplication({runtime: e => events.push(e), ui() {}});
+    const script = `
+      import { expect } from "bun:test";
+      import { fauxProvider, fauxAssistantMessage } from "@earendil-works/pi-ai";
+      import * as app from ${JSON.stringify(new URL("./pi-service.ts", import.meta.url).href)};
+      import { SessionHost } from ${JSON.stringify(new URL("./session-host.ts", import.meta.url).href)};
       expect((await app.utilityModels()).imageModels.some(m => m.provider === "openai-codex")).toBe(false);
       await app.credentials.modify("openai-codex", async () => ({type: "oauth", access: "test-only", refresh: "test-only", expires: Date.now() + 3600000, accountId: "test-account"}));
       expect((await app.utilityModels()).imageModels.filter(m => m.provider === "openai-codex").length).toBe(2);
       await app.credentials.delete("openai-codex");
-      const model = fauxProvider().getModel();
-      expect(app.modelInfo({...model, api: "anthropic-messages", compat: {forceAdaptiveThinking: true}}).adaptiveThinking).toBe(true);
-      await app.initializeApplication([process.env.HOME]);
-      await app.application.connect({clientId: "root"});
-      const chat = await app.openSession({cwd: process.env.HOME, openId: "first"});
-      await app.application.ready(chat.address);
-      expect(chat.info.id).toMatch(/^d2_[a-f0-9]{32}_[1-9][0-9]*$/);
+      const faux = fauxProvider({tokensPerSecond: Infinity});
+      const events = [];
+      const host = new SessionHost({credentials: app.credentials, modelInfo: app.modelInfo, emit: e => events.push(e), emitUI() {}, emitTerminal() {}, configureModels: models => {models.registerNativeProvider(faux.provider);}});
+      const input = {cwd: ${JSON.stringify(home)}, openId: "open-1"};
+      const first = host.openSession(input);
+      expect(host.openSession(input)).toBe(first);
+      const chat = await first;
       expect(chat.info.id).toBe(chat.address.sessionId);
-      expect(chat.address.hostId).toBe(app.host.hostId);
-      await app.renameSession(chat.info, "Native metadata only");
-      await app.closeSession(chat.address);
-      const reopened = await app.openSession({cwd: process.env.HOME, id: chat.info.id, openId: "reopen"});
+      expect(chat.address.hostId).toBe(host.hostId);
+      expect(chat.info.id).not.toMatch(/^\\d+$/);
+      await host.setModel({...chat.address, provider: faux.getModel().provider, id: faux.getModel().id});
+      faux.setResponses([fauxAssistantMessage("App answer")]);
+      const send = {...chat.address, text: "App hello", requestId: "app-1", draftRevision: 0};
+      expect(await host.prompt(send)).toEqual({disposition: "started"});
+      await host.session(chat.info.id).waitForIdle();
+      await host.receipts.settled();
+      expect(host.getPromptReceipt(send).state).toBe("accepted");
+      const snapshot = host.getSessionSnapshot(chat.address);
+      expect(snapshot.transcript.records.some(r => r.kind === "message" && r.message.role === "assistant")).toBe(true);
+      expect(snapshot.transcript.running).toBe(false);
+      expect(snapshot.snapshotSeq).toBeGreaterThan(chat.snapshotSeq);
+      expect(events.some(e => e.type === "snapshot")).toBe(true);
+      await host.renameSession(chat.info, "Renamed");
+      expect((await host.listSessions(input.cwd)).find(s => s.id === chat.info.id).title).toBe("Renamed");
+      const model = faux.getModel();
+      expect(app.modelInfo({...model, api: "anthropic-messages", compat: {forceAdaptiveThinking: true}}).adaptiveThinking).toBe(true);
+      await app.credentials.modify(model.provider, async () => ({type: "api_key", key: "test-only"}));
+      await expect(host.prompt({...send, text: "", requestId: "empty"})).rejects.toThrow("empty");
+      await host.closeSession(chat.address);
+      expect(host.getPromptReceipt(send).state).toBe("accepted");
+      const reopened = await host.openSession({...input, openId: "open-2", id: chat.info.id});
       expect(reopened.address.epoch).toBeGreaterThan(chat.address.epoch);
-      expect(reopened.info.title).toBe("Native metadata only");
-      expect(reopened.transcript.records.filter(r => r.kind === "message")).toHaveLength(0);
-      await expect(app.host.getSnapshot(chat.address)).rejects.toThrow("STALE_SESSION_ADDRESS");
-      expect((await app.listSessions(process.env.HOME)).map(s => s.id)).toEqual([chat.info.id]);
-      expect(events.some(e => e.type === "ready")).toBe(true);
-      expect(existsSync(join(process.env.HOME, ".config", "pig", "auth.json"))).toBe(true);
-      expect(existsSync(join(process.env.HOME, ".config", "pig", "pi-agent"))).toBe(false);
-      expect(existsSync(join(process.env.HOME, ".pi", "agent"))).toBe(false);
-    } finally { await app.disposeSessions(); }
-  `);
+      expect(reopened.info.title).toBe("Renamed");
+      expect(() => host.getSessionSnapshot(chat.address)).toThrow("STALE");
+      const userEntry = reopened.transcript.records.find(r => r.kind === "message" && r.message.role === "user");
+      await host.rewindSession({...reopened.address, entryId:userEntry.entryId});
+      await host.closeSession(reopened.address);
+      const rewound = await host.openSession({...input, openId:"rewound-reopen", id:chat.info.id});
+      expect(rewound.transcript.records.filter(r => r.kind === "message")).toHaveLength(0);
+      expect(rewound.info.title).toBe("Renamed");
+      await host.deleteSession(reopened.info);
+      expect(await host.listSessions(input.cwd)).toEqual([]);
+      await host.dispose(); await app.disposeSessions();
+    `;
+    const child = Bun.spawn([process.execPath, "--eval", script], {
+      cwd: join(import.meta.dir, "../.."),
+      env: { ...process.env, HOME: home, USERPROFILE: home, PI_OFFLINE: "1" },
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+    const [code, stdout, stderr] = await Promise.all([
+      child.exited,
+      new Response(child.stdout).text(),
+      new Response(child.stderr).text(),
+    ]);
+    expect({ code, stdout, stderr }).toMatchObject({ code: 0 });
+    expect(
+      existsSync(join(home, ".config", "pig", "pi-agent", "sessions")),
+    ).toBe(true);
+    expect(existsSync(join(home, ".config", "pig", "auth.json"))).toBe(true);
+    expect(existsSync(join(home, ".pi", "agent"))).toBe(false);
+  } finally {
+    await rm(home, { recursive: true, force: true });
+  }
 }, 30_000);
 
 test("provider status, availability and requests ignore ambient credentials", async () => {
-  await runServiceScript(`
-    import { expect } from "bun:test";
-    import { mkdir, writeFile } from "node:fs/promises";
-    import { join } from "node:path";
-    const home = process.env.HOME;
-    await mkdir(join(home, ".config/gcloud"), {recursive: true});
-    await writeFile(join(home, ".config/gcloud/application_default_credentials.json"), "{}");
-    process.env.OPENAI_API_KEY = "ambient-openai";
-    process.env.ANTHROPIC_API_KEY = "ambient-anthropic";
-    process.env.AWS_ACCESS_KEY_ID = "ambient-aws";
-    process.env.AWS_SECRET_ACCESS_KEY = "ambient-secret";
-    process.env.GOOGLE_CLOUD_PROJECT = "ambient-project";
-    process.env.GOOGLE_CLOUD_LOCATION = "us-central1";
-    const app = await import(${service});
-    try {
+  const home = await mkdtemp(join(tmpdir(), "pig-app-auth-"));
+  try {
+    // A subprocess isolates process.env and the module-level app runtime; the
+    // parent's environment is never changed and the child's dies on exit.
+    const script = `
+      import { expect } from "bun:test";
+      import { mkdir, writeFile } from "node:fs/promises";
+      import { join } from "node:path";
+      const home = ${JSON.stringify(home)};
+      await mkdir(join(home, ".config/gcloud"), {recursive: true});
+      await writeFile(join(home, ".config/gcloud/application_default_credentials.json"), "{}");
+      process.env.OPENAI_API_KEY = "ambient-openai";
+      process.env.ANTHROPIC_API_KEY = "ambient-anthropic";
+      process.env.AWS_ACCESS_KEY_ID = "ambient-aws";
+      process.env.AWS_SECRET_ACCESS_KEY = "ambient-secret";
+      process.env.GOOGLE_CLOUD_PROJECT = "ambient-project";
+      process.env.GOOGLE_CLOUD_LOCATION = "us-central1";
+      const app = await import(${JSON.stringify(new URL("./pi-service.ts", import.meta.url).href)});
       expect(await app.credentials.list()).toEqual([]);
       expect((await app.listProviders()).find(p => p.id === "openai")).toMatchObject({name: "OpenAI ChatGPT", apiKey: false, oauth: {label: "Sign in with ChatGPT"}});
       expect((await app.listProviders()).find(p => p.id === "openai-api")).toMatchObject({name: "OpenAI API", apiKey: true, oauth: undefined});
-      const subscription = structuredClone(app.runtime.getAllModels("openai"));
-      expect(app.runtime.getAllModels("openai-api")).toEqual(subscription.map(m => ({...m, provider: "openai-api"})));
-      // Mock catalog transport, including utility types absent from the baseline.
+      const mirror = () => {
+        const upstream = app.runtime.getAllModels("openai");
+        expect(app.runtime.getAllModels("openai-api")).toEqual(upstream.map(m => ({...m, provider: "openai-api"})));
+      };
+      mirror();
+      // Mock the catalog transport, including utility types absent from the baseline.
       const base = app.runtime.getModels("openai")[0];
       const remote = [base, {...base, type: "image", api: "openai-images", id: "split-image"}, {...base, type: "classifier", api: "openai-decisions", id: "split-classifier"}];
       const requests = [];
@@ -105,16 +126,11 @@ test("provider status, availability and requests ignore ambient credentials", as
         expect(requests).toHaveLength(1);
         expect(new URL(requests[0]).pathname).toBe("/api/models/providers/openai");
       } finally { globalThis.fetch = originalFetch; }
-      const published = structuredClone(app.runtime.getAllModels("openai-api"));
-      const catalogUnchanged = () => {
-        expect(app.runtime.getAllModels("openai")).toEqual(subscription);
-        expect(app.runtime.getAllModels("openai-api")).toEqual(published);
-      };
-      catalogUnchanged();
+      mirror();
       expect(app.runtime.getAllModels("openai-api").map(m => m.id)).toContain("split-image");
       expect(app.runtime.getAllModels("openai-api").map(m => m.id)).toContain("split-classifier");
       await app.refreshModels({allowNetwork: false});
-      catalogUnchanged();
+      mirror();
       expect(app.runtime.getProvider("openai-api").auth.oauth).toBeUndefined();
       const configFile = join(home, ".config", "pig", "models.json");
       await writeFile(configFile, JSON.stringify({providers: {"openai-api": {modelOverrides: {[base.id]: {name: "API-only override"}}}}}));
@@ -123,13 +139,15 @@ test("provider status, availability and requests ignore ambient credentials", as
       expect(app.runtime.getModel("openai", base.id).name).toBe(base.name);
       await writeFile(configFile, "{}");
       await app.refreshModels({allowNetwork: false});
-      catalogUnchanged();
+      mirror();
       await app.credentials.delete("openai-api");
-      for (const id of ["openai-api", "anthropic", "amazon-bedrock", "google-vertex"]) {
+      const ids = ["openai-api", "anthropic", "amazon-bedrock", "google-vertex"];
+      for (const id of ids) {
         expect((await app.listProviders()).find(p => p.id === id)).toMatchObject({configured: false, stored: false});
         expect(await app.runtime.checkAuth(id)).toBeUndefined();
         expect(await app.runtime.getAuth(id)).toBeUndefined();
         expect(await app.runtime.getAllAvailable(id)).toEqual([]);
+        // Unavailable catalog models must not dispatch, even if selected by ID.
         const provider = app.runtime.getProvider(id);
         const model = app.runtime.getModels(id)[0];
         expect(model).toBeDefined();
@@ -139,7 +157,7 @@ test("provider status, availability and requests ignore ambient credentials", as
           expect(options.apiKey).toBe("stored-" + id);
           throw new Error("test dispatch reached");
         };
-        app.runtime.setProvider({...provider, stream: dispatch, streamSimple: dispatch});
+        app.runtime.registerNativeProvider({...provider, stream: dispatch, streamSimple: dispatch});
         const context = {messages: []};
         for (const complete of [app.runtime.complete.bind(app.runtime), app.runtime.completeSimple.bind(app.runtime)]) {
           const result = await complete(model, context);
@@ -147,6 +165,7 @@ test("provider status, availability and requests ignore ambient credentials", as
           expect(result.errorMessage).toContain("Provider is not configured");
         }
         expect(dispatched).toBe(0);
+        // The same runtime observes credentials saved by the app without restart.
         await app.credentials.modify(id, async () => ({type: "api_key", key: "stored-" + id}));
         expect((await app.listProviders()).find(p => p.id === id)).toMatchObject({configured: true, stored: true});
         expect(await app.runtime.checkAuth("openai")).toBeUndefined();
@@ -162,22 +181,37 @@ test("provider status, availability and requests ignore ambient credentials", as
         await app.credentials.delete(id);
         expect(await app.runtime.checkAuth(id)).toBeUndefined();
       }
-    } finally { await app.disposeSessions(); }
-  `);
-}, 30_000);
+    `;
+    const child = Bun.spawn([process.execPath, "--eval", script], {
+      cwd: join(import.meta.dir, "../.."),
+      env: { ...process.env, HOME: home, USERPROFILE: home, PI_OFFLINE: "1" },
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+    const [code, stdout, stderr] = await Promise.all([
+      child.exited,
+      new Response(child.stdout).text(),
+      new Response(child.stderr).text(),
+    ]);
+    expect({ code, stdout, stderr }).toMatchObject({ code: 0 });
+  } finally {
+    await rm(home, { recursive: true, force: true });
+  }
+}, 15_000);
 
 test("models.json composes app configuration and malformed config reports an error without crashing startup", async () => {
   for (const invalid of [false, true]) {
-    await runServiceScript(`
-      import { expect } from "bun:test";
-      import { mkdir, writeFile } from "node:fs/promises";
-      import { join } from "node:path";
-      const dir = join(process.env.HOME, ".config", "pig");
-      await mkdir(dir, {recursive: true});
-      const config = {providers: {local: {api: "openai-completions", baseUrl: "http://localhost:1234", apiKey: "literal", models: [{id: "custom"}]}}};
-      await writeFile(join(dir, "models.json"), ${invalid} ? '{"providers":[]}' : '// JSONC is supported\\n' + JSON.stringify(config));
-      const app = await import(${service});
-      try {
+    const home = await mkdtemp(join(tmpdir(), "pig-app-model-config-"));
+    try {
+      const script = `
+        import { expect } from "bun:test";
+        import { mkdir, writeFile } from "node:fs/promises";
+        import { join } from "node:path";
+        const dir = join(${JSON.stringify(home)}, ".config", "pig");
+        await mkdir(dir, {recursive: true});
+        const config = {providers: {local: {api: "openai-completions", baseUrl: "http://localhost:1234", apiKey: "literal", models: [{id: "custom"}]}}};
+        await writeFile(join(dir, "models.json"), ${invalid} ? '{"providers":[]}' : '// JSONC is supported\\n' + JSON.stringify(config));
+        const app = await import(${JSON.stringify(new URL("./pi-service.ts", import.meta.url).href)});
         if (${invalid}) {
           expect(app.modelErrors.some(e => e.includes("models.json"))).toBe(true);
           expect(app.runtime.getProviders().length).toBeGreaterThan(0);
@@ -190,10 +224,24 @@ test("models.json composes app configuration and malformed config reports an err
         }
         const {fauxProvider} = await import("@earendil-works/pi-ai");
         const {provider} = fauxProvider();
-        app.runtime.setProvider({...provider, refreshModels: async () => {throw new Error("catalog failure");}});
+        app.runtime.registerNativeProvider({...provider, refreshModels: async () => {throw new Error("catalog failure");}});
         await app.refreshModels({allowNetwork: false});
         expect(app.modelErrors.some(e => e.includes("catalog failure"))).toBe(true);
-      } finally { await app.disposeSessions(); }
-    `);
+      `;
+      const child = Bun.spawn([process.execPath, "--eval", script], {
+        cwd: join(import.meta.dir, "../.."),
+        env: { ...process.env, HOME: home, USERPROFILE: home, PI_OFFLINE: "1" },
+        stdout: "pipe",
+        stderr: "pipe",
+      });
+      const [code, stdout, stderr] = await Promise.all([
+        child.exited,
+        new Response(child.stdout).text(),
+        new Response(child.stderr).text(),
+      ]);
+      expect({ code, stdout, stderr }).toMatchObject({ code: 0 });
+    } finally {
+      await rm(home, { recursive: true, force: true });
+    }
   }
-}, 30_000);
+}, 15_000);

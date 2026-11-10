@@ -5,34 +5,10 @@ import {
   type Model,
   type Provider,
   type ProviderAuth,
-  type ProviderStreams,
 } from "@earendil-works/pi-ai";
-import { anthropicMessagesApi } from "@earendil-works/pi-ai/api/anthropic-messages.lazy";
-import { azureOpenAIResponsesApi } from "@earendil-works/pi-ai/api/azure-openai-responses.lazy";
-import { bedrockConverseStreamApi } from "@earendil-works/pi-ai/api/bedrock-converse-stream.lazy";
-import { googleGenerativeAIApi } from "@earendil-works/pi-ai/api/google-generative-ai.lazy";
-import { googleVertexApi } from "@earendil-works/pi-ai/api/google-vertex.lazy";
-import { mistralConversationsApi } from "@earendil-works/pi-ai/api/mistral-conversations.lazy";
-import { openAICodexResponsesApi } from "@earendil-works/pi-ai/api/openai-codex-responses.lazy";
-import { openAICompletionsApi } from "@earendil-works/pi-ai/api/openai-completions.lazy";
-import { openAIResponsesApi } from "@earendil-works/pi-ai/api/openai-responses.lazy";
-import { piMessagesApi } from "@earendil-works/pi-ai/api/pi-messages.lazy";
+import { getApiProvider } from "@earendil-works/pi-ai/compat";
 import { radiusProvider } from "@earendil-works/pi-ai/providers/radius";
 import { resolveSavedValue } from "./config-value";
-
-// Code-only factories, never a global registry or shared provider instances.
-const apiFactories: ReadonlyMap<string, () => ProviderStreams> = new Map([
-  ["anthropic-messages", anthropicMessagesApi],
-  ["azure-openai-responses", azureOpenAIResponsesApi],
-  ["bedrock-converse-stream", bedrockConverseStreamApi],
-  ["google-generative-ai", googleGenerativeAIApi],
-  ["google-vertex", googleVertexApi],
-  ["mistral-conversations", mistralConversationsApi],
-  ["openai-codex-responses", openAICodexResponsesApi],
-  ["openai-completions", openAICompletionsApi],
-  ["openai-responses", openAIResponsesApi],
-  ["pi-messages", piMessagesApi],
-]);
 
 type ObjectValue = Record<string, unknown>;
 function object(value: unknown): value is ObjectValue {
@@ -253,7 +229,7 @@ export function composeProviders(
           models[0];
         const api = definition.api ?? raw.api ?? defaults?.api;
         const baseUrl = definition.baseUrl ?? raw.baseUrl ?? defaults?.baseUrl;
-        if (typeof api !== "string" || !apiFactories.has(api))
+        if (typeof api !== "string" || !getApiProvider(api as Api))
           throw new Error(`Provider ${id}: unknown or missing api`);
         if (typeof baseUrl !== "string" || !baseUrl)
           throw new Error(`Provider ${id}: baseUrl is required`);
@@ -374,15 +350,9 @@ export function composeProviders(
     };
     if (!inherited && rawKey === undefined && base?.auth.oauth)
       delete auth.apiKey;
-    const apis = new Map<string, ProviderStreams>();
-    const dispatch = (model: Model<Api>): ProviderStreams => {
-      const factory = apiFactories.get(model.api);
-      if (!factory) throw new Error(`Unknown API ${model.api}`);
-      let api = apis.get(model.api);
-      if (!api) {
-        api = factory();
-        apis.set(model.api, api);
-      }
+    const dispatch = (model: Model<Api>) => {
+      const api = getApiProvider(model.api);
+      if (!api) throw new Error(`Unknown API ${model.api}`);
       return api;
     };
     const custom = createProvider({

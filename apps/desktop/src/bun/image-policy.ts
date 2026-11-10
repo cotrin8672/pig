@@ -1,81 +1,35 @@
-import type { JsonValue } from "@earendil-works/chord";
-import type { ImageContent } from "@earendil-works/pi-ai";
-import {
-  defineExtension,
-  GenerationTask,
-  hook,
-  type ToolDiagnostic,
-  type ToolExecutionResult,
-  type ToolRegistration,
-  ToolTask,
-  type UserInput,
-  wrapTool,
-} from "@earendil-works/pi-durable";
-import { createNodePhotonImages } from "@earendil-works/pi-durable/images/node";
-import {
-  DEFAULT_IMAGE_LIMITS,
-  type ImageLimits,
-  type ImageProcessor,
-  type PreparedImage,
-} from "@earendil-works/pi-durable/tools";
+import { createHash } from "node:crypto";
+import type { Api, ImageContent, Model } from "@earendil-works/pi-ai";
+import type { ExtensionFactory } from "@earendil-works/pi-coding-agent";
+import { formatDimensionNote, resizeImage } from "./sdk";
 
 export const blockedImageNote =
   "[Image removed: images are blocked by settings.]";
 export const decodeImageNote =
   "[Image could not be decoded or resized to fit model limits.]";
-const boundedNote = "[Value omitted: policy JSON limit.]";
-const MAX_JSON_BYTES = 1024 * 1024;
-type PolicyJsonLimits = {
-  maxBytes?: number;
-  maxNodes?: number;
-  maxDepth?: number;
-  strict?: boolean;
-};
-const projectionLimits: PolicyJsonLimits = {
-  maxBytes: 64 * MAX_JSON_BYTES,
-  maxNodes: 500_000,
-  maxDepth: 64,
-  strict: true,
-};
-let photon: Promise<ImageProcessor> | undefined;
-const defaultProcessor = () => (photon ??= createNodePhotonImages());
-function dimensions(image: PreparedImage): string | undefined {
-  if (!image.resized) return;
-  const { from, to } = image.resized;
-  return `Resized from ${from.width}x${from.height} to ${to.width}x${to.height}. Multiply coordinates by ${(from.width / to.width).toFixed(2)} to map them to the original.`;
-}
-
-/** Both idle AND queued admission must call this before Conversation.submit().
- * Disabled images return before base64 decode or Photon initialization. */
 export async function preparePromptImages(
-  images: readonly ImageContent[],
+  images: ImageContent[],
   options: {
-    queued?: boolean;
+    queued: boolean;
     blockImages: boolean;
-    provider?: string;
-    modelId?: string;
+    provider: string;
+    modelId: string;
   },
-  limits?: Partial<ImageLimits>,
-  processor?: ImageProcessor,
+  // Captured from this session's model, never a process-global provider/id map.
+  resizeOptions?: Parameters<typeof resizeImage>[2],
 ): Promise<{ images: ImageContent[]; hints: string[] }> {
   if (options.blockImages)
     return { images: [], hints: images.map(() => blockedImageNote) };
+  // SDK idle prompt owns normalization. Its followUp path explicitly bypasses it.
+  if (!options.queued) return { images, hints: [] };
   const prepared: ImageContent[] = [],
     hints: string[] = [];
   for (const image of images) {
     try {
-      // Reject malformed/oversized admission rather than allocate arbitrary decoded buffers.
-      if (
-        image.data.length > 64 * 1024 * 1024 ||
-        !/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(
-          image.data,
-        )
-      )
-        throw new Error("Invalid image base64");
-      const result = await (processor ?? (await defaultProcessor())).prepare(
+      const result = await resizeImage(
         Buffer.from(image.data, "base64"),
         image.mimeType,
-        { ...DEFAULT_IMAGE_LIMITS, ...limits },
+        resizeOptions,
       );
       if (!result) {
         hints.push(decodeImageNote);
@@ -86,7 +40,7 @@ export async function preparePromptImages(
         data: result.data,
         mimeType: result.mimeType,
       });
-      const hint = dimensions(result);
+      const hint = formatDimensionNote(result);
       if (hint) hints.push(hint);
     } catch {
       hints.push(decodeImageNote);
@@ -94,226 +48,94 @@ export async function preparePromptImages(
   }
   return { images: prepared, hints };
 }
-
-/** Bounded valid JSON only, for details, results, control values, context and DTOs.
- * No toJSON/getters are executed. This is a data policy, not a trusted-JS sandbox. */
-export function sanitizePolicyValue(
-  value: unknown,
-  blockImages: boolean,
-  limits: PolicyJsonLimits = {},
-): JsonValue {
-  const ancestors = new WeakSet<object>();
-  // Native read repeats one prepared image in output AND structuredOutput.
-  const maxBytes =
-    limits.maxBytes ?? (blockImages ? MAX_JSON_BYTES : 16 * MAX_JSON_BYTES);
-  const maxNodes = limits.maxNodes ?? 10_000;
-  const omitted = (): string => {
-    if (limits.strict) throw new RangeError("Image policy JSON limit exceeded");
-    return boundedNote;
-  };
-  let bytes = 0,
-    nodes = 0;
-  const visit = (item: unknown, depth: number): JsonValue => {
-    if (
-      ++nodes > maxNodes ||
-      depth > (limits.maxDepth ?? 32) ||
-      bytes > maxBytes
-    )
-      return omitted();
-    if (item === null || typeof item === "boolean") return item;
-    if (typeof item === "number") return Number.isFinite(item) ? item : null;
-    if (typeof item === "string") {
-      if (blockImages && /data:image\//i.test(item)) return blockedImageNote;
-      const size = Buffer.byteLength(item);
-      if (size + bytes > maxBytes) return omitted();
-      bytes += size;
-      // JSON-bearing details must not smuggle image objects as strings.
-      if (blockImages && /^\s*[[{]/.test(item)) {
-        let parsed: unknown;
-        try {
-          parsed = JSON.parse(item);
-        } catch {
-          return item;
-        }
-        const clean = JSON.stringify(visit(parsed, depth + 1));
-        return clean === JSON.stringify(parsed) ? item : clean;
-      }
-      return item;
-    }
-    if (!item || typeof item !== "object") return null;
-    if (ancestors.has(item)) return omitted();
-    ancestors.add(item);
-    try {
-      const descriptors = Object.getOwnPropertyDescriptors(item);
-      if (
-        blockImages &&
-        (descriptors.type?.value === "image" ||
-          descriptors.type?.value === "image_url" ||
-          (typeof descriptors.mimeType?.value === "string" &&
-            descriptors.mimeType.value.startsWith("image/")))
-      )
-        return { type: "text", text: blockedImageNote };
-      if (Array.isArray(item)) {
-        const result: JsonValue[] = [];
-        for (let index = 0; index < item.length; index++) {
-          if (nodes >= maxNodes || bytes > maxBytes) {
-            result.push(omitted());
-            break;
-          }
-          result.push(visit(descriptors[String(index)]?.value, depth + 1));
-        }
-        return result;
-      }
-      const result: Record<string, JsonValue> = {};
-      for (const [key, descriptor] of Object.entries(descriptors)) {
-        if (nodes >= maxNodes || bytes > maxBytes) {
-          omitted();
-          break;
-        }
-        if (
-          !descriptor.enumerable ||
-          !("value" in descriptor) ||
-          key === "__proto__"
-        )
-          continue;
-        bytes += Buffer.byteLength(key) + 8;
-        result[key] = visit(descriptor.value, depth + 1);
-      }
-      return result;
-    } finally {
-      ancestors.delete(item);
-    }
-  };
-  const result = visit(value, 0);
-  // Escaping can increase JSON size. Fail closed, still valid JSON.
-  return Buffer.byteLength(JSON.stringify(result)) > maxBytes
-    ? omitted()
-    : result;
-}
+/** JSON-only projection/persistence/context scrub, including custom and tool details. */
 export function scrubImages<T>(value: T): T {
-  return sanitizePolicyValue(value, true, projectionLimits) as T;
-}
-export function sanitizeToolResult(
-  result: ToolExecutionResult,
-  toolName: string,
-  blocked: boolean,
-): ToolExecutionResult {
-  const value = sanitizePolicyValue(result, blocked);
-  if (typeof value !== "object" || value === null || Array.isArray(value))
-    return { isError: true, output: [{ type: "text", text: boundedNote }] };
-  const sanitized = value as ToolExecutionResult;
-  // Native read schema is string | ImageContent, NOT TextContent.
-  if (
-    blocked &&
-    toolName === "read" &&
-    result.structuredOutput &&
-    typeof result.structuredOutput === "object" &&
-    !Array.isArray(result.structuredOutput) &&
-    result.structuredOutput.type === "image"
-  )
-    return { ...sanitized, structuredOutput: blockedImageNote };
-  return sanitized;
+  if (!value || typeof value !== "object") return value;
+  if (Array.isArray(value)) return value.map(scrubImages) as T;
+  if ("type" in value && value.type === "image")
+    return { type: "text", text: blockedImageNote } as T;
+  return Object.fromEntries(
+    Object.entries(value).map(([key, item]) => [key, scrubImages(item)]),
+  ) as T;
 }
 
-export function createNativeImagePolicy(options: {
+/** Runs after discovered extension input handlers. Recognize host-normalized
+ * queue images so they are not resized a second time, but normalize newly
+ * inserted extension images against this session's actual model. */
+export function createQueuedImagePolicy(options: {
   blockImages(): boolean;
-  processor?: ImageProcessor;
+  processing(): void;
+  queued(): void;
+  settled(): void;
 }) {
-  const images: ImageProcessor = {
-    async prepare(bytes, mimeType, limits) {
-      if (options.blockImages()) return undefined;
-      return (options.processor ?? (await defaultProcessor())).prepare(
-        bytes,
-        mimeType,
-        limits,
-      );
-    },
+  const prepared = new Set<string>();
+  const key = (image: ImageContent, model: Model<Api> | undefined) =>
+    createHash("sha256")
+      .update(
+        JSON.stringify([
+          model?.provider,
+          model?.id,
+          model?.inputLimits?.images,
+          image.mimeType,
+          image.data,
+        ]),
+      )
+      .digest("hex");
+  const remember = (images: ImageContent[], model: Model<Api> | undefined) => {
+    for (const image of images) prepared.add(key(image, model));
   };
-  const wrap = <T extends ToolRegistration>(tool: T): T => ({
-    ...tool,
-    async execute(args, api, context) {
-      const result = await tool.execute(
-        args,
-        {
-          ...api,
-          async details(value, detailsContext) {
-            await api.details(
-              sanitizePolicyValue(value, options.blockImages()),
-              detailsContext,
-            );
-          },
-          diagnostic(value) {
-            const clean = sanitizePolicyValue(value, options.blockImages());
-            api.diagnostic(
-              typeof clean === "object" &&
-                clean !== null &&
-                !Array.isArray(clean)
-                ? (clean as ToolDiagnostic)
-                : { severity: "warn", message: boundedNote },
-            );
-          },
-        },
-        context,
-      );
-      return sanitizeToolResult(result, tool.name, options.blockImages());
-    },
-  });
-  return {
-    images,
-    wrap,
-    /** DTO defense: apply at every Host/RPC projection, not only model context. */
-    project<T>(value: T): T {
-      return sanitizePolicyValue(
-        value,
-        options.blockImages(),
-        projectionLimits,
-      ) as T;
-    },
-    async prepareInput(
-      content: UserInput,
-      limits?: Partial<ImageLimits>,
-    ): Promise<UserInput> {
-      if (typeof content === "string") return content;
-      const output: (typeof content)[number][] = [];
-      for (const block of content) {
-        if (block.type !== "image") {
-          output.push(block);
+  const extension: ExtensionFactory = (pi) => {
+    pi.on("input", async (event, ctx) => {
+      if (!event.images?.length) return { action: "continue" };
+      const blocked = options.blockImages(),
+        queued = !ctx.isIdle();
+      if (!blocked && !queued) return { action: "continue" };
+      options.processing();
+      const images: ImageContent[] = [],
+        hints: string[] = [];
+      for (const image of event.images) {
+        if (!blocked && prepared.has(key(image, ctx.model))) {
+          images.push(image);
           continue;
         }
-        const normalized = await preparePromptImages(
-          [block],
-          { blockImages: options.blockImages() },
-          limits,
-          images,
+        const result = await preparePromptImages(
+          [image],
+          {
+            queued,
+            blockImages: blocked,
+            provider: ctx.model?.provider ?? "",
+            modelId: ctx.model?.id ?? "",
+          },
+          ctx.model?.inputLimits?.images?.resize,
         );
-        output.push(
-          ...normalized.images,
-          ...normalized.hints.map((text) => ({ type: "text" as const, text })),
-        );
+        images.push(...result.images);
+        hints.push(...result.hints);
+        remember(result.images, ctx.model);
       }
-      // The policy can change while Photon runs.
-      return options.blockImages() ? scrubImages(output) : output;
-    },
-    /** Mandatory on every effective profile, after third-party wraps/hooks. Does
-     * NOT intercept arbitrary third-party api.commit()/appendEntry()/doc writes:
-     * native 1.5 exposes no universal pre-storage policy hook. */
-    extension(tools: readonly ToolRegistration[]) {
-      return defineExtension({
-        name: "pig.image-policy",
-        wraps: tools.map((tool) => wrapTool(tool, wrap)),
-        hooks: [
-          hook(ToolTask, {
-            afterTool: (call, result) =>
-              sanitizeToolResult(result, call.name, options.blockImages()),
-          }),
-          hook(GenerationTask, {
-            beforeRequest: ({ messages }) =>
-              options.blockImages()
-                ? { messages: scrubImages(messages) }
-                : undefined,
-          }),
-        ],
-      });
-    },
+      if (queued && images.length) options.queued();
+      return {
+        action: "transform",
+        text: [event.text, ...hints].filter(Boolean).join("\n\n"),
+        images,
+      };
+    });
+    pi.on("context_with_system", (event) =>
+      options.blockImages()
+        ? { messages: scrubImages(event.messages) }
+        : undefined,
+    );
+    pi.on("tool_result", (event) =>
+      options.blockImages()
+        ? {
+            content: scrubImages(event.content),
+            details: scrubImages(event.details),
+          }
+        : undefined,
+    );
+    pi.on("agent_settled", () => {
+      prepared.clear();
+      options.settled();
+    });
   };
+  return { remember, extension };
 }

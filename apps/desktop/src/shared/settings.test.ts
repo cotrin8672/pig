@@ -40,23 +40,23 @@ test("utility selections validate independently, preserve settings, and clear", 
     shell: "git-bash",
     blockImages: false,
     imageGenerationModel: null,
-    decisionModel: null,
+    classificationModel: null,
   });
   const imageGenerationModel = {
     provider: "unavailable-provider",
     id: "image-1",
   };
-  const decisionModel = { provider: "typesafe", id: "jev-latest" };
+  const classificationModel = { provider: "typesafe", id: "jev-latest" };
   const selected = patchSettings(validateSettings(old), {
     imageGenerationModel,
-    decisionModel,
+    classificationModel,
   });
   expect(selected).toEqual({
     ...old,
     shell: "git-bash",
     blockImages: false,
     imageGenerationModel,
-    decisionModel,
+    classificationModel,
   });
   expect(patchSettings(selected, { language: "en" })).toEqual({
     ...selected,
@@ -66,11 +66,11 @@ test("utility selections validate independently, preserve settings, and clear", 
     ...selected,
     imageGenerationModel: null,
   });
-  expect(patchSettings(selected, { decisionModel: null })).toEqual({
+  expect(patchSettings(selected, { classificationModel: null })).toEqual({
     ...selected,
-    decisionModel: null,
+    classificationModel: null,
   });
-  for (const field of ["imageGenerationModel", "decisionModel"]) {
+  for (const field of ["imageGenerationModel", "classificationModel"]) {
     for (const value of [
       false,
       "model",

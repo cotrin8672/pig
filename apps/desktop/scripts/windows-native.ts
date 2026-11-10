@@ -91,20 +91,8 @@ export function patchNativeSource(source: string) {
   return source;
 }
 
-function proxy(args: string[]) {
-  const rtk = Bun.which("rtk");
-  if (!rtk)
-    throw new Error(
-      "RTK is required for native builds. Run through mise exec -- rtk proxy pnpm build.",
-    );
-  const executable = Bun.which(args[0]);
-  if (!executable)
-    throw new Error(`Native build executable is missing: ${args[0]}`);
-  return [rtk, "proxy", executable, ...args.slice(1)];
-}
-
 function run(args: string[], cwd: string, env = process.env) {
-  const result = Bun.spawnSync(proxy(args), {
+  const result = Bun.spawnSync(args, {
     cwd,
     env,
     stdio: ["ignore", "inherit", "inherit"],
@@ -221,18 +209,16 @@ async function main() {
       process.env["ProgramFiles(x86)"] ?? "C:/Program Files (x86)",
       "Microsoft Visual Studio/Installer/vswhere.exe",
     );
-    const installation = Bun.spawnSync(
-      proxy([
-        vswhere,
-        "-latest",
-        "-products",
-        "*",
-        "-requires",
-        "Microsoft.VisualStudio.Component.VC.Tools.x86.x64",
-        "-property",
-        "installationPath",
-      ]),
-    );
+    const installation = Bun.spawnSync([
+      vswhere,
+      "-latest",
+      "-products",
+      "*",
+      "-requires",
+      "Microsoft.VisualStudio.Component.VC.Tools.x86.x64",
+      "-property",
+      "installationPath",
+    ]);
     if (installation.exitCode !== 0 || !installation.stdout.toString().trim())
       throw new Error(
         "Install Visual Studio C++ Build Tools with CMake and the Windows SDK.",
@@ -241,19 +227,9 @@ async function main() {
       installation.stdout.toString().trim(),
       "VC/Auxiliary/Build/vcvars64.bat",
     );
-    // Rust/Windows argv quoting escapes embedded quotes for cmd incorrectly.
-    // Expand the quoted, host-owned vcvars path inside cmd instead; preserve /u
-    // raw UTF-16 output through RTK proxy (not a filtered RTK command).
     const variables = Bun.spawnSync(
-      proxy([
-        "cmd.exe",
-        "/d",
-        "/u",
-        "/s",
-        "/c",
-        "call %PIG_NATIVE_VCVARS% >nul && set",
-      ]),
-      { env: { ...process.env, PIG_NATIVE_VCVARS: `"${vcvars}"` } },
+      ["cmd.exe", "/d", "/u", "/s", "/c", `"call "${vcvars}" >nul && set"`],
+      { windowsVerbatimArguments: true },
     );
     if (variables.exitCode !== 0)
       throw new Error(
@@ -270,7 +246,6 @@ async function main() {
       if (equals > 0)
         env[line.slice(0, equals).toUpperCase()] = line.slice(equals + 1);
     }
-    delete env.PIG_NATIVE_VCVARS;
     const tool = (name: string) => {
       const path = Bun.which(name, { PATH: env.PATH });
       if (!path) throw new Error(`Visual Studio build tool missing: ${name}`);

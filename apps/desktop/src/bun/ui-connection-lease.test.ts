@@ -4,7 +4,8 @@ import { UIRequestBroker } from "./ui-request-broker";
 
 test("Root lease heartbeats extend liveness; expired/foreign clients cannot revive UI", async () => {
   let now = 0,
-    lost = 0;
+    lost = 0,
+    terminalsCancelled = 0;
   const broker = new UIRequestBroker(() => {});
   const lease = new UIConnectionLease(
     () => {
@@ -24,12 +25,12 @@ test("Root lease heartbeats extend liveness; expired/foreign clients cannot revi
     title: "Permission",
     message: "Allow?",
   });
-  const editor = broker.request({
-    ...address,
-    uiId: "editor",
-    kind: "editor",
-    title: "Edit",
-  });
+  broker.registerTerminal(
+    { ...address, uiId: "terminal", kind: "terminal", title: "Custom" },
+    () => {
+      terminalsCancelled++;
+    },
+  );
   now = 90;
   expect(lease.heartbeat("root")).toBe(true);
   now = 110;
@@ -39,7 +40,7 @@ test("Root lease heartbeats extend liveness; expired/foreign clients cannot revi
   now = 190;
   lease.expire();
   expect(lost).toBe(1);
-  expect((await editor).kind).toBe("cancel");
+  expect(terminalsCancelled).toBe(1);
   expect((await pending).kind).toBe("cancel");
   expect(broker.pending()).toEqual([]);
   expect(broker.isAvailable()).toBe(false);

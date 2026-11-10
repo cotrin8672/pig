@@ -1,3 +1,4 @@
+import "./runtime-profile";
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import Electrobun, {
@@ -54,31 +55,34 @@ import {
 } from "./packages";
 import {
   abortSession,
-  application,
   applyModelSettings,
   availableModels,
   closeSession,
-  configureApplication,
+  configureSessionHost,
   deleteSession,
   disposeSessions,
   forkSession,
-  host,
-  initializeApplication,
   listProviders,
   listSessions,
   modelErrors,
   modelInfo,
   openSession,
   promptSession,
+  refreshUserCatalog,
   renameSession,
   rewindSession,
   runtime,
+  sessionHost,
   setDisabledModels,
   setSessionEffort,
   setSessionModel,
   utilityModels,
 } from "./pi-service";
-import { isProjectTrusted, persistProjectTrust } from "./project-trust";
+import {
+  discoverProjectResources,
+  isProjectTrusted,
+  persistProjectTrust,
+} from "./project-trust";
 import { validateSessionScope } from "./session-scope";
 import { loadSettings, saveSettings } from "./settings";
 import { synchronizeClientArea } from "./window-layout";
@@ -178,6 +182,24 @@ const report = (error: unknown) => {
   rpc.send.error({ message: String(error) });
 };
 initImageMenu(report);
+async function reloadPackages() {
+  const failures: string[] = [];
+  await Promise.all([
+    refreshUserCatalog().then(
+      (diagnostics) => failures.push(...diagnostics),
+      (error) => failures.push(String(error)),
+    ),
+    ...sessionHost
+      .runtimeState()
+      .sessions.filter((session) => session.phase === "ready")
+      .map((session) =>
+        sessionHost
+          .reloadSession(session.address)
+          .catch((error) => failures.push(String(error))),
+      ),
+  ]);
+  return failures;
+}
 const rpc = BrowserView.defineRPC<RPCSchema>({
   maxRequestTime: 600_000,
   handlers: {
@@ -186,25 +208,20 @@ const rpc = BrowserView.defineRPC<RPCSchema>({
       packagePreviews: (input) => packagePreviews(input),
       listInstalled: () => listInstalled(),
       prompt: (input) => promptSession(input),
-      getOpenState: (input) => host.getOpenState(input),
-      cancelOpen: (input) => host.cancelOpen(input),
-      getSessionSnapshot: (input) => host.getSnapshot(input),
-      getPromptReceipt: (input) => host.getReceipt(input),
-      syncDraft: (input) => host.draft(input),
-      resolveExtensionUI: (input) => application.resolveUI(input),
-      runtimeState: () => host.runtimeState(),
-      heartbeatUI: (input) => host.heartbeat(input),
+      getOpenState: (input) => sessionHost.getOpenState(input),
+      cancelOpen: (input) => sessionHost.cancelOpen(input),
+      getSessionSnapshot: (input) => sessionHost.getSessionSnapshot(input),
+      getPromptReceipt: (input) => sessionHost.getPromptReceipt(input),
+      syncDraft: (input) => sessionHost.syncDraft(input),
+      resolveExtensionUI: (input) => sessionHost.resolveExtensionUI(input),
+      terminalCommand: (input) => sessionHost.terminalCommand(input),
+      runtimeState: () => sessionHost.runtimeState(),
+      heartbeatUI: (input) => sessionHost.heartbeatUI(input),
       abort: (input) => abortSession(input),
       closeSession: (input) => closeSession(input),
-      reloadSession: async (input) => {
-        await host.getSnapshot(input);
-        const result = await application.reload();
-        if (result.state === "failed")
-          throw new Error(result.reason ?? "Config reload failed");
-        return { state: result.state };
-      },
-      invokeSessionAction: (input) => host.invokeSessionAction(input),
-      reloadAdapterConfig: () => application.reload(),
+      reloadSession: (input) => sessionHost.reloadSession(input),
+      invokeSessionAction: (input) => sessionHost.invokeSessionAction(input),
+      reloadAdapterConfig: () => sessionHost.reloadAdapterConfig(),
       copyImage: ({ src }) => copyImage(src),
       saveImage: ({ src }) => saveImage(src),
       appearance: () => appearance,
@@ -283,7 +300,14 @@ const rpc = BrowserView.defineRPC<RPCSchema>({
       },
       openSession: async (input) => {
         await validateScope(input.cwd);
-        // Native metadata proves immutable workspace membership before opening.
+        if (input.id) {
+          const info = await resolveSession({ cwd: input.cwd, id: input.id });
+          return openManagedSession({
+            cwd: input.cwd,
+            openId: input.openId,
+            id: info.id,
+          });
+        }
         return openManagedSession(input);
       },
       rewindSession: (input) => rewindSession(input),
@@ -409,7 +433,7 @@ const rpc = BrowserView.defineRPC<RPCSchema>({
           if (folder && !projects.includes(folder)) {
             // Ask once per folder here so opening a chat never interrupts with Trust.
             if (
-              (await application.selectedProjectResources(folder)).length &&
+              (await discoverProjectResources(folder)).length &&
               !(await isProjectTrusted(folder))
             ) {
               const t = dictionary(settings.language);
@@ -451,16 +475,15 @@ const rpc = BrowserView.defineRPC<RPCSchema>({
         const t = dictionary(settings.language);
         showImageMenu(src, { copy: t["Copy image"], save: t["Save image"] });
       },
-      connectUI: (input) => {
-        void application.connect(input).catch(report);
-      },
-      disconnectUI: (input) => host.disconnect(input),
+      connectUI: (input) => sessionHost.connectUI(input),
+      disconnectUI: (input) => sessionHost.disconnectUI(input),
       installPackage: (input) => {
         void packageOperation(
           "install",
           input,
           (event) => rpc.send.packageOp(event),
           (items) => rpc.send.installed(items),
+          reloadPackages,
           (message) => rpc.send.error({ message }),
         ).catch(console.error);
       },
@@ -470,6 +493,7 @@ const rpc = BrowserView.defineRPC<RPCSchema>({
           input,
           (event) => rpc.send.packageOp(event),
           (items) => rpc.send.installed(items),
+          reloadPackages,
           (message) => rpc.send.error({ message }),
         ).catch(console.error);
       },
@@ -479,6 +503,7 @@ const rpc = BrowserView.defineRPC<RPCSchema>({
           input,
           (event) => rpc.send.packageOp(event),
           (items) => rpc.send.installed(items),
+          reloadPackages,
           (message) => rpc.send.error({ message }),
         ).catch(console.error);
       },
@@ -489,9 +514,10 @@ const completions = new Map<
   string,
   ReturnType<typeof createCompletionTracker>
 >();
-configureApplication(
+configureSessionHost(
   {
     ui: (event) => rpc.send.extensionUIEvent(event),
+    terminal: (event) => rpc.send.terminalEvent(event),
     runtime: (event) => {
       rpc.send.runtimeEvent(event);
       if (event.type !== "snapshot") return;
@@ -538,9 +564,6 @@ configureApplication(
   },
   modelPreferences.disabled,
 );
-await initializeApplication([generalCwd, ...projects]).catch((error) => {
-  modelErrors.push(String(error));
-});
 let url = "views://mainview/index.html";
 if ((await Updater.localInfo.channel()) === "dev") {
   setNativeEnvironment(
@@ -582,7 +605,7 @@ window.on("resize", () => {
 });
 // Native navigation invalidates the old Root even if its cooperative unload
 // message is lost. Do not disconnect at dom-ready after the new Root connects.
-window.webview.on("will-navigate", () => host.disconnectAll());
+window.webview.on("will-navigate", () => sessionHost.disconnectAll());
 window.webview.on("dom-ready", () => {
   rpc.send.windowState({ maximized: window.isMaximized() });
   try {

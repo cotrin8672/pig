@@ -1,24 +1,17 @@
 import { afterEach, expect, test } from "bun:test";
-import {
-  type ConversationView,
-  defineDoc,
-  type JsonObject,
-  type TaskGraph,
-  type Tx,
-} from "@earendil-works/pi-durable";
 import type {
   Action,
   AdapterContext,
-  DocumentState,
   Json,
   PigConfig,
   SessionActionRequest,
   SessionAdapter,
   SessionView,
+  SourceEvent,
 } from "../../../../packages/config/src";
 import { actionRequest } from "../mainview/session-panel-model";
-import type { AdapterBackend } from "./adapter-backend";
 import { AdapterRuntime } from "./adapter-runtime";
+import type { AdapterBackend } from "./adapter-source";
 
 function deferred() {
   let resolve!: () => void;
@@ -35,54 +28,61 @@ afterEach(() => {
   for (const runtime of runtimes.splice(0)) runtime.dispose();
 });
 
-const TestDoc = defineDoc({
-  kind: "test.adapter",
-  version: 1,
-  scope: "conversation",
-  history: "latest",
-  fork: "current",
-  initial: () => ({ value: "original" }),
-  checkpointWhen: () => true,
-});
 function fakeBackend() {
   const changes = new Set<() => void>();
-  const documents = new Set<(state: DocumentState<JsonObject>) => void>();
-  const conversation = {
-    conversation: { id: 1 },
-    entries: [],
-    before: 42,
-    docs: { "pi.test": { value: "original" } },
-  } as unknown as ConversationView;
-  const graph: TaskGraph = { tasks: {} };
-  const document = { value: "original" };
+  const events = new Set<(event: SourceEvent) => void>();
+  const bus = new Set<(data: unknown) => void>();
+  const entries = [
+    {
+      id: "entry",
+      type: "custom",
+      timestamp: "now",
+      data: { value: "original" },
+    },
+  ];
+  const tools = [
+    {
+      toolCallId: "tool",
+      toolName: "read",
+      phase: "finished" as const,
+      origin: "history" as const,
+      result: { value: "original" },
+    },
+  ];
+  const commands = [
+    { name: "toggle", invocationName: "toggle", source: "extension" },
+  ];
   let current = true;
   let streaming = false;
   const calls: unknown[] = [];
   const backend: AdapterBackend = {
     session: { id: "session", cwd: "cwd" },
-    conversation: () => conversation,
-    taskGraph: () => graph,
+    entries: () => entries,
+    tools: () => tools,
     subscribe: (callback) => {
       changes.add(callback);
       return () => {
         changes.delete(callback);
       };
     },
-    snapshot: async () => document as never,
-    watchDocument: async (_token, callback) => {
-      const dispatch = callback as (state: DocumentState<JsonObject>) => void;
-      documents.add(dispatch);
-      dispatch({ value: document, retired: false });
+    onEvent: (callback) => {
+      events.add(callback);
       return () => {
-        documents.delete(dispatch);
+        events.delete(callback);
       };
     },
-    configure: async (change, signal) => {
-      calls.push({ change, signal });
+    onBus: (_channel, callback) => {
+      bus.add(callback);
+      return () => {
+        bus.delete(callback);
+      };
     },
-    commit: async (change, signal) => {
-      calls.push({ signal });
-      return change({} as Tx);
+    commands: () => commands,
+    invoke: async (input) => {
+      calls.push(input);
+    },
+    emit: (channel, data) => {
+      calls.push({ channel, data });
     },
     assertCurrent: () => {
       if (!current) throw new Error("OLD_BACKEND");
@@ -91,11 +91,12 @@ function fakeBackend() {
   };
   return {
     backend,
-    conversation,
-    graph,
-    document,
-    documents,
+    entries,
+    tools,
+    commands,
     changes,
+    events,
+    bus,
     calls,
     stale: () => {
       current = false;
@@ -106,8 +107,11 @@ function fakeBackend() {
     refresh: () => {
       for (const callback of changes) callback();
     },
-    publishDocument: (state: DocumentState<JsonObject>) => {
-      for (const callback of documents) callback(state);
+    event: (event: SourceEvent) => {
+      for (const callback of events) callback(event);
+    },
+    broadcast: (data: unknown) => {
+      for (const callback of bus) callback(data);
     },
   };
 }
@@ -132,7 +136,7 @@ function make(adapters: SessionAdapter[], keymaps: PigConfig["keymaps"] = []) {
   const fake = fakeBackend();
   const publications: boolean[] = [];
   const runtime = new AdapterRuntime(
-    { apiVersion: 2, sessionAdapters: adapters, keymaps },
+    { apiVersion: 1, sessionAdapters: adapters, keymaps },
     fake.backend,
     () => {
       publications.push(runtime.busy);
@@ -204,15 +208,12 @@ test("connect is asynchronous; reload aborts, ignores late writes, and runs late
   expect(replacement.snapshot().views).toHaveLength(1);
   expect(() => context.views.set(null as unknown as SessionView)).not.toThrow();
   await expect(
-    context.controller.configure({ instructions: "changed" }),
+    context.pi.invoke({ name: "toggle", source: "extension" }),
   ).rejects.toThrow("ADAPTER_DISPOSED");
-  await expect(context.controller.commit(() => {})).rejects.toThrow(
-    "ADAPTER_DISPOSED",
-  );
+  expect(() => context.pi.emit("test", null)).toThrow("ADAPTER_DISPOSED");
 });
 
 test("connect and callback failures remove only that adapter, retaining diagnostics", async () => {
-  let failCallbacks = false;
   const { runtime, fake } = make([
     {
       id: "sync",
@@ -231,16 +232,16 @@ test("connect and callback failures remove only that adapter, retaining diagnost
       connect(ctx) {
         ctx.views.set(view());
         ctx.commands.register({ id: "run", title: "Run", run() {} });
-        ctx.sources.subscribe(() => {
-          if (failCallbacks) throw new Error("snapshot failure");
+        ctx.sources.onEvent(() => {
+          throw new Error("event failure");
         });
       },
     },
     {
       id: "promise",
       connect(ctx) {
-        ctx.sources.subscribe(async () => {
-          if (failCallbacks) throw new Error("async snapshot failure");
+        ctx.sources.onBus("test", async () => {
+          throw new Error("bus failure");
         });
       },
     },
@@ -257,8 +258,8 @@ test("connect and callback failures remove only that adapter, retaining diagnost
     "sync",
     "async",
   ]);
-  failCallbacks = true;
-  fake.refresh();
+  fake.event({ type: "change" });
+  fake.broadcast({});
   await tick();
   expect(runtime.snapshot().diagnostics).toHaveLength(4);
   expect(runtime.snapshot().views.map((item) => item.adapterId)).toEqual([
@@ -267,8 +268,8 @@ test("connect and callback failures remove only that adapter, retaining diagnost
   expect(runtime.snapshot().commands.map((item) => item.adapterId)).toEqual([
     "good",
   ]);
-  expect(fake.changes.size).toBe(0);
-  fake.refresh();
+  expect(fake.events.size + fake.bus.size).toBe(0);
+  fake.event({ type: "again" });
   expect(runtime.snapshot().diagnostics).toHaveLength(4);
 });
 
@@ -567,7 +568,7 @@ test("busy rejects concurrent commands without retransmit, streaming gates, erro
   expect(runs).toBe(2);
 });
 
-test("native reads are detached, invalidations coalesce/unsubscribe and timers stop", async () => {
+test("source reads/events are cloned, subscriptions coalesce and unsubscribe, timers stop", async () => {
   const gate = deferred();
   let context!: AdapterContext;
   let unsubscribe!: () => void;
@@ -578,7 +579,7 @@ test("native reads are detached, invalidations coalesce/unsubscribe and timers s
   const { runtime, fake } = make([
     {
       id: "demo",
-      async connect(ctx) {
+      connect(ctx) {
         context = ctx;
         unsubscribe = ctx.sources.subscribe(async () => {
           active++;
@@ -587,8 +588,11 @@ test("native reads are detached, invalidations coalesce/unsubscribe and timers s
           if (seen.length === 1) await gate.promise;
           active--;
         });
-        await ctx.sources.watchDocument(TestDoc, (state) => {
-          (state.value as { value: string }).value = "mutated";
+        ctx.sources.onEvent((event) => {
+          (event.payload as { value: string }).value = "mutated";
+        });
+        ctx.sources.onBus("test", (data) => {
+          (data as { value: string }).value = "mutated";
         });
         ctx.scope.interval(() => {
           timers++;
@@ -606,19 +610,18 @@ test("native reads are detached, invalidations coalesce/unsubscribe and timers s
   await tick();
   expect(seen).toEqual([0, 1]);
   expect(maxActive).toBe(1);
-  context.sources.conversation().docs["pi.test"].value = "mutated";
-  expect(Number(context.sources.conversation().before)).toBe(42);
-  (context.sources.taskGraph().tasks as Record<string, unknown>).mutated = {};
-  const snapshot = await context.sources.snapshot(TestDoc);
-  (snapshot as { value: string }).value = "mutated";
+  (context.sources.entries("all")[0].data as { value: string }).value =
+    "mutated";
+  (context.sources.tools()[0].result as { value: string }).value = "mutated";
+  context.pi.commands()[0].name = "mutated";
   context.session.cwd = "mutated";
-  const payload = { value: { value: "original" }, retired: true };
-  fake.publishDocument(payload);
-  await tick();
-  expect(payload.value.value).toBe("original");
-  expect(fake.conversation.docs["pi.test"].value).toBe("original");
-  expect(fake.graph.tasks).toEqual({});
-  expect(fake.document.value).toBe("original");
+  const payload = { value: "original" };
+  fake.event({ type: "test", payload });
+  fake.broadcast(payload);
+  expect(payload.value).toBe("original");
+  expect(fake.entries[0].data.value).toBe("original");
+  expect(fake.tools[0].result.value).toBe("original");
+  expect(fake.commands[0].name).toBe("toggle");
   expect(fake.backend.session.cwd).toBe("cwd");
   unsubscribe();
   fake.refresh();
@@ -628,75 +631,31 @@ test("native reads are detached, invalidations coalesce/unsubscribe and timers s
   const before = timers;
   await Bun.sleep(25);
   expect(timers).toBe(before);
-  expect(fake.changes.size + fake.documents.size).toBe(0);
+  expect(fake.changes.size + fake.events.size + fake.bus.size).toBe(0);
 });
 
-test("bound configure/commit require an explicit command, current backend and cancellation lifetime", async () => {
+test("backend invoke/emit always check current scope and backend, without source-driven commands", async () => {
   let context!: AdapterContext;
-  const { runtime, fake } = make([
+  const { fake } = make([
     {
       id: "demo",
       connect(ctx) {
         context = ctx;
         ctx.sources.subscribe(() => {});
-        ctx.views.set(view());
-        ctx.commands.register({
-          id: "run",
-          title: "Run",
-          async run() {
-            await ctx.controller.configure({ instructions: "native" });
-            await ctx.controller.commit(() => "committed");
-          },
-        });
       },
     },
   ]);
   await tick();
   expect(fake.calls).toEqual([]);
-  await expect(context.controller.configure({})).rejects.toThrow(
-    "ADAPTER_COMMAND_REQUIRED",
-  );
-  await runtime.invoke(request(runtime));
+  await context.pi.invoke({ name: "toggle", source: "extension" });
+  context.pi.emit("channel", { value: "ok" });
   expect(fake.calls).toHaveLength(2);
-  expect((fake.calls[0] as { signal: AbortSignal }).signal.aborted).toBe(true);
   fake.stale();
-  await expect(context.controller.configure({})).rejects.toThrow("OLD_BACKEND");
-  await expect(context.controller.commit(() => {})).rejects.toThrow(
-    "OLD_BACKEND",
-  );
+  await expect(
+    context.pi.invoke({ name: "toggle", source: "extension" }),
+  ).rejects.toThrow("OLD_BACKEND");
+  expect(() => context.pi.emit("channel", null)).toThrow("OLD_BACKEND");
   expect(fake.calls).toHaveLength(2);
-});
-
-test("late native watch attachment is released once after disposal, absent documents stay absent", async () => {
-  const gate = deferred();
-  let context!: AdapterContext;
-  let stops = 0;
-  const { runtime, fake } = make([
-    {
-      id: "demo",
-      connect(ctx) {
-        context = ctx;
-      },
-    },
-  ]);
-  await tick();
-  fake.backend.snapshot = async () => undefined;
-  fake.backend.watchDocument = async () => undefined;
-  expect(await context.sources.snapshot(TestDoc)).toBeUndefined();
-  expect(
-    await context.sources.watchDocument(TestDoc, () => {}),
-  ).toBeUndefined();
-  fake.backend.watchDocument = async () => {
-    await gate.promise;
-    return () => {
-      stops++;
-    };
-  };
-  const attachment = context.sources.watchDocument(TestDoc, () => {});
-  runtime.dispose();
-  gate.resolve();
-  expect(await attachment).toBeUndefined();
-  expect(stops).toBe(1);
 });
 
 test("command registration is bounded, unique, and type checked", async () => {
@@ -764,7 +723,7 @@ test("synchronous source reentry coalesces without recursion and late callback f
       id: "late",
       connect(ctx) {
         context = ctx;
-        ctx.sources.subscribe(async () => {
+        ctx.sources.onBus("test", async () => {
           await gate.promise;
           ctx.views.set(view());
           throw new Error("late rejection");
@@ -778,7 +737,7 @@ test("synchronous source reentry coalesces without recursion and late callback f
   await tick();
   expect(calls).toBe(5);
   expect(maxDepth).toBe(1);
-  fake.refresh();
+  fake.broadcast({});
   runtime.dispose();
   gate.resolve();
   await tick();
@@ -858,17 +817,15 @@ test("scope failure does not clear an in-flight command's busy state before fina
             await gate.promise;
           },
         });
-        let first = true;
-        ctx.sources.subscribe(() => {
-          if (!first) throw new Error("source failure");
-          first = false;
+        ctx.sources.onEvent(() => {
+          throw new Error("source failure");
         });
       },
     },
   ]);
   await tick();
   const pending = runtime.invoke(request(runtime));
-  fake.refresh();
+  fake.event({ type: "fail" });
   expect(runtime.snapshot().commands).toEqual([]);
   expect(runtime.busy).toBe(true);
   gate.resolve();
@@ -879,14 +836,14 @@ test("scope failure does not clear an in-flight command's busy state before fina
   ]);
 });
 
-test("document revisions retain retirement order and a consumed display action cannot replay", async () => {
+test("raw events retain every delta and a consumed display action cannot replay", async () => {
   const gate = deferred();
-  const received: boolean[] = [];
+  const received: unknown[] = [];
   let calls = 0;
   const { runtime, fake } = make([
     {
       id: "demo",
-      async connect(ctx) {
+      connect(ctx) {
         ctx.views.set(view());
         ctx.commands.register({
           id: "run",
@@ -895,19 +852,20 @@ test("document revisions retain retirement order and a consumed display action c
             calls++;
           },
         });
-        await ctx.sources.watchDocument(TestDoc, async (state) => {
-          received.push(state.retired);
-          if (received.length === 1) await gate.promise;
+        ctx.sources.onBus("test", async (data) => {
+          received.push(data);
+          if (data === 1) await gate.promise;
         });
       },
     },
   ]);
   await tick();
-  fake.publishDocument({ value: { value: "second" }, retired: false });
-  fake.publishDocument({ value: { value: "last" }, retired: true });
+  fake.broadcast(1);
+  fake.broadcast(2);
+  fake.broadcast(3);
   gate.resolve();
   await tick();
-  expect(received).toEqual([false, false, true]);
+  expect(received).toEqual([1, 2, 3]);
   const original = request(runtime);
   await runtime.invoke(original);
   await expect(runtime.invoke(original)).rejects.toThrow("STALE_VIEW");
