@@ -26,6 +26,7 @@ import {
   setNativeEnvironment,
   validateAppearance,
 } from "./appearance";
+import { ChatRendererLoader } from "./chat-renderer-loader";
 import {
   desktopConfigDir,
   generalCwd,
@@ -89,6 +90,9 @@ import { loadSettings, saveSettings } from "./settings";
 import { synchronizeClientArea } from "./window-layout";
 
 await prepareDesktopConfig(Utils.paths.userData);
+const chatRendererLoader = new ChatRendererLoader(
+  join(desktopConfigDir, "chat-renderers.tsx"),
+);
 const desktopState = new DesktopStateStore(
   join(desktopConfigDir, "desktop.json"),
   (state) => rpc.send.desktopState(state),
@@ -205,6 +209,7 @@ const rpc = BrowserView.defineRPC<RPCSchema>({
   maxRequestTime: 600_000,
   handlers: {
     requests: {
+      getChatRendererBundle: () => chatRendererLoader.load(),
       searchPackages: (input) => searchPackages(input),
       packagePreviews: (input) => packagePreviews(input),
       listInstalled: () => listInstalled(),

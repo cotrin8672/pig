@@ -1,4 +1,5 @@
 import type { ImageContent, TextContent } from "@earendil-works/pi-ai";
+import type { ChatRendererProps } from "@pig/chat-renderers";
 import { Check, Copy, Pencil } from "lucide-react";
 import { memo, useCallback, useState } from "react";
 import ReactMarkdown, { defaultUrlTransform } from "react-markdown";
@@ -9,6 +10,7 @@ import { normalizeMath } from "../shared/math";
 import { sessionIdFromLink } from "../shared/session-links";
 import type { Message } from "../shared/transcript";
 import { editUserMessage } from "../shared/user-message";
+import { ChatContent } from "./ChatContent";
 import { dataText } from "./custom-data";
 import { ImageGallery } from "./ImageGallery";
 import { useT } from "./i18n";
@@ -16,6 +18,14 @@ import { openChatLink, regenerate, rpc } from "./rpc";
 import { showError } from "./store";
 
 export const Markdown = memo(function Markdown({ text }: { text: string }) {
+  return (
+    <ChatContent kind="markdown" data={{ text }} builtin={BuiltinMarkdown} />
+  );
+});
+
+export function BuiltinMarkdown({
+  data: { text },
+}: ChatRendererProps<"markdown">) {
   return (
     <ReactMarkdown
       remarkPlugins={[remarkGfm, remarkMath]}
@@ -48,7 +58,7 @@ export const Markdown = memo(function Markdown({ text }: { text: string }) {
       {normalizeMath(text)}
     </ReactMarkdown>
   );
-});
+}
 
 type Content = string | (TextContent | ImageContent)[];
 

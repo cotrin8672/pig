@@ -189,6 +189,11 @@ export interface SlashCommand {
 export type RPCSchema = {
   bun: {
     requests: {
+      getChatRendererBundle: {
+        // biome-ignore lint/suspicious/noConfusingVoidType: Electrobun convention.
+        params: void;
+        response: { file: string; source: string | null; error?: string };
+      };
       invokeSessionAction: {
         params: SessionAddress & SessionActionRequest;
         // biome-ignore lint/suspicious/noConfusingVoidType: Electrobun convention.

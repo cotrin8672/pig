@@ -1,3 +1,4 @@
+import type { ChatRendererProps } from "@pig/chat-renderers";
 import {
   Check,
   ChevronLeft,
@@ -8,6 +9,7 @@ import {
 } from "lucide-react";
 import { type MouseEvent, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import { ChatContent } from "./ChatContent";
 import { useT } from "./i18n";
 import { rpc } from "./rpc";
 import { showError } from "./store";
@@ -21,6 +23,18 @@ function openImageMenu(event: MouseEvent, src: string) {
 
 /** One large preview plus a vertical thumbnail rail for multiple images (PI-Desktop style). */
 export function ImageGallery({ sources }: { sources: string[] }) {
+  return (
+    <ChatContent
+      kind="image"
+      data={{ sources }}
+      builtin={BuiltinImageGallery}
+    />
+  );
+}
+
+export function BuiltinImageGallery({
+  data: { sources },
+}: ChatRendererProps<"image">) {
   const t = useT();
   const [current, setCurrent] = useState(0);
   const [viewing, setViewing] = useState(false);

@@ -2,6 +2,8 @@
 
 Pi Extensionの状態をpigのネイティブUIへ投影する、Host側のTS設定APIです。実行エンジンや権限管理を置き換えません。
 
+任意の React/TSX コンポーネントによるチャット表示の差し替えは、別 API の `packages/chat-renderers/README.md` を参照してください。`config.ts` の Host 設定と `chat-renderers.tsx` の WebView 表示コードは別に読み込みます。
+
 ## 設定
 
 ユーザーの `~/.config/pig/config.ts`（Windows: `%USERPROFILE%\.config\pig\config.ts`）に保存します。プロジェクト内のTS設定は自動実行しません。

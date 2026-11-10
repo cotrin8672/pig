@@ -22,6 +22,9 @@ importers:
 
   apps/desktop:
     dependencies:
+      '@babel/parser':
+        specifier: 7.29.13
+        version: 7.29.13
       '@earendil-works/pi-ai':
         specifier: 1.5.0
         version: 1.5.0(@aws-sdk/credential-provider-node@3.972.94)(@smithy/signature-v4@5.7.5)(undici@8.12.3)(ws@8.22.1)
@@ -34,6 +37,9 @@ importers:
       '@lobehub/icons':
         specifier: 6.15.0
         version: 6.15.0(@lobehub/ui@6.15.2)(lucide-react@0.468.0(react@19.3.1))(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
+      '@pig/chat-renderers':
+        specifier: workspace:*
+        version: link:../../packages/chat-renderers
       '@silvia-odwyer/photon':
         specifier: 0.3.3
         version: 0.3.3
@@ -98,6 +104,19 @@ importers:
       vite:
         specifier: ^6.0.0
         version: 6.4.5(@types/node@26.6.6)(jiti@2.7.0)(lightningcss@1.33.0)(yaml@2.9.0)
+
+  packages/chat-renderers:
+    dependencies:
+      '@pig/config':
+        specifier: workspace:*
+        version: link:../config
+      react:
+        specifier: ^19.0.0
+        version: 19.3.1
+    devDependencies:
+      '@types/react':
+        specifier: ^19.0.0
+        version: 19.3.0
 
   packages/config: {}
 

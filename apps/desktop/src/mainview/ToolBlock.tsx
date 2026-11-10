@@ -1,4 +1,5 @@
 import type { ToolCall } from "@earendil-works/pi-ai";
+import type { ChatRenderData, ChatRendererProps } from "@pig/chat-renderers";
 import {
   Brain,
   ChevronRight,
@@ -12,6 +13,7 @@ import {
   Search,
 } from "lucide-react";
 import { memo, type ReactNode } from "react";
+import type { ToolCard, ToolCardBlock } from "../../../../packages/config/src";
 import {
   diffStats,
   resultText,
@@ -19,6 +21,7 @@ import {
   shellOutcome,
 } from "../shared/tool-view";
 import type { Transcript } from "../shared/transcript";
+import { ChatContent } from "./ChatContent";
 import { useT } from "./i18n";
 import { Markdown, MessageContent, ToolResultContent } from "./MessageContent";
 
@@ -137,19 +140,103 @@ function Shell({
   );
 }
 
+function Diff({ text }: { text: string }) {
+  return (
+    <pre className="tool-diff">
+      {text.split("\n").map((line, index) => (
+        <span
+          // biome-ignore lint/suspicious/noArrayIndexKey: Diff lines are static and ordered.
+          key={index}
+          className={line[0] === "+" ? "add" : line[0] === "-" ? "del" : ""}
+        >
+          {line}
+        </span>
+      ))}
+    </pre>
+  );
+}
+
+/** Fixed templates for config-provided tool cards; card data never becomes markup. */
+function CardBlock({ block }: { block: ToolCardBlock }) {
+  switch (block.type) {
+    case "text":
+      return block.format === "markdown" ? (
+        <div className="prose">
+          <Markdown text={block.text} />
+        </div>
+      ) : (
+        <pre className="tool-code">{block.text}</pre>
+      );
+    case "code":
+    case "terminal":
+      return <pre className="tool-code">{block.text}</pre>;
+    case "diff":
+      return <Diff text={block.text} />;
+    case "facts":
+      return (
+        <dl className="tool-facts">
+          {block.items.map((item, index) => (
+            // biome-ignore lint/suspicious/noArrayIndexKey: Labels may repeat; order is static.
+            <div key={index}>
+              <dt>{item.label}</dt>
+              <dd>{item.value}</dd>
+            </div>
+          ))}
+        </dl>
+      );
+    case "list":
+      return (
+        <ul className="tool-list">
+          {block.items.map((item, index) => (
+            // biome-ignore lint/suspicious/noArrayIndexKey: Titles may repeat; order is static.
+            <li key={index} className={item.state}>
+              <span className="tool-list-title">{item.title}</span>
+              {item.description && (
+                <span className="tool-list-description">
+                  {item.description}
+                </span>
+              )}
+            </li>
+          ))}
+        </ul>
+      );
+  }
+}
+
 const ICON = 14;
 
-export const ToolBlock = memo(function ToolBlock({
-  call,
-  state,
-  live,
-}: {
-  call: ToolCall;
-  state: ToolState;
-  live: boolean;
-}) {
+export const ToolBlock = memo(function ToolBlock(data: ChatRenderData["tool"]) {
+  return (
+    <ChatContent
+      kind="tool"
+      data={data}
+      contentKey={data.call.id}
+      builtin={BuiltinTool}
+    />
+  );
+});
+
+export function BuiltinTool({
+  data: { call, state, live, card },
+}: ChatRendererProps<"tool">) {
   const t = useT();
   const status = tone(state, live);
+  if (card)
+    return (
+      <Row
+        icon={<Plug size={ICON} />}
+        verb={card.title}
+        target={card.target ?? ""}
+        meta={card.meta}
+        state={state}
+        status={status}
+      >
+        {card.body?.map((block, index) => (
+          // biome-ignore lint/suspicious/noArrayIndexKey: Card blocks are ordered data.
+          <CardBlock key={index} block={block} />
+        ))}
+      </Row>
+    );
   const args = (call.arguments ?? {}) as Record<string, unknown>;
   const path = str(args.path);
   if (SHELL_TOOLS.has(call.name))
@@ -225,19 +312,7 @@ export const ToolBlock = memo(function ToolBlock({
           status={status}
         >
           {diff && state?.status === "done" ? (
-            <pre className="tool-diff">
-              {diff.split("\n").map((line, index) => (
-                <span
-                  // biome-ignore lint/suspicious/noArrayIndexKey: Diff lines are static and ordered.
-                  key={index}
-                  className={
-                    line[0] === "+" ? "add" : line[0] === "-" ? "del" : ""
-                  }
-                >
-                  {line}
-                </span>
-              ))}
-            </pre>
+            <Diff text={diff} />
           ) : (
             <Output state={state} />
           )}
@@ -277,17 +352,19 @@ export const ToolBlock = memo(function ToolBlock({
         </Row>
       );
   }
-});
+}
 
 /** Two or more consecutive read/grep/find/ls calls, collapsed into one row. */
 export const ToolGroup = memo(function ToolGroup({
   calls,
   tools,
   live,
+  cards,
 }: {
   calls: ToolCall[];
   tools: Transcript["tools"];
   live: boolean;
+  cards?: Record<string, ToolCard>;
 }) {
   const t = useT();
   const tones = calls.map((call) => tone(tools[call.id], live));
@@ -320,6 +397,7 @@ export const ToolGroup = memo(function ToolGroup({
             call={call}
             state={tools[call.id]}
             live={live}
+            card={cards?.[call.id]}
           />
         ))}
       </div>
@@ -327,15 +405,15 @@ export const ToolGroup = memo(function ToolGroup({
   );
 });
 
-export const ThinkingBlock = memo(function ThinkingBlock({
-  text,
-  label,
-  active,
-}: {
-  text: string;
-  label: string;
-  active: boolean;
-}) {
+export const ThinkingBlock = memo(function ThinkingBlock(
+  data: ChatRenderData["thinking"],
+) {
+  return <ChatContent kind="thinking" data={data} builtin={BuiltinThinking} />;
+});
+
+export function BuiltinThinking({
+  data: { text, label, active },
+}: ChatRendererProps<"thinking">) {
   const t = useT();
   if (active)
     return (
@@ -358,7 +436,7 @@ export const ThinkingBlock = memo(function ThinkingBlock({
       )}
     </details>
   );
-});
+}
 
 /** Folds a finished response's work (thinking, tools, interim text) above its final answer. */
 export function WorkToggle({

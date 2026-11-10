@@ -1,6 +1,14 @@
 import type { Settings } from "./settings";
 
 export const en = {
+  "Chat renderers": "Chat renderers",
+  "Reload chat renderers": "Reload chat renderers",
+  "Load trusted local TSX components. Changes only affect chat display.":
+    "Load trusted local TSX components. Changes only affect chat display.",
+  "Renderer errors (built-in display retained)":
+    "Renderer errors (built-in display retained)",
+  "Arbitrary React code is not sandboxed. Only load components you trust.":
+    "Arbitrary React code is not sandboxed. Only load components you trust.",
   slashSuggestions: "Slash command suggestions",
   extension: "Extension",
   skill: "Skill",
@@ -414,6 +422,13 @@ export const en = {
 };
 type Dictionary = { [K in keyof typeof en]: (typeof en)[K] };
 export const ja: Dictionary = {
+  "Chat renderers": "チャット描画コンポーネント",
+  "Reload chat renderers": "描画コンポーネントを再読込",
+  "Load trusted local TSX components. Changes only affect chat display.":
+    "信頼するローカル TSX を読み込みます。変更はチャットの表示だけに適用されます。",
+  "Renderer errors (built-in display retained)": "描画エラー（標準表示で継続）",
+  "Arbitrary React code is not sandboxed. Only load components you trust.":
+    "React コードは隔離されません。信頼するコンポーネントだけを読み込んでください。",
   slashSuggestions: "スラッシュコマンドの候補",
   extension: "拡張機能",
   skill: "スキル",

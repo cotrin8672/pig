@@ -635,6 +635,7 @@ function Chat({ snapshot }: { snapshot: ChatSnapshot }) {
                                   )}
                                   tools={transcript.tools}
                                   live={transcript.running}
+                                  cards={snapshot.sessionUI?.toolCards}
                                 />
                               ) : content.type === "text" ? (
                                 <div className="prose">
@@ -655,6 +656,9 @@ function Chat({ snapshot }: { snapshot: ChatSnapshot }) {
                                   call={content}
                                   state={transcript.tools[content.id]}
                                   live={transcript.running}
+                                  card={
+                                    snapshot.sessionUI?.toolCards?.[content.id]
+                                  }
                                 />
                               ) : null}
                             </div>
