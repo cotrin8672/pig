@@ -1411,7 +1411,8 @@ input:not([type="range"]) {
   pointer-events: auto;
   font-size: 12px;
   flex-shrink: 0;
-  background: var(--ds-bg-elevated);
+  background: var(--ds-bg-popover);
+  backdrop-filter: blur(20px);
   border: 1px solid var(--ds-border-strong);
   border-radius: var(--radius-md);
   padding: 8px 12px;
