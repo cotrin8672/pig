@@ -842,6 +842,7 @@ details[open] > summary .tool-chevron,
 }
 .tool-term-output {
   max-height: 280px;
+  border-bottom: 6px solid transparent;
   color: var(--ds-text-muted);
 }
 @media (prefers-reduced-motion: reduce) {
