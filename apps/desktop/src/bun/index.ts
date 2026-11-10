@@ -68,6 +68,7 @@ import {
   modelInfo,
   openSession,
   promptSession,
+  refreshProviderModels,
   refreshUserCatalog,
   renameSession,
   rewindSession,
@@ -323,6 +324,7 @@ const rpc = BrowserView.defineRPC<RPCSchema>({
           throw new Error("Invalid provider.");
         await logoutProvider(provider);
       },
+      refreshProviderModels: ({ provider }) => refreshProviderModels(provider),
       setModel: (input) => setSessionModel(input),
       setModelEnabled: async ({ provider, id, enabled }) => {
         if (

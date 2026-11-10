@@ -278,6 +278,11 @@ export type RPCSchema = {
       openProjectFolder: { params: { cwd: string }; response: boolean };
       // biome-ignore lint/suspicious/noConfusingVoidType: Electrobun's empty response convention.
       logout: { params: { provider: string }; response: void };
+      refreshProviderModels: {
+        params: { provider: string };
+        // biome-ignore lint/suspicious/noConfusingVoidType: Electrobun's empty response convention.
+        response: void;
+      };
       setModel: {
         params: SessionAddress & { provider: string; id: string };
         response: ModelSelection;

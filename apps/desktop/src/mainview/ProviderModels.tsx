@@ -1,4 +1,4 @@
-import { ChevronDown, Search, X } from "lucide-react";
+import { ChevronDown, RefreshCw, Search, X } from "lucide-react";
 import { useRef, useState } from "react";
 import {
   isModelEnabled,
@@ -8,7 +8,7 @@ import {
 import { useT } from "./i18n";
 import { formatTokens, ModelSettings } from "./ModelSettings";
 import { useProviderName } from "./ProviderIcon";
-import { rpc } from "./rpc";
+import { refresh, rpc } from "./rpc";
 import { showError, useStore } from "./store";
 
 export function ProviderModels({
@@ -24,6 +24,8 @@ export function ProviderModels({
   const [query, setQuery] = useState("");
   const [pending, setPending] = useState<string[]>([]);
   const [open, setOpen] = useState<string>();
+  const [refreshing, setRefreshing] = useState(false);
+  const refreshingRef = useRef(false);
   const pendingKeys = useRef(new Set<string>());
   const group = models.filter((model) => model.provider === provider);
   const visible = group.filter((model) =>
@@ -70,6 +72,24 @@ export function ProviderModels({
       setPending([...pendingKeys.current]);
     }
   }
+  async function refreshModels() {
+    if (refreshingRef.current) return;
+    refreshingRef.current = true;
+    const started = performance.now();
+    setRefreshing(true);
+    try {
+      await rpc.request.refreshProviderModels({ provider });
+      await refresh();
+    } catch (error) {
+      showError(error);
+    } finally {
+      const remaining = 500 - (performance.now() - started);
+      if (remaining > 0)
+        await new Promise((resolve) => setTimeout(resolve, remaining));
+      refreshingRef.current = false;
+      setRefreshing(false);
+    }
+  }
   return (
     <fieldset
       className="provider-model-panel"
@@ -82,6 +102,24 @@ export function ProviderModels({
             {enabledCount}/{group.length}
           </small>
         )}
+        <button
+          type="button"
+          className="provider-model-refresh"
+          data-refreshing={refreshing || undefined}
+          aria-busy={refreshing}
+          aria-label={
+            refreshing ? t["Refreshing models…"] : t["Refresh models"]
+          }
+          title={refreshing ? t["Refreshing models…"] : t["Refresh models"]}
+          disabled={refreshing}
+          onClick={() => void refreshModels()}
+        >
+          <RefreshCw
+            size={14}
+            className="provider-model-refresh-icon"
+            aria-hidden="true"
+          />
+        </button>
       </div>
       {!group.length ? (
         <p className="model-list-empty">

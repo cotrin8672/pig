@@ -2667,3 +2667,30 @@ input:not([type="range"]) {
     animation: none;
   }
 }
+
+.provider-model-refresh {
+  margin-left: auto;
+  padding: 5px;
+  color: var(--ds-text-muted);
+}
+.provider-model-refresh[data-refreshing] {
+  opacity: 1;
+  color: var(--ds-text-secondary);
+}
+.provider-model-refresh[data-refreshing] .provider-model-refresh-icon {
+  transform-origin: center;
+  animation: provider-model-refresh-spin 700ms linear infinite;
+}
+@keyframes provider-model-refresh-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .provider-model-refresh[data-refreshing] .provider-model-refresh-icon {
+    animation: none;
+  }
+}
+.provider-model-refresh:hover:not(:disabled) {
+  color: var(--ds-text-primary);
+}

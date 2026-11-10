@@ -19,6 +19,7 @@ import type {
 import type { TerminalHostEvent } from "../shared/terminal-ui";
 import { FileCredentials } from "./credentials";
 import { desktopConfigDir } from "./desktop-config";
+import { manualModelRefresh } from "./manual-model-refresh";
 import {
   applyRuntimeModelSettings,
   createModelRuntime,
@@ -66,6 +67,13 @@ export async function refreshModels(
 }
 await loadEfforts();
 export const modelNetworkEnabled = process.env.PI_OFFLINE === undefined;
+export function refreshProviderModels(provider: string) {
+  return manualModelRefresh(provider, {
+    hasProvider: (id) => !!runtime.getProvider(id),
+    online: modelNetworkEnabled,
+    refresh: refreshAllModelRuntimes,
+  });
+}
 export async function applyModelSettings(selected?: readonly string[]) {
   await applyRuntimeModelSettings(runtime, selected);
   await refreshAllModelRuntimes({ providers: selected, allowNetwork: false });

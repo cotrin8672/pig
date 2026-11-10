@@ -1,6 +1,8 @@
 import type { Settings } from "./settings";
 
 export const en = {
+  "Refresh models": "Refresh models",
+  "Refreshing models…": "Refreshing models…",
   dockTitle: "Session activity",
   dockProgress: "Progress",
   dockTasks: "Tasks",
@@ -408,6 +410,8 @@ export const en = {
 };
 type Dictionary = { [K in keyof typeof en]: (typeof en)[K] };
 export const ja: Dictionary = {
+  "Refresh models": "モデルを再取得",
+  "Refreshing models…": "モデルを再取得中…",
   dockTitle: "セッションの作業状況",
   dockProgress: "進捗",
   dockTasks: "実行",
