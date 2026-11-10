@@ -1,4 +1,4 @@
-import { ArrowUp, BookOpen, FileText, Puzzle, Square, X } from "lucide-react";
+import { BookOpen, FileText, Puzzle, X } from "lucide-react";
 import {
   useEffect,
   useId,
@@ -11,6 +11,7 @@ import {
 import { filterModels } from "../shared/models";
 import { makeMarker, shouldCollapse } from "../shared/paste";
 import type { SlashCommand, Snapshot } from "../shared/rpc-schema";
+import { ComposerSubmit } from "./ComposerSubmit";
 import { ContextIndicator } from "./ContextIndicator";
 import { addressKey } from "./chat-snapshot";
 import { drafts, expandedDraft } from "./draft-store";
@@ -550,21 +551,10 @@ export function Composer({ snapshot }: { snapshot: Snapshot }) {
             <ModelPicker snapshot={snapshot} />
           </div>
           <div className="send-controls">
-            {(transcript.running || submitting) && (
-              <button
-                type="button"
-                className="send-button"
-                title={t.Stop}
-                aria-label={t.Stop}
-                onClick={() => void rpc.request.abort(address).catch(showError)}
-              >
-                <Square size={15} fill="currentColor" />
-              </button>
-            )}
-            <button
-              type="submit"
-              className="send-button"
-              aria-label={transcript.running ? t["Queue follow-up"] : t.Send}
+            <ComposerSubmit
+              busy={transcript.running || submitting}
+              hasContent={!!expanded || images.length > 0}
+              onStop={() => void rpc.request.abort(address).catch(showError)}
               disabled={
                 (!expanded && !images.length) ||
                 (!canSend && !extensionSend) ||
@@ -575,9 +565,7 @@ export function Composer({ snapshot }: { snapshot: Snapshot }) {
                 uncertain ||
                 !!draft.conflict
               }
-            >
-              <ArrowUp size={19} />
-            </button>
+            />
           </div>
         </div>
       </form>

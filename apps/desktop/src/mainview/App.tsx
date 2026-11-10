@@ -660,7 +660,18 @@ function Chat({ snapshot }: { snapshot: ChatSnapshot }) {
                           );
                         })}
                         {message.errorMessage && (
-                          <p className="error">{message.errorMessage}</p>
+                          <p
+                            className={
+                              message.stopReason === "aborted"
+                                ? "muted"
+                                : "error"
+                            }
+                          >
+                            {t.responseError(
+                              message.stopReason,
+                              message.errorMessage,
+                            )}
+                          </p>
                         )}
                       </>
                     ) : (
@@ -680,11 +691,6 @@ function Chat({ snapshot }: { snapshot: ChatSnapshot }) {
             {snapshot.failure && (
               <p className="error" role="alert">
                 {snapshot.failure}
-              </p>
-            )}
-            {snapshot.aborted && !snapshot.failure && (
-              <p className="muted" role="status">
-                {t.Stopped}
               </p>
             )}
             {transcript.running && (

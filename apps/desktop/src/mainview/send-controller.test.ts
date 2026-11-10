@@ -276,3 +276,24 @@ test("an indeterminate send transferred across epoch requires inspect-history co
   await f.sends.send(next);
   expect(calls).toBe(2);
 });
+
+test("accepted follow-ups allow the next message without waiting for response completion", async () => {
+  const prompts: PromptParams[] = [];
+  const f = fixture(
+    async (params) => {
+      prompts.push(params);
+      return { disposition: "queued" };
+    },
+    async (key) => ({ ...key, state: "pending" }),
+  );
+  await f.sends.send(address);
+  expect(f.sends.read(address)?.state).toBe("accepted");
+  f.drafts.edit(address, () => ({ ...emptyContent(), text: "One more thing" }));
+  await f.sends.send(address);
+  expect(prompts.map((prompt) => prompt.text)).toEqual([
+    "Hello",
+    "One more thing",
+  ]);
+  expect(prompts[0].requestId).not.toBe(prompts[1].requestId);
+  expect(f.drafts.read(address).content.text).toBe("");
+});

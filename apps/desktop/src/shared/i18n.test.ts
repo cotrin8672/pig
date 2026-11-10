@@ -10,3 +10,17 @@ test("Japanese dictionary covers English keys and preserves parameterized user v
   );
   expect(dictionary("ja").Settings).toBe("設定");
 });
+
+test("response cancellation is localized while real error details are preserved", () => {
+  expect(ja.responseError("aborted", "The operation was aborted.")).toBe(
+    "応答を停止しました。",
+  );
+  expect(en.responseError("aborted", "The operation was aborted.")).toBe(
+    "Response stopped.",
+  );
+  for (const t of [en, ja]) {
+    expect(t.responseError("error", "Provider authentication failed")).toBe(
+      "Provider authentication failed",
+    );
+  }
+});

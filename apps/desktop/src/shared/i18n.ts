@@ -383,6 +383,8 @@ export const en = {
   installedError: (error: string) =>
     `Could not check installed packages. ${error}`,
   copyError: (error: string) => `Could not copy command: ${error}`,
+  responseError: (stopReason: string, error: string) =>
+    stopReason === "aborted" ? "Response stopped." : error,
   relativeDate: (count: number, unit: "d" | "mo" | "y") =>
     `${count}${unit} ago`,
   downloads: (count: string) => `${count}/mo`,
@@ -801,6 +803,8 @@ export const ja: Dictionary = {
   installedError: (error) =>
     `インストール済みパッケージを確認できませんでした。${error}`,
   copyError: (error) => `コマンドをコピーできませんでした: ${error}`,
+  responseError: (stopReason, error) =>
+    stopReason === "aborted" ? "応答を停止しました。" : error,
   relativeDate: (count, unit) =>
     `${count}${{ d: "日", mo: "か月", y: "年" }[unit]}前`,
   downloads: (count) => `${count}/月`,
