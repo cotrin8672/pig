@@ -309,14 +309,7 @@ const rpc = BrowserView.defineRPC<RPCSchema>({
       },
       openSession: async (input) => {
         await validateScope(input.cwd);
-        if (input.id) {
-          const info = await resolveSession({ cwd: input.cwd, id: input.id });
-          return openManagedSession({
-            cwd: input.cwd,
-            openId: input.openId,
-            id: info.id,
-          });
-        }
+        // SessionHost validates persisted membership while resolving the file.
         return openManagedSession(input);
       },
       rewindSession: (input) => rewindSession(input),

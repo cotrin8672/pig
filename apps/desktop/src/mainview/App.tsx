@@ -20,6 +20,7 @@ import { DEFAULT_CHAT_WIDTH } from "../shared/chat-width";
 import { filterModels } from "../shared/models";
 import { finishedWork, groupBlocks } from "../shared/tool-view";
 import { responseStats } from "../shared/transcript";
+import { ChatOpening } from "./ChatOpening";
 import { ChatWidthHandles, useChatWidth } from "./ChatWidth";
 import { Composer } from "./Composer";
 import { CustomRecord } from "./CustomRecord";
@@ -33,12 +34,11 @@ import { getT, useT } from "./i18n";
 import { Markdown, UserMessage } from "./MessageContent";
 import { NotificationCenter } from "./NotificationCenter";
 import { Notifications } from "./Notifications";
-import { initNavigation, navigate } from "./navigation";
+import { initNavigation, navigate, navigationRevision } from "./navigation";
 import { ProviderIcon, useProviderName } from "./ProviderIcon";
 import { Providers } from "./Providers";
 import { ResponseFooter } from "./ResponseFooter";
 import {
-  cancelOpening,
   initRuntimeConnection,
   initSessionLinks,
   initSessionReadTracking,
@@ -168,6 +168,9 @@ export function App() {
           <Extensions />
         ) : state.page === "settings" ? (
           <Settings />
+        ) : state.opening &&
+          state.openingViewRevision === navigationRevision ? (
+          <ChatOpening cwd={state.openingNewCwd} />
         ) : active ? (
           <Chat key={addressKey(active.address)} snapshot={active} />
         ) : (
@@ -230,17 +233,6 @@ export function App() {
       </div>
       {state.login && (
         <OAuthLoginDialog key={state.login.loginId} login={state.login} />
-      )}
-      {state.opening && (
-        <div className="loading">
-          {state.openMessage ?? t["Opening chat…"]}{" "}
-          <button
-            type="button"
-            onClick={() => void cancelOpening().catch(showError)}
-          >
-            Cancel opening
-          </button>
-        </div>
       )}
       <Notifications />
     </div>

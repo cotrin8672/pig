@@ -19,6 +19,7 @@ import { sameAddress } from "./chat-snapshot";
 import { drafts } from "./draft-store";
 import { navigate, navigationRevision } from "./navigation";
 import { OpenController } from "./open-controller";
+import { mergeOpeningText } from "./opening-draft";
 import {
   liveAddress,
   receiveExtension,
@@ -354,14 +355,36 @@ const opens = new OpenController({
   getOpenState: (params) => rpc.request.getOpenState(params),
   cancelOpen: (params) => rpc.request.cancelOpen(params),
 });
+let openingReturn:
+  | {
+      openId: string;
+      revision: number;
+      page: ReturnType<typeof useStore.getState>["page"];
+      active?: string;
+    }
+  | undefined;
+function restoreOpening(openId: string) {
+  const previous = openingReturn;
+  if (!previous || previous.openId !== openId) return;
+  openingReturn = undefined;
+  if (previous.revision !== navigationRevision) return;
+  history.replaceState(
+    { page: previous.page, sessionKey: previous.active },
+    "",
+  );
+  useStore.setState({ page: previous.page, active: previous.active });
+}
 export async function cancelOpening() {
   const openId = useStore.getState().openId;
   if (!openId) return;
   const cancellation = opens.cancel(openId);
+  restoreOpening(openId);
   useStore.setState({
     opening: false,
     openingAddress: undefined,
     openMessage: undefined,
+    openingViewRevision: undefined,
+    openingNewCwd: undefined,
     openId: undefined,
   });
   await cancellation;
@@ -386,6 +409,7 @@ export async function openChat(
       }),
     push,
     openId,
+    { id, cwd },
   );
 }
 export async function openChatLink(url: string) {
@@ -459,14 +483,26 @@ async function openSnapshot(
   load: () => Promise<Snapshot | undefined>,
   push = true,
   openId = crypto.randomUUID(),
+  optimistic?: { id?: string; cwd: string },
 ): Promise<Snapshot | undefined> {
   if (push && useStore.getState().opening) return;
+  const previous = useStore.getState();
+  if (optimistic && push) navigate("chat", optimistic.id ?? null);
   const revision = navigationRevision;
+  if (optimistic && push)
+    openingReturn = {
+      openId,
+      revision,
+      page: previous.page,
+      active: previous.active,
+    };
   useStore.setState({
     opening: true,
     openId,
     openMessage: undefined,
     openingAddress: undefined,
+    openingViewRevision: optimistic ? revision : undefined,
+    openingNewCwd: optimistic && !optimistic.id ? optimistic.cwd : undefined,
   });
   try {
     await connectRuntime();
@@ -478,21 +514,43 @@ async function openSnapshot(
       !liveAddress(snapshot.address)
     )
       return;
+    if (optimistic && !optimistic.id && useStore.getState().openId === openId) {
+      const text = useStore.getState().newChatDrafts[optimistic.cwd];
+      if (text) {
+        drafts.edit(snapshot.address, (content) =>
+          mergeOpeningText(content, text),
+        );
+        useStore.setState((state) => {
+          const newChatDrafts = { ...state.newChatDrafts };
+          delete newChatDrafts[optimistic.cwd];
+          return { newChatDrafts };
+        });
+      }
+    }
     receiveSnapshot(snapshot);
     if (revision === navigationRevision) {
       useStore.setState({ active: snapshot.info.id });
-      if (push) navigate("chat", snapshot.info.id);
+      if (push && optimistic)
+        history.replaceState(
+          { page: "chat", sessionKey: snapshot.info.id },
+          "",
+        );
+      else if (push) navigate("chat", snapshot.info.id);
     }
-    await refreshSessions();
+    if (openingReturn?.openId === openId) openingReturn = undefined;
+    void refreshSessions().catch(showError);
     return useStore.getState().snapshots[snapshot.info.id];
   } catch (error) {
     if (!opens.isCancelled(openId)) showError(error);
   } finally {
+    restoreOpening(openId);
     if (useStore.getState().openId === openId)
       useStore.setState({
         opening: false,
         openId: undefined,
         openingAddress: undefined,
+        openingViewRevision: undefined,
+        openingNewCwd: undefined,
         openMessage: undefined,
       });
   }

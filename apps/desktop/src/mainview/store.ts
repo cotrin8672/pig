@@ -49,6 +49,9 @@ export const useStore = create<{
   openingAddress?: SessionAddress;
   openId?: string;
   openMessage?: string;
+  openingViewRevision?: number;
+  openingNewCwd?: string;
+  newChatDrafts: Record<string, string>;
   installed: InstalledPackage[];
   packageOps: Record<string, PackageOpStatus>;
   notices: (Notice & { id: string })[];
@@ -83,6 +86,7 @@ export const useStore = create<{
   installed: [],
   packageOps: {},
   notices: [],
+  newChatDrafts: {},
   noticeHistory: loadNoticeHistory(),
   opening: false,
   maximized: false,
