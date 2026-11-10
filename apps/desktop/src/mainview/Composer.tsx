@@ -1,8 +1,16 @@
-import { ArrowUp, Square, X } from "lucide-react";
-import { useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { ArrowUp, BookOpen, FileText, Puzzle, Square, X } from "lucide-react";
+import {
+  useEffect,
+  useId,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from "react";
 import { filterModels } from "../shared/models";
 import { makeMarker, shouldCollapse } from "../shared/paste";
-import type { Snapshot } from "../shared/rpc-schema";
+import type { SlashCommand, Snapshot } from "../shared/rpc-schema";
 import { ContextIndicator } from "./ContextIndicator";
 import { addressKey } from "./chat-snapshot";
 import { drafts, expandedDraft } from "./draft-store";
@@ -11,8 +19,17 @@ import { useT } from "./i18n";
 import { ModelPicker } from "./ModelPicker";
 import { navigate } from "./navigation";
 import { rpc, sends } from "./rpc";
+import {
+  applySlashCompletion,
+  extensionCommand,
+  matchesSlashCommand,
+  type SlashArgument,
+  slashContext,
+} from "./slash-completion";
 import { showError, useStore } from "./store";
 import "./composer.css";
+
+const categoryIcons = { extension: Puzzle, skill: BookOpen, prompt: FileText };
 
 const imageTypes = new Set([
   "image/png",
@@ -35,10 +52,37 @@ function changeReads(key: string, delta: number) {
 }
 export function Composer({ snapshot }: { snapshot: Snapshot }) {
   const t = useT();
+  const dockRef = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => {
+    const dock = dockRef.current;
+    const shell = dock?.closest<HTMLElement>(".chat-shell");
+    if (!dock || !shell) return;
+    const measure = () => {
+      shell.style.setProperty(
+        "--composer-height",
+        `${dock.getBoundingClientRect().height}px`,
+      );
+    };
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(dock);
+    return () => {
+      observer.disconnect();
+      shell.style.removeProperty("--composer-height");
+    };
+  }, []);
   const { address, transcript, model } = snapshot;
   const key = addressKey(address);
   const { models: available, disabledModels } = useStore((s) => s.bootstrap);
   const models = filterModels(available, disabledModels);
+  const slashAddress = useMemo(
+    () => ({
+      hostId: address.hostId,
+      sessionId: address.sessionId,
+      epoch: address.epoch,
+    }),
+    [address.hostId, address.sessionId, address.epoch],
+  );
   const modelPending = useStore((s) => s.modelPending);
   const canSend = models.some(
     (m) => m.provider === model?.provider && m.id === model.id,
@@ -61,6 +105,130 @@ export function Composer({ snapshot }: { snapshot: Snapshot }) {
   const submitting =
     sendState?.state === "sending" || sendState?.state === "checking";
   const uncertain = sendState?.state === "unknown";
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const listId = useId();
+  const [commandState, setCommandState] = useState<{
+    key: string;
+    commands: SlashCommand[];
+  }>({ key: "", commands: [] });
+  const commands = commandState.key === key ? commandState.commands : [];
+  const [selection, setSelection] = useState({ key, start: 0, end: 0 });
+  const [focused, setFocused] = useState(false);
+  const [composing, setComposing] = useState(false);
+  const [dismissed, setDismissed] = useState(false);
+  const [selected, setSelected] = useState(0);
+  const [argumentState, setArgumentState] = useState<{
+    query: string;
+    items: SlashArgument[];
+  }>({ query: "", items: [] });
+  const context =
+    selection.key === key && focused && !composing && !dismissed
+      ? slashContext(text, selection.start, selection.end)
+      : undefined;
+  const open = !!context;
+  useEffect(() => {
+    if (open) return;
+    let live = true;
+    void rpc.request
+      .listSlashCommands(slashAddress)
+      .then((commands) => {
+        if (live) setCommandState({ key, commands });
+      })
+      .catch((error) => {
+        if (live) showError(error);
+      });
+    return () => {
+      live = false;
+    };
+  }, [key, slashAddress, open]);
+  useEffect(() => {
+    if (!open) return;
+    let live = true;
+    void rpc.request
+      .listSlashCommands(slashAddress)
+      .then((commands) => {
+        if (live) setCommandState({ key, commands });
+      })
+      .catch((error) => {
+        if (live) showError(error);
+      });
+    return () => {
+      live = false;
+    };
+  }, [key, slashAddress, open]);
+  const name = context?.kind === "argument" ? context.name : undefined;
+  const prefix = context?.kind === "argument" ? context.prefix : undefined;
+  const query = name === undefined ? "" : JSON.stringify([key, name, prefix]);
+  const hasExtension = commands.some(
+    (c) => c.name === name && c.category === "extension",
+  );
+  useEffect(() => {
+    let live = true;
+    setArgumentState({ query: "", items: [] });
+    if (name !== undefined && prefix !== undefined && hasExtension) {
+      void rpc.request
+        .completeSlashArguments({
+          ...slashAddress,
+          name,
+          argumentPrefix: prefix,
+        })
+        .then((items) => {
+          if (live) setArgumentState({ query, items });
+        })
+        .catch((error) => {
+          if (live) showError(error);
+        });
+    }
+    return () => {
+      live = false;
+    };
+  }, [query, name, prefix, hasExtension, slashAddress]);
+  const options =
+    context?.kind === "command"
+      ? commands
+          .filter((c) => matchesSlashCommand(c, context.prefix))
+          .map((c) => ({
+            label: `/${c.name}`,
+            value: `/${c.name}`,
+            description: c.description,
+            category: c.category,
+          }))
+      : query && argumentState.query === query
+        ? argumentState.items.map((item) => ({ ...item, category: undefined }))
+        : [];
+  const active = Math.min(selected, options.length - 1);
+  useEffect(() => {
+    if (active >= 0)
+      document
+        .getElementById(`${listId}-${active}`)
+        ?.scrollIntoView({ block: "nearest" });
+  }, [active, listId]);
+  const extensionSend = !images.length && extensionCommand(expanded, commands);
+  function updateSelection(target: HTMLTextAreaElement) {
+    setSelection({
+      key,
+      start: target.selectionStart,
+      end: target.selectionEnd,
+    });
+    setDismissed(false);
+    setSelected(0);
+  }
+  function acceptOption(index: number) {
+    if (!context || !options[index]) return;
+    const { text: next, cursor } = applySlashCompletion(
+      text,
+      context,
+      options[index].value,
+    );
+    drafts.edit(address, (content) => ({ ...content, text: next }));
+    setSelection({ key, start: cursor, end: cursor });
+    setSelected(0);
+    setDismissed(context.kind === "argument");
+    requestAnimationFrame(() => {
+      textareaRef.current?.focus();
+      textareaRef.current?.setSelectionRange(cursor, cursor);
+    });
+  }
   // Background mirror is not the command barrier: send still awaits the ordered CAS queue.
   useEffect(() => {
     if (!draft.dirty || draft.conflict || draft.retired) return;
@@ -77,8 +245,8 @@ export function Composer({ snapshot }: { snapshot: Snapshot }) {
   function send() {
     if (
       (!expanded && !images.length) ||
-      !canSend ||
-      useStore.getState().modelPending ||
+      (!canSend && !extensionSend) ||
+      (useStore.getState().modelPending && !extensionSend) ||
       imageBlocked ||
       reading ||
       submitting ||
@@ -139,7 +307,7 @@ export function Composer({ snapshot }: { snapshot: Snapshot }) {
     }
   }
   return (
-    <div className="composer-dock">
+    <div className="composer-dock" ref={dockRef}>
       <ExtensionWidgets address={address} placement="aboveEditor" />
       {draft.conflict && (
         <section className="draft-conflict" role="alert">
@@ -205,7 +373,76 @@ export function Composer({ snapshot }: { snapshot: Snapshot }) {
             ))}
           </div>
         )}
+        {options.length > 0 && (
+          <div
+            className="slash-options"
+            id={listId}
+            role="listbox"
+            aria-label={t.slashSuggestions}
+          >
+            {options.map((option, index) => (
+              <div
+                key={`${option.category ?? "argument"}-${option.value}-${option.label}`}
+                id={`${listId}-${index}`}
+                role="option"
+                tabIndex={-1}
+                aria-selected={index === active}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter" || event.key === " ") {
+                    event.preventDefault();
+                    acceptOption(index);
+                  }
+                }}
+                onMouseDown={(event) => event.preventDefault()}
+                onClick={() => acceptOption(index)}
+              >
+                {option.category &&
+                  (() => {
+                    const Icon = categoryIcons[option.category];
+                    return (
+                      <span
+                        role="img"
+                        className="slash-category"
+                        title={t[option.category]}
+                        aria-label={t[option.category]}
+                      >
+                        <Icon size={14} aria-hidden="true" />
+                      </span>
+                    );
+                  })()}
+                <span className="slash-name" title={option.label}>
+                  {option.label}
+                </span>
+                {option.description && (
+                  <small
+                    className="slash-description"
+                    title={option.description}
+                  >
+                    {option.description}
+                  </small>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
         <textarea
+          ref={textareaRef}
+          aria-autocomplete="list"
+          aria-controls={options.length ? listId : undefined}
+          aria-activedescendant={
+            active >= 0 ? `${listId}-${active}` : undefined
+          }
+          onFocus={(event) => {
+            setFocused(true);
+            updateSelection(event.currentTarget);
+          }}
+          onBlur={() => setFocused(false)}
+          onSelect={(event) => updateSelection(event.currentTarget)}
+          onCompositionStart={() => setComposing(true)}
+          onCompositionEnd={(event) => {
+            setComposing(false);
+            updateSelection(event.currentTarget);
+          }}
           aria-label={t.Message}
           placeholder={
             transcript.running
@@ -214,12 +451,14 @@ export function Composer({ snapshot }: { snapshot: Snapshot }) {
           }
           rows={2}
           value={text}
-          onChange={(event) =>
+          onChange={(event) => {
+            const target = event.currentTarget;
+            updateSelection(target);
             drafts.edit(address, (content) => ({
               ...content,
-              text: event.target.value,
-            }))
-          }
+              text: target.value,
+            }));
+          }}
           onPaste={(event) => {
             const files = Array.from(event.clipboardData.files);
             if (files.length) {
@@ -261,6 +500,40 @@ export function Composer({ snapshot }: { snapshot: Snapshot }) {
           }}
           onKeyDown={(event) => {
             if (
+              event.nativeEvent.isComposing ||
+              event.keyCode === 229 ||
+              composing
+            )
+              return;
+            if (
+              options.length &&
+              !event.shiftKey &&
+              !event.ctrlKey &&
+              !event.metaKey &&
+              !event.altKey
+            ) {
+              if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+                event.preventDefault();
+                setSelected(
+                  (active +
+                    (event.key === "ArrowDown" ? 1 : -1) +
+                    options.length) %
+                    options.length,
+                );
+                return;
+              }
+              if (event.key === "Enter" || event.key === "Tab") {
+                event.preventDefault();
+                acceptOption(active);
+                return;
+              }
+              if (event.key === "Escape") {
+                event.preventDefault();
+                setDismissed(true);
+                return;
+              }
+            }
+            if (
               event.key === "Enter" &&
               !event.shiftKey &&
               !event.nativeEvent.isComposing &&
@@ -294,8 +567,8 @@ export function Composer({ snapshot }: { snapshot: Snapshot }) {
               aria-label={transcript.running ? t["Queue follow-up"] : t.Send}
               disabled={
                 (!expanded && !images.length) ||
-                !canSend ||
-                modelPending ||
+                (!canSend && !extensionSend) ||
+                (modelPending && !extensionSend) ||
                 imageBlocked ||
                 reading > 0 ||
                 submitting ||
@@ -348,7 +621,7 @@ export function Composer({ snapshot }: { snapshot: Snapshot }) {
           }
         </p>
       )}
-      {!canSend && (
+      {!canSend && !extensionSend && (
         <p className="composer-hint">
           {t["Choose an enabled model to send a message."]}{" "}
           <button type="button" onClick={() => navigate("providers")}>

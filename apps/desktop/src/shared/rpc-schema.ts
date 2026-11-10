@@ -180,6 +180,12 @@ export type PackageOpStatus = {
   action: "install" | "uninstall" | "update";
 } & ({ status: "running" | "done" } | { status: "error"; message: string });
 
+export interface SlashCommand {
+  name: string;
+  description?: string;
+  category: "extension" | "skill" | "prompt";
+}
+
 export type RPCSchema = {
   bun: {
     requests: {
@@ -251,6 +257,11 @@ export type RPCSchema = {
       // biome-ignore lint/suspicious/noConfusingVoidType: Electrobun convention.
       cancelOpen: { params: { openId: string }; response: void };
       getSessionSnapshot: { params: SessionAddress; response: Snapshot };
+      listSlashCommands: { params: SessionAddress; response: SlashCommand[] };
+      completeSlashArguments: {
+        params: SessionAddress & { name: string; argumentPrefix: string };
+        response: { value: string; label: string; description?: string }[];
+      };
       getPromptReceipt: { params: SendKey; response: PromptReceipt };
       syncDraft: { params: DraftSyncParams; response: DraftSyncResult };
       // biome-ignore lint/suspicious/noConfusingVoidType: Electrobun convention.

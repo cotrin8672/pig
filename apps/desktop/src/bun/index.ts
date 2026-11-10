@@ -212,6 +212,9 @@ const rpc = BrowserView.defineRPC<RPCSchema>({
       getOpenState: (input) => sessionHost.getOpenState(input),
       cancelOpen: (input) => sessionHost.cancelOpen(input),
       getSessionSnapshot: (input) => sessionHost.getSessionSnapshot(input),
+      listSlashCommands: (input) => sessionHost.listSlashCommands(input),
+      completeSlashArguments: (input) =>
+        sessionHost.completeSlashArguments(input),
       getPromptReceipt: (input) => sessionHost.getPromptReceipt(input),
       syncDraft: (input) => sessionHost.syncDraft(input),
       resolveExtensionUI: (input) => sessionHost.resolveExtensionUI(input),

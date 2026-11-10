@@ -5,6 +5,7 @@ import { join } from "node:path";
 
 const extension = `export default function(pi) {
   pi.on("session_start", async (_event, ctx) => {
+    if (ctx.mode !== "rpc") throw new Error("Expected rpc extension mode, received " + ctx.mode);
     globalThis.__starts++;
     await ctx.ui.confirm("Startup", "Ready?");
     globalThis.__customValue = await ctx.ui.custom((_tui, _theme, _keys, done) => {
@@ -17,6 +18,8 @@ const extension = `export default function(pi) {
   });
   pi.on("session_shutdown", (event) => {globalThis.__shutdown.push(event.reason);});
   pi.registerCommand("boom", {description: "Fixture error", handler: async () => {throw new Error("command failure fixture");}});
+  pi.registerCommand("complete", {description:"Complete fixture", getArgumentCompletions: async prefix => [{value:prefix + "-value", label:prefix, description:"result"}], handler: async () => {}});
+  pi.registerCommand("dupe", {description:"first", handler: async () => {}});
   pi.on("input", async (event) => {if(event.text === "slow-input") {globalThis.__inputStarted = true; await globalThis.__inputGate;}});
   pi.on("before_agent_start", async (event) => {if(event.messageType === "user" && event.prompt === "slow-start") {globalThis.__startStarted = true; await globalThis.__startGate;}});
   pi.on("agent_settled", async () => {if(globalThis.__holdSettled) {globalThis.__settling = true; await globalThis.__settledGate;}});
@@ -41,6 +44,12 @@ test("SDK fork/rewind/reload/shutdown, root startup UI and stale epochs", async 
       await mkdir(join(cwd, ".pi/extensions"), {recursive:true});
       await writeFile(join(cwd, ".pi/extensions/fixture.ts"), ${JSON.stringify(extension)});
       const faux = fauxProvider({tokensPerSecond: Infinity, models:[{id:"fixture", input:["text","image"]}]});
+      await writeFile(join(cwd, ".pi/extensions/second.ts"), 'export default pi => pi.registerCommand("dupe", {description:"second", handler: async () => {}})');
+      await mkdir(join(cwd, ".pi/skills/example"), {recursive:true});
+      await writeFile(join(cwd, ".pi/skills/example/SKILL.md"), '---\\nname: example\\ndescription: Example skill\\n---\\nSkill body');
+      await mkdir(join(cwd, ".pi/prompts"), {recursive:true});
+      await writeFile(join(cwd, ".pi/prompts/complete.md"), '---\\ndescription: Hidden prompt\\n---\\nPrompt');
+      await writeFile(join(cwd, ".pi/prompts/greeting.md"), '---\\ndescription: Greeting prompt\\n---\\nPrompt');
       let settings = {...defaultSettings};
       let startup = 0, holdStartup = false;
       const events = [];
@@ -56,6 +65,17 @@ test("SDK fork/rewind/reload/shutdown, root startup UI and stale epochs", async 
       expect(globalThis.__customDisposed).toBe(1);
       expect(chat.transcript.records.some(r => r.kind === "custom-entry" && r.customType === "fixture")).toBe(true);
       expect(host.drafts.read(chat.address).text).toBe("extension draft");
+      expect(host.listSlashCommands(chat.address)).toContainEqual({name:"complete", description:"Complete fixture", category:"extension"});
+      expect(await host.completeSlashArguments({...chat.address,name:"complete",argumentPrefix:"abc"})).toEqual([{value:"abc-value",label:"abc",description:"result"}]);
+      expect(await host.completeSlashArguments({...chat.address,name:"unknown",argumentPrefix:""})).toEqual([]);
+      const commands = host.listSlashCommands(chat.address);
+      expect(commands.filter(c => c.name.startsWith("dupe:")).map(c => c.name).sort()).toEqual(["dupe:1", "dupe:2"]);
+      expect(commands.filter(c => c.name === "complete")).toHaveLength(1);
+      expect(commands).toContainEqual({name:"greeting",description:"Greeting prompt",category:"prompt"});
+      expect(commands).toContainEqual({name:"skill:example",description:"Example skill",category:"skill"});
+      host.session(chat.info.id).settingsManager.setEnableSkillCommands(false);
+      expect(host.listSlashCommands(chat.address).some(c => c.name === "skill:example")).toBe(false);
+      host.session(chat.info.id).settingsManager.setEnableSkillCommands(true);
       const initial = chat.address;
       const flags = new DesktopStateStore(join(cwd, "desktop.json"));
       await flags.setSession(chat.info.id, {pinned: true, archived: true});
@@ -73,6 +93,8 @@ test("SDK fork/rewind/reload/shutdown, root startup UI and stale epochs", async 
       const fork = await host.forkSession({...chat.address, entryId:last.entryId});
       expect(fork.info.id).not.toBe(chat.info.id); expect(fork.address.epoch).toBeGreaterThan(chat.address.epoch);
       expect(() => host.getSessionSnapshot(initial)).toThrow("STALE");
+      expect(() => host.listSlashCommands(initial)).toThrow("STALE");
+      await expect(host.completeSlashArguments({...initial,name:"complete",argumentPrefix:""})).rejects.toThrow("STALE");
       expect(globalThis.__shutdown).toEqual(["fork"]);
       chat = fork;
       await host.setModel({...chat.address, provider:faux.getModel().provider, id:faux.getModel().id});

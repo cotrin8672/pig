@@ -27,3 +27,56 @@
   border-radius: 50%;
   background: var(--ds-bg-composer);
 }
+
+.slash-options {
+  position: absolute;
+  bottom: calc(100% + 8px);
+  left: 0;
+  z-index: 10;
+  width: 100%;
+  max-height: min(320px, 50vh);
+  overflow-y: auto;
+  background: var(--ds-bg-popover);
+  backdrop-filter: blur(20px);
+  border: 1px solid var(--ds-border-strong);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--ds-shadow-dialog);
+  padding: 8px;
+  color: var(--ds-text-primary);
+}
+.slash-options [role="option"] {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  gap: 8px;
+  padding: 6px 12px;
+  cursor: pointer;
+}
+.slash-options [aria-selected="true"] {
+  background: var(--ds-bg-hover);
+}
+.slash-category {
+  display: grid;
+  place-items: center;
+  flex: 0 0 24px;
+  height: 24px;
+  border-radius: var(--radius-sm);
+  background: var(--ds-bg-chip);
+  color: var(--ds-text-secondary);
+}
+.slash-name {
+  flex: 0 1 auto;
+  max-width: 55%;
+  min-width: 0;
+}
+.slash-description {
+  flex: 1;
+  min-width: 0;
+  color: var(--ds-text-secondary);
+}
+.slash-name,
+.slash-description {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

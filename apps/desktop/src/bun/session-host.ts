@@ -31,6 +31,7 @@ import type {
   ModelInfo,
   ModelSelection,
   SessionInfo,
+  SlashCommand,
   Snapshot,
   WireEvent,
 } from "../shared/rpc-schema";
@@ -675,7 +676,7 @@ export class SessionHost {
     );
     await session.bindExtensions({
       uiContext: m.ui.uiContext,
-      mode: "tui",
+      mode: "rpc",
       abortHandler: () => {
         void this.abort(m.address);
       },
@@ -902,6 +903,44 @@ export class SessionHost {
   }
   getSessionSnapshot(address: SessionAddress) {
     return this.snapshot(this.current(address, false));
+  }
+  listSlashCommands(address: SessionAddress): SlashCommand[] {
+    const session = required(this.current(address).runtime).session;
+    const commands: SlashCommand[] = [];
+    const seen = new Set<string>();
+    const add = (
+      name: string,
+      description: string | undefined,
+      category: SlashCommand["category"],
+    ) => {
+      if (!seen.has(name)) {
+        seen.add(name);
+        commands.push({ name, description, category });
+      }
+    };
+    for (const command of session.extensionRunner.getRegisteredCommands())
+      add(command.invocationName, command.description, "extension");
+    if (session.settingsManager.getEnableSkillCommands())
+      for (const skill of session.resourceLoader.getSkills().skills)
+        add(`skill:${skill.name}`, skill.description, "skill");
+    for (const template of session.promptTemplates)
+      add(template.name, template.description, "prompt");
+    return commands;
+  }
+  async completeSlashArguments(
+    input: SessionAddress & { name: string; argumentPrefix: string },
+  ) {
+    const session = required(this.current(input).runtime).session;
+    const command = session.extensionRunner
+      .getRegisteredCommands()
+      .find((item) => item.invocationName === input.name);
+    const items = await command?.getArgumentCompletions?.(input.argumentPrefix);
+    this.current(input);
+    return (items ?? []).map(({ value, label, description }) => ({
+      value,
+      label,
+      description,
+    }));
   }
   getPromptReceipt(key: SendKey) {
     return this.receipts.lookup(key);

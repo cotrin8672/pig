@@ -1,6 +1,10 @@
 import type { Settings } from "./settings";
 
 export const en = {
+  slashSuggestions: "Slash command suggestions",
+  extension: "Extension",
+  skill: "Skill",
+  prompt: "Prompt",
   "Refresh models": "Refresh models",
   "Refreshing models…": "Refreshing models…",
   dockTitle: "Session activity",
@@ -410,6 +414,10 @@ export const en = {
 };
 type Dictionary = { [K in keyof typeof en]: (typeof en)[K] };
 export const ja: Dictionary = {
+  slashSuggestions: "スラッシュコマンドの候補",
+  extension: "拡張機能",
+  skill: "スキル",
+  prompt: "プロンプト",
   "Refresh models": "モデルを再取得",
   "Refreshing models…": "モデルを再取得中…",
   dockTitle: "セッションの作業状況",
