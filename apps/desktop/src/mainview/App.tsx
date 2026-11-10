@@ -54,6 +54,7 @@ import { SidebarSessions } from "./SidebarSessions";
 import { initShortcuts } from "./shortcuts";
 import { type LoginState, showError, useStore } from "./store";
 import { ThinkingBlock, ToolBlock, ToolGroup, WorkToggle } from "./ToolBlock";
+import { isThreadAtBottom } from "./thread-scroll";
 import { UIRequestBroker } from "./UIRequestBroker";
 
 const basename = (path: string) =>
@@ -452,6 +453,7 @@ function Chat({ snapshot }: { snapshot: ChatSnapshot }) {
   const models = filterModels(available, disabledModels);
   const { width, setWidth } = useChatWidth();
   const thread = useRef<HTMLDivElement>(null);
+  const followThread = useRef(true);
   const status = useStore(
     (s) => s.extensionStatuses[addressKey(snapshot.address)],
   );
@@ -494,7 +496,8 @@ function Chat({ snapshot }: { snapshot: ChatSnapshot }) {
   };
   // biome-ignore lint/correctness/useExhaustiveDependencies: Transcript changes require scrolling its updated DOM before paint.
   useLayoutEffect(() => {
-    if (thread.current) thread.current.scrollTop = thread.current.scrollHeight;
+    if (thread.current && followThread.current)
+      thread.current.scrollTop = thread.current.scrollHeight;
   }, [transcript]);
   return (
     <div className="session-layout">
@@ -533,7 +536,13 @@ function Chat({ snapshot }: { snapshot: ChatSnapshot }) {
             </button>
           </div>
         </header>
-        <div ref={thread} className="thread-scroll">
+        <div
+          ref={thread}
+          className="thread-scroll"
+          onScroll={(event) => {
+            followThread.current = isThreadAtBottom(event.currentTarget);
+          }}
+        >
           <div className="transcript">
             {!transcript.records.length && (
               <div className="chat-empty">
