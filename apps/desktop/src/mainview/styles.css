@@ -1416,7 +1416,6 @@ input:not([type="range"]) {
   border: 1px solid var(--ds-border-strong);
   border-radius: var(--radius-md);
   padding: 8px 12px;
-  box-shadow: var(--ds-shadow-dialog);
   display: flex;
   align-items: flex-start;
   gap: 6px;
