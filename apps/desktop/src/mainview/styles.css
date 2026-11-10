@@ -355,10 +355,7 @@ main {
   transition: margin-left var(--motion-duration-normal) var(--motion-ease-out);
   border-radius: var(--radius-sm);
   overflow: hidden;
-  box-shadow:
-    var(--ds-elevation-stroke),
-    0 4px 16px #11111626,
-    0 0 0 100vmax var(--ds-bg-sidebar);
+  box-shadow: 0 0 0 100vmax var(--ds-bg-sidebar);
 }
 main > :not(.window-drag-strip) {
   grid-row: 2;
