@@ -4,3 +4,5 @@ build/
 artifacts/
 *.log
 apps/desktop/rtk/
+/rtk/
+apps/desktop/src/bun/rtk/
