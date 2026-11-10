@@ -62,8 +62,8 @@ native drag-region backport, downloads about 170 MB of checksum-verified SDKs on
 the first build, and caches the result. Installed dependencies are not modified.
 
 ```sh
-pnpm install
-pnpm dev
+mise exec -- pnpm install
+mise run dev
 ```
 
 Add a project folder with **+**, open **Providers** to sign in with an OpenAI
@@ -84,9 +84,14 @@ Only sessions in registered project folders can be opened. Electrobun 1.18.1
 does not support OS-level URL activation on Windows/Linux, so links do not
 launch the app from other applications.
 
-`pnpm dev` builds the webview and launches the app. For webview HMR, also run
-`pnpm --filter @pig/desktop exec vite` in another terminal; restart `pnpm dev`
-after changing main-process code. Without Vite, the app uses bundled views.
+On Windows, `mise run dev` focuses the running development app, or starts
+`pnpm dev` in the background. Logs are written to `%TEMP%/piris-dev.stdout.log`
+and `%TEMP%/piris-dev.stderr.log`. Close the development app before a fresh launch.
+For foreground logs, use `mise exec -- pnpm dev` instead.
+
+`pnpm dev` builds the webview, starts Vite with HMR, and launches the app.
+Main-process changes automatically restart the app; do not launch a second Vite
+server or development app.
 
 ```sh
 pnpm typecheck
