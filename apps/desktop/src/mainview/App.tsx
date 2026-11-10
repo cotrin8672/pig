@@ -127,7 +127,9 @@ export function App() {
             className={`sidebar-icon ${state.page === "settings" ? "active" : ""}`}
             aria-label={t.Settings}
             title={t.Settings}
-            onClick={() => navigate("settings")}
+            onClick={() =>
+              navigate(state.page === "settings" ? "chat" : "settings")
+            }
           >
             <SettingsIcon size={16} aria-hidden="true" />
           </button>
@@ -136,7 +138,9 @@ export function App() {
             className={`sidebar-icon ${state.page === "providers" ? "active" : ""}`}
             aria-label={`${t.Providers}: ${state.login?.error || (state.login ? t["Signing in…"] : connected ? t.Connected : t["Not connected"])}`}
             title={`${t.Providers}: ${state.login?.error || (state.login ? t["Signing in…"] : connected ? t.Connected : t["Not connected"])}`}
-            onClick={() => navigate("providers")}
+            onClick={() =>
+              navigate(state.page === "providers" ? "chat" : "providers")
+            }
           >
             <Settings2 size={16} aria-hidden="true" />
             <span
@@ -149,7 +153,9 @@ export function App() {
             className={`sidebar-icon ${state.page === "extensions" ? "active" : ""}`}
             aria-label={t.Extensions}
             title={t.Extensions}
-            onClick={() => navigate("extensions")}
+            onClick={() =>
+              navigate(state.page === "extensions" ? "chat" : "extensions")
+            }
           >
             <Puzzle size={16} aria-hidden="true" />
           </button>
