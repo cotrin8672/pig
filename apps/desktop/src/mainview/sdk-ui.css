@@ -15,6 +15,14 @@
 .sdk-request::backdrop {
   background: #0008;
 }
+.sdk-request[aria-modal="false"],
+.terminal-dialog[aria-modal="false"] {
+  position: fixed;
+  inset: 64px 24px auto auto;
+  margin: 0;
+  max-width: min(calc(100vw - 48px), max(280px, calc(100vw - 296px)));
+  z-index: 20;
+}
 .sdk-request p,
 .sdk-request ul {
   margin: 16px 0;
@@ -66,6 +74,15 @@
   flex-wrap: wrap;
   gap: 8px;
   background: var(--ds-bg-elevated-opaque);
+}
+.ui-waiting-floating {
+  position: fixed;
+  top: 48px;
+  right: 16px;
+  max-width: calc(100vw - 48px);
+  z-index: 30;
+  border: 1px solid var(--ds-border-strong);
+  border-radius: var(--radius-xs);
 }
 .ui-waiting [aria-pressed="true"] {
   color: var(--ds-accent);

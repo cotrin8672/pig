@@ -75,8 +75,8 @@ function removeSurfaces(address: SessionAddress) {
 function replace(previous: SessionAddress, next: SessionAddress) {
   if (sameAddress(previous, next) || retired.has(addressKey(previous))) return;
   retired.add(addressKey(previous));
-  for (const listener of ownershipListeners) listener(previous, next);
   drafts.transfer(previous, next);
+  for (const listener of ownershipListeners) listener(previous, next);
   removeSurfaces(previous);
   useStore.setState((s) => {
     const snapshots = { ...s.snapshots };
@@ -122,8 +122,26 @@ export function receiveRuntime(event: RuntimeEvent) {
   runtimeRevision++;
   if (event.type === "opening") {
     if (!register(event.address)) return;
-    if (event.openId && event.openId === useStore.getState().openId)
-      useStore.setState({ openingAddress: event.address });
+    if (event.openId)
+      useStore.setState((state) => {
+        const pending = state.pendingOpens[event.openId as string];
+        return {
+          ...(event.openId === state.openId
+            ? { openingAddress: event.address }
+            : {}),
+          ...(pending
+            ? {
+                pendingOpens: {
+                  ...state.pendingOpens,
+                  [event.openId as string]: {
+                    ...pending,
+                    address: event.address,
+                  },
+                },
+              }
+            : {}),
+        };
+      });
     if (event.previous) replace(event.previous, event.address);
   } else if (event.type === "replaced") {
     if (!liveAddress(event.snapshot.address)) return;
@@ -142,8 +160,15 @@ export function receiveRuntime(event: RuntimeEvent) {
       if (
         snapshots[event.address.sessionId] &&
         sameAddress(snapshots[event.address.sessionId].address, event.address)
-      )
-        delete snapshots[event.address.sessionId];
+      ) {
+        const snapshot = snapshots[event.address.sessionId];
+        if (event.reason === "failed" && snapshot.ready === false)
+          snapshots[event.address.sessionId] = {
+            ...snapshot,
+            failure: event.message,
+          };
+        else delete snapshots[event.address.sessionId];
+      }
       return { snapshots };
     });
     if (event.reason === "failed" && event.message)

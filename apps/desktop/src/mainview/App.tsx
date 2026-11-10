@@ -4,29 +4,24 @@ import {
   CircleAlert,
   Copy,
   ExternalLink,
-  Folder,
   LoaderCircle,
-  Minus,
-  MoveHorizontal,
   PanelLeft,
   Plus,
   Puzzle,
   Settings2,
   Settings as SettingsIcon,
-  Square,
   X,
 } from "lucide-react";
 import { Fragment, useEffect, useLayoutEffect, useRef, useState } from "react";
-import { DEFAULT_CHAT_WIDTH } from "../shared/chat-width";
-import { filterModels } from "../shared/models";
 import { finishedWork, groupBlocks } from "../shared/tool-view";
 import { responseStats } from "../shared/transcript";
-import { ChatOpening } from "./ChatOpening";
-import { ChatWidthHandles, useChatWidth } from "./ChatWidth";
+import { ChatHeader } from "./ChatHeader";
+import { ChatEmpty, ChatLayout } from "./ChatLayout";
+import { ChatOpening, OpeningComposer } from "./ChatOpening";
 import { Composer } from "./Composer";
 import { CustomRecord } from "./CustomRecord";
 import type { ChatSnapshot } from "./chat-snapshot";
-import { addressKey } from "./chat-snapshot";
+import { addressKey, prependHistory, sameAddress } from "./chat-snapshot";
 import { customPresentation, dataText } from "./custom-data";
 import { DraftRecovery } from "./DraftRecovery";
 import { Extensions } from "./Extensions";
@@ -40,6 +35,7 @@ import { ProviderIcon, useProviderName } from "./ProviderIcon";
 import { Providers } from "./Providers";
 import { ResponseFooter } from "./ResponseFooter";
 import {
+  cancelOpening,
   initRuntimeConnection,
   initSessionLinks,
   initSessionReadTracking,
@@ -56,9 +52,7 @@ import { type LoginState, showError, useStore } from "./store";
 import { ThinkingBlock, ToolBlock, ToolGroup, WorkToggle } from "./ToolBlock";
 import { isThreadAtBottom } from "./thread-scroll";
 import { UIRequestBroker } from "./UIRequestBroker";
-
-const basename = (path: string) =>
-  path.split(/[\\/]/).filter(Boolean).pop() || path;
+import { WindowTitlebar } from "./WindowTitlebar";
 
 function isWindowDragTarget(target: EventTarget) {
   return (
@@ -83,6 +77,17 @@ export function App() {
     document.documentElement.lang = state.settings.language;
   }, [state.settings.language]);
   const active = state.active ? state.snapshots[state.active] : undefined;
+  const openingSnapshot = state.openingTarget?.id
+    ? state.snapshots[state.openingTarget.id]
+    : undefined;
+  const openingView =
+    state.opening && state.openingViewRevision === navigationRevision;
+  const displayedChat = openingView ? openingSnapshot : active;
+  const displayedChatOpening =
+    displayedChat &&
+    state.opening &&
+    state.openingAddress &&
+    sameAddress(state.openingAddress, displayedChat.address);
   const connected = state.bootstrap.models.length > 0;
   return (
     // biome-ignore lint/a11y/noStaticElementInteractions: Native drag handles; maximize is also available as a keyboard-accessible button.
@@ -163,16 +168,21 @@ export function App() {
         </div>
       </aside>
       <main>
-        <div className="window-drag-strip electrobun-webkit-app-region-drag" />
         {state.page === "providers" ? (
           <Providers />
         ) : state.page === "extensions" ? (
           <Extensions />
         ) : state.page === "settings" ? (
           <Settings />
-        ) : state.opening &&
-          state.openingViewRevision === navigationRevision ? (
-          <ChatOpening cwd={state.openingNewCwd} />
+        ) : openingView ? (
+          openingSnapshot ? (
+            <Chat
+              key={addressKey(openingSnapshot.address)}
+              snapshot={openingSnapshot}
+            />
+          ) : (
+            <ChatOpening />
+          )
         ) : active ? (
           <Chat key={addressKey(active.address)} snapshot={active} />
         ) : (
@@ -200,39 +210,48 @@ export function App() {
       </main>
       <DraftRecovery />
       <UIRequestBroker />
-      {/* Mouse clicks must not leave a focus ring behind, like native caption buttons. */}
-      <div
-        className="window-controls electrobun-webkit-app-region-no-drag"
-        role="toolbar"
-        aria-label={t["Window controls"]}
-        onMouseDown={(e) => e.preventDefault()}
+      <WindowTitlebar
+        maximized={state.maximized}
+        onAction={(action) => rpc.send.windowControl({ action })}
       >
-        <button
-          type="button"
-          aria-label={t.Minimize}
-          title={t.Minimize}
-          onClick={() => rpc.send.windowControl({ action: "minimize" })}
-        >
-          <Minus size={14} />
-        </button>
-        <button
-          type="button"
-          aria-label={state.maximized ? t.Restore : t.Maximize}
-          title={state.maximized ? t.Restore : t.Maximize}
-          onClick={() => rpc.send.windowControl({ action: "toggleMaximize" })}
-        >
-          {state.maximized ? <Copy size={12} /> : <Square size={12} />}
-        </button>
-        <button
-          type="button"
-          className="window-close"
-          aria-label={t["Close window"]}
-          title={t.Close}
-          onClick={() => rpc.send.windowControl({ action: "close" })}
-        >
-          <X size={15} />
-        </button>
-      </div>
+        {state.page === "chat" && (openingView || displayedChat) && (
+          <ChatHeader
+            cwd={displayedChat?.info.cwd ?? state.openingTarget?.cwd}
+            title={
+              displayedChat
+                ? (state.extensionStatuses[addressKey(displayedChat.address)]
+                    ?.title ?? displayedChat.info.title)
+                : state.openingTarget?.id
+                  ? t["Opening chat…"]
+                  : t["New chat"]
+            }
+            closeLabel={
+              !displayedChat || displayedChatOpening
+                ? t.Cancel
+                : t["Close chat (history is kept)"]
+            }
+            onClose={() => {
+              if (!displayedChat || displayedChatOpening) {
+                void cancelOpening().catch(showError);
+                return;
+              }
+              if (displayedChat.ready === false) {
+                useStore.setState((current) => {
+                  const snapshots = { ...current.snapshots };
+                  delete snapshots[displayedChat.info.id];
+                  return { snapshots };
+                });
+                navigate("chat", null);
+                return;
+              }
+              void rpc.request
+                .closeSession(displayedChat.address)
+                .then(() => refreshSessions(), showError);
+              navigate("chat", null);
+            }}
+          />
+        )}
+      </WindowTitlebar>
       {state.login && (
         <OAuthLoginDialog key={state.login.loginId} login={state.login} />
       )}
@@ -454,12 +473,51 @@ function OAuthLoginDialog({ login }: { login: LoginState }) {
 function Chat({ snapshot }: { snapshot: ChatSnapshot }) {
   const t = useT();
   const { info, transcript } = snapshot;
-  const { models: available, disabledModels } = useStore((s) => s.bootstrap);
-  const general = useStore((s) => s.bootstrap.generalCwd === info.cwd);
-  const models = filterModels(available, disabledModels);
-  const { width, setWidth } = useChatWidth();
+  const readOnly = snapshot.ready === false;
+  const opening = useStore(
+    (s) =>
+      s.opening &&
+      s.openingAddress &&
+      sameAddress(s.openingAddress, snapshot.address),
+  );
+  const openMessage = useStore((s) => s.openMessage);
   const thread = useRef<HTMLDivElement>(null);
   const followThread = useRef(true);
+  const prependScroll = useRef<{ top: number; height: number } | undefined>(
+    undefined,
+  );
+  const [loadingHistory, setLoadingHistory] = useState(false);
+  async function loadEarlier() {
+    const cursor = transcript.history;
+    if (!cursor?.before || loadingHistory) return;
+    setLoadingHistory(true);
+    try {
+      const page = await rpc.request.getSessionHistory({
+        ...snapshot.address,
+        revision: cursor.revision,
+        before: cursor.before,
+      });
+      useStore.setState((state) => {
+        const current = state.snapshots[info.id];
+        if (!current || !sameAddress(current.address, snapshot.address))
+          return {};
+        const next = prependHistory(current, page, cursor.before as string);
+        if (next === current) return {};
+        if (thread.current) {
+          prependScroll.current = {
+            top: thread.current.scrollTop,
+            height: thread.current.scrollHeight,
+          };
+          followThread.current = false;
+        }
+        return { snapshots: { ...state.snapshots, [info.id]: next } };
+      });
+    } catch (error) {
+      showError(error);
+    } finally {
+      setLoadingHistory(false);
+    }
+  }
   const status = useStore(
     (s) => s.extensionStatuses[addressKey(snapshot.address)],
   );
@@ -492,239 +550,199 @@ function Chat({ snapshot }: { snapshot: ChatSnapshot }) {
     return (
       <ResponseFooter
         sessionId={info.id}
-        entryId={record.entryId}
+        entryId={readOnly ? undefined : record.entryId}
         userEntryId={userRecord?.entryId}
         stats={stats}
         user={user?.role === "user" ? user : undefined}
-        canRegenerate={!transcript.running}
+        canRegenerate={!readOnly && !transcript.running}
       />
     );
   };
   // biome-ignore lint/correctness/useExhaustiveDependencies: Transcript changes require scrolling its updated DOM before paint.
   useLayoutEffect(() => {
-    if (thread.current && followThread.current)
+    if (!thread.current) return;
+    if (prependScroll.current) {
+      const { top, height } = prependScroll.current;
+      thread.current.scrollTop = top + thread.current.scrollHeight - height;
+      prependScroll.current = undefined;
+    } else if (followThread.current)
       thread.current.scrollTop = thread.current.scrollHeight;
   }, [transcript]);
   return (
-    <div className="session-layout">
-      <div
-        className="chat-shell"
-        style={{ "--chat-width": `${width}px` } as React.CSSProperties}
-      >
-        <ChatWidthHandles width={width} onChange={setWidth} />
-        <header className="chat-header">
-          <div className="chat-heading">
-            <Folder size={14} />
-            <span>{general ? t.Chats : basename(info.cwd)}</span>
-            <small>{status?.title ?? info.title}</small>
-          </div>
-          <div className="chat-header-actions">
-            <button
-              type="button"
-              aria-label={t["Reset chat width"]}
-              title={t["Reset chat width (drag either edge to resize)"]}
-              onClick={() => setWidth(DEFAULT_CHAT_WIDTH)}
-            >
-              <MoveHorizontal size={16} />
-            </button>
-            <button
-              type="button"
-              title={t["Close chat (history is kept)"]}
-              aria-label={t["Close chat"]}
-              onClick={() => {
-                void rpc.request
-                  .closeSession(snapshot.address)
-                  .then(() => refreshSessions(), showError);
-                navigate("chat", null);
-              }}
-            >
-              <X size={17} />
-            </button>
-          </div>
-        </header>
-        <div
-          ref={thread}
-          className="thread-scroll"
-          onScroll={(event) => {
-            followThread.current = isThreadAtBottom(event.currentTarget);
-          }}
-        >
-          <div className="transcript">
-            {!transcript.records.length && (
-              <div className="chat-empty">
-                <h1>{t["What shall we build?"]}</h1>
-                <p className="muted">
-                  {general
-                    ? t["Chat without a project"]
-                    : t.workingIn(info.cwd)}
-                </p>
-                {!models.length && (
-                  <button
-                    type="button"
-                    className="primary"
-                    onClick={() => navigate("providers")}
-                  >
-                    <Settings2 size={14} />{" "}
-                    {available.length
-                      ? t["Enable models"]
-                      : t["Connect a provider"]}
-                  </button>
-                )}
-              </div>
-            )}
-            {transcript.records.map((record, index) => {
-              // Session metadata (model/thinking-level changes, hidden entries) is not conversation.
-              if (customPresentation(record).hidden) return null;
-              const range = work.get(index);
-              const folded = range !== undefined && !openWork[range.key];
-              const toggle = range?.first === index && (
-                <WorkToggle
-                  open={!folded}
-                  tools={range.tools}
-                  onToggle={() =>
-                    setOpenWork((open) => ({
-                      ...open,
-                      [range.key]: !open[range.key],
-                    }))
-                  }
-                />
-              );
-              if (folded && index !== range.final)
-                return toggle ? (
-                  <Fragment key={record.id}>{toggle}</Fragment>
-                ) : null;
-              if (record.kind !== "message" || record.message.role === "custom")
-                return (
-                  <Fragment key={record.id}>
-                    {toggle}
-                    <CustomRecord record={record} />
-                  </Fragment>
+    <ChatLayout
+      threadRef={thread}
+      onScroll={(event) => {
+        followThread.current = isThreadAtBottom(event.currentTarget);
+      }}
+      composer={
+        readOnly ? (
+          <OpeningComposer preview={snapshot} />
+        ) : (
+          <Composer snapshot={snapshot} />
+        )
+      }
+      panel={
+        readOnly ? undefined : (
+          <SessionPanel
+            key={addressKey(snapshot.address)}
+            sessionId={snapshot.address.sessionId}
+            state={snapshot.sessionUI}
+            configError={snapshot.configError}
+            onAction={(request) =>
+              rpc.request.invokeSessionAction({
+                ...snapshot.address,
+                ...request,
+              })
+            }
+            onActionError={showError}
+            onReload={async () => {
+              const result = await rpc.request.reloadAdapterConfig();
+              if (result.state === "failed")
+                throw new Error(
+                  "Config reload failed; previous configuration is still active.",
                 );
-              const { id, message } = record;
-              // Tool results render inside their tool call block.
-              if (message.role === "toolResult") return null;
-              const live =
-                transcript.running && index === transcript.records.length - 1;
-              return (
-                <div key={id} className="response-turn">
-                  {toggle}
-                  <article className={`message ${message.role}`}>
-                    {message.role === "user" ? (
-                      <UserMessage
-                        message={message}
-                        sessionId={info.id}
-                        entryId={record.entryId}
-                        disabled={transcript.running || !snapshot.model}
-                      />
-                    ) : message.role === "assistant" ? (
-                      <>
-                        {groupBlocks(
-                          folded
-                            ? message.content.filter(
-                                (block) => block.type === "text",
-                              )
-                            : message.content,
-                        ).map(({ start, blocks }) => {
-                          const content = blocks[0];
-                          return (
-                            <div key={`${content.type}-${start}`}>
-                              {blocks.length > 1 ? (
-                                <ToolGroup
-                                  calls={blocks.filter(
-                                    (block): block is ToolCall =>
-                                      block.type === "toolCall",
-                                  )}
-                                  tools={transcript.tools}
-                                  live={transcript.running}
-                                  cards={snapshot.sessionUI?.toolCards}
-                                />
-                              ) : content.type === "text" ? (
-                                <div className="prose">
-                                  <Markdown text={content.text} />
-                                </div>
-                              ) : content.type === "thinking" ? (
-                                <ThinkingBlock
-                                  text={content.thinking}
-                                  label={
-                                    status?.hiddenThinkingLabel ?? t.Thinking
-                                  }
-                                  active={
-                                    live && start === message.content.length - 1
-                                  }
-                                />
-                              ) : content.type === "toolCall" ? (
-                                <ToolBlock
-                                  call={content}
-                                  state={transcript.tools[content.id]}
-                                  live={transcript.running}
-                                  card={
-                                    snapshot.sessionUI?.toolCards?.[content.id]
-                                  }
-                                />
-                              ) : null}
-                            </div>
-                          );
-                        })}
-                        {message.errorMessage && (
-                          <p
-                            className={
-                              message.stopReason === "aborted"
-                                ? "muted"
-                                : "error"
-                            }
-                          >
-                            {t.responseError(
-                              message.stopReason,
-                              message.errorMessage,
+            }}
+          />
+        )
+      }
+    >
+      {transcript.history?.before && (
+        <button
+          type="button"
+          disabled={loadingHistory || (readOnly && !opening)}
+          onClick={() => void loadEarlier()}
+        >
+          {loadingHistory ? t["Loading…"] : t["Load earlier messages"]}
+        </button>
+      )}
+      {readOnly && opening && openMessage && (
+        <p className="muted" role="status">
+          {openMessage}
+        </p>
+      )}
+      {!transcript.records.length && <ChatEmpty cwd={info.cwd} />}
+      {transcript.records.map((record, index) => {
+        // Session metadata (model/thinking-level changes, hidden entries) is not conversation.
+        if (customPresentation(record).hidden) return null;
+        const range = work.get(index);
+        const folded = range !== undefined && !openWork[range.key];
+        const toggle = range?.first === index && (
+          <WorkToggle
+            open={!folded}
+            tools={range.tools}
+            onToggle={() =>
+              setOpenWork((open) => ({
+                ...open,
+                [range.key]: !open[range.key],
+              }))
+            }
+          />
+        );
+        if (folded && index !== range.final)
+          return toggle ? <Fragment key={record.id}>{toggle}</Fragment> : null;
+        if (record.kind !== "message" || record.message.role === "custom")
+          return (
+            <Fragment key={record.id}>
+              {toggle}
+              <CustomRecord record={record} />
+            </Fragment>
+          );
+        const { id, message } = record;
+        // Tool results render inside their tool call block.
+        if (message.role === "toolResult") return null;
+        const live =
+          transcript.running && index === transcript.records.length - 1;
+        return (
+          <div key={id} className="response-turn">
+            {toggle}
+            <article className={`message ${message.role}`}>
+              {message.role === "user" ? (
+                <UserMessage
+                  message={message}
+                  sessionId={info.id}
+                  entryId={record.entryId}
+                  disabled={readOnly || transcript.running || !snapshot.model}
+                />
+              ) : message.role === "assistant" ? (
+                <>
+                  {groupBlocks(
+                    folded
+                      ? message.content.filter((block) => block.type === "text")
+                      : message.content,
+                  ).map(({ start, blocks }) => {
+                    const content = blocks[0];
+                    return (
+                      <div key={`${content.type}-${start}`}>
+                        {blocks.length > 1 ? (
+                          <ToolGroup
+                            calls={blocks.filter(
+                              (block): block is ToolCall =>
+                                block.type === "toolCall",
                             )}
-                          </p>
-                        )}
-                      </>
-                    ) : (
-                      <CustomRecord record={record} />
-                    )}
-                    {record.details !== undefined && (
-                      <details>
-                        <summary>Details</summary>
-                        <pre>{dataText(record.details)}</pre>
-                      </details>
-                    )}
-                  </article>
-                  {footer(index)}
-                </div>
-              );
-            })}
-            {snapshot.failure && (
-              <p className="error" role="alert">
-                {snapshot.failure}
-              </p>
-            )}
-            {transcript.running && (
-              <p className="muted running" role="status">
-                {workingLabel(status, t["Working…"])}
-              </p>
-            )}
+                            tools={transcript.tools}
+                            live={transcript.running}
+                            cards={snapshot.sessionUI?.toolCards}
+                          />
+                        ) : content.type === "text" ? (
+                          <div className="prose">
+                            <Markdown text={content.text} />
+                          </div>
+                        ) : content.type === "thinking" ? (
+                          <ThinkingBlock
+                            text={content.thinking}
+                            label={status?.hiddenThinkingLabel ?? t.Thinking}
+                            active={
+                              live && start === message.content.length - 1
+                            }
+                          />
+                        ) : content.type === "toolCall" ? (
+                          <ToolBlock
+                            call={content}
+                            state={transcript.tools[content.id]}
+                            live={transcript.running}
+                            card={snapshot.sessionUI?.toolCards?.[content.id]}
+                          />
+                        ) : null}
+                      </div>
+                    );
+                  })}
+                  {message.errorMessage && (
+                    <p
+                      className={
+                        message.stopReason === "aborted" ? "muted" : "error"
+                      }
+                    >
+                      {t.responseError(
+                        message.stopReason,
+                        message.errorMessage,
+                      )}
+                    </p>
+                  )}
+                </>
+              ) : (
+                <CustomRecord record={record} />
+              )}
+              {record.details !== undefined && (
+                <details>
+                  <summary>Details</summary>
+                  <pre>{dataText(record.details)}</pre>
+                </details>
+              )}
+            </article>
+            {footer(index)}
           </div>
-        </div>
-        <SessionPanel
-          key={addressKey(snapshot.address)}
-          sessionId={snapshot.address.sessionId}
-          state={snapshot.sessionUI}
-          configError={snapshot.configError}
-          onAction={(request) =>
-            rpc.request.invokeSessionAction({ ...snapshot.address, ...request })
-          }
-          onActionError={showError}
-          onReload={async () => {
-            const result = await rpc.request.reloadAdapterConfig();
-            if (result.state === "failed")
-              throw new Error(
-                "Config reload failed; previous configuration is still active.",
-              );
-          }}
-        />
-        <Composer snapshot={snapshot} />
-      </div>
-    </div>
+        );
+      })}
+      {snapshot.failure && (
+        <p className="error" role="alert">
+          {snapshot.failure}
+        </p>
+      )}
+      {transcript.running && (
+        <p className="muted running" role="status">
+          {workingLabel(status, t["Working…"])}
+        </p>
+      )}
+    </ChatLayout>
   );
 }

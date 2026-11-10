@@ -35,10 +35,16 @@ test("appearance validates backdrop and clamps finite opacity", () => {
     expect(() => validateAppearance(value)).toThrow();
 });
 
-test("backdrop preserves native caption/Snap flags and clears child clipping", () => {
-  expect(windowStyleForBackdrop(0x16c40000)).toBe(0x14cf0000);
-  expect(windowStyleForBackdrop(0x37c40000)).toBe(0x35cf0000);
-  expect(windowStyleForBackdrop(0x14cf0000)).toBe(0x14cf0000);
+test("backdrop removes native caption buttons but preserves resize and Snap", () => {
+  expect(windowStyleForBackdrop(0x16c40000)).toBe(0x140f0000);
+  expect(windowStyleForBackdrop(0x37c40000)).toBe(0x350f0000);
+  expect(windowStyleForBackdrop(0x140f0000)).toBe(0x140f0000);
+  for (const style of [0x16c40000, 0x37c40000, 0x14cf0000]) {
+    const next = windowStyleForBackdrop(style);
+    expect(next & 0x00c00000).toBe(0);
+    expect(next & 0x02000000).toBe(0);
+    expect(next & 0x000f0000).toBe(0x000f0000);
+  }
 });
 
 test("corrupt appearance remains untouched until an explicit valid save", async () => {

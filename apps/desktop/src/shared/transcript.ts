@@ -29,6 +29,8 @@ export type TranscriptRecord = {
   | { kind: "session-entry"; entryType: string; data: unknown }
 );
 export interface Transcript {
+  /** Cursor is bound to the selected branch, not to a changing live leaf. */
+  history?: { revision: string; before?: string };
   records: TranscriptRecord[];
   tools: Record<
     string,

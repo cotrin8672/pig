@@ -1,3 +1,8 @@
+.send-button[aria-busy="true"] {
+  opacity: 1;
+  cursor: wait;
+}
+
 .composer-attachments {
   display: flex;
   flex-wrap: wrap;

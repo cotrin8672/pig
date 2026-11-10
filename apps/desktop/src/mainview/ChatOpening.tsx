@@ -1,118 +1,108 @@
-import { ArrowUp, Folder, X } from "lucide-react";
-import { useLayoutEffect, useRef } from "react";
+import { useSyncExternalStore } from "react";
+import type { Snapshot } from "../shared/rpc-schema";
+import { ChatEmpty, ChatLayout } from "./ChatLayout";
+import { ComposerEditor } from "./ComposerEditor";
+import { ComposerFrame } from "./ComposerFrame";
+import { ComposerSubmit } from "./ComposerSubmit";
+import { ContextIndicator } from "./ContextIndicator";
+import { addressKey } from "./chat-snapshot";
+import { drafts } from "./draft-store";
 import { useT } from "./i18n";
-import { cancelOpening } from "./rpc";
-import { showError, useStore } from "./store";
-import "./chat-opening.css";
+import { ModelPicker } from "./ModelPicker";
+import { useStore } from "./store";
+import "./composer.css";
 
-export function ChatOpening({ cwd }: { cwd?: string }) {
+export function OpeningComposer({ preview }: { preview?: Snapshot }) {
   const t = useT();
-  const message = useStore((s) => s.openMessage);
-  const text = useStore((s) => (cwd ? (s.newChatDrafts[cwd] ?? "") : ""));
-  const general = useStore((s) => s.bootstrap.generalCwd === cwd);
-  const input = useRef<HTMLTextAreaElement>(null);
-  useLayoutEffect(
-    () => () => {
-      if (!input.current || document.activeElement !== input.current) return;
-      const start = input.current.selectionStart;
-      const end = input.current.selectionEnd;
-      requestAnimationFrame(() => {
-        const next = document.querySelector<HTMLTextAreaElement>(
-          "main .composer textarea",
-        );
-        if (!next || document.activeElement !== document.body) return;
-        next.focus();
-        next.setSelectionRange(start, end);
-      });
-    },
-    [],
+  const target = useStore((s) => s.openingTarget);
+  const stored = useStore((s) =>
+    target?.id ? s.snapshots[target.id] : undefined,
   );
-  const cancel = () => void cancelOpening().catch(showError);
-  if (!cwd)
-    return (
-      <div className="chat-opening" role="status" aria-live="polite">
-        <div className="chat-opening-heading" aria-hidden="true" />
-        <div className="chat-opening-content" aria-hidden="true">
-          <span />
-          <span />
-          <span />
-        </div>
-        <div className="chat-opening-composer">
-          <span>{message ?? t["Opening chat…"]}</span>
-          <button type="button" onClick={cancel}>
-            {t.Cancel}
-          </button>
-        </div>
-      </div>
-    );
+  const snapshot = preview ?? stored;
+  const newText = useStore((s) =>
+    target ? (s.newChatDrafts[target.cwd] ?? "") : "",
+  );
+  const readText = () =>
+    snapshot ? drafts.read(snapshot.address).content.text : "";
+  const existingText = useSyncExternalStore(
+    drafts.subscribe,
+    readText,
+    readText,
+  );
+  const existing = !!preview || !!target?.id;
+  const text = existing ? existingText : newText;
+  const viewKey = snapshot
+    ? addressKey(snapshot.address)
+    : target?.id
+      ? `opening:${target.id}`
+      : `new:${target?.cwd}`;
   return (
-    <div className="chat-shell">
-      <header className="chat-header">
-        <div className="chat-heading">
-          <Folder size={14} />
-          <span>
-            {general
-              ? t.Chats
-              : cwd.split(/[\\/]/).filter(Boolean).pop() || cwd}
-          </span>
-          <small>{t["New chat"]}</small>
-        </div>
-        <button
-          type="button"
-          aria-label={t.Cancel}
-          title={t.Cancel}
-          onClick={cancel}
-        >
-          <X size={16} />
-        </button>
-      </header>
-      <div className="thread-scroll">
-        <div className="transcript chat-empty">
-          <h1>{t["What shall we build?"]}</h1>
-          <p className="muted">
-            {general ? t["Chat without a project"] : t.workingIn(cwd)}
-          </p>
-        </div>
-      </div>
-      <div className="composer-dock">
-        <div className="composer">
-          <textarea
-            ref={input}
-            aria-label={t.Message}
-            placeholder={t["Ask anything, or describe what to build…"]}
-            rows={2}
-            value={text}
-            onChange={(event) => {
-              const value = event.target.value;
+    <ComposerFrame>
+      <form className="composer" onSubmit={(event) => event.preventDefault()}>
+        <ComposerEditor
+          viewKey={viewKey}
+          aria-label={t.Message}
+          placeholder={t["Ask anything, or describe what to build…"]}
+          value={text}
+          readOnly={
+            existing && (!snapshot || drafts.read(snapshot.address).retired)
+          }
+          onChange={(event) => {
+            const value = event.currentTarget.value;
+            if (existing) {
+              if (snapshot)
+                drafts.edit(snapshot.address, (content) => ({
+                  ...content,
+                  text: value,
+                }));
+            } else if (target)
               useStore.setState((s) => ({
-                newChatDrafts: { ...s.newChatDrafts, [cwd]: value },
+                newChatDrafts: { ...s.newChatDrafts, [target.cwd]: value },
               }));
-            }}
-            onKeyDown={(event) => {
-              if (
-                event.key === "Enter" &&
-                !event.shiftKey &&
-                !event.nativeEvent.isComposing &&
-                event.keyCode !== 229
-              )
-                event.preventDefault();
-            }}
-          />
-          <div className="composer-toolbar">
-            <span className="muted" role="status">
-              {message ?? t["Opening chat…"]}
-            </span>
-            <button
-              type="button"
-              className="send-button"
-              aria-label={t.Send}
+          }}
+          onKeyDown={(event) => {
+            if (
+              event.key === "Enter" &&
+              !event.shiftKey &&
+              !event.nativeEvent.isComposing &&
+              event.keyCode !== 229
+            )
+              event.preventDefault();
+          }}
+        />
+        <div className="composer-toolbar">
+          <span className="sr-only" role="status">
+            {t["Opening chat…"]}
+          </span>
+          <div className="composer-pickers">
+            <ContextIndicator usage={snapshot?.contextUsage} />
+            <ModelPicker selection={target?.selection ?? snapshot} />
+          </div>
+          <div className="send-controls">
+            <ComposerSubmit
+              busy={false}
+              hasContent={!!text}
               disabled
-            >
-              <ArrowUp size={19} />
-            </button>
+              onStop={() => {}}
+            />
           </div>
         </div>
-      </div>
-    </div>
+      </form>
+    </ComposerFrame>
+  );
+}
+
+export function ChatOpening() {
+  const target = useStore((s) => s.openingTarget);
+  const message = useStore((s) => s.openMessage);
+  return (
+    <ChatLayout loading composer={<OpeningComposer />}>
+      {message && (
+        <p className="muted" role="status">
+          {message}
+        </p>
+      )}
+      {!target?.id && <ChatEmpty cwd={target?.cwd} />}
+    </ChatLayout>
   );
 }

@@ -30,24 +30,20 @@ function wireMessage(
     };
 }
 export function projectEntries(
-  manager: Pick<
-    SessionManager,
-    "getEntries" | "getLeafId" | "getBranch" | "getTree"
-  >,
+  manager: Pick<SessionManager, "getLeafId" | "getBranch">,
+  offset = 0,
 ): Transcript {
   const state = emptyTranscript();
   const branchId = manager.getLeafId() ?? "root";
   // SessionManager retains the complete tree. The GUI displays the selected
   // branch, not discarded answers from an earlier rewind.
-  manager.getEntries();
-  manager.getTree();
   for (const entry of manager.getBranch()) {
     const base = {
       id: entry.id,
       entryId: entry.id,
       parentId: entry.parentId,
       branchId,
-      order: state.records.length,
+      order: offset + state.records.length,
     };
     let record: TranscriptRecord;
     if (entry.type === "message" && wireMessage(entry.message)) {
@@ -103,6 +99,8 @@ export class SDKProjector {
   private liveBefore = new Set<string>();
   private aliases: Record<string, string> = {};
   private tools: Transcript["tools"] = {};
+  private historyRevision = crypto.randomUUID();
+  private historyLeaf: string | null = null;
   running = false;
   failure?: string;
   aborted = false;
@@ -137,7 +135,7 @@ export class SDKProjector {
             id: `live:${this.epoch}:${++this.counter}`,
             parentId: this.manager.getLeafId(),
             branchId: this.manager.getLeafId() ?? "root",
-            order: this.manager.getEntries().length,
+            order: this.manager.getBranch().length,
             kind: "message",
             message,
           };
@@ -188,11 +186,52 @@ export class SDKProjector {
       this.live = undefined;
     }
   }
+  historyPage(before?: string, revision?: string): Transcript {
+    const branch = this.manager.getBranch();
+    if (
+      this.historyLeaf &&
+      !branch.some((entry) => entry.id === this.historyLeaf)
+    )
+      this.historyRevision = crypto.randomUUID();
+    this.historyLeaf = this.manager.getLeafId();
+    if (revision !== undefined && revision !== this.historyRevision)
+      throw new Error("STALE_HISTORY_CURSOR");
+    const end =
+      before === undefined
+        ? branch.length
+        : branch.findIndex((entry) => entry.id === before);
+    if (end < 0) throw new Error("STALE_HISTORY_CURSOR");
+    let start = Math.max(0, end - 50);
+    // shortcut: keep whole responses for tool links/totals; oversized turns need per-turn summaries before splitting.
+    while (start > 0) {
+      const entry = branch[start];
+      if (entry.type === "message" && entry.message.role === "user") break;
+      start--;
+    }
+    const state = projectEntries(
+      {
+        getLeafId: () => this.manager.getLeafId(),
+        getBranch: () => branch.slice(start, end),
+      },
+      start,
+    );
+    state.history = {
+      revision: this.historyRevision,
+      before: start > 0 ? branch[start].id : undefined,
+    };
+    return state;
+  }
   snapshot(): Transcript {
     this.commitLive();
-    const state = projectEntries(this.manager);
+    const state = this.historyPage();
     if (this.live) state.records.push(structuredClone(this.live));
-    state.tools = { ...state.tools, ...structuredClone(this.tools) };
+    const calls = new Set(Object.keys(state.tools));
+    for (const record of state.records)
+      if (record.kind === "message" && record.message.role === "assistant")
+        for (const block of record.message.content)
+          if (block.type === "toolCall") calls.add(block.id);
+    for (const id of calls)
+      if (this.tools[id]) state.tools[id] = structuredClone(this.tools[id]);
     state.liveToEntry = { ...this.aliases };
     state.current = this.live?.id ?? null;
     state.running = this.running;

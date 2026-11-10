@@ -1,5 +1,5 @@
 import type { UIReply, UIRequest } from "../shared/extension-ui";
-import type { UIAddress } from "../shared/runtime-contract";
+import type { SessionAddress, UIAddress } from "../shared/runtime-contract";
 import { sameAddress } from "./chat-snapshot";
 
 export const uiKey = (a: UIAddress) =>
@@ -34,6 +34,29 @@ export function focusedRequest(
   }
   return focus;
 }
+/** Startup prompts wait for their chat instead of taking over another view. */
+export function foregroundRequests(
+  requests: UIRequest[],
+  state: {
+    page: string;
+    active?: string;
+    openingAddress?: SessionAddress;
+    snapshots: Record<string, { ready?: false }>;
+  },
+  selected?: string,
+) {
+  const explicit = requests.find((request) => uiKey(request) === selected);
+  return requests.filter(
+    (request) =>
+      state.snapshots[request.sessionId]?.ready !== false ||
+      (explicit && sameAddress(explicit, request)) ||
+      (state.page === "chat" &&
+        (state.active === request.sessionId ||
+          (state.openingAddress &&
+            sameAddress(state.openingAddress, request)))),
+  );
+}
+
 export function validReply(request: UIRequest, reply: UIReply): boolean {
   if (uiKey(request) !== uiKey(reply)) return false;
   if (reply.kind === "cancel") return true;

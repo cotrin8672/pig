@@ -8,16 +8,18 @@ import { isTerminalKeyboardEvent } from "./terminal-ui";
 
 export function initShortcuts() {
   const keydown = (event: KeyboardEvent) => {
+    const state = useStore.getState();
     if (
       isTerminalKeyboardEvent(event) ||
-      useStore.getState().pendingUI.length > 0 ||
+      state.pendingUI.some(
+        (request) => state.snapshots[request.sessionId]?.ready !== false,
+      ) ||
       event.defaultPrevented ||
       event.isComposing ||
       event.keyCode === 229 ||
       event.repeat
     )
       return;
-    const state = useStore.getState();
     const bindings = resolveBindings(state.settings.keybindings);
     const action = actionIds.find((id) => matchesCombo(event, bindings[id]));
     const explicit =

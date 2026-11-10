@@ -30,7 +30,9 @@ export function SessionList({ cwd }: { cwd: string }) {
     (session) => desktop.sessions[session.id]?.archived,
   ).length;
   const visible = (sessions ?? [])
-    .filter((session) => !!desktop.sessions[session.id]?.archived === archived)
+    .filter(
+      (session) => Boolean(desktop.sessions[session.id]?.archived) === archived,
+    )
     .sort(
       (a, b) =>
         Number(!!desktop.sessions[b.id]?.pinned) -
@@ -61,7 +63,16 @@ export function SessionList({ cwd }: { cwd: string }) {
 function SessionRow({ session, cwd }: { session: SessionInfo; cwd: string }) {
   const t = useT();
   const active = useStore((s) => s.active === session.id && s.page === "chat");
-  const opening = useStore((s) => s.opening);
+  const opening = useStore(
+    (s) =>
+      (s.opening && !s.openingTarget && s.active === session.id) ||
+      Object.values(s.pendingOpens).some(
+        (pending) =>
+          pending.cwd === cwd &&
+          (pending.id === session.id ||
+            pending.address?.sessionId === session.id),
+      ),
+  );
   const flags = useStore((s) => s.bootstrap.desktop.sessions[session.id]);
   const running = useStore(
     (s) =>
@@ -160,7 +171,6 @@ function SessionRow({ session, cwd }: { session: SessionInfo; cwd: string }) {
             ? `${session.title} · ${t[sessionStatusLabels[status]]}`
             : session.title
         }
-        disabled={opening}
         aria-current={active ? "page" : undefined}
         onClick={() => void openChat(cwd, session.id)}
       >

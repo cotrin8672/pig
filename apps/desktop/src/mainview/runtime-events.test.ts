@@ -225,6 +225,34 @@ test("terminal boundary adds host owner even before ready snapshot and never use
   receiveRuntime({ type: "closed", address, reason: "close" });
   expect(() => ownedTerminalCommand(request, command)).toThrow("Stale");
 });
+test("failed startup retains readable history, while cancellation removes previews and rejects late replies", () => {
+  const { address, snapshot } = fixture();
+  receiveSnapshot({ ...snapshot, ready: false });
+  receiveRuntime({
+    type: "closed",
+    address,
+    reason: "failed",
+    message: "Model unavailable",
+  });
+  expect(useStore.getState().snapshots[address.sessionId]).toMatchObject({
+    ready: false,
+    failure: "Model unavailable",
+  });
+  receiveSnapshot({ ...snapshot, snapshotSeq: 99 });
+  expect(useStore.getState().snapshots[address.sessionId].ready).toBe(false);
+  const cancelled = fixture();
+  receiveSnapshot({ ...cancelled.snapshot, ready: false });
+  receiveRuntime({
+    type: "closed",
+    address: cancelled.address,
+    reason: "cancelled",
+  });
+  receiveSnapshot({ ...cancelled.snapshot, snapshotSeq: 99 });
+  expect(
+    useStore.getState().snapshots[cancelled.address.sessionId],
+  ).toBeUndefined();
+});
+
 test("reconnect response racing newer root events cannot restore ended requests", () => {
   const { address } = fixture();
   const before = runtimeRevision;

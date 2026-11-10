@@ -24,7 +24,6 @@ export function SidebarSessions() {
     (cwd) => projectFlags?.[cwd]?.archived,
   ).length;
   const generalCwd = useStore((s) => s.bootstrap.generalCwd);
-  const opening = useStore((s) => s.opening);
   const chatsId = useId();
   const projectsId = useId();
   return (
@@ -36,7 +35,7 @@ export function SidebarSessions() {
             type="button"
             aria-label={t["New chat"]}
             title={t["New chat"]}
-            disabled={opening || !generalCwd}
+            disabled={!generalCwd}
             onClick={() => void openChat(generalCwd)}
           >
             <Plus size={14} aria-hidden="true" />
@@ -86,7 +85,6 @@ function ProjectSessions({ cwd }: { cwd: string }) {
   const displayName = projectFlags?.name || basename(cwd);
   const [expanded, setExpanded] = useState(true);
   const listId = useId();
-  const opening = useStore((s) => s.opening);
   const sessions = useStore((s) => s.sessions[cwd]);
   const flags = useStore((s) => s.bootstrap.desktop.sessions);
   const snapshots = useStore((s) => s.snapshots);
@@ -154,7 +152,6 @@ function ProjectSessions({ cwd }: { cwd: string }) {
             type="button"
             title={t["New chat"]}
             aria-label={t.newChatIn(displayName)}
-            disabled={opening}
             onClick={() => {
               setExpanded(true);
               void openChat(cwd);

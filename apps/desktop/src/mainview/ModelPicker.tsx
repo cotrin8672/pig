@@ -11,7 +11,7 @@ import {
 import { useEffect, useId, useRef, useState } from "react";
 import { effortLabels } from "../shared/effort";
 import { filterModels, modelKey } from "../shared/models";
-import type { ModelInfo, Snapshot } from "../shared/rpc-schema";
+import type { ModelInfo, ModelSelection, Snapshot } from "../shared/rpc-schema";
 import { EffortPicker } from "./EffortPicker";
 import { useT } from "./i18n";
 import { navigate } from "./navigation";
@@ -20,8 +20,15 @@ import { ProviderIcon } from "./ProviderIcon";
 import { rpc, updateUiPreferences } from "./rpc";
 import { useStore } from "./store";
 
-export function ModelPicker({ snapshot }: { snapshot: Snapshot }) {
+export function ModelPicker({
+  snapshot,
+  selection,
+}: {
+  snapshot?: Snapshot;
+  selection?: ModelSelection;
+}) {
   const t = useT();
+  const current = selection ?? snapshot ?? { effort: "off", effortLevels: [] };
   const { models, disabledModels, desktop, providers } = useStore(
     (state) => state.bootstrap,
   );
@@ -30,14 +37,14 @@ export function ModelPicker({ snapshot }: { snapshot: Snapshot }) {
   const pending = useStore((state) => state.modelPending);
   const [query, setQuery] = useState("");
   const recent = desktop.recentModels ?? [];
-  const [source, setSource] = useState(snapshot.model?.provider);
+  const [source, setSource] = useState(current.model?.provider);
   const [highlight, setHighlight] = useState(-1);
   const [open, setOpen] = useState(false);
   const search = useRef<HTMLInputElement>(null);
   const list = useRef<HTMLDivElement>(null);
   const listId = useId();
   const { ref, close } = usePicker();
-  const disabled = pending;
+  const disabled = pending || !snapshot;
   const enabled = filterModels(models, disabledModels);
   const recentModels = recent.flatMap((key) => {
     const model = enabled.find((entry) => modelKey(entry) === key);
@@ -66,7 +73,7 @@ export function ModelPicker({ snapshot }: { snapshot: Snapshot }) {
       ? recentModels
       : enabled.filter((model) => model.provider === activeSource);
   const selectedIndex = visible.findIndex(
-    (model) => snapshot.model && modelKey(model) === modelKey(snapshot.model),
+    (model) => current.model && modelKey(model) === modelKey(current.model),
   );
   const activeIndex =
     highlight >= 0 && highlight < visible.length
@@ -81,6 +88,7 @@ export function ModelPicker({ snapshot }: { snapshot: Snapshot }) {
         ?.scrollIntoView({ block: "nearest" });
   }, [open, activeIndex]);
   function select(model: ModelInfo) {
+    if (!snapshot) return;
     close();
     void changeSelection(snapshot.address, () =>
       rpc.request.setModel({
@@ -119,8 +127,8 @@ export function ModelPicker({ snapshot }: { snapshot: Snapshot }) {
       <summary
         className="picker-trigger"
         aria-label={t.chooseModel(
-          snapshot.model?.name ?? t.None,
-          effortLabels[snapshot.effort],
+          current.model?.name ?? t.None,
+          effortLabels[current.effort],
         )}
         aria-disabled={disabled}
         onClick={(event) => {
@@ -134,17 +142,17 @@ export function ModelPicker({ snapshot }: { snapshot: Snapshot }) {
             setSource(
               recentModels.length
                 ? "recent"
-                : (snapshot.model?.provider ?? sources[0]?.id),
+                : (current.model?.provider ?? sources[0]?.id),
             );
           }
         }}
       >
         <span className="picker-model-label">
-          {snapshot.model?.name ?? t["Select model"]}
+          {current.model?.name ?? t["Select model"]}
         </span>
-        {snapshot.effortLevels.length > 1 && (
+        {current.effortLevels.length > 1 && (
           <span className="picker-effort-label">
-            {effortLabels[snapshot.effort]}
+            {effortLabels[current.effort]}
           </span>
         )}
         <ChevronDown size={12} />
@@ -264,7 +272,7 @@ export function ModelPicker({ snapshot }: { snapshot: Snapshot }) {
           >
             {visible.map((model, index) => {
               const selected =
-                snapshot.model && modelKey(model) === modelKey(snapshot.model);
+                current.model && modelKey(model) === modelKey(current.model);
               const showGroup =
                 searching &&
                 (index === 0 || visible[index - 1].provider !== model.provider);
@@ -318,10 +326,12 @@ export function ModelPicker({ snapshot }: { snapshot: Snapshot }) {
             )}
           </div>
         </div>
-        <EffortPicker
-          key={`${snapshot.model?.provider}/${snapshot.model?.id}/${snapshot.effortLevels.join()}`}
-          snapshot={snapshot}
-        />
+        {snapshot && (
+          <EffortPicker
+            key={`${current.model?.provider}/${current.model?.id}/${current.effortLevels.join()}`}
+            snapshot={snapshot}
+          />
+        )}
       </div>
     </details>
   );

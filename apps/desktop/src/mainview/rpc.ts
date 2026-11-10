@@ -15,7 +15,8 @@ import {
   type SettingsPatch,
 } from "../shared/settings";
 import type { Message } from "../shared/transcript";
-import { sameAddress } from "./chat-snapshot";
+import { transferEditorView } from "./ComposerEditor";
+import { addressKey, sameAddress } from "./chat-snapshot";
 import { drafts } from "./draft-store";
 import { navigate, navigationRevision } from "./navigation";
 import { OpenController } from "./open-controller";
@@ -31,7 +32,7 @@ import {
   runtimeRevision,
   subscribeOwnership,
 } from "./runtime-events";
-import { SendController } from "./send-controller";
+import { isSendUnconfirmed, SendController } from "./send-controller";
 import { visibleCompletion } from "./session-read";
 import {
   readViewedNotices,
@@ -355,38 +356,101 @@ const opens = new OpenController({
   getOpenState: (params) => rpc.request.getOpenState(params),
   cancelOpen: (params) => rpc.request.cancelOpen(params),
 });
-let openingReturn:
-  | {
-      openId: string;
-      revision: number;
-      page: ReturnType<typeof useStore.getState>["page"];
-      active?: string;
-    }
-  | undefined;
-function restoreOpening(openId: string) {
-  const previous = openingReturn;
-  if (!previous || previous.openId !== openId) return;
-  openingReturn = undefined;
-  if (previous.revision !== navigationRevision) return;
-  history.replaceState(
-    { page: previous.page, sessionKey: previous.active },
-    "",
-  );
-  useStore.setState({ page: previous.page, active: previous.active });
-}
-export async function cancelOpening() {
-  const openId = useStore.getState().openId;
-  if (!openId) return;
-  const cancellation = opens.cancel(openId);
-  restoreOpening(openId);
+const pendingChats = new Map<
+  string,
+  { openId: string; promise: Promise<Snapshot | undefined> }
+>();
+const openingReturns = new Map<
+  string,
+  {
+    revision: number;
+    page: ReturnType<typeof useStore.getState>["page"];
+    active?: string;
+    pendingId?: string;
+  }
+>();
+function clearOpeningView(openId?: string) {
+  if (openId && useStore.getState().openId !== openId) return;
   useStore.setState({
     opening: false,
     openingAddress: undefined,
     openMessage: undefined,
     openingViewRevision: undefined,
-    openingNewCwd: undefined,
+    openingTarget: undefined,
     openId: undefined,
   });
+}
+function showOpening(openId: string, push: boolean) {
+  const previous = useStore.getState();
+  const pending = previous.pendingOpens[openId];
+  if (!pending) return;
+  if (
+    previous.openId === openId &&
+    previous.page === "chat" &&
+    previous.openingViewRevision === navigationRevision
+  )
+    return;
+  const pendingId =
+    previous.openingViewRevision === navigationRevision
+      ? previous.openId
+      : undefined;
+  if (push) navigate("chat", pending.id ?? null);
+  if (push)
+    openingReturns.set(openId, {
+      revision: navigationRevision,
+      page: previous.page,
+      active: previous.active,
+      pendingId,
+    });
+  else {
+    const saved = openingReturns.get(openId);
+    if (saved) saved.revision = navigationRevision;
+  }
+  useStore.setState({
+    page: "chat",
+    active: pending.id,
+    opening: true,
+    openId,
+    openingTarget: pending,
+    openingAddress: pending.address,
+    openMessage: pending.message,
+    openingViewRevision: navigationRevision,
+  });
+}
+function ownsOpeningView(openId: string, revision: number) {
+  const state = useStore.getState();
+  return (
+    state.openId === openId &&
+    (state.openingViewRevision ?? revision) === navigationRevision
+  );
+}
+function restoreOpening(openId: string) {
+  const previous = openingReturns.get(openId);
+  openingReturns.delete(openId);
+  if (
+    !previous ||
+    previous.revision !== navigationRevision ||
+    useStore.getState().openId !== openId
+  )
+    return;
+  clearOpeningView(openId);
+  history.replaceState(
+    { page: previous.page, sessionKey: previous.active },
+    "",
+  );
+  useStore.setState({ page: previous.page, active: previous.active });
+  if (
+    previous.pendingId &&
+    useStore.getState().pendingOpens[previous.pendingId] &&
+    !opens.isCancelled(previous.pendingId)
+  )
+    showOpening(previous.pendingId, false);
+}
+export async function cancelOpening(openId = useStore.getState().openId) {
+  if (!openId) return;
+  const cancellation = opens.cancel(openId);
+  restoreOpening(openId);
+  clearOpeningView(openId);
   await cancellation;
 }
 export async function openChat(
@@ -394,23 +458,60 @@ export async function openChat(
   id?: string,
   push = true,
 ): Promise<Snapshot | undefined> {
+  const key = JSON.stringify([cwd, id ?? null]);
+  const pending =
+    pendingChats.get(key) ??
+    (id
+      ? [...pendingChats.values()].find((item) => {
+          const target = useStore.getState().pendingOpens[item.openId];
+          return target?.cwd === cwd && target.address?.sessionId === id;
+        })
+      : undefined);
+  if (pending && !opens.isCancelled(pending.openId)) {
+    showOpening(pending.openId, push);
+    return pending.promise;
+  }
   const current = id ? useStore.getState().snapshots[id] : undefined;
-  if (current && current.info.cwd === cwd && liveAddress(current.address)) {
+  if (
+    current &&
+    current.ready !== false &&
+    current.info.cwd === cwd &&
+    liveAddress(current.address)
+  ) {
+    clearOpeningView();
     if (push) navigate("chat", current.info.id);
     else useStore.setState({ active: current.info.id });
     return current;
   }
   const openId = crypto.randomUUID();
-  return openSnapshot(
+  const promise = openSnapshot(
     () =>
       opens.open({ openId, cwd, id }, (openMessage) => {
-        if (useStore.getState().openId === openId)
-          useStore.setState({ openMessage });
+        useStore.setState((state) => {
+          const pending = state.pendingOpens[openId];
+          return {
+            ...(state.openId === openId ? { openMessage } : {}),
+            ...(pending
+              ? {
+                  pendingOpens: {
+                    ...state.pendingOpens,
+                    [openId]: { ...pending, message: openMessage },
+                  },
+                }
+              : {}),
+          };
+        });
       }),
     push,
     openId,
     { id, cwd },
   );
+  pendingChats.set(key, { openId, promise });
+  const settled = () => {
+    if (pendingChats.get(key)?.openId === openId) pendingChats.delete(key);
+  };
+  void promise.then(settled, settled);
+  return promise;
 }
 export async function openChatLink(url: string) {
   const id = sessionIdFromLink(url);
@@ -436,13 +537,19 @@ export async function openChatLink(url: string) {
 }
 function currentAddress(sessionId: string): SessionAddress {
   const address = useStore.getState().snapshots[sessionId]?.address;
-  if (!address || !liveAddress(address))
+  if (
+    !address ||
+    useStore.getState().snapshots[sessionId]?.ready === false ||
+    !liveAddress(address)
+  )
     throw new Error("Session is no longer open");
   return address;
 }
-export function forkChat(sessionId: string, entryId: string) {
+export async function forkChat(sessionId: string, entryId: string) {
   const previous = currentAddress(sessionId);
+  if (isSendUnconfirmed(sends.read(previous))) return;
   return openSnapshot(async () => {
+    if (isSendUnconfirmed(sends.read(previous))) return;
     const snapshot = await rpc.request.forkSession({ ...previous, entryId });
     receiveRuntime({ type: "replaced", previous, snapshot });
     return snapshot;
@@ -455,6 +562,7 @@ export async function regenerate(
   entryId: string,
 ) {
   const previous = currentAddress(sessionId);
+  if (isSendUnconfirmed(sends.read(previous))) return;
   const snapshot = await rpc.request.rewindSession({
     ...previous,
     entryId,
@@ -485,25 +593,32 @@ async function openSnapshot(
   openId = crypto.randomUUID(),
   optimistic?: { id?: string; cwd: string },
 ): Promise<Snapshot | undefined> {
-  if (push && useStore.getState().opening) return;
   const previous = useStore.getState();
-  if (optimistic && push) navigate("chat", optimistic.id ?? null);
-  const revision = navigationRevision;
-  if (optimistic && push)
-    openingReturn = {
+  if (optimistic) {
+    useStore.setState({
+      pendingOpens: {
+        ...previous.pendingOpens,
+        [openId]: {
+          ...optimistic,
+          selection:
+            (optimistic.id ? previous.snapshots[optimistic.id] : undefined) ??
+            (previous.active ? previous.snapshots[previous.active] : undefined),
+        },
+      },
+    });
+    showOpening(openId, push);
+  } else {
+    useStore.setState({
+      opening: true,
       openId,
-      revision,
-      page: previous.page,
-      active: previous.active,
-    };
-  useStore.setState({
-    opening: true,
-    openId,
-    openMessage: undefined,
-    openingAddress: undefined,
-    openingViewRevision: optimistic ? revision : undefined,
-    openingNewCwd: optimistic && !optimistic.id ? optimistic.cwd : undefined,
-  });
+      openMessage: undefined,
+      openingAddress: undefined,
+      openingViewRevision: undefined,
+      openingTarget: undefined,
+    });
+  }
+  const revision = navigationRevision;
+  let transferred: { cwd: string; text: string } | undefined;
   try {
     await connectRuntime();
     if (opens.isCancelled(openId)) return;
@@ -514,21 +629,22 @@ async function openSnapshot(
       !liveAddress(snapshot.address)
     )
       return;
-    if (optimistic && !optimistic.id && useStore.getState().openId === openId) {
-      const text = useStore.getState().newChatDrafts[optimistic.cwd];
-      if (text) {
+    if (optimistic && !optimistic.id) {
+      const text = useStore.getState().newChatDrafts[optimistic.cwd] ?? "";
+      if (text)
         drafts.edit(snapshot.address, (content) =>
           mergeOpeningText(content, text),
         );
-        useStore.setState((state) => {
-          const newChatDrafts = { ...state.newChatDrafts };
-          delete newChatDrafts[optimistic.cwd];
-          return { newChatDrafts };
-        });
-      }
+      const merged = drafts.read(snapshot.address).content.text;
+      transferEditorView(
+        `new:${optimistic.cwd}`,
+        addressKey(snapshot.address),
+        merged.slice(0, merged.length - text.length),
+      );
+      transferred = { cwd: optimistic.cwd, text };
     }
     receiveSnapshot(snapshot);
-    if (revision === navigationRevision) {
+    if (ownsOpeningView(openId, revision)) {
       useStore.setState({ active: snapshot.info.id });
       if (push && optimistic)
         history.replaceState(
@@ -537,22 +653,31 @@ async function openSnapshot(
         );
       else if (push) navigate("chat", snapshot.info.id);
     }
-    if (openingReturn?.openId === openId) openingReturn = undefined;
+    openingReturns.delete(openId);
     void refreshSessions().catch(showError);
     return useStore.getState().snapshots[snapshot.info.id];
   } catch (error) {
-    if (!opens.isCancelled(openId)) showError(error);
+    if (!opens.isCancelled(openId)) {
+      showError(error);
+      const preview = optimistic?.id
+        ? useStore.getState().snapshots[optimistic.id]
+        : undefined;
+      if (preview?.ready === false && ownsOpeningView(openId, revision)) {
+        openingReturns.delete(openId);
+        useStore.setState({ active: preview.info.id });
+      }
+    }
   } finally {
     restoreOpening(openId);
-    if (useStore.getState().openId === openId)
-      useStore.setState({
-        opening: false,
-        openId: undefined,
-        openingAddress: undefined,
-        openingViewRevision: undefined,
-        openingNewCwd: undefined,
-        openMessage: undefined,
-      });
+    clearOpeningView(openId);
+    useStore.setState((state) => {
+      const pendingOpens = { ...state.pendingOpens };
+      delete pendingOpens[openId];
+      const newChatDrafts = { ...state.newChatDrafts };
+      if (transferred && newChatDrafts[transferred.cwd] === transferred.text)
+        delete newChatDrafts[transferred.cwd];
+      return { pendingOpens, newChatDrafts };
+    });
   }
 }
 

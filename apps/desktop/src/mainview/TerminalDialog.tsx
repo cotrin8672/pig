@@ -17,6 +17,8 @@ export type TerminalDialogProps = {
   request: TerminalOpenEvent;
   /** Retain started surfaces at root when switching tabs or opening child dialogs. */
   active?: boolean;
+  /** Startup UI must not make chat navigation inert. */
+  modal?: boolean;
   send: (command: TerminalClientCommand) => void;
   subscribe: (listener: (event: TerminalHostEvent) => void) => () => void;
   /** Bun must independently reject every non-http(s) scheme. */
@@ -31,7 +33,7 @@ export function TerminalDialog(props: TerminalDialogProps) {
   );
 }
 function TerminalModal(props: TerminalDialogProps) {
-  const { request, active = true } = props;
+  const { request, active = true, modal = true } = props;
   const callbacks = useRef(props);
   callbacks.current = props;
   const dialog = useRef<HTMLDialogElement>(null);
@@ -175,10 +177,12 @@ function TerminalModal(props: TerminalDialogProps) {
   }, [sessionId, epoch, uiId]);
   useEffect(() => {
     try {
+      dialog.current?.close();
       if (active) {
-        if (!dialog.current?.open) dialog.current?.showModal();
+        if (modal) dialog.current?.showModal();
+        else dialog.current?.show();
         fitNow.current?.();
-      } else dialog.current?.close();
+      }
     } catch (failure) {
       connection.current?.cancel();
       setError(
@@ -187,13 +191,14 @@ function TerminalModal(props: TerminalDialogProps) {
           : "Terminal view unavailable",
       );
     }
-  }, [active]);
+  }, [active, modal]);
   return (
     <dialog
       ref={dialog}
       data-terminal-ui
       className="terminal-dialog electrobun-webkit-app-region-no-drag"
       aria-label={request.title ?? "Extension terminal"}
+      aria-modal={modal}
       onCancel={(event) => event.preventDefault()}
       onKeyDown={(event) => event.stopPropagation()}
       onKeyUp={(event) => event.stopPropagation()}

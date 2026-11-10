@@ -338,6 +338,7 @@ export const en = {
   "Try a different name or keyword.": "Try a different name or keyword.",
   "Loading…": "Loading…",
   "Load more": "Load more",
+  "Load earlier messages": "Load earlier messages",
   "Packages from your user and project configuration.":
     "Packages from your user and project configuration.",
   "Loading installed packages…": "Loading installed packages…",
@@ -761,6 +762,7 @@ export const ja: Dictionary = {
   "Try a different name or keyword.": "別の名前やキーワードを試してください。",
   "Loading…": "読み込み中…",
   "Load more": "さらに読み込む",
+  "Load earlier messages": "以前のメッセージを読み込む",
   "Packages from your user and project configuration.":
     "ユーザーとプロジェクトの設定にあるパッケージ。",
   "Loading installed packages…": "インストール済みパッケージを読み込み中…",

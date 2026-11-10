@@ -113,6 +113,8 @@ export interface ModelSelection {
   contextUsage?: ContextUsage | null;
 }
 export interface Snapshot extends ModelSelection {
+  /** A history preview is readable but must never grant runtime capabilities. */
+  ready?: false;
   address: SessionAddress;
   snapshotSeq: number;
   info: SessionInfo;
@@ -262,6 +264,10 @@ export type RPCSchema = {
       // biome-ignore lint/suspicious/noConfusingVoidType: Electrobun convention.
       cancelOpen: { params: { openId: string }; response: void };
       getSessionSnapshot: { params: SessionAddress; response: Snapshot };
+      getSessionHistory: {
+        params: SessionAddress & { revision: string; before: string };
+        response: Transcript;
+      };
       listSlashCommands: { params: SessionAddress; response: SlashCommand[] };
       completeSlashArguments: {
         params: SessionAddress & { name: string; argumentPrefix: string };

@@ -8,6 +8,7 @@ import type {
   AuthMethod,
   Bootstrap,
   InstalledPackage,
+  ModelSelection,
   Notice,
   PackageOpStatus,
   SessionInfo,
@@ -34,6 +35,15 @@ export interface LoginState {
   error?: string;
   prompt?: AuthPrompt;
 }
+export interface OpeningTarget {
+  cwd: string;
+  id?: string;
+  selection?: ModelSelection;
+}
+export interface PendingOpen extends OpeningTarget {
+  address?: SessionAddress;
+  message?: string;
+}
 export const useStore = create<{
   bootstrap: Bootstrap;
   sessions: Record<string, SessionInfo[]>;
@@ -50,13 +60,15 @@ export const useStore = create<{
   openId?: string;
   openMessage?: string;
   openingViewRevision?: number;
-  openingNewCwd?: string;
+  openingTarget?: OpeningTarget;
+  pendingOpens: Record<string, PendingOpen>;
   newChatDrafts: Record<string, string>;
   installed: InstalledPackage[];
   packageOps: Record<string, PackageOpStatus>;
   notices: (Notice & { id: string })[];
   noticeHistory: NoticeRecord[];
   login?: LoginState;
+  /** Selected-view state only; pendingOpens tracks startup without locking navigation. */
   opening: boolean;
   appearance: Appearance;
   settings: Settings;
@@ -89,6 +101,7 @@ export const useStore = create<{
   newChatDrafts: {},
   noticeHistory: loadNoticeHistory(),
   opening: false,
+  pendingOpens: {},
   maximized: false,
   modelPending: false,
   appearance: defaultAppearance,

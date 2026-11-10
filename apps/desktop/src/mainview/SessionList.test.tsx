@@ -13,7 +13,7 @@ mock.module("./rpc", () => ({
 }));
 const { SessionList } = await import("./SessionList");
 
-function render(opening = false, running = false) {
+function render(opening = false, running = false, otherOpening = false) {
   const state = useStore.getInitialState();
   const previous = { ...state, active: state.active };
   const session = {
@@ -31,6 +31,9 @@ function render(opening = false, running = false) {
     active: session.id,
     opening,
     modelPending: running,
+    pendingOpens: otherOpening
+      ? { other: { cwd: "test-project", id: "other-chat" } }
+      : {},
   });
   try {
     return renderToStaticMarkup(<SessionList cwd={session.cwd} />);
@@ -65,4 +68,12 @@ test("session deletion uses the shared two-press button, not a delete dialog", (
 test("deletion stays disabled while a session is running or opening", () => {
   expect(deleteButton(render(false, true))).toContain('disabled=""');
   expect(deleteButton(render(true, false))).toContain('disabled=""');
+});
+
+test("chat selection stays enabled during startup and another chat's startup does not lock actions", () => {
+  const starting = render(true);
+  expect(starting.match(/<button[^>]*class="thread"[^>]*>/)?.[0]).not.toContain(
+    "disabled",
+  );
+  expect(deleteButton(render(false, false, true))).not.toContain("disabled");
 });

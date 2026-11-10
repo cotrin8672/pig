@@ -2,7 +2,6 @@ import { BookOpen, FileText, Puzzle, X } from "lucide-react";
 import {
   useEffect,
   useId,
-  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -11,6 +10,8 @@ import {
 import { filterModels } from "../shared/models";
 import { makeMarker, shouldCollapse } from "../shared/paste";
 import type { SlashCommand, Snapshot } from "../shared/rpc-schema";
+import { ComposerEditor } from "./ComposerEditor";
+import { ComposerFrame } from "./ComposerFrame";
 import { ComposerSubmit } from "./ComposerSubmit";
 import { ContextIndicator } from "./ContextIndicator";
 import { addressKey } from "./chat-snapshot";
@@ -53,25 +54,6 @@ function changeReads(key: string, delta: number) {
 }
 export function Composer({ snapshot }: { snapshot: Snapshot }) {
   const t = useT();
-  const dockRef = useRef<HTMLDivElement>(null);
-  useLayoutEffect(() => {
-    const dock = dockRef.current;
-    const shell = dock?.closest<HTMLElement>(".chat-shell");
-    if (!dock || !shell) return;
-    const measure = () => {
-      shell.style.setProperty(
-        "--composer-height",
-        `${dock.getBoundingClientRect().height}px`,
-      );
-    };
-    measure();
-    const observer = new ResizeObserver(measure);
-    observer.observe(dock);
-    return () => {
-      observer.disconnect();
-      shell.style.removeProperty("--composer-height");
-    };
-  }, []);
   const { address, transcript, model } = snapshot;
   const key = addressKey(address);
   const { models: available, disabledModels } = useStore((s) => s.bootstrap);
@@ -105,7 +87,6 @@ export function Composer({ snapshot }: { snapshot: Snapshot }) {
   const expanded = expandedDraft(draft.content);
   const submitting =
     sendState?.state === "sending" || sendState?.state === "checking";
-  const uncertain = sendState?.state === "unknown";
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const listId = useId();
   const [commandState, setCommandState] = useState<{
@@ -251,7 +232,6 @@ export function Composer({ snapshot }: { snapshot: Snapshot }) {
       imageBlocked ||
       reading ||
       submitting ||
-      uncertain ||
       draft.conflict
     )
       return;
@@ -308,7 +288,7 @@ export function Composer({ snapshot }: { snapshot: Snapshot }) {
     }
   }
   return (
-    <div className="composer-dock" ref={dockRef}>
+    <ComposerFrame>
       <ExtensionWidgets address={address} placement="aboveEditor" />
       {draft.conflict && (
         <section className="draft-conflict" role="alert">
@@ -426,8 +406,9 @@ export function Composer({ snapshot }: { snapshot: Snapshot }) {
             ))}
           </div>
         )}
-        <textarea
-          ref={textareaRef}
+        <ComposerEditor
+          viewKey={key}
+          inputRef={textareaRef}
           aria-autocomplete="list"
           aria-controls={options.length ? listId : undefined}
           aria-activedescendant={
@@ -450,7 +431,6 @@ export function Composer({ snapshot }: { snapshot: Snapshot }) {
               ? t["Send a follow-up…"]
               : t["Ask anything, or describe what to build…"]
           }
-          rows={2}
           value={text}
           onChange={(event) => {
             const target = event.currentTarget;
@@ -552,7 +532,8 @@ export function Composer({ snapshot }: { snapshot: Snapshot }) {
           </div>
           <div className="send-controls">
             <ComposerSubmit
-              busy={transcript.running || submitting}
+              busy={transcript.running}
+              submitting={submitting}
               hasContent={!!expanded || images.length > 0}
               onStop={() => void rpc.request.abort(address).catch(showError)}
               disabled={
@@ -562,7 +543,6 @@ export function Composer({ snapshot }: { snapshot: Snapshot }) {
                 imageBlocked ||
                 reading > 0 ||
                 submitting ||
-                uncertain ||
                 !!draft.conflict
               }
             />
@@ -573,26 +553,6 @@ export function Composer({ snapshot }: { snapshot: Snapshot }) {
       {sendState?.message && (
         <p className="composer-hint" role="status">
           {sendState.message}
-        </p>
-      )}
-      {uncertain && (
-        <button
-          type="button"
-          onClick={() => {
-            if (
-              window.confirm(
-                "This send may already have executed. Have you inspected history and do you want to enable a NEW send?",
-              )
-            )
-              sends.confirmNewSend(address);
-          }}
-        >
-          I inspected history — enable a new send
-        </button>
-      )}
-      {sendState?.state === "sending" && (
-        <p className="composer-hint" role="status">
-          {t["Sending…"]}
         </p>
       )}
       {mirrorError && (
@@ -617,6 +577,6 @@ export function Composer({ snapshot }: { snapshot: Snapshot }) {
           </button>
         </p>
       )}
-    </div>
+    </ComposerFrame>
   );
 }

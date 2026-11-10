@@ -3,6 +3,7 @@ import { createPortal } from "react-dom";
 import type { UIReply, UIRequest } from "../shared/extension-ui";
 import { addressKey, sameAddress } from "./chat-snapshot";
 import { useT } from "./i18n";
+import { navigationRevision } from "./navigation";
 import { cancelOpening, rpc } from "./rpc";
 import {
   liveAddress,
@@ -11,16 +12,38 @@ import {
 } from "./runtime-events";
 import { showError, useStore } from "./store";
 import { TerminalDialog } from "./TerminalDialog";
-import { focusedRequest, uiKey, validReply } from "./ui-request-state";
+import {
+  focusedRequest,
+  foregroundRequests,
+  uiKey,
+  validReply,
+} from "./ui-request-state";
 import "./sdk-ui.css";
 
 /** Root-owned: startup/trust UI must not depend on a Chat or Composer mounting. */
 export function UIRequestBroker() {
-  const requests = useStore((s) => s.pendingUI);
-  const terminals = useStore((s) => s.terminals);
-  const [selected, setSelected] = useState<string>();
+  const state = useStore();
+  const { pendingUI: requests, terminals } = state;
+  const [selected, setSelected] = useState<{ key: string; revision: number }>();
   const [started, setStarted] = useState<Set<string>>(() => new Set());
-  const focus = focusedRequest(requests, selected);
+  const selectedKey =
+    selected?.revision === navigationRevision ? selected.key : undefined;
+  const focus = focusedRequest(
+    foregroundRequests(
+      requests,
+      {
+        page: state.page,
+        active: state.active,
+        snapshots: state.snapshots,
+        openingAddress:
+          state.opening && state.openingViewRevision === navigationRevision
+            ? state.openingAddress
+            : undefined,
+      },
+      selectedKey,
+    ),
+    selectedKey,
+  );
   const focusKey = focus && uiKey(focus);
   useEffect(() => {
     if (focus?.kind === "terminal" && terminals[uiKey(focus)]) {
@@ -32,11 +55,11 @@ export function UIRequestBroker() {
   }, [focus, terminals]);
   return (
     <>
-      {focus && requests.length > 1 && (
+      {requests.length > 0 && (!focus || requests.length > 1) && (
         <RequestQueue
           requests={requests}
           focusKey={focusKey}
-          select={setSelected}
+          select={(key) => setSelected({ key, revision: navigationRevision })}
         />
       )}
       {requests.map((request) => {
@@ -47,6 +70,7 @@ export function UIRequestBroker() {
               key={key}
               request={request}
               active={key === focusKey}
+              modal={state.snapshots[request.sessionId]?.ready !== false}
             />
           );
         const terminal = terminals[key];
@@ -56,6 +80,7 @@ export function UIRequestBroker() {
             key={key}
             request={terminal}
             active={key === focusKey}
+            modal={state.snapshots[request.sessionId]?.ready !== false}
             subscribe={subscribeTerminal}
             onError={showError}
             openExternal={(url) => rpc.send.openExternal({ url })}
@@ -92,9 +117,11 @@ export function UIRequestBroker() {
 function NativeRequest({
   request,
   active,
+  modal,
 }: {
   request: Exclude<UIRequest, { kind: "terminal" }>;
   active: boolean;
+  modal: boolean;
 }) {
   const dialog = useRef<HTMLDialogElement>(null);
   const [value, setValue] = useState(
@@ -147,10 +174,12 @@ function NativeRequest({
     void reply({ ...request, kind: "cancel" });
   };
   useEffect(() => {
+    dialog.current?.close();
     if (active) {
-      if (!dialog.current?.open) dialog.current?.showModal();
-    } else dialog.current?.close();
-  }, [active]);
+      if (modal) dialog.current?.showModal();
+      else dialog.current?.show();
+    }
+  }, [active, modal]);
   useEffect(() => {
     if (request.expiresAt === undefined) return;
     const timer = setTimeout(
@@ -173,6 +202,7 @@ function NativeRequest({
       ref={dialog}
       className="sdk-request"
       aria-label={request.title}
+      aria-modal={modal}
       onCancel={(event) => {
         event.preventDefault();
         cancel();
@@ -329,10 +359,15 @@ function RequestQueue({
   select: (key: string) => void;
 }) {
   const [target, setTarget] = useState<Element | null>(null);
-  const openingAddress = useStore((s) =>
-    s.opening ? s.openingAddress : undefined,
-  );
+  const pendingOpens = useStore((s) => s.pendingOpens);
   const focus = requests.find((request) => uiKey(request) === focusKey);
+  const openingId =
+    focus &&
+    Object.keys(pendingOpens).find(
+      (id) =>
+        pendingOpens[id].address &&
+        sameAddress(pendingOpens[id].address, focus),
+    );
   useEffect(() => {
     const update = () =>
       setTarget(
@@ -349,7 +384,10 @@ function RequestQueue({
     return () => observer.disconnect();
   }, []);
   const queue = (
-    <nav className="ui-waiting" aria-label="Waiting extension requests">
+    <nav
+      className={`ui-waiting${target ? "" : " ui-waiting-floating"}`}
+      aria-label="Waiting extension requests"
+    >
       {requests.map((request) => (
         <button
           key={uiKey(request)}
@@ -376,10 +414,10 @@ function RequestQueue({
           >
             Close session
           </button>
-          {openingAddress && sameAddress(openingAddress, focus) && (
+          {openingId && (
             <button
               type="button"
-              onClick={() => void cancelOpening().catch(showError)}
+              onClick={() => void cancelOpening(openingId).catch(showError)}
             >
               Cancel startup
             </button>

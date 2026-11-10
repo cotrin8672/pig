@@ -85,6 +85,7 @@ import {
   listSessionFiles,
   removeSessionFile,
   resolveSessionFile,
+  sameSessionPath,
 } from "./session-files";
 import { currentSettings } from "./settings";
 import { desktopShellTool } from "./shell-tools";
@@ -377,6 +378,7 @@ export class SessionHost {
         seq: 0,
         openId: input.openId,
         manager,
+        projector: new SDKProjector(manager, address.epoch),
         controller,
         ui,
         eventBus: createEventBus(),
@@ -409,6 +411,8 @@ export class SessionHost {
         address,
         cwd: input.cwd,
       });
+      // History is independent of model availability, Trust UI and startup hooks.
+      this.options.emit({ type: "snapshot", snapshot: this.snapshot(m) });
       const managed = m;
       const factory: Parameters<typeof createAgentSessionRuntime>[0] = async (
         target,
@@ -571,6 +575,7 @@ export class SessionHost {
         this.sessions.delete(previous.sessionId);
         managed.address = this.address(session.sessionManager.getSessionId());
         managed.manager = session.sessionManager;
+        managed.projector = undefined;
         managed.phase = "opening";
         this.sessions.set(managed.address.sessionId, managed);
         this.drafts.transfer(previous, managed.address);
@@ -619,7 +624,7 @@ export class SessionHost {
   }
   private async bind(m: Managed, session: AgentSession) {
     m.manager = session.sessionManager;
-    m.projector = new SDKProjector(m.manager, m.address.epoch);
+    m.projector ??= new SDKProjector(m.manager, m.address.epoch);
     const agentPrompt = session.agent.prompt.bind(session.agent);
     session.agent.prompt = new Proxy(agentPrompt, {
       apply(target, agent, args) {
@@ -694,7 +699,9 @@ export class SessionHost {
           this.transition(m, () => required(m.runtime).fork(entryId, options)),
         switchSession: async (path, options) => {
           const known = (await SessionManager.list(m.cwd)).find(
-            (info) => info.path === path && info.cwd === m.cwd,
+            (info) =>
+              sameSessionPath(info.path, path) &&
+              sameSessionPath(info.cwd, m.cwd),
           );
           if (!known) throw new Error("Session path outside workspace");
           return this.transition(m, () =>
@@ -888,7 +895,8 @@ export class SessionHost {
   }
   private snapshot(m: Managed): Snapshot {
     const projector = required(m.projector);
-    const snapshot = {
+    const snapshot: Snapshot = {
+      ...(m.phase === "ready" ? {} : { ready: false }),
       address: { ...m.address },
       snapshotSeq: ++m.seq,
       info: this.info(m),
@@ -897,12 +905,26 @@ export class SessionHost {
       aborted: projector.aborted,
       sessionUI: m.adapters?.snapshot(),
       configError: this.configLoader.error,
-      ...this.selection(m),
+      ...(m.runtime
+        ? this.selection(m)
+        : { effort: "off" as const, effortLevels: [] }),
     };
     return this.settings.blockImages ? scrubImages(snapshot) : snapshot;
   }
   getSessionSnapshot(address: SessionAddress) {
     return this.snapshot(this.current(address, false));
+  }
+  getSessionHistory(
+    input: SessionAddress & { revision: string; before: string },
+  ) {
+    const m = this.current(input, false);
+    if (typeof input.revision !== "string" || typeof input.before !== "string")
+      throw new Error("Invalid history cursor");
+    const page = required(m.projector).historyPage(
+      input.before,
+      input.revision,
+    );
+    return this.settings.blockImages ? scrubImages(page) : page;
   }
   listSlashCommands(address: SessionAddress): SlashCommand[] {
     const session = required(this.current(address).runtime).session;
@@ -1304,7 +1326,7 @@ export class SessionHost {
         phase: m.phase,
         address: { ...m.address },
         openId: m.openId,
-        snapshot: m.runtime && m.projector ? this.snapshot(m) : undefined,
+        snapshot: m.projector ? this.snapshot(m) : undefined,
       })),
       pendingUI: this.broker.pending(),
       drafts: sessions.map((m) => ({

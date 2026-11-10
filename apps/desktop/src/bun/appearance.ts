@@ -60,7 +60,8 @@ const gdi =
     : undefined;
 
 export function windowStyleForBackdrop(style: number) {
-  return (style & ~0x02000000) | 0x000b0000;
+  // Custom controls own the caption; keep resize/Snap flags without native buttons.
+  return (style & ~(0x02000000 | 0x00c00000)) | 0x000b0000;
 }
 
 export function applyBackdrop(hwnd: Pointer, appearance: Appearance) {
@@ -76,7 +77,7 @@ export function applyBackdrop(hwnd: Pointer, appearance: Appearance) {
     // HiddenInset adds WS_CLIPCHILDREN; it clips the black alpha clear out of the
     // WebView2 area, leaving an opaque surface even with the correct class brushes.
     const windowStyle = user.symbols.GetWindowLongW(hwnd, -16);
-    // Native caption handling needs SYSMENU and both boxes for Windows Snap.
+    // Remove native caption painting while preserving SYSMENU and both boxes for Snap.
     const nextStyle = windowStyleForBackdrop(windowStyle);
     if (nextStyle !== windowStyle) {
       user.symbols.SetWindowLongW(hwnd, -16, nextStyle);
