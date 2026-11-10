@@ -1,5 +1,5 @@
 import type { Json } from "./index";
-import { type SessionView, viewActions } from "./models";
+import { type SessionView, type ToolCard, viewActions } from "./models";
 
 const MAX_BYTES = 1024 * 1024;
 const MAX_DEPTH = 32;
@@ -436,4 +436,40 @@ export function validateView(value: unknown): SessionView {
     seen.add(action.id);
   }
   return view;
+}
+
+const workState = oneOf(
+  "pending",
+  "active",
+  "completed",
+  "cancelled",
+  "unknown",
+);
+const blocks: Record<string, Check> = {
+  text: shape({ text }, { format: oneOf("text", "markdown") }),
+  code: shape({ text }),
+  diff: shape({ text }),
+  terminal: shape({ text }),
+  facts: shape({ items: facts }),
+  list: shape({
+    items: list(
+      shape({ title: short }, { description: text, state: workState }),
+    ),
+  }),
+};
+const block: Check = (v, p) => {
+  const kind = record(v, p).type;
+  if (typeof kind !== "string" || !Object.hasOwn(blocks, kind))
+    fail(`${p}.type`, `expected ${Object.keys(blocks).join(" | ")}`);
+  blocks[kind](v, p);
+};
+
+/** Same snapshot rules as views: detached, bounded JSON with every consumed field checked. */
+export function validateToolCard(value: unknown): ToolCard {
+  const clone = snapshot(value);
+  shape({ title: id }, { target: short, meta: short, body: list(block) })(
+    clone,
+    "$",
+  );
+  return clone as unknown as ToolCard;
 }

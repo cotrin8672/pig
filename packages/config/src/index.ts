@@ -1,4 +1,4 @@
-import type { SessionView } from "./models";
+import type { SessionView, ToolCard } from "./models";
 
 export * from "./models";
 
@@ -98,9 +98,18 @@ export interface AdapterKeymap {
   command: string;
   when: "chat" | "composer" | "panel";
 }
+/** Pure display mapping for tool calls. It never runs, approves or retries a tool. */
+export interface ToolView {
+  id: string;
+  /** Exact tool names. The first tool view in config order that returns a card wins. */
+  tools: readonly string[];
+  /** Called again while the call is running; return undefined to keep pig's own display. */
+  render(call: ToolObservation): ToolCard | undefined;
+}
 export interface PigConfig {
   apiVersion: 1;
   sessionAdapters?: readonly SessionAdapter[];
+  toolViews?: readonly ToolView[];
   keymaps?: readonly AdapterKeymap[];
 }
 export function defineConfig(config: PigConfig): PigConfig {
@@ -118,6 +127,8 @@ export interface SessionUIState {
   commands: { adapterId: string; id: string; title: string; busy: boolean }[];
   keymaps: AdapterKeymap[];
   diagnostics: { adapterId: string; message: string }[];
+  /** Keyed by tool call id. Calls without an entry use pig's own display. */
+  toolCards?: Record<string, ToolCard>;
 }
 export interface SessionActionRequest {
   generation: string;

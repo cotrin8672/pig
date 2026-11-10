@@ -5,6 +5,7 @@ import type {
   AdapterKeymap,
   PigConfig,
   SessionAdapter,
+  ToolView,
 } from "../../../../packages/config/src/index";
 import { viewActions } from "../../../../packages/config/src/models";
 import { normalizeCombo } from "../shared/keymap";
@@ -48,6 +49,7 @@ function validate(value: unknown): PigConfig {
   const input = object(value, "config", [
     "apiVersion",
     "sessionAdapters",
+    "toolViews",
     "keymaps",
   ]);
   if (input.apiVersion !== 1) throw new Error("apiVersion must be exactly 1");
@@ -68,6 +70,24 @@ function validate(value: unknown): PigConfig {
       ids.add(id);
       return { id, connect: adapter.connect as SessionAdapter["connect"] };
     });
+  }
+  if (input.toolViews !== undefined) {
+    const viewIds = new Set<string>();
+    config.toolViews = array(input.toolViews, "toolViews", MAX_ADAPTERS).map(
+      (value, index) => {
+        const name = `toolViews[${index}]`;
+        const view = object(value, name, ["id", "tools", "render"]);
+        const id = text(view.id, `${name}.id`, 128);
+        if (viewIds.has(id)) throw new Error(`Duplicate tool view id: ${id}`);
+        viewIds.add(id);
+        const tools = array(view.tools, `${name}.tools`, 256).map((tool, i) =>
+          text(tool, `${name}.tools[${i}]`, 256),
+        );
+        if (typeof view.render !== "function")
+          throw new Error(`${name}.render must be a function`);
+        return { id, tools, render: view.render as ToolView["render"] };
+      },
+    );
   }
   if (input.keymaps !== undefined) {
     const combos = new Set<string>();

@@ -204,3 +204,29 @@ export function viewActions(view: SessionView): Action[] {
     for (const thread of view.threads) actions.push(...(thread.actions ?? []));
   return actions;
 }
+
+/** Fixed display blocks for one tool call. Data only; pig chooses the React component. */
+export type ToolCardBlock =
+  | { type: "text"; text: string; format?: "text" | "markdown" }
+  | { type: "code"; text: string }
+  /** Unified diff text; lines starting with + or - are highlighted. */
+  | { type: "diff"; text: string }
+  | { type: "terminal"; text: string }
+  | { type: "facts"; items: { label: string; value: string }[] }
+  | {
+      type: "list";
+      items: {
+        title: string;
+        description?: string;
+        state?: WorkItem["state"];
+      }[];
+    };
+/** Replaces the generic row of a tool call. Running/failed state stays owned by pig. */
+export interface ToolCard {
+  title: string;
+  target?: string;
+  /** Short right-aligned summary, shown once the call has finished successfully. */
+  meta?: string;
+  /** Omitted: pig shows the tool's own result content. */
+  body?: ToolCardBlock[];
+}

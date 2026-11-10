@@ -6,11 +6,14 @@ import {
   type SessionActionRequest,
   type SessionUIState,
   type SessionView,
+  type ToolCard,
+  type ToolView,
   type Unsubscribe,
   viewActions,
 } from "../../../../packages/config/src";
 import {
   validateJson,
+  validateToolCard,
   validateView,
 } from "../../../../packages/config/src/validate";
 import type { AdapterBackend } from "./adapter-source";
@@ -30,6 +33,14 @@ type Scope = {
   commands: Map<string, Command>;
   views: Map<string, StoredView>;
   running?: Command;
+};
+
+/** `card` is absent when the tool view declined the call; the decision is still cached. */
+type RenderedTool = {
+  key: string;
+  viewId?: string;
+  card?: ToolCard;
+  json: string;
 };
 
 const MAX_COMMANDS = 256;
@@ -52,6 +63,12 @@ export class AdapterRuntime {
   private readonly scopes = new Map<string, Scope>();
   private readonly diagnostics = new Map<string, string>();
   private readonly keymaps: NonNullable<PigConfig["keymaps"]>;
+  private readonly toolViews: ToolView[];
+  private readonly failedToolViews = new Set<string>();
+  private renderedTools = new Map<string, RenderedTool>();
+  /** Replaced, never mutated, so snapshots can share it without cloning. */
+  private toolCards: Record<string, ToolCard> = {};
+  private stopToolViews?: Unsubscribe;
   private started = false;
   private disposed = false;
   private revision = 0;
@@ -62,6 +79,7 @@ export class AdapterRuntime {
     private readonly changed: () => void,
   ) {
     this.keymaps = structuredClone(config.keymaps ?? []);
+    this.toolViews = [...(config.toolViews ?? [])];
   }
 
   get busy(): boolean {
@@ -71,6 +89,7 @@ export class AdapterRuntime {
   start(): void {
     if (this.started || this.disposed) return;
     this.started = true;
+    this.startToolViews();
     const adapters = this.config.sessionAdapters ?? [];
     const counts = new Map<string, number>();
     for (const adapter of adapters)
@@ -115,7 +134,7 @@ export class AdapterRuntime {
   }
 
   snapshot(): SessionUIState {
-    return structuredClone({
+    const state: SessionUIState = structuredClone({
       generation: this.generation,
       views: [...this.scopes.values()].flatMap((scope) =>
         [...scope.views.values()].map(({ revision, view }) => ({
@@ -140,6 +159,101 @@ export class AdapterRuntime {
         message,
       })),
     });
+    if (this.toolViews.length) state.toolCards = this.toolCards;
+    return state;
+  }
+
+  private startToolViews(): void {
+    if (!this.toolViews.length) return;
+    // The source reports each event before its change notification; text deltas never alter tools.
+    let delta = false;
+    const stopEvents = this.backend.onEvent((event) => {
+      delta = event.type === "message_update";
+    });
+    const stopChanges = this.backend.subscribe(() => {
+      const skip = delta;
+      delta = false;
+      if (!skip) this.renderTools();
+    });
+    this.stopToolViews = () => {
+      stopEvents();
+      stopChanges();
+    };
+    void Promise.resolve().then(() => this.renderTools());
+  }
+
+  private renderTools(): void {
+    if (this.disposed) return;
+    let observations: ReturnType<AdapterBackend["tools"]>;
+    try {
+      this.backend.assertCurrent();
+      observations = this.backend.tools();
+    } catch {
+      return;
+    }
+    const before = this.renderedTools;
+    let next = before;
+    let failed = false;
+    // A failing view is retired, then the pass repeats so its calls reach the next view.
+    for (let retired = -1; retired !== this.failedToolViews.size; ) {
+      retired = this.failedToolViews.size;
+      next = this.renderPass(observations, next);
+      failed ||= retired !== this.failedToolViews.size;
+    }
+    const changed =
+      next.size !== before.size ||
+      [...next].some(
+        ([id, rendered]) => before.get(id)?.json !== rendered.json,
+      );
+    this.renderedTools = next;
+    if (!changed && !failed) return;
+    this.toolCards = Object.fromEntries(
+      [...next].flatMap(([id, { card }]) => (card ? [[id, card]] : [])),
+    );
+    this.changed();
+  }
+
+  private renderPass(
+    observations: ReturnType<AdapterBackend["tools"]>,
+    cache: Map<string, RenderedTool>,
+  ): Map<string, RenderedTool> {
+    const next = new Map<string, RenderedTool>();
+    for (const observation of observations) {
+      const views = this.toolViews.filter(
+        (view) =>
+          !this.failedToolViews.has(view.id) &&
+          view.tools.includes(observation.toolName),
+      );
+      if (!views.length) continue;
+      const key = `${observation.phase}:${observation.origin}:${observation.isError}`;
+      const previous = cache.get(observation.toolCallId);
+      // A finished call's result is final, so its card is too.
+      if (
+        observation.phase === "finished" &&
+        previous?.key === key &&
+        !(previous.viewId && this.failedToolViews.has(previous.viewId))
+      ) {
+        next.set(observation.toolCallId, previous);
+        continue;
+      }
+      const rendered: RenderedTool = { key, json: "" };
+      for (const view of views) {
+        try {
+          const output = view.render(structuredClone(observation));
+          if (output === undefined) continue;
+          rendered.card = validateToolCard(output);
+          rendered.viewId = view.id;
+          rendered.json = JSON.stringify(rendered.card);
+          break;
+        } catch (error) {
+          // Only this view's cards are withdrawn; the call falls back to the next view or pig's display.
+          this.failedToolViews.add(view.id);
+          this.diagnostics.set(`toolView:${view.id}`, this.message(error));
+        }
+      }
+      next.set(observation.toolCallId, rendered);
+    }
+    return next;
   }
 
   async invoke(request: SessionActionRequest): Promise<void> {
@@ -221,6 +335,7 @@ export class AdapterRuntime {
   dispose(): void {
     if (this.disposed) return;
     this.disposed = true;
+    this.stopToolViews?.();
     for (const scope of this.scopes.values()) this.close(scope);
   }
 
