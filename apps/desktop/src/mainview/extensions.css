@@ -1,15 +1,3 @@
-.extensions-page {
-  width: 100%;
-  max-width: 1440px;
-  height: 100%;
-  margin: 0 auto;
-  padding: 24px 16px 40px;
-  overflow-y: auto;
-}
-.extensions-page h1 {
-  font-size: var(--text-xl);
-  margin-bottom: 8px;
-}
 .extensions-tabs {
   display: flex;
   gap: 8px;
@@ -236,6 +224,14 @@
   color: var(--ds-text-muted);
   padding: 4px 0;
 }
+.package-actions button.primary.package-uninstall {
+  background: var(--ds-error);
+  color: var(--ds-bg-primary);
+  --confirm-ring: var(--ds-bg-primary);
+}
+.package-actions button.primary.package-uninstall:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--ds-error) 80%, white);
+}
 .package-op-error {
   display: flex;
   align-items: start;
@@ -349,9 +345,6 @@
   outline-offset: 4px;
 }
 @media (max-width: 640px) {
-  .extensions-page {
-    padding: 20px 16px;
-  }
   .market-grid {
     grid-template-columns: minmax(0, 1fr);
   }

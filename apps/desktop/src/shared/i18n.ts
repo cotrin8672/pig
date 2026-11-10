@@ -1,6 +1,7 @@
 import type { Settings } from "./settings";
 
 export const en = {
+  "Toggle sidebar": "Toggle sidebar",
   "Chat renderers": "Chat renderers",
   "Reload chat renderers": "Reload chat renderers",
   "Load trusted local TSX components. Changes only affect chat display.":
@@ -13,8 +14,6 @@ export const en = {
   extension: "Extension",
   skill: "Skill",
   prompt: "Prompt",
-  "Refresh models": "Refresh models",
-  "Refreshing models…": "Refreshing models…",
   dockTitle: "Session activity",
   dockProgress: "Progress",
   dockTasks: "Tasks",
@@ -206,6 +205,8 @@ export const en = {
   "Close window": "Close window",
   Close: "Close",
   "Opening chat…": "Opening chat…",
+  "Refresh models": "Refresh models",
+  "Refreshing models…": "Refreshing models…",
   "Dismiss notification": "Dismiss notification",
   Notifications: "Notifications",
   Unread: "Unread",
@@ -422,6 +423,7 @@ export const en = {
 };
 type Dictionary = { [K in keyof typeof en]: (typeof en)[K] };
 export const ja: Dictionary = {
+  "Toggle sidebar": "サイドバーの開閉",
   "Chat renderers": "チャット描画コンポーネント",
   "Reload chat renderers": "描画コンポーネントを再読込",
   "Load trusted local TSX components. Changes only affect chat display.":
@@ -433,8 +435,6 @@ export const ja: Dictionary = {
   extension: "拡張機能",
   skill: "スキル",
   prompt: "プロンプト",
-  "Refresh models": "モデルを再取得",
-  "Refreshing models…": "モデルを再取得中…",
   dockTitle: "セッションの作業状況",
   dockProgress: "進捗",
   dockTasks: "実行",
@@ -626,6 +626,8 @@ export const ja: Dictionary = {
   "Close window": "ウィンドウを閉じる",
   Close: "閉じる",
   "Opening chat…": "チャットを開いています…",
+  "Refresh models": "モデルを再取得",
+  "Refreshing models…": "モデルを再取得中…",
   "Dismiss notification": "通知を閉じる",
   Notifications: "通知",
   Unread: "未読",

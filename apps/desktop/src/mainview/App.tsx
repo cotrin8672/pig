@@ -1,7 +1,6 @@
 import type { ToolCall } from "@earendil-works/pi-ai";
 import {
   Check,
-  Circle,
   CircleAlert,
   Copy,
   ExternalLink,
@@ -9,9 +8,11 @@ import {
   LoaderCircle,
   Minus,
   MoveHorizontal,
+  PanelLeft,
   Plus,
   Puzzle,
   Settings2,
+  Settings as SettingsIcon,
   Square,
   X,
 } from "lucide-react";
@@ -29,7 +30,7 @@ import { addressKey } from "./chat-snapshot";
 import { customPresentation, dataText } from "./custom-data";
 import { DraftRecovery } from "./DraftRecovery";
 import { Extensions } from "./Extensions";
-import { ExtensionStatusBar, workingLabel } from "./extension-status";
+import { workingLabel } from "./extension-status";
 import { getT, useT } from "./i18n";
 import { Markdown, UserMessage } from "./MessageContent";
 import { NotificationCenter } from "./NotificationCenter";
@@ -68,6 +69,7 @@ function isWindowDragTarget(target: EventTarget) {
 export function App() {
   const t = useT();
   const state = useStore();
+  const [sidebarOpen, setSidebarOpen] = useState(true);
   useEffect(initRuntimeConnection, []);
   useEffect(() => {
     void refresh().catch(showError);
@@ -84,7 +86,7 @@ export function App() {
   return (
     // biome-ignore lint/a11y/noStaticElementInteractions: Native drag handles; maximize is also available as a keyboard-accessible button.
     <div
-      className="app-shell"
+      className={`app-shell${sidebarOpen ? "" : " sidebar-collapsed"}`}
       onContextMenu={(event) => event.preventDefault()}
       onMouseDown={(event) => {
         // Do not start a second native move while double-clicking a drag handle.
@@ -102,60 +104,53 @@ export function App() {
         } as React.CSSProperties
       }
     >
-      <aside className="sidebar">
+      <button
+        type="button"
+        className="sidebar-toggle electrobun-webkit-app-region-no-drag"
+        aria-label={t["Toggle sidebar"]}
+        title={t["Toggle sidebar"]}
+        aria-expanded={sidebarOpen}
+        aria-controls="app-sidebar"
+        onClick={() => setSidebarOpen((open) => !open)}
+      >
+        <PanelLeft size={16} aria-hidden="true" />
+      </button>
+      <aside id="app-sidebar" className="sidebar" inert={!sidebarOpen}>
         <header className="electrobun-webkit-app-region-drag">
           <strong>pig</strong>
         </header>
         <SidebarSessions />
-        <button
-          type="button"
-          className={`providers-nav ${state.page === "providers" ? "active" : ""}`}
-          onClick={() => navigate("providers")}
-        >
-          <Settings2 size={16} />
-          <span className="nav-label">
-            {t.Providers}{" "}
-            <small
-              className={
-                state.login?.error
-                  ? "error"
-                  : state.login
-                    ? "muted"
-                    : connected
-                      ? "connected"
-                      : "muted"
-              }
-            >
-              {state.login?.error ? (
-                <CircleAlert size={12} />
-              ) : state.login ? (
-                <LoaderCircle size={12} className="spinner" />
-              ) : (
-                <Circle size={7} fill="currentColor" />
-              )}
-              {state.login?.error ||
-                (state.login
-                  ? t["Signing in…"]
-                  : connected
-                    ? t.Connected
-                    : t["Not connected"])}
-            </small>
-          </span>
-        </button>
-        <button
-          type="button"
-          className={`providers-nav ${state.page === "extensions" ? "active" : ""}`}
-          onClick={() => navigate("extensions")}
-        >
-          <Puzzle size={16} /> {t.Extensions}
-        </button>
         <div className="sidebar-footer">
           <button
             type="button"
-            className={`providers-nav ${state.page === "settings" ? "active" : ""}`}
+            className={`sidebar-icon ${state.page === "settings" ? "active" : ""}`}
+            aria-label={t.Settings}
+            title={t.Settings}
             onClick={() => navigate("settings")}
           >
-            <Settings2 size={16} /> {t.Settings}
+            <SettingsIcon size={16} aria-hidden="true" />
+          </button>
+          <button
+            type="button"
+            className={`sidebar-icon ${state.page === "providers" ? "active" : ""}`}
+            aria-label={`${t.Providers}: ${state.login?.error || (state.login ? t["Signing in…"] : connected ? t.Connected : t["Not connected"])}`}
+            title={`${t.Providers}: ${state.login?.error || (state.login ? t["Signing in…"] : connected ? t.Connected : t["Not connected"])}`}
+            onClick={() => navigate("providers")}
+          >
+            <Settings2 size={16} aria-hidden="true" />
+            <span
+              className={`sidebar-provider-dot ${state.login?.error ? "error" : state.login ? "busy" : connected ? "connected" : ""}`}
+              aria-hidden="true"
+            />
+          </button>
+          <button
+            type="button"
+            className={`sidebar-icon ${state.page === "extensions" ? "active" : ""}`}
+            aria-label={t.Extensions}
+            title={t.Extensions}
+            onClick={() => navigate("extensions")}
+          >
+            <Puzzle size={16} aria-hidden="true" />
           </button>
           <NotificationCenter />
         </div>
@@ -538,7 +533,6 @@ function Chat({ snapshot }: { snapshot: ChatSnapshot }) {
             </button>
           </div>
         </header>
-        <ExtensionStatusBar address={snapshot.address} />
         <div ref={thread} className="thread-scroll">
           <div className="transcript">
             {!transcript.records.length && (

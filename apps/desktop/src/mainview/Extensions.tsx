@@ -1,5 +1,4 @@
 import {
-  ArrowLeft,
   ArrowUpCircle,
   Check,
   CircleAlert,
@@ -22,8 +21,8 @@ import type {
   PackageType,
 } from "../shared/rpc-schema";
 import { ConfirmButton } from "./ConfirmButton";
+import { ContentPage } from "./ContentPage";
 import { getT, useT } from "./i18n";
-import { navigate } from "./navigation";
 import { rpc } from "./rpc";
 import { receivePackageOp, showError, useStore } from "./store";
 import "./extensions.css";
@@ -301,20 +300,11 @@ export function Extensions() {
     if (focus) document.getElementById(`extensions-tab-${next}`)?.focus();
   }
   return (
-    <div className="extensions-page">
-      <button
-        className="back-button"
-        type="button"
-        onClick={() => navigate("chat")}
-      >
-        <ArrowLeft size={14} />
-
-        {t["Back to chat"]}
-      </button>
-      <h1>{t.Extensions}</h1>
-      <p className="muted page-description">
-        {t["Make pi your own with community packages."]}
-      </p>
+    <ContentPage
+      className="extensions-page"
+      title={t.Extensions}
+      description={t["Make pi your own with community packages."]}
+    >
       <div
         className="extensions-tabs"
         role="tablist"
@@ -445,26 +435,18 @@ export function Extensions() {
                         {op?.status === "running" ? (
                           <Progress op={op} />
                         ) : match ? (
-                          <>
-                            <span className="status connected">
-                              <Check size={14} />
-
-                              {t.Installed}
-                            </span>
-                            <ConfirmButton
-                              className="quiet"
-                              title={
-                                t[
-                                  "This package will be removed from your pi configuration. Open chats will be reloaded."
-                                ]
-                              }
-                              onConfirm={() => run("uninstall", source)}
-                            >
-                              <Trash2 size={13} />
-
-                              {t.Uninstall}
-                            </ConfirmButton>
-                          </>
+                          <ConfirmButton
+                            className="primary package-uninstall"
+                            title={
+                              t[
+                                "This package will be removed from your pi configuration. Open chats will be reloaded."
+                              ]
+                            }
+                            onConfirm={() => run("uninstall", source)}
+                          >
+                            <Trash2 size={13} />
+                            {t.Uninstall}
+                          </ConfirmButton>
                         ) : (
                           <ConfirmButton
                             className="primary"
@@ -624,7 +606,7 @@ export function Extensions() {
                             </button>
                           )}
                           <ConfirmButton
-                            className="quiet"
+                            className="primary package-uninstall"
                             title={
                               t[
                                 "This package will be removed from your pi configuration. Open chats will be reloaded."
@@ -646,7 +628,7 @@ export function Extensions() {
           </>
         )}
       </section>
-    </div>
+    </ContentPage>
   );
 }
 function ErrorState({
