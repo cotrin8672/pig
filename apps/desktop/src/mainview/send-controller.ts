@@ -16,6 +16,9 @@ export type SendState = {
   state: "sending" | "checking" | "unknown" | "rejected" | "accepted";
   message?: string;
 };
+export function isSendUnconfirmed(state: SendState | undefined) {
+  return !!state && ["sending", "checking", "unknown"].includes(state.state);
+}
 type Transport = {
   syncDraft(params: DraftSyncParams): Promise<DraftSyncResult>;
   prompt(params: PromptParams): Promise<PromptAccepted>;
@@ -24,6 +27,7 @@ type Transport = {
 /** A transport failure is not a rejection. Only read-only lookup is ever retried. */
 export class SendController {
   private states = new Map<string, SendState>();
+  private transfers = new Map<string, SessionAddress>();
   private listeners = new Set<() => void>();
   constructor(
     private drafts: DraftStore,
@@ -47,8 +51,8 @@ export class SendController {
   }
   async send(address: SessionAddress) {
     const previous = this.read(address);
-    if (previous && ["sending", "checking", "unknown"].includes(previous.state))
-      return;
+    // An unknown receipt never triggers a retry or requires permission for a new send.
+    if (previous && ["sending", "checking"].includes(previous.state)) return;
     // Reserve before awaiting CAS so double-clicks cannot register two sends.
     const state: SendState = {
       key: { ...address, requestId: crypto.randomUUID() },
@@ -70,8 +74,7 @@ export class SendController {
         draftRevision: draft.revision,
       };
     } catch (error) {
-      this.put(address, {
-        ...state,
+      this.settle(address, state, {
         state: "rejected",
         message: String(error),
       });
@@ -79,23 +82,34 @@ export class SendController {
     }
     try {
       await this.transport.prompt(payload);
-      this.accept(address, state);
+      this.settle(address, state, { state: "accepted" });
     } catch {
+      if (this.read(address)?.key.requestId !== state.key.requestId) return;
       this.put(address, {
         ...state,
         state: "checking",
-        message: "Checking acceptance — do not resend.",
       });
       await this.lookup(address);
     }
   }
-  private accept(address: SessionAddress, state: SendState) {
+  private settle(
+    address: SessionAddress,
+    state: SendState,
+    result: { state: "accepted" | "rejected"; message?: string },
+  ) {
     if (this.read(address)?.key.requestId !== state.key.requestId) return;
-    const cleared = this.drafts.clearAccepted(address, state.version);
-    this.put(address, { ...state, state: "accepted", message: undefined });
+    const cleared =
+      result.state === "accepted" &&
+      this.drafts.clearAccepted(address, state.version);
+    this.put(address, { ...state, message: undefined, ...result });
     // Mirror the accepted clear, without risking a newer extension revision.
     if (cleared)
       void this.drafts.flush(address, this.transport.syncDraft).catch(() => {});
+    const next = this.transfers.get(addressKey(address));
+    const transferred = next && this.read(next);
+    this.transfers.delete(addressKey(address));
+    if (next && transferred?.key.requestId === state.key.requestId)
+      this.settle(next, transferred, result);
   }
   async lookup(address: SessionAddress) {
     const state = this.read(address);
@@ -109,12 +123,11 @@ export class SendController {
         throw new Error("Receipt address mismatch");
       if (this.read(address)?.key.requestId !== state.key.requestId) return;
       if (receipt.state === "accepted") {
-        this.accept(address, state);
+        this.settle(address, state, { state: "accepted" });
         return;
       }
       if (receipt.state === "rejected") {
-        this.put(address, {
-          ...state,
+        this.settle(address, state, {
           state: "rejected",
           message: receipt.message,
         });
@@ -124,44 +137,40 @@ export class SendController {
         this.put(address, {
           ...state,
           state: "unknown",
-          message:
-            "Acceptance is unknown. This message may have executed. Inspect history before explicitly sending again.",
+          message: undefined,
         });
         return;
       }
       this.put(address, {
         ...state,
         state: "checking",
-        message: "Checking acceptance — do not resend.",
       });
     } catch {
+      if (this.read(address)?.key.requestId !== state.key.requestId) return;
       this.put(address, {
         ...state,
         state: "checking",
-        message: "Connection unavailable; checking acceptance. Draft retained.",
       });
     }
     this.schedule(() => {
       void this.lookup(address);
     });
   }
-  confirmNewSend(address: SessionAddress) {
-    const state = this.read(address);
-    if (state?.state === "unknown")
-      this.put(address, {
-        ...state,
-        state: "rejected",
-        message: "New send explicitly enabled after inspecting history.",
-      });
-  }
   transfer(previous: SessionAddress, next: SessionAddress) {
     const state = this.read(previous);
-    if (state && ["sending", "checking", "unknown"].includes(state.state))
-      this.put(next, {
-        ...state,
-        state: "unknown",
-        message:
-          "Session ownership changed while acceptance was unconfirmed. The old send may have executed. Inspect history before enabling a NEW send.",
-      });
+    if (!state || !isSendUnconfirmed(state)) return;
+    const old = this.drafts.read(previous);
+    const current = this.drafts.read(next);
+    this.transfers.set(addressKey(previous), next);
+    this.put(next, {
+      ...state,
+      // Only the unchanged transferred draft may be cleared by a late receipt.
+      version:
+        old.version === state.version && current.content === old.content
+          ? current.version
+          : -1,
+      state: "unknown",
+      message: undefined,
+    });
   }
 }

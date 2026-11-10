@@ -7,7 +7,7 @@ import type {
   SendKey,
 } from "../shared/runtime-contract";
 import { DraftStore, emptyContent } from "./draft-store";
-import { SendController } from "./send-controller";
+import { isSendUnconfirmed, SendController } from "./send-controller";
 
 const address = { hostId: "h", sessionId: "opaque-sdk", epoch: 3 };
 const accepted: PromptAccepted = { disposition: "started" };
@@ -78,7 +78,8 @@ test.each([
   "unchanged",
   "newer draft",
   "replacement epoch",
-])("pending receipt acceptance clears obsolete warning and protects %s", async (scenario) => {
+  "replacement unchanged",
+])("pending receipt acceptance resolves internally and protects %s", async (scenario) => {
   let calls = 0;
   const keys: SendKey[] = [];
   const f = fixture(
@@ -95,21 +96,22 @@ test.each([
   );
   await f.sends.send(address);
   expect(f.sends.read(address)?.state).toBe("checking");
-  expect(f.sends.read(address)?.message).toBe(
-    "Checking acceptance — do not resend.",
-  );
+  expect(f.sends.read(address)?.message).toBeUndefined();
   expect(f.drafts.read(address).content.text).toBe("Hello");
   expect(f.drafts.read(address).content.images).toHaveLength(1);
   expect(f.callbacks).toHaveLength(1);
   await f.sends.send(address);
 
   const next = { ...address, epoch: address.epoch + 1 };
-  if (scenario === "replacement epoch") {
-    f.sends.transfer(address, next);
+  const replacement = scenario.startsWith("replacement");
+  if (replacement) {
     f.drafts.transfer(address, next);
+    f.sends.transfer(address, next);
+    expect(isSendUnconfirmed(f.sends.read(next))).toBe(true);
   }
-  const current = scenario === "replacement epoch" ? next : address;
-  if (scenario !== "unchanged") {
+  const current = replacement ? next : address;
+  const newer = scenario === "newer draft" || scenario === "replacement epoch";
+  if (newer) {
     f.drafts.edit(current, (content) => ({
       ...content,
       text: "newer",
@@ -122,18 +124,16 @@ test.each([
     }));
   }
   const retained = f.drafts.read(current).content;
-  const replacementState = f.sends.read(next);
   await f.sends.lookup(address);
   expect(f.sends.read(address)?.state).toBe("accepted");
   expect(f.sends.read(address)?.message).toBeUndefined();
   expect(f.drafts.read(current).content).toEqual(
-    scenario === "unchanged" ? emptyContent() : retained,
+    newer ? retained : emptyContent(),
   );
-  if (scenario === "replacement epoch") {
-    expect(f.sends.read(next)).toEqual(replacementState);
-    expect(f.sends.read(next)?.state).toBe("unknown");
-    expect(f.sends.read(next)?.message).toContain("ownership changed");
-    await f.sends.send(next);
+  if (replacement) {
+    expect(f.sends.read(next)?.state).toBe("accepted");
+    expect(f.sends.read(next)?.message).toBeUndefined();
+    expect(isSendUnconfirmed(f.sends.read(next))).toBe(false);
   }
   await f.sends.lookup(address);
   expect(calls).toBe(1);
@@ -157,7 +157,7 @@ test("preaccept rejection retains text and images, shows backend error", async (
   expect(f.drafts.read(address).content.text).toBe("Hello");
   expect(f.drafts.read(address).content.images).toHaveLength(1);
 });
-test("host restart unknown blocks send until user explicitly confirms a NEW request", async () => {
+test("unknown acceptance retains the draft without warnings, automatic retry or a confirmation gate", async () => {
   const ids: string[] = [];
   const f = fixture(
     async (params) => {
@@ -167,10 +167,11 @@ test("host restart unknown blocks send until user explicitly confirms a NEW requ
     async (key) => ({ ...key, state: "unknown", reason: "host-restarted" }),
   );
   await f.sends.send(address);
-  await f.sends.send(address);
+  await f.sends.lookup(address);
   expect(ids).toHaveLength(1);
   expect(f.sends.read(address)?.state).toBe("unknown");
-  f.sends.confirmNewSend(address);
+  expect(f.sends.read(address)?.message).toBeUndefined();
+  expect(isSendUnconfirmed(f.sends.read(address))).toBe(true);
   await f.sends.send(address);
   expect(ids).toHaveLength(2);
   expect(ids[0]).not.toBe(ids[1]);
@@ -199,7 +200,7 @@ test("late acceptance preserves edits made during pending prompt", async () => {
   expect(f.drafts.read(address).content.text).toBe("newer");
   expect(f.drafts.read(address).content.images).toHaveLength(1);
 });
-test("replacement during admission preserves next epoch draft, double click sends once", async () => {
+test("replacement during admission resolves internally and clears the unchanged sent draft", async () => {
   let finish: (value: PromptAccepted) => void = () => {};
   let begun: () => void = () => {};
   const started = new Promise<void>((resolve) => {
@@ -221,10 +222,12 @@ test("replacement during admission preserves next epoch draft, double click send
   await started;
   const next = { ...address, epoch: 4 };
   f.drafts.transfer(address, next);
+  f.sends.transfer(address, next);
   finish(accepted);
   await result;
   expect(calls).toBe(1);
-  expect(f.drafts.read(next).content.text).toBe("Hello");
+  expect(f.sends.read(next)?.state).toBe("accepted");
+  expect(f.drafts.read(next).content).toEqual(emptyContent());
 });
 test("CAS mirror settles before prompt captures exact expanded paste and image order", async () => {
   const drafts = new DraftStore();
@@ -255,7 +258,7 @@ test("CAS mirror settles before prompt captures exact expanded paste and image o
   expect(order.slice(0, 2)).toEqual(["sync", "prompt"]);
 });
 
-test("an indeterminate send transferred across epoch requires inspect-history confirmation", async () => {
+test("an indeterminate transferred send prevents branching but needs no confirmation for a new send", async () => {
   let calls = 0;
   const f = fixture(
     async () => {
@@ -266,13 +269,13 @@ test("an indeterminate send transferred across epoch requires inspect-history co
   );
   await f.sends.send(address);
   const next = { ...address, epoch: 8 };
-  f.sends.transfer(address, next);
   f.drafts.transfer(address, next);
-  await f.sends.send(next);
+  f.sends.transfer(address, next);
   expect(calls).toBe(1);
   expect(f.sends.read(next)?.state).toBe("unknown");
+  expect(f.sends.read(next)?.message).toBeUndefined();
+  expect(isSendUnconfirmed(f.sends.read(next))).toBe(true);
   expect(f.drafts.read(next).content.text).toBe("Hello");
-  f.sends.confirmNewSend(next);
   await f.sends.send(next);
   expect(calls).toBe(2);
 });
@@ -296,4 +299,85 @@ test("accepted follow-ups allow the next message without waiting for response co
   ]);
   expect(prompts[0].requestId).not.toBe(prompts[1].requestId);
   expect(f.drafts.read(address).content.text).toBe("");
+});
+
+test.each([
+  "local edit",
+  "extension startup",
+])("late transferred acceptance preserves %s made before ownership changed", async (scenario) => {
+  let lookups = 0;
+  const f = fixture(
+    async () => {
+      throw new Error("transport");
+    },
+    async (key) =>
+      ++lookups === 1
+        ? { ...key, state: "pending" }
+        : { ...key, state: "accepted", accepted, acceptedAt: 1 },
+  );
+  await f.sends.send(address);
+  const next = { ...address, epoch: 4 };
+  if (scenario === "local edit")
+    f.drafts.edit(address, (content) => ({ ...content, text: "newer" }));
+  else
+    f.drafts.receive(next, { ...emptyContent(), text: "newer", revision: 1 });
+  f.drafts.transfer(address, next);
+  f.sends.transfer(address, next);
+  await f.sends.lookup(address);
+  expect(f.sends.read(next)?.state).toBe("accepted");
+  expect(f.drafts.read(next).content.text).toBe("newer");
+});
+
+test("a late rejection unlocks the replacement without dropping its draft", async () => {
+  let lookups = 0;
+  const f = fixture(
+    async () => {
+      throw new Error("transport");
+    },
+    async (key) =>
+      ++lookups === 1
+        ? { ...key, state: "pending" }
+        : {
+            ...key,
+            state: "rejected",
+            code: "AUTH",
+            message: "Configure provider",
+          },
+  );
+  await f.sends.send(address);
+  const next = { ...address, epoch: 4 };
+  f.drafts.transfer(address, next);
+  f.sends.transfer(address, next);
+  await f.sends.lookup(address);
+  expect(isSendUnconfirmed(f.sends.read(next))).toBe(false);
+  expect(f.sends.read(next)?.message).toBe("Configure provider");
+  expect(f.drafts.read(next).content.text).toBe("Hello");
+  expect(f.drafts.read(next).content.images).toHaveLength(1);
+});
+
+test("a retired owner's late acceptance cannot clear a new send's subsequent edits", async () => {
+  let calls = 0;
+  let lookups = 0;
+  const f = fixture(
+    async () => {
+      if (++calls === 1) throw new Error("transport");
+      return accepted;
+    },
+    async (key) =>
+      ++lookups === 1
+        ? { ...key, state: "pending" }
+        : { ...key, state: "accepted", accepted, acceptedAt: 1 },
+  );
+  await f.sends.send(address);
+  const next = { ...address, epoch: 4 };
+  f.drafts.transfer(address, next);
+  f.sends.transfer(address, next);
+  f.drafts.edit(next, (content) => ({ ...content, text: "new request" }));
+  await f.sends.send(next);
+  const state = f.sends.read(next);
+  f.drafts.edit(next, (content) => ({ ...content, text: "still typing" }));
+  await f.sends.lookup(address);
+  expect(f.sends.read(next)).toBe(state);
+  expect(f.drafts.read(next).content.text).toBe("still typing");
+  expect(calls).toBe(2);
 });

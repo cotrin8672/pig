@@ -7,10 +7,11 @@ import {
   Sparkles,
   Split,
 } from "lucide-react";
-import { useState } from "react";
+import { useState, useSyncExternalStore } from "react";
 import type { Message, ResponseStats } from "../shared/transcript";
 import { useT } from "./i18n";
-import { forkChat, regenerate } from "./rpc";
+import { forkChat, regenerate, sends } from "./rpc";
+import { isSendUnconfirmed } from "./send-controller";
 import { showError, useStore } from "./store";
 
 function duration(ms: number) {
@@ -39,6 +40,16 @@ export function ResponseFooter({
   const t = useT();
   const language = useStore((s) => s.settings.language);
   const [copied, setCopied] = useState(false);
+  const snapshot = useStore((s) => s.snapshots[sessionId]);
+  const readSendState = () =>
+    snapshot ? sends.read(snapshot.address) : undefined;
+  const sendState = useSyncExternalStore(
+    sends.subscribe,
+    readSendState,
+    readSendState,
+  );
+  const canBranch =
+    !!snapshot && snapshot.ready !== false && !isSendUnconfirmed(sendState);
   const status =
     stats.stopReason === "error"
       ? { icon: <CircleAlert size={14} />, label: t.Failed }
@@ -92,7 +103,7 @@ export function ResponseFooter({
           type="button"
           title={t["Branch into new chat"]}
           aria-label={t["Branch into new chat"]}
-          disabled={!entryId}
+          disabled={!entryId || !canBranch}
           onClick={() => {
             if (entryId) void forkChat(sessionId, entryId).catch(showError);
           }}
@@ -104,6 +115,7 @@ export function ResponseFooter({
             type="button"
             title={t.Regenerate}
             aria-label={t.Regenerate}
+            disabled={!canBranch}
             onClick={() =>
               void regenerate(sessionId, user, userEntryId).catch(showError)
             }
