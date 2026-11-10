@@ -1,4 +1,4 @@
-import { watch } from "node:fs";
+import { existsSync, lstatSync, rmSync, watch } from "node:fs";
 
 // Dev loop: Vite serves the webview with HMR (index.ts loads it when :5173 answers).
 // Bun host changes restart the app here, not via `electrobun dev --watch`: on Windows
@@ -30,12 +30,23 @@ let restarting = false;
 let app = run(["electrobun", "dev"]);
 let timer: ReturnType<typeof setTimeout> | undefined;
 const restart = async () => {
+  if (restarting) return;
   restarting = true;
-  console.log("[dev] Bun host changed, restarting app...");
-  killTree(app);
-  await app.exited;
-  app = run(["electrobun", "dev"]);
-  restarting = false;
+  try {
+    console.log("[dev] Bun host changed, restarting app...");
+    killTree(app);
+    await app.exited;
+    // A killed preBuild can leave its generated staging directory behind.
+    const stage = "build/sdk-runtime.next";
+    if (existsSync(stage)) {
+      if (lstatSync(stage).isSymbolicLink())
+        throw new Error(`Refusing to remove symlink: ${stage}`);
+      rmSync(stage, { recursive: true, force: true });
+    }
+    app = run(["electrobun", "dev"]);
+  } finally {
+    restarting = false;
+  }
 };
 for (const dir of ["src/bun", "src/shared"])
   watch(dir, { recursive: true }, (_event, file) => {
