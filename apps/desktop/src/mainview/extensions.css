@@ -209,9 +209,6 @@
 .package-copy-feedback.is-copied {
   opacity: 1;
 }
-.package-copy-feedback.is-copied {
-  color: var(--ds-success);
-}
 .package-actions {
   display: flex;
   flex-direction: row;

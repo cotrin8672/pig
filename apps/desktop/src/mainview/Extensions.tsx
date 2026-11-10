@@ -58,11 +58,7 @@ function CopyCommand({ name }: { name: string }) {
         aria-live="polite"
       >
         {copied ? (
-          <>
-            <Check size={13} aria-hidden="true" />
-
-            {t.Copied}
-          </>
+          <Check size={13} aria-hidden="true" />
         ) : (
           <Copy size={13} aria-hidden="true" />
         )}
