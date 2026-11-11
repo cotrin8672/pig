@@ -220,9 +220,22 @@ test.skipIf(!existsSync(edge))(
       let socket: WebSocket | undefined;
       try {
         const portFile = join(dir, "profile", "DevToolsActivePort");
-        for (let i = 0; i < 200 && !existsSync(portFile); i++)
+        let port = "";
+        for (let i = 0; i < 400; i++) {
+          try {
+            const lines = (await readFile(portFile, "utf8")).split(/\r?\n/);
+            if (/^\d+$/.test(lines[0]) && lines[1]?.startsWith("/devtools/")) {
+              port = lines[0];
+              break;
+            }
+          } catch (error) {
+            // On Windows Edge may still hold the new port file exclusively.
+            const code = (error as NodeJS.ErrnoException).code;
+            if (code !== "ENOENT" && code !== "EBUSY") throw error;
+          }
           await Bun.sleep(25);
-        const port = (await readFile(portFile, "utf8")).split("\n")[0];
+        }
+        if (!port) throw new Error("Edge did not publish its debugging port");
         const target = (await (
           await fetch(
             `http://127.0.0.1:${port}/json/new?${encodeURIComponent(pathToFileURL(html).href)}`,
