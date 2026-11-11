@@ -1,3 +1,4 @@
+import { mkdir, writeFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 import { dirname, join, resolve } from "node:path";
 import config from "../electrobun.config";
@@ -39,3 +40,25 @@ const native = Bun.spawnSync(
   { stdio: ["ignore", "inherit", "inherit"] },
 );
 if (native.exitCode !== 0) process.exit(native.exitCode ?? 1);
+
+const buildDir = process.env.ELECTROBUN_BUILD_DIR;
+const appName = process.env.ELECTROBUN_APP_NAME;
+if (!buildDir || !appName)
+  throw new Error("Missing Electrobun build destination");
+const channel = process.env.PIG_RELEASE_CHANNEL ?? "dev";
+const version = process.env.PIG_RELEASE_VERSION ?? config.app.version;
+if (
+  !["stable", "nightly", "dev"].includes(channel) ||
+  (channel === "stable" && version !== config.app.version)
+)
+  throw new Error("Invalid app release metadata");
+const resources = join(buildDir, appName, "Resources");
+await mkdir(resources, { recursive: true });
+await writeFile(
+  join(resources, "app-build.json"),
+  JSON.stringify({
+    channel,
+    version,
+    commit: process.env.PIG_RELEASE_COMMIT ?? "",
+  }),
+);

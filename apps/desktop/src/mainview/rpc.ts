@@ -144,6 +144,7 @@ export const rpc = Electroview.defineRPC<RPCSchema>({
       },
     },
     messages: {
+      appUpdate: (appUpdate) => useStore.setState({ appUpdate }),
       packageOp: receivePackageOp,
       installed: (installed) =>
         useStore.setState({ installed, installedLoaded: true }),

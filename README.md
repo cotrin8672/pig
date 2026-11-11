@@ -30,6 +30,15 @@ Update with `scoop update` followed by `scoop update pig` or
 `scoop update pig-nightly`. Nightly uses a rolling prerelease and Scoop's
 `nightly` version: updates re-download it without hash verification.
 
+Stable builds can also update from **Settings → About & updates** (Windows x64).
+The app checks the latest stable GitHub release, verifies the ZIP checksum, then
+replaces the installation after the app exits: Scoop installs run
+`scoop update pig`, portable installs replace their own folder and restore the
+old one if the swap fails. Nightly, development, and unverified installations
+never self-update; use the Scoop CLI for those. The update stops running agents
+and terminals, so drafts are saved before closing and the restart can be
+cancelled. A failed update is reported on the next launch.
+
 ### Publish
 
 Push `main` to build CI and publish/replace the `nightly` prerelease. Manual

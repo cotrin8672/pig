@@ -14,6 +14,7 @@ import type { Notice, RPCSchema, SessionTarget } from "../shared/rpc-schema";
 import type { OpenSessionParams } from "../shared/runtime-contract";
 import { sessionIdFromLink } from "../shared/session-links";
 import { patchSettings } from "../shared/settings";
+import { AppUpdater } from "./app-update";
 import {
   applyBackdrop,
   loadAppearance,
@@ -205,6 +206,7 @@ const rpc = BrowserView.defineRPC<RPCSchema>({
   maxRequestTime: 600_000,
   handlers: {
     requests: {
+      getAppUpdate: () => appUpdater.info(),
       getChatRendererBundle: () => chatRendererLoader.load(),
       searchPackages: (input) => searchPackages(input),
       packagePreviews: (input) => packagePreviews(input),
@@ -394,6 +396,12 @@ const rpc = BrowserView.defineRPC<RPCSchema>({
       setEffort: (input) => setSessionEffort(input),
     },
     messages: {
+      checkAppUpdate: () => {
+        void appUpdater.check().catch(report);
+      },
+      installAppUpdate: () => {
+        void appUpdater.apply().catch(report);
+      },
       setSettings: (patch) => {
         settingsQueue = settingsQueue
           .then(async () => {
@@ -667,3 +675,33 @@ Electrobun.events.on("before-quit", (event) => {
     });
 });
 process.on("exit", dispose);
+
+const appUpdater = new AppUpdater(
+  process.execPath,
+  join(desktopConfigDir, "app-update-result.json"),
+  (state) => rpc.send.appUpdate(state),
+  async (handoff) => {
+    if (quitting) return false;
+    quitting = true;
+    try {
+      const t = dictionary(settings.language);
+      const { response } = await Utils.showMessageBox({
+        type: "warning",
+        title: t.appUpdateTitle,
+        message: t.appUpdateConfirm,
+        buttons: [t.cancel, t.appUpdateRestart],
+        defaultId: 0,
+        cancelId: 0,
+      });
+      if (response !== 1 || !(await confirmDraftsBeforeClose())) return false;
+      const commit = await handoff();
+      await disposeSessions();
+      await commit();
+      quitReady = true;
+      Utils.quit();
+      return true;
+    } finally {
+      quitting = false;
+    }
+  },
+);

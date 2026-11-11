@@ -190,9 +190,13 @@ export interface SlashCommand {
   category: "extension" | "skill" | "prompt";
 }
 
+import type { AppUpdateState } from "./app-update";
+
 export type RPCSchema = {
   bun: {
     requests: {
+      // biome-ignore lint/suspicious/noConfusingVoidType: Electrobun convention.
+      getAppUpdate: { params: void; response: AppUpdateState };
       getChatRendererBundle: {
         // biome-ignore lint/suspicious/noConfusingVoidType: Electrobun convention.
         params: void;
@@ -350,6 +354,10 @@ export type RPCSchema = {
       };
     };
     messages: {
+      // biome-ignore lint/suspicious/noConfusingVoidType: Electrobun convention.
+      checkAppUpdate: void;
+      // biome-ignore lint/suspicious/noConfusingVoidType: Electrobun convention.
+      installAppUpdate: void;
       // biome-ignore lint/suspicious/noConfusingVoidType: Electrobun's parameterless RPC convention.
       addProject: void;
       setAppearance: Appearance;
@@ -374,6 +382,7 @@ export type RPCSchema = {
       flushDrafts: { params: void; response: void };
     };
     messages: {
+      appUpdate: AppUpdateState;
       runtimeEvent: RuntimeEvent;
       extensionUIEvent: ExtensionUIEvent;
       terminalEvent: TerminalHostEvent;

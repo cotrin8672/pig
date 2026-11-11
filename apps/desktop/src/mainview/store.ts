@@ -1,5 +1,6 @@
 import type { AuthEvent, AuthPrompt } from "@earendil-works/pi-ai";
 import { create } from "zustand";
+import type { AppUpdateState } from "../shared/app-update";
 import { defaultAppearance } from "../shared/appearance";
 import type { ExtensionStatus, UIRequest } from "../shared/extension-ui";
 import { dictionary } from "../shared/i18n";
@@ -68,6 +69,7 @@ export interface PendingOpen extends OpeningTarget {
 export const useStore = create<{
   bootstrap: Bootstrap;
   initialized: boolean;
+  appUpdate?: AppUpdateState;
   installedLoaded: boolean;
   sessions: Record<string, SessionInfo[]>;
   snapshots: Record<string, ChatSnapshot>;

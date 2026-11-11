@@ -11,6 +11,7 @@ export default {
     copy: {
       "dist/index.html": "views/mainview/index.html",
       "dist/assets": "views/mainview/assets",
+      "scripts/app-update.ps1": "app-update.ps1",
       [`${SDK_RUNTIME_STAGE}/node_modules`]: "node_modules",
       [`${SDK_RUNTIME_STAGE}/sdk-runtime-manifest.json`]:
         "sdk-runtime-manifest.json",

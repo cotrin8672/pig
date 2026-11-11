@@ -1,5 +1,6 @@
 import {
   ChevronDown,
+  Info,
   Keyboard,
   Palette,
   RotateCcw,
@@ -16,6 +17,7 @@ import {
   normalizeCombo,
   resolveBindings,
 } from "../shared/keymap";
+import { AppUpdateSettings } from "./AppUpdateSettings";
 import { ChatRendererSettings } from "./ChatRendererSettings";
 import { ContentPage } from "./ContentPage";
 import { useT } from "./i18n";
@@ -50,6 +52,7 @@ export function Settings() {
     { id: "general", label: t.General, icon: Settings2 },
     { id: "appearance", label: t.Appearance, icon: Palette },
     { id: "keyboard", label: t["Keyboard shortcuts"], icon: Keyboard },
+    { id: "updates", label: t.appUpdateTitle, icon: Info },
   ];
   return (
     <ContentPage className="settings-page" title={t.Settings}>
@@ -182,6 +185,7 @@ export function Settings() {
             </>
           )}
           {category === "keyboard" && <KeyboardSettings />}
+          {category === "updates" && <AppUpdateSettings />}
         </section>
       </div>
     </ContentPage>
