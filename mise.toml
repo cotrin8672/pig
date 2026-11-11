@@ -1,3 +1,8 @@
+[tasks.storybook]
+description = "Browse the built-in chat renderers with live reload"
+dir = "apps/desktop"
+run = "pnpm exec storybook dev --port 6006 --host 127.0.0.1 --exact-port --disable-telemetry"
+
 [tasks.dev]
 description = "Start the desktop app in the background, or focus the running dev window (Windows)"
 run = "powershell.exe -NoProfile -ExecutionPolicy Bypass -File apps/desktop/scripts/start-dev.ps1"
