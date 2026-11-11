@@ -70,6 +70,8 @@ try {
             $archive = [IO.Compression.ZipFile]::OpenRead($c.zip)
             try {
                 $seen = [Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
+                # Normalize like entry paths: .NET Framework expands 8.3 names (RUNNER~1) in GetFullPath.
+                $stageRoot = [IO.Path]::GetFullPath($c.stage).TrimEnd('\') + '\'
                 [long]$total = 0
                 foreach ($entry in $archive.Entries) {
                     $name = $entry.FullName.Replace('/', '\')
@@ -82,7 +84,7 @@ try {
                         throw "Unsafe ZIP entry: $name"
                     }
                     $path = [IO.Path]::GetFullPath((Join-Path $c.stage $name))
-                    if (!$path.StartsWith($c.stage.TrimEnd('\') + '\', [StringComparison]::OrdinalIgnoreCase) -or !$seen.Add($path)) {
+                    if (!$path.StartsWith($stageRoot, [StringComparison]::OrdinalIgnoreCase) -or !$seen.Add($path)) {
                         throw "Invalid or duplicate ZIP entry: $name"
                     }
                     if ($name.EndsWith('\')) {
