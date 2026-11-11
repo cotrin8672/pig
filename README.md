@@ -64,6 +64,13 @@ mise exec -- pnpm install
 mise run dev
 ```
 
+To preview the built-in chat renderers, run `mise run storybook` and open
+[Storybook](http://127.0.0.1:6006). Open **Chat → Overview → All Components**
+to compare every example on one page, or choose **Chat → Tools** or **Chat → Items** for individual stories.
+Changes to the desktop components, styles, and fixtures appear on save. Add
+examples in `apps/desktop/src/stories`. The gallery uses sample data and does
+not load pi-lens, local renderer overrides, or a desktop session.
+
 Add a project folder with **+**, open **Providers** to sign in with an OpenAI
 ChatGPT Plus/Pro or Anthropic Claude Pro/Max subscription, then create a chat
 with the project's **+**. Enter sends; Shift+Enter inserts a newline. Sending

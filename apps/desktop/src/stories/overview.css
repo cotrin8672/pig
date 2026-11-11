@@ -1,0 +1,30 @@
+.renderer-overview > h1 {
+  font-size: var(--text-xl);
+  font-weight: var(--font-weight-semibold);
+}
+.renderer-overview > section > h2 {
+  margin-top: 2rem;
+  font-size: var(--text-lg);
+  font-weight: var(--font-weight-semibold);
+}
+.renderer-specimen {
+  padding: 1rem 0;
+  border-top: 1px solid var(--ds-border-strong);
+}
+/* Specimens that need the acrylic backdrop get a wallpaper strip behind them. */
+.renderer-specimen.on-wallpaper {
+  margin: 1rem 0;
+  padding: 1rem;
+  border: 0;
+  border-radius: var(--radius-md);
+  background:
+    radial-gradient(60% 45% at 18% 22%, #5b7cfa 0%, transparent 62%),
+    radial-gradient(55% 40% at 82% 18%, #b56bff 0%, transparent 60%),
+    radial-gradient(70% 55% at 70% 88%, #1f9e8a 0%, transparent 65%),
+    linear-gradient(160deg, #0d1526, #131a2b 55%, #0a101c);
+}
+.renderer-specimen > h3 {
+  margin-bottom: 0.75rem;
+  color: var(--ds-text-muted);
+  font-size: var(--text-sm);
+}
