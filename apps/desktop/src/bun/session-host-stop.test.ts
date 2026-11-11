@@ -22,7 +22,7 @@ test("Stop/Close/quit bound non-cooperative hooks, isolate late events and recov
       import {join} from "node:path";
       import {fauxProvider,fauxAssistantMessage} from "@earendil-works/pi-ai";
       import {SessionHost} from ${JSON.stringify(new URL("./session-host.ts", import.meta.url).href)};
-      import {credentials,modelInfo,disposeSessions} from ${JSON.stringify(new URL("./pi-service.ts", import.meta.url).href)};
+      import {modelInfo,disposeSessions} from ${JSON.stringify(new URL("./pi-service.ts", import.meta.url).href)};
       const cwd = ${JSON.stringify(home)};
       const recoveryFile = join(cwd,"send-recovery.sqlite");
       await mkdir(join(cwd,".pi/extensions"),{recursive:true});
@@ -30,7 +30,7 @@ test("Stop/Close/quit bound non-cooperative hooks, isolate late events and recov
       const faux = fauxProvider({tokensPerSecond:Infinity,models:[{id:"fixture",input:["text","image"]}]});
       const events = [];
       function makeHost() {
-        const host = new SessionHost({credentials,modelInfo,recoveryFile,configureModels:m=>m.registerNativeProvider(faux.provider),emit:e=>events.push(e),emitTerminal(){},emitUI(e){
+        const host = new SessionHost({modelInfo,recoveryFile,configureModels:m=>m.registerNativeProvider(faux.provider),emit:e=>events.push(e),emitTerminal(){},emitUI(e){
           if(e.type === "request" && e.request.kind === "project-trust") queueMicrotask(()=>host.resolveExtensionUI({...e.request,kind:"project-trust",value:"once"}));
         }});
         host.connectUI({clientId:crypto.randomUUID()}); return host;

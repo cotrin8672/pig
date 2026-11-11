@@ -23,7 +23,6 @@ const models = await ModelRuntime.create({
   modelsStore: new InMemoryModelsStore(),
   modelsPath: null,
   refreshOnCreate: false,
-  authContext: { env: async () => undefined, fileExists: async () => false },
 });
 models.registerNativeProvider(faux.provider);
 await models.refresh({ allowNetwork: false });

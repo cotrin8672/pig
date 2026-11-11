@@ -135,7 +135,6 @@ async function runtime(
       modify: async (_id, fn) => fn(undefined),
       delete: async () => {},
     },
-    authContext: { env: async () => undefined, fileExists: async () => false },
   });
   models.registerNativeProvider(faux.provider);
   await models.refresh({ allowNetwork: false });

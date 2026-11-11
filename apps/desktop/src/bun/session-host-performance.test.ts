@@ -10,12 +10,12 @@ test("progress coalesces without delaying boundaries; completed opens retain onl
       import {expect} from "bun:test";
       import {fauxProvider, fauxAssistantMessage} from "@earendil-works/pi-ai";
       import {SessionHost} from ${JSON.stringify(new URL("./session-host.ts", import.meta.url).href)};
-      import {credentials,modelInfo, disposeSessions} from ${JSON.stringify(new URL("./pi-service.ts", import.meta.url).href)};
+      import {modelInfo, disposeSessions} from ${JSON.stringify(new URL("./pi-service.ts", import.meta.url).href)};
       const cwd = ${JSON.stringify(home)};
       const faux = fauxProvider({tokensPerSecond: Infinity});
       const repetitions = 3;
       const events = [], deliveries = [];
-      const host = new SessionHost({credentials,modelInfo,
+      const host = new SessionHost({modelInfo,
         connectionNow: () => 0,
         configureModels: m => m.registerNativeProvider(faux.provider),
         emit: e => {events.push(e); deliveries.push(e.type);},

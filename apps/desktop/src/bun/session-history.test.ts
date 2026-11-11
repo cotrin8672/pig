@@ -13,7 +13,6 @@ test("persisted history is available before model initialization, pages are read
       import {fauxProvider,fauxAssistantMessage} from "@earendil-works/pi-ai";
       import {SessionManager} from ${JSON.stringify(new URL("./sdk.ts", import.meta.url).href)};
       import {SessionHost} from ${JSON.stringify(new URL("./session-host.ts", import.meta.url).href)};
-      import {FileCredentials} from ${JSON.stringify(new URL("./credentials.ts", import.meta.url).href)};
       const cwd = join(${JSON.stringify(home)},"project");
       await mkdir(cwd);
       const faux = fauxProvider({tokensPerSecond:Infinity,models:[{id:"fixture"}]});
@@ -26,7 +25,6 @@ test("persisted history is available before model initialization, pages are read
       let gate = Promise.withResolvers(), started = false, fail = false, initializations = 0;
       const events = [];
       const host = new SessionHost({
-        credentials:new FileCredentials(join(${JSON.stringify(home)},"auth.json")),
         modelInfo: m => ({id:m.id,provider:m.provider,name:m.name}),
         configureModels: async m => {initializations++; started = true; await gate.promise; if(fail) throw new Error("fixture model failure"); m.registerNativeProvider(faux.provider);},
         emit:e => events.push(e),emitUI() {},emitTerminal() {},

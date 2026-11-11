@@ -27,7 +27,7 @@ test("user-only catalog and same-cwd/different-cwd SDK ModelRuntimes isolate pro
         await writeFile(join(cwd,".pi/extensions/provider.ts"),source("workspace-fixture",model));
       }
       let host;
-      host = new SessionHost({credentials:app.credentials,modelInfo:app.modelInfo,emit(){},emitTerminal(){},emitUI(e){if(e.type === "request" && e.request.kind === "project-trust") queueMicrotask(() => host.resolveExtensionUI({...e.request,kind:"project-trust",value:"once"}));}});
+      host = new SessionHost({modelInfo:app.modelInfo,emit(){},emitTerminal(){},emitUI(e){if(e.type === "request" && e.request.kind === "project-trust") queueMicrotask(() => host.resolveExtensionUI({...e.request,kind:"project-trust",value:"once"}));}});
       host.connectUI({clientId:"root"});
       const first = await host.openSession({cwd:a,openId:"a1"});
       const same = await host.openSession({cwd:a,openId:"a2"});
@@ -38,7 +38,7 @@ test("user-only catalog and same-cwd/different-cwd SDK ModelRuntimes isolate pro
       expect(B.getModel("workspace-fixture","b-model")).toBeDefined();
       expect(C.getModel("workspace-fixture","a-model")).toBeDefined();
       expect(app.runtime.getProvider("workspace-fixture")).toBeUndefined();
-      await app.credentials.modify("workspace-fixture",async()=>({type:"api_key",key:"fixture-only"}));
+      await writeFile(join(global,"pi-agent/auth.json"),JSON.stringify({"workspace-fixture":{type:"api_key",key:"fixture-only"}}));
       await app.refreshModels({providers:["workspace-fixture"],allowNetwork:false});
       expect((await A.getAvailable("workspace-fixture")).length).toBe(1); expect((await B.getAvailable("workspace-fixture")).length).toBe(1);
       await rm(join(a,".pi/extensions/provider.ts"));

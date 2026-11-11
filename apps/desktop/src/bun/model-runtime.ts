@@ -1,7 +1,7 @@
 import { join } from "node:path";
-import type { CredentialStore, Provider } from "@earendil-works/pi-ai";
+import type { Provider } from "@earendil-works/pi-ai";
 import {
-  builtinModels,
+  builtinProviders,
   getBuiltinModelDataGeneratedAt,
 } from "@earendil-works/pi-ai/providers/all";
 import { personalizeOpenRouterCatalog } from "@earendil-works/pi-ai/providers/openrouter";
@@ -14,10 +14,6 @@ import { FileModelsStore } from "./models-store";
 import { withPersonalizedCatalog, withRemoteCatalog } from "./remote-catalog";
 import { ModelRuntime } from "./sdk";
 
-export const appAuthContext = {
-  env: async () => undefined,
-  fileExists: async () => false,
-};
 const owned = new Set<SDKModelRuntime>();
 const bases = new WeakMap<SDKModelRuntime, Provider[]>();
 const applied = new WeakMap<SDKModelRuntime, Map<string, Provider>>();
@@ -28,56 +24,26 @@ const virtuals = new WeakMap<
 export const modelRuntimeErrors: string[] = [];
 
 /** Distinct runtime per catalog/session; shared persistence, never shared registrations. */
-export async function createModelRuntime(
-  credentials: CredentialStore,
-  directory = desktopConfigDir,
-) {
+export async function createModelRuntime() {
   const runtime = await ModelRuntime.create({
-    credentials,
     modelsPath: null,
-    modelsStore: new FileModelsStore(join(directory, "model-catalogs")),
-    authContext: appAuthContext,
+    modelsStore: new FileModelsStore(join(desktopConfigDir, "model-catalogs")),
     refreshOnCreate: false,
     allowModelNetwork: false,
   });
-  // Fail closed if the selected package lacks the real policy patch.
-  let policySeen = false;
-  const probe: Provider = {
-    ...runtime.getProviders()[0],
-    id: "desktop-auth-policy-probe",
-    name: "Policy probe",
-    getModels: () => [],
-    auth: {
-      apiKey: {
-        name: "App-only policy probe",
-        check: async ({ ctx }) => {
-          policySeen = ctx === appAuthContext;
-          return undefined;
-        },
-        resolve: async () => undefined,
-      },
-    },
-  };
-  runtime.registerNativeProvider(probe);
-  await runtime.checkAuth(probe.id);
-  if (!policySeen)
-    throw new Error("SDK authContext patch missing: refusing startup");
-  runtime.unregisterProvider(probe.id);
   const generatedAt = getBuiltinModelDataGeneratedAt();
-  const base = builtinModels({ credentials, authContext: appAuthContext })
-    .getProviders()
-    .map((builtin) => {
-      const provider = withCodexImages(builtin);
-      if (provider.id === "radius") return provider;
-      return provider.id === "openrouter"
-        ? withPersonalizedCatalog(
-            provider,
-            personalizeOpenRouterCatalog,
-            undefined,
-            generatedAt,
-          )
-        : withRemoteCatalog(provider, undefined, generatedAt);
-    });
+  const base = builtinProviders().map((builtin) => {
+    const provider = withCodexImages(builtin);
+    if (provider.id === "radius") return provider;
+    return provider.id === "openrouter"
+      ? withPersonalizedCatalog(
+          provider,
+          personalizeOpenRouterCatalog,
+          undefined,
+          generatedAt,
+        )
+      : withRemoteCatalog(provider, undefined, generatedAt);
+  });
   const openai = base.find((p) => p.id === "openai");
   if (openai) {
     base.push({

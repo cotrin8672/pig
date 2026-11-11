@@ -9,7 +9,7 @@ Legacy Archive の画面・検出・reader/schema/RPC・continuation metadata �
 ## 到達点と証拠の種類
 
 - SDK / pi-ai / pi-tui は **1.5.0**。通常 app/workspace の実行・テスト・smoke/build graph に Durable はない。セッション内 installed-manifest 監査は **526 nodes、missing required edges 0、Durable nodes 0、lock 内 pi-durable 0、direct chord なし**。単に古い node_modules が物理的に残っているかとは区別する。
-- SDK の app-only auth は [ローカル patch](../patches/pi-coding-agent-1.5.0-auth-context.patch) を pnpm の patchedDependencies と lock で適用。変更は公開 dist の JS と宣言に `authContext` を通すものだけ。元の source map は upstream のまま。`refreshOnCreate:false` → policy 設定後の refresh、patch 不在時の fail-closed を使用する。実インストールへの隔離 probe は 7 checks / builtin 42 経路 / network 0 / **偽** OAuth refresh 1。実ログインや provider E2E の証拠ではない。
+- 1.5.0 時点では認証情報をアプリ内に限定するパッチを使用していた。以下の auth probe は当時の記録。1.5.2 への更新でこのパッチを削除し、現在は公式 SDK の認証を使用する。保存先は従来と同じで、未保存の場合は SDK が環境変数なども参照する。
 - 最終 postfix の repository suite は **268 pass / 0 fail、1,532 assertions、63 files**。既存 UI integration subprocess の **11 pass** は別集計。typecheck / lint (**202 files、fix なし**) / SDK faux-provider smoke は exit 0。
 - production frontend build は exit 0（2,201 modules）。既存の static/dynamic import と大きい chunk の警告は残る。隔離 Chrome の actual React DOM + bundled xterm は **14/14 scenario groups** 成功。ただし **fake Electrobun IPC** であり、本物の Bun Host / native WebView2 E2E ではない。スクリーンショットも手動視認・物理幅検査の代用ではない。
 - actual Electrobun CLI の **candidate2 dev/stable** build と、repo 外へ link-free に移した各 payload の shipped **Bun 1.3.13** による **6/6 SDK checks**、stable installer ZIP 内 archive の SHA256 一致監査は成功。installer の実インストールはしていない。

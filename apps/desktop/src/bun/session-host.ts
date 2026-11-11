@@ -12,7 +12,6 @@ function required<T>(value: T | undefined): T {
 
 import {
   type Api,
-  type CredentialStore,
   getSupportedThinkingLevels,
   type Model,
 } from "@earendil-works/pi-ai";
@@ -160,7 +159,6 @@ type OpenResult = {
     | Extract<OpenState, { state: "failed" | "cancelled" }>;
 };
 type Options = {
-  credentials: CredentialStore;
   modelInfo: (model: Model<Api>) => ModelInfo;
   emit: (event: RuntimeEvent) => void;
   emitUI: (event: ExtensionUIEvent) => void;
@@ -588,7 +586,7 @@ export class SessionHost {
             level: "warning",
             message: `Safe mode: omitted project resources: ${trust.omitted.map((r) => r.path).join(", ")}. Trust and reload to enable them.`,
           });
-        const models = await createModelRuntime(this.options.credentials);
+        const models = await createModelRuntime();
         managed.models = models;
         await this.options.configureModels?.(models);
         controller.signal.throwIfAborted();

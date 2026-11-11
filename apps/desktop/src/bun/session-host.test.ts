@@ -37,7 +37,7 @@ test("SDK fork/rewind/reload/shutdown, root startup UI and stale epochs", async 
       import {fauxProvider, fauxAssistantMessage, fauxToolCall} from "@earendil-works/pi-ai";
       import {defaultSettings} from ${JSON.stringify(new URL("../shared/settings.ts", import.meta.url).href)};
       import {SessionHost} from ${JSON.stringify(new URL("./session-host.ts", import.meta.url).href)};
-      import {modelInfo, credentials, disposeSessions} from ${JSON.stringify(new URL("./pi-service.ts", import.meta.url).href)};
+      import {modelInfo, disposeSessions} from ${JSON.stringify(new URL("./pi-service.ts", import.meta.url).href)};
       import {DesktopStateStore} from ${JSON.stringify(new URL("./desktop-state.ts", import.meta.url).href)};
       const cwd = ${JSON.stringify(home)};
       globalThis.__shutdown = []; globalThis.__starts = 0;
@@ -53,7 +53,7 @@ test("SDK fork/rewind/reload/shutdown, root startup UI and stale epochs", async 
       let settings = {...defaultSettings};
       let startup = 0, holdStartup = false;
       const events = [];
-      const host = new SessionHost({credentials, modelInfo, settings:() => settings, configureModels: m => {m.registerNativeProvider(faux.provider);}, emit: e => events.push(e), emitTerminal(e) {if(e.type === "open") queueMicrotask(() => host.terminalCommand({...e, type:"ready", cols:80, rows:24}));}, emitUI(e) {
+      const host = new SessionHost({modelInfo, settings:() => settings, configureModels: m => {m.registerNativeProvider(faux.provider);}, emit: e => events.push(e), emitTerminal(e) {if(e.type === "open") queueMicrotask(() => host.terminalCommand({...e, type:"ready", cols:80, rows:24}));}, emitUI(e) {
         if(e.type !== "request") return;
         if(e.request.kind === "project-trust") queueMicrotask(() => host.resolveExtensionUI({...e.request, kind: "project-trust", value: "once"}));
         if(e.request.kind === "confirm") {startup++; if(!holdStartup) queueMicrotask(() => host.resolveExtensionUI({...e.request, kind: "confirm", value: true}));}

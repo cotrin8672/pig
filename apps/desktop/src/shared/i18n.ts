@@ -251,8 +251,8 @@ export const en = {
   "Agent failed": "Agent failed",
   "Dismiss error": "Dismiss error",
   "Back to chat": "Back to chat",
-  "Connect a subscription or API key. Credentials are stored by pig only.":
-    "Connect a subscription or API key. Credentials are stored by pig only.",
+  "Connect a subscription or API key. Providers can also use credentials from the environment.":
+    "Connect a subscription or API key. Providers can also use credentials from the environment.",
   "Checking connections…": "Checking connections…",
   "Sign out": "Sign out",
   Connect: "Connect",
@@ -710,8 +710,8 @@ export const ja: Dictionary = {
   "Agent failed": "エージェントの処理に失敗しました",
   "Dismiss error": "エラーを閉じる",
   "Back to chat": "チャットに戻る",
-  "Connect a subscription or API key. Credentials are stored by pig only.":
-    "サブスクリプションまたは API キーを接続します。認証情報は pig 内にのみ保存されます。",
+  "Connect a subscription or API key. Providers can also use credentials from the environment.":
+    "サブスクリプションまたは API キーを接続します。プロバイダーは環境変数などの認証情報も利用できます。",
   "Checking connections…": "接続を確認中…",
   "Sign out": "サインアウト",
   Connect: "接続",

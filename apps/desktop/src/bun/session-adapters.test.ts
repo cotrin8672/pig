@@ -31,7 +31,7 @@ test("session adapters attach, invoke, reload independently and reject stale own
     import {mkdir,writeFile} from "node:fs/promises";
     import {join} from "node:path";
     import {SessionHost} from ${JSON.stringify(new URL("./session-host.ts", import.meta.url).href)};
-    import {credentials,modelInfo,disposeSessions} from ${JSON.stringify(new URL("./pi-service.ts", import.meta.url).href)};
+    import {modelInfo,disposeSessions} from ${JSON.stringify(new URL("./pi-service.ts", import.meta.url).href)};
     const cwd = ${JSON.stringify(home)};
     const source = join(cwd,".pi/extensions/fixture.ts");
     const configFile = join(cwd,"config.ts");
@@ -49,7 +49,7 @@ test("session adapters attach, invoke, reload independently and reject stale own
       'if(viewActions({kind:"status",actions:[]}).length!==0) throw new Error("bad API");' +
       '}}]});';
     await writeFile(configFile,config);
-    const host = new SessionHost({credentials,modelInfo,configFile,emit(){},emitTerminal(){},emitUI(e){if(e.type==="request" && e.request.kind==="project-trust") queueMicrotask(()=>host.resolveExtensionUI({...e.request,kind:"project-trust",value:"once"}));}});
+    const host = new SessionHost({modelInfo,configFile,emit(){},emitTerminal(){},emitUI(e){if(e.type==="request" && e.request.kind==="project-trust") queueMicrotask(()=>host.resolveExtensionUI({...e.request,kind:"project-trust",value:"once"}));}});
     host.connectUI({clientId:"root"});
     const chat = await host.openSession({cwd,openId:"first"});
     const originalBus=globalThis.__fixtureBus;
@@ -158,7 +158,7 @@ test("official Pi todo and plan-mode project through user adapters with a real S
     import {mkdir,writeFile} from "node:fs/promises";
     import {join} from "node:path";
     import {SessionHost} from ${JSON.stringify(new URL("./session-host.ts", import.meta.url).href)};
-    import {credentials,modelInfo,disposeSessions} from ${JSON.stringify(new URL("./pi-service.ts", import.meta.url).href)};
+    import {modelInfo,disposeSessions} from ${JSON.stringify(new URL("./pi-service.ts", import.meta.url).href)};
     const cwd=${JSON.stringify(home)};
     const planPath=join(cwd,".pi/extensions/plan-mode/index.ts");
     await mkdir(join(cwd,".pi/extensions/plan-mode"),{recursive:true});
@@ -168,7 +168,7 @@ test("official Pi todo and plan-mode project through user adapters with a real S
     const configFile=join(cwd,"config.ts");
     await writeFile(configFile,'import {connectPiTodos,connectPiPlanMode} from '+JSON.stringify(${JSON.stringify(adapterPath)})+';export default {apiVersion:1,sessionAdapters:[connectPiTodos(),connectPiPlanMode({source:'+JSON.stringify(planPath)+'})]};');
     const updates=new Set();
-    const host=new SessionHost({credentials,modelInfo,configFile,emit(){for(const update of updates)update();},emitTerminal(){},emitUI(e){if(e.type==="request"&&e.request.kind==="project-trust")queueMicrotask(()=>host.resolveExtensionUI({...e.request,kind:"project-trust",value:"once"}));}});
+    const host=new SessionHost({modelInfo,configFile,emit(){for(const update of updates)update();},emitTerminal(){},emitUI(e){if(e.type==="request"&&e.request.kind==="project-trust")queueMicrotask(()=>host.resolveExtensionUI({...e.request,kind:"project-trust",value:"once"}));}});
     host.connectUI({clientId:"root"});
     const chat=await host.openSession({cwd,openId:"official"});
     let address=chat.address;

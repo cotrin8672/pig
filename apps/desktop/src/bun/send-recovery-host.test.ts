@@ -11,14 +11,14 @@ test("real SessionHost separates lost CAS ACK from dispatch and accepts the froz
       import {join} from "node:path";
       import {fauxProvider, fauxAssistantMessage} from "@earendil-works/pi-ai";
       import {SessionHost} from ${JSON.stringify(new URL("./session-host.ts", import.meta.url).href)};
-      import {credentials,modelInfo, disposeSessions} from ${JSON.stringify(new URL("./pi-service.ts", import.meta.url).href)};
+      import {modelInfo, disposeSessions} from ${JSON.stringify(new URL("./pi-service.ts", import.meta.url).href)};
       import {DraftStore} from ${JSON.stringify(new URL("../mainview/draft-store.ts", import.meta.url).href)};
       import {SendController} from ${JSON.stringify(new URL("../mainview/send-controller.ts", import.meta.url).href)};
       const cwd = ${JSON.stringify(home)};
       const faux = fauxProvider({tokensPerSecond:Infinity, models:[{id:"fixture"}]});
       const renderer = new DraftStore();
       const events = [];
-      const host = new SessionHost({credentials,modelInfo,recoveryFile:join(cwd,"test.sqlite"),configureModels:m=>m.registerNativeProvider(faux.provider),emit:e=>events.push(e),emitTerminal(){},emitUI(e){
+      const host = new SessionHost({modelInfo,recoveryFile:join(cwd,"test.sqlite"),configureModels:m=>m.registerNativeProvider(faux.provider),emit:e=>events.push(e),emitTerminal(){},emitUI(e){
         if(e.type === "draft") renderer.receive(e.address,e.draft);
         if(e.type === "request" && e.request.kind === "project-trust") queueMicrotask(()=>host.resolveExtensionUI({...e.request,kind:"project-trust",value:"once"}));
       }});

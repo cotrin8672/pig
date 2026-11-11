@@ -10,16 +10,17 @@ test("application uses the fixed SDK profile and preserves model/auth helpers", 
   try {
     const script = `
       import { expect } from "bun:test";
+      import { join } from "node:path";
       import { fauxProvider, fauxAssistantMessage } from "@earendil-works/pi-ai";
       import * as app from ${JSON.stringify(new URL("./pi-service.ts", import.meta.url).href)};
       import { SessionHost } from ${JSON.stringify(new URL("./session-host.ts", import.meta.url).href)};
       expect((await app.utilityModels()).imageModels.some(m => m.provider === "openai-codex")).toBe(false);
-      await app.credentials.modify("openai-codex", async () => ({type: "oauth", access: "test-only", refresh: "test-only", expires: Date.now() + 3600000, accountId: "test-account"}));
+      await Bun.write(join(${JSON.stringify(home)}, ".config/pig/pi-agent/auth.json"), JSON.stringify({"openai-codex": {type: "oauth", access: "test-only", refresh: "test-only", expires: Date.now() + 3600000, accountId: "test-account"}}));
       expect((await app.utilityModels()).imageModels.filter(m => m.provider === "openai-codex").length).toBe(2);
-      await app.credentials.delete("openai-codex");
+      await app.runtime.logout("openai-codex");
       const faux = fauxProvider({tokensPerSecond: Infinity});
       const events = [];
-      const host = new SessionHost({credentials: app.credentials, modelInfo: app.modelInfo, emit: e => events.push(e), emitUI() {}, emitTerminal() {}, configureModels: models => {models.registerNativeProvider(faux.provider);}});
+      const host = new SessionHost({modelInfo: app.modelInfo, emit: e => events.push(e), emitUI() {}, emitTerminal() {}, configureModels: models => {models.registerNativeProvider(faux.provider);}});
       const input = {cwd: ${JSON.stringify(home)}, openId: "open-1"};
       const first = host.openSession(input);
       expect(host.openSession(input)).toBe(first);
@@ -43,7 +44,6 @@ test("application uses the fixed SDK profile and preserves model/auth helpers", 
       expect((await host.listSessions(input.cwd)).find(s => s.id === chat.info.id).title).toBe("Renamed");
       const model = faux.getModel();
       expect(app.modelInfo({...model, api: "anthropic-messages", compat: {forceAdaptiveThinking: true}}).adaptiveThinking).toBe(true);
-      await app.credentials.modify(model.provider, async () => ({type: "api_key", key: "test-only"}));
       await expect(host.prompt({...send, text: "", requestId: "empty", draftRevision: host.drafts.read(chat.address).revision})).rejects.toThrow("empty");
       await host.closeSession(chat.address);
       expect(host.getPromptReceipt(send).state).toBe("accepted");
@@ -76,33 +76,29 @@ test("application uses the fixed SDK profile and preserves model/auth helpers", 
     expect(
       existsSync(join(home, ".config", "pig", "pi-agent", "sessions")),
     ).toBe(true);
-    expect(existsSync(join(home, ".config", "pig", "auth.json"))).toBe(true);
+    expect(
+      existsSync(join(home, ".config", "pig", "pi-agent", "auth.json")),
+    ).toBe(true);
+    expect(existsSync(join(home, ".config", "pig", "auth.json"))).toBe(false);
     expect(existsSync(join(home, ".pi", "agent"))).toBe(false);
   } finally {
     await rm(home, { recursive: true, force: true });
   }
 }, 30_000);
 
-test("provider status, availability and requests ignore ambient credentials", async () => {
+test("OpenAI API uses SDK credential precedence and mirrors the ChatGPT catalog", async () => {
   const home = await mkdtemp(join(tmpdir(), "pig-app-auth-"));
   try {
     // A subprocess isolates process.env and the module-level app runtime; the
     // parent's environment is never changed and the child's dies on exit.
     const script = `
       import { expect } from "bun:test";
-      import { mkdir, writeFile } from "node:fs/promises";
+      import { writeFile } from "node:fs/promises";
       import { join } from "node:path";
       const home = ${JSON.stringify(home)};
-      await mkdir(join(home, ".config/gcloud"), {recursive: true});
-      await writeFile(join(home, ".config/gcloud/application_default_credentials.json"), "{}");
       process.env.OPENAI_API_KEY = "ambient-openai";
-      process.env.ANTHROPIC_API_KEY = "ambient-anthropic";
-      process.env.AWS_ACCESS_KEY_ID = "ambient-aws";
-      process.env.AWS_SECRET_ACCESS_KEY = "ambient-secret";
-      process.env.GOOGLE_CLOUD_PROJECT = "ambient-project";
-      process.env.GOOGLE_CLOUD_LOCATION = "us-central1";
       const app = await import(${JSON.stringify(new URL("./pi-service.ts", import.meta.url).href)});
-      expect(await app.credentials.list()).toEqual([]);
+      expect(await app.runtime.listCredentials()).toEqual([]);
       expect((await app.listProviders()).find(p => p.id === "openai")).toMatchObject({name: "OpenAI ChatGPT", apiKey: false, oauth: {label: "Sign in with ChatGPT"}});
       expect((await app.listProviders()).find(p => p.id === "openai-api")).toMatchObject({name: "OpenAI API", apiKey: true, oauth: undefined});
       const mirror = () => {
@@ -119,7 +115,12 @@ test("provider status, availability and requests ignore ambient credentials", as
         requests.push(String(url));
         return Response.json(remote, {headers: {"last-modified": "Thu, 01 Jan 2099 00:00:00 GMT"}});
       };
-      await app.credentials.modify("openai-api", async () => ({type: "api_key", key: "catalog-test"}));
+      const apiStatus = async () => (await app.listProviders()).find(p => p.id === "openai-api");
+      expect(await apiStatus()).toMatchObject({configured: true, stored: false});
+      expect((await app.runtime.getAuth("openai-api")).auth.apiKey).toBe("ambient-openai");
+      await app.runtime.login("openai-api", "api_key", {prompt: async () => "catalog-test", notify() {}});
+      expect(await apiStatus()).toMatchObject({configured: true, stored: true});
+      expect((await app.runtime.getAuth("openai-api")).auth.apiKey).toBe("catalog-test");
       try {
         const result = await app.refreshModels({providers: ["openai-api"], allowNetwork: true, force: true});
         expect(result.errors.size).toBe(0);
@@ -140,47 +141,12 @@ test("provider status, availability and requests ignore ambient credentials", as
       await writeFile(configFile, "{}");
       await app.refreshModels({allowNetwork: false});
       mirror();
-      await app.credentials.delete("openai-api");
-      const ids = ["openai-api", "anthropic", "amazon-bedrock", "google-vertex"];
-      for (const id of ids) {
-        expect((await app.listProviders()).find(p => p.id === id)).toMatchObject({configured: false, stored: false});
-        expect(await app.runtime.checkAuth(id)).toBeUndefined();
-        expect(await app.runtime.getAuth(id)).toBeUndefined();
-        expect(await app.runtime.getAllAvailable(id)).toEqual([]);
-        // Unavailable catalog models must not dispatch, even if selected by ID.
-        const provider = app.runtime.getProvider(id);
-        const model = app.runtime.getModels(id)[0];
-        expect(model).toBeDefined();
-        let dispatched = 0;
-        const dispatch = (_model, _context, options) => {
-          dispatched++;
-          expect(options.apiKey).toBe("stored-" + id);
-          throw new Error("test dispatch reached");
-        };
-        app.runtime.registerNativeProvider({...provider, stream: dispatch, streamSimple: dispatch});
-        const context = {messages: []};
-        for (const complete of [app.runtime.complete.bind(app.runtime), app.runtime.completeSimple.bind(app.runtime)]) {
-          const result = await complete(model, context);
-          expect(result.stopReason).toBe("error");
-          expect(result.errorMessage).toContain("Provider is not configured");
-        }
-        expect(dispatched).toBe(0);
-        // The same runtime observes credentials saved by the app without restart.
-        await app.credentials.modify(id, async () => ({type: "api_key", key: "stored-" + id}));
-        expect((await app.listProviders()).find(p => p.id === id)).toMatchObject({configured: true, stored: true});
-        expect(await app.runtime.checkAuth("openai")).toBeUndefined();
-        expect(await app.runtime.getAllAvailable("openai")).toEqual([]);
-        expect(await app.runtime.checkAuth(id)).toMatchObject({type: "api_key"});
-        expect((await app.runtime.getAvailable(id)).length).toBeGreaterThan(0);
-        expect((await app.runtime.getAuth(id)).auth.apiKey).toBe("stored-" + id);
-        for (const complete of [app.runtime.complete.bind(app.runtime), app.runtime.completeSimple.bind(app.runtime)]) {
-          const result = await complete(model, context);
-          expect(result.errorMessage).toContain("test dispatch reached");
-        }
-        expect(dispatched).toBe(2);
-        await app.credentials.delete(id);
-        expect(await app.runtime.checkAuth(id)).toBeUndefined();
-      }
+      await app.runtime.logout("openai-api");
+      expect(await apiStatus()).toMatchObject({configured: true, stored: false});
+      expect((await app.runtime.getAuth("openai-api")).auth.apiKey).toBe("ambient-openai");
+      expect(await app.runtime.checkAuth("openai")).toBeUndefined();
+      delete process.env.OPENAI_API_KEY;
+      expect(await app.runtime.checkAuth("openai-api")).toBeUndefined();
     `;
     const child = Bun.spawn([process.execPath, "--eval", script], {
       cwd: join(import.meta.dir, "../.."),

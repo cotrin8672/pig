@@ -22,7 +22,7 @@ test("F1/F2: target selection, metadata-only restore, transitions reject sends a
       import {fauxProvider,fauxAssistantMessage} from "@earendil-works/pi-ai";
       import {SessionHost} from ${JSON.stringify(new URL("./session-host.ts", import.meta.url).href)};
       import {SessionManager} from ${JSON.stringify(new URL("./sdk.ts", import.meta.url).href)};
-      import {credentials,modelInfo,disposeSessions} from ${JSON.stringify(new URL("./pi-service.ts", import.meta.url).href)};
+      import {modelInfo,disposeSessions} from ${JSON.stringify(new URL("./pi-service.ts", import.meta.url).href)};
       const cwd = ${JSON.stringify(home)};
       await mkdir(join(cwd,".pi/extensions"),{recursive:true});
       await writeFile(join(cwd,".pi/extensions/fixture.ts"),${JSON.stringify(extension)});
@@ -30,7 +30,7 @@ test("F1/F2: target selection, metadata-only restore, transitions reject sends a
       globalThis.__shutdown = [];
       let hidden = [], trust = "once", waitingTrust;
       const events = [];
-      const host = new SessionHost({credentials,modelInfo,disabled:()=>hidden,configureModels:m=>{m.registerNativeProvider(faux.provider);},emit:e=>events.push(e),emitTerminal(){},emitUI(e){
+      const host = new SessionHost({modelInfo,disabled:()=>hidden,configureModels:m=>{m.registerNativeProvider(faux.provider);},emit:e=>events.push(e),emitTerminal(){},emitUI(e){
         if(e.type === "request" && e.request.kind === "project-trust") {
           if(trust === "hold") {waitingTrust = e.request; return;}
           queueMicrotask(()=>host.resolveExtensionUI({...e.request,kind:"project-trust",value:trust}));
@@ -114,7 +114,7 @@ test("F1/F2: target selection, metadata-only restore, transitions reject sends a
       // UI without a native hook or cooperative disconnect message.
       await writeFile(join(cwd,".pi/extensions/lease.ts"), 'export default function(pi){pi.on("session_start",async (_e,ctx)=>{if(globalThis.__leaseMode === "native") await ctx.ui.confirm("Lease","Wait"); else await ctx.ui.custom(()=>({render:()=>["Wait"]}));});}');
       let clock = 0;
-      const leaseHost = new SessionHost({credentials,modelInfo,connectionNow:()=>clock,configureModels:m=>m.registerNativeProvider(faux.provider),emit(){},emitTerminal(){},emitUI(e){if(e.type === "request" && e.request.kind === "project-trust") queueMicrotask(()=>leaseHost.resolveExtensionUI({...e.request,kind:"project-trust",value:"once"}));}});
+      const leaseHost = new SessionHost({modelInfo,connectionNow:()=>clock,configureModels:m=>m.registerNativeProvider(faux.provider),emit(){},emitTerminal(){},emitUI(e){if(e.type === "request" && e.request.kind === "project-trust") queueMicrotask(()=>leaseHost.resolveExtensionUI({...e.request,kind:"project-trust",value:"once"}));}});
       for (const mode of ["native","terminal"]) {
         globalThis.__leaseMode = mode; leaseHost.connectUI({clientId:mode});
         const opening = leaseHost.openSession({cwd,openId:"lease-"+mode}).then(()=>"ready",()=>"cancelled");

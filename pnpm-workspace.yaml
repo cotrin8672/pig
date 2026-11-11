@@ -7,5 +7,4 @@ onlyBuiltDependencies:
   - esbuild
 
 patchedDependencies:
-  '@earendil-works/pi-coding-agent@1.5.0': patches/pi-coding-agent-1.5.0-auth-context.patch
   electrobun@1.18.1: patches/electrobun@1.18.1.patch

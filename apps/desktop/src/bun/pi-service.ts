@@ -1,5 +1,4 @@
 import "./runtime-profile";
-import { join } from "node:path";
 import {
   type Api,
   clampThinkingLevel,
@@ -17,8 +16,6 @@ import type {
   SessionAddress,
 } from "../shared/runtime-contract";
 import type { TerminalHostEvent } from "../shared/terminal-ui";
-import { FileCredentials } from "./credentials";
-import { desktopConfigDir } from "./desktop-config";
 import { manualModelRefresh } from "./manual-model-refresh";
 import {
   applyRuntimeModelSettings,
@@ -33,10 +30,7 @@ import { loadExclusive, SessionHost } from "./session-host";
 import { reloadUserCatalog } from "./user-catalog";
 
 registerBunOAuthFlows();
-export const credentials = new FileCredentials(
-  join(desktopConfigDir, "auth.json"),
-);
-export const runtime = await createModelRuntime(credentials);
+export const runtime = await createModelRuntime();
 export const modelErrors = modelRuntimeErrors;
 export async function refreshUserCatalog() {
   const services = await loadExclusive(() => reloadUserCatalog(runtime));
@@ -120,7 +114,7 @@ const providerNames: Record<string, string> = {
 };
 export async function listProviders(): Promise<ProviderInfo[]> {
   const stored = new Set(
-    (await credentials.list()).map((item) => item.providerId),
+    (await runtime.listCredentials()).map((item) => item.providerId),
   );
   return Promise.all(
     runtime.getProviders().map(async (p) => {
@@ -192,7 +186,6 @@ export function setDisabledModels(hidden: readonly string[]) {
   disabled = hidden;
 }
 export const sessionHost = new SessionHost({
-  credentials,
   modelInfo,
   emit: (event) => transport().runtime(event),
   emitUI: (event) => transport().ui(event),

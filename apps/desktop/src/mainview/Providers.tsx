@@ -62,7 +62,7 @@ export function Providers() {
       title={t.Providers}
       description={
         t[
-          "Connect a subscription or API key. Credentials are stored by pig only."
+          "Connect a subscription or API key. Providers can also use credentials from the environment."
         ]
       }
     >

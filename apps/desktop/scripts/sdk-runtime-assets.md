@@ -15,7 +15,7 @@ The `preBuild` hook `sdk-runtime-assets.ts` stages the **installed production
 closure** of SDK/pi-ai/pi-tui in `build/sdk-runtime`. It follows dependencies,
 installed optional dependencies and peers, not devDependencies; missing required
 edges fail the build. No install, registry resolution, lifecycle script or source
-patching occurs. The installed pnpm auth-context patch is copied as installed.
+patching occurs. The Pi packages are installed from npm without local patches.
 Dependency changes must be installed/locked by the dependency owner before a
 release build.
 
