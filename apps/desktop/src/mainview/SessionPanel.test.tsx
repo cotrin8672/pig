@@ -429,11 +429,12 @@ test("source, diagnostics, commands and keymaps expose adapter connections witho
     "Stale source",
     "Connection details",
     "adapter-one/apply",
-    "Request pending",
+    'aria-busy="true"',
     "ctrl+k",
     "panel",
   ])
     expect(html).toContain(text);
+  expect(html).not.toContain("Request pending");
   expect(calls).toBe(0);
 });
 
@@ -484,8 +485,9 @@ test("actions resolve commands per adapter; disabled reasons, busy, missing comm
   const html = renderToStaticMarkup(
     <SessionPanel state={state} onAction={noop} onReload={noop} />,
   );
+  expect(html).not.toContain("Command is busy");
   for (const text of [
-    "Command is busy",
+    'aria-busy="true"',
     "Read-only source",
     "Command not registered for this adapter",
     "Comment body (required)",

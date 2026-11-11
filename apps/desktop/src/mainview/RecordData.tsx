@@ -5,6 +5,7 @@ import {
   dataText,
   rendererOrFallback,
 } from "./custom-data";
+import { useT } from "./i18n";
 
 function BasicRecord({
   record,
@@ -13,29 +14,35 @@ function BasicRecord({
   record: TranscriptRecord;
   images?: ReactNode;
 }) {
+  const t = useT();
   const view = customPresentation(record);
+  if (view.hidden) return null;
+  const blocks = Array.isArray(view.content) ? view.content : [view.content];
   return (
-    <details className="custom-record" open={!view.hidden}>
-      <summary>
-        {view.label}{" "}
-        <small>
-          {record.entryId ? "saved" : "live"}
-          {view.hidden ? " · hidden content / metadata" : ""}
-        </small>
-      </summary>
+    <section className="custom-record">
+      <small>
+        {view.label === "Cancelled queued prompt" ? t.Cancelled : view.label}
+      </small>
       {images}
-      <pre>{dataText(view.content)}</pre>
-      {view.details !== undefined && (
-        <details>
-          <summary>Details</summary>
-          <pre>{dataText(view.details)}</pre>
-        </details>
-      )}
-      <details>
-        <summary>Raw record · {record.entryId ?? record.id}</summary>
-        <pre>{dataText(record)}</pre>
-      </details>
-    </details>
+      {blocks.map((block, index) => {
+        if (block == null || block?.type === "image") return null;
+        const text =
+          typeof block === "string"
+            ? block
+            : block?.type === "text" && typeof block.text === "string"
+              ? block.text
+              : undefined;
+        return text !== undefined ? (
+          // biome-ignore lint/suspicious/noArrayIndexKey: Content blocks retain their indexes.
+          <p key={index} style={{ whiteSpace: "pre-wrap" }}>
+            {text}
+          </p>
+        ) : (
+          // biome-ignore lint/suspicious/noArrayIndexKey: Content blocks retain their indexes.
+          <pre key={index}>{dataText(block, true)}</pre>
+        );
+      })}
+    </section>
   );
 }
 class RendererBoundary extends Component<
@@ -50,7 +57,7 @@ class RendererBoundary extends Component<
     return this.state.failed ? this.props.fallback : this.props.children;
   }
 }
-/** Renderer-independent, inert basic data is mandatory for saved AND live records. */
+/** Renderer failures retain the message body without exposing internal records. */
 export function RecordData({
   record,
   renderer,

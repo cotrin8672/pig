@@ -28,11 +28,12 @@ function render(opening = false, running = false, otherOpening = false) {
     settings: { ...state.settings, language: "ja" },
     bootstrap: { ...state.bootstrap, desktop: { sessions: {} } },
     sessions: { [session.cwd]: [session] },
-    snapshots: {},
     pendingUI: [],
     active: session.id,
     opening,
-    modelPending: running,
+    snapshots: running
+      ? { [session.id]: { transcript: { running: true } } }
+      : {},
     pendingOpens: otherOpening
       ? { other: { cwd: "test-project", id: "other-chat" } }
       : {},
@@ -67,9 +68,9 @@ test("session deletion uses the shared two-press button, not a delete dialog", (
   expect(html).not.toContain("チャットを削除</h2>");
 });
 
-test("deletion stays disabled while a session is running or opening", () => {
-  expect(deleteButton(render(false, true))).toContain('disabled=""');
-  expect(deleteButton(render(true, false))).toContain('disabled=""');
+test("deletion remains available while a session is running or opening", () => {
+  expect(deleteButton(render(false, true))).not.toContain('disabled=""');
+  expect(deleteButton(render(true, false))).not.toContain('disabled=""');
 });
 
 test("chat selection stays enabled during startup and another chat's startup does not lock actions", () => {

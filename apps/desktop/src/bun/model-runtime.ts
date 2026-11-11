@@ -22,12 +22,16 @@ const virtuals = new WeakMap<
   Map<string, { provider: string; id: string }>
 >();
 export const modelRuntimeErrors: string[] = [];
+const modelsStore = new FileModelsStore(
+  join(desktopConfigDir, "model-catalogs"),
+  true,
+);
 
 /** Distinct runtime per catalog/session; shared persistence, never shared registrations. */
 export async function createModelRuntime() {
   const runtime = await ModelRuntime.create({
     modelsPath: null,
-    modelsStore: new FileModelsStore(join(desktopConfigDir, "model-catalogs")),
+    modelsStore,
     refreshOnCreate: false,
     allowModelNetwork: false,
   });

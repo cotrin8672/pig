@@ -114,6 +114,7 @@ export interface ModelSelection {
   contextUsage?: ContextUsage | null;
 }
 export interface Snapshot extends ModelSelection {
+  modelCatalog?: ModelInfo[];
   /** A history preview is readable but must never grant runtime capabilities. */
   ready?: false;
   address: SessionAddress;

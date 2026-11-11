@@ -13,6 +13,7 @@ export type Message =
 export type TranscriptRecord = {
   id: string;
   entryId?: string;
+  requestId?: string;
   parentId: string | null;
   branchId: string;
   order: number;

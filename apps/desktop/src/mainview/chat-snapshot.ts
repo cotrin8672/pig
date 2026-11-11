@@ -95,6 +95,7 @@ export function newerSnapshot(
   return sameAddress(current.address, incoming.address)
     ? {
         ...incoming,
+        modelCatalog: incoming.modelCatalog ?? current.modelCatalog,
         transcript: retainHistory(current.transcript, incoming.transcript),
       }
     : incoming;

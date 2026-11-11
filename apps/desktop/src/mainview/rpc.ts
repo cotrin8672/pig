@@ -4,7 +4,12 @@ import {
   type UiPreferences,
 } from "../shared/desktop-state";
 import { isModelEnabled } from "../shared/models";
-import type { Appearance, RPCSchema, Snapshot } from "../shared/rpc-schema";
+import type {
+  Appearance,
+  ModelSelection,
+  RPCSchema,
+  Snapshot,
+} from "../shared/rpc-schema";
 import {
   type RuntimeRecoveryState,
   type SessionAddress,
@@ -25,6 +30,11 @@ import { navigate, navigationRevision } from "./navigation";
 import { OpenController } from "./open-controller";
 import { mergeOpeningText } from "./opening-draft";
 import {
+  openingDraftKey,
+  removeOpeningSend,
+  restoreOpeningSends,
+} from "./opening-sends";
+import {
   liveAddress,
   receiveExtension,
   receiveRuntime,
@@ -35,7 +45,8 @@ import {
   runtimeRevision,
   subscribeOwnership,
 } from "./runtime-events";
-import { isSendUnconfirmed, SendController } from "./send-controller";
+import { changeSelection, selections } from "./selections";
+import { SendController } from "./send-controller";
 import { visibleCompletion } from "./session-read";
 import {
   readViewedNotices,
@@ -44,6 +55,11 @@ import {
   showNotice,
   useStore,
 } from "./store";
+import {
+  overlayDesktop,
+  overlayModelVisibility,
+  overlaySessionInfo,
+} from "./ui-mutations";
 
 // Root event handlers below are installed before any session-opening RPC.
 let appearanceInFlight = false;
@@ -122,7 +138,8 @@ export const rpc = Electroview.defineRPC<RPCSchema>({
     },
     messages: {
       packageOp: receivePackageOp,
-      installed: (installed) => useStore.setState({ installed }),
+      installed: (installed) =>
+        useStore.setState({ installed, installedLoaded: true }),
       runtimeEvent: (event) => {
         if (event.type === "closed" && event.discardDraft) {
           receiveRuntime(event);
@@ -156,6 +173,9 @@ export const rpc = Electroview.defineRPC<RPCSchema>({
               )
             : undefined);
         receiveRuntime(event);
+        const current = useStore.getState().snapshots[address.sessionId];
+        if (current) sends.reconcile(current);
+        resumeSelectionChanges();
         if (
           event.type === "ready" ||
           event.type === "replaced" ||
@@ -171,7 +191,11 @@ export const rpc = Electroview.defineRPC<RPCSchema>({
       },
       extensionUIEvent: receiveExtension,
       terminalEvent: receiveTerminal,
-      sessionEvent: receiveWire,
+      sessionEvent: (event) => {
+        receiveWire(event);
+        const snapshot = useStore.getState().snapshots[event.address.sessionId];
+        if (snapshot) sends.reconcile(snapshot);
+      },
       appearance: receiveAppearance,
       settings: receiveSettings,
       windowState: ({ maximized }) => useStore.setState({ maximized }),
@@ -186,7 +210,10 @@ export const rpc = Electroview.defineRPC<RPCSchema>({
         useStore.setState((s) => ({
           bootstrap: {
             ...s.bootstrap,
-            desktop: { ...s.bootstrap.desktop, sessions: desktop.sessions },
+            desktop: overlayDesktop({
+              ...s.bootstrap.desktop,
+              sessions: desktop.sessions,
+            }),
           },
         }));
       },
@@ -269,7 +296,10 @@ function refreshProjectSessions(cwd: string): Promise<void> {
         if (useStore.getState().sessions[cwd] !== before) flight.dirty = true;
         if (!flight.dirty)
           useStore.setState((s) => ({
-            sessions: { ...s.sessions, [cwd]: sessions },
+            sessions: {
+              ...s.sessions,
+              [cwd]: sessions.map(overlaySessionInfo),
+            },
           }));
       } while (flight.dirty);
     } finally {
@@ -294,7 +324,11 @@ export async function refreshSessions(cwd?: string) {
 }
 export async function refresh() {
   const before = useStore.getState();
-  const bootstrap = await rpc.request.bootstrap();
+  const [bootstrap, appearance, settings] = await Promise.all([
+    rpc.request.bootstrap(),
+    rpc.request.appearance(),
+    rpc.request.settings(),
+  ]);
   if (bootstrap.desktop) {
     try {
       const patch = legacyUiPreferences(
@@ -318,7 +352,28 @@ export async function refresh() {
       recentModels: current.recentModels,
     };
   }
+  const activeAddress =
+    before.active && before.snapshots[before.active]?.address;
+  if (
+    activeAddress &&
+    before.snapshots[activeAddress.sessionId]?.ready !== false
+  )
+    void rpc.request
+      .getSessionSnapshot(activeAddress)
+      .then(receiveSnapshot)
+      .catch(showError);
+  bootstrap.disabledModels = overlayModelVisibility(bootstrap.disabledModels);
+  bootstrap.desktop = overlayDesktop(bootstrap.desktop);
   useStore.setState((s) => ({
+    initialized: true,
+    ...(!appearanceInFlight &&
+    !appearancePending &&
+    s.appearance === before.appearance
+      ? { appearance }
+      : {}),
+    ...(!settingsInFlight && !settingsPending && s.settings === before.settings
+      ? { settings }
+      : {}),
     bootstrap: {
       ...bootstrap,
       desktop: {
@@ -330,34 +385,81 @@ export async function refresh() {
       },
     },
   }));
-  try {
-    const beforeAppearance = useStore.getState().appearance;
-    const appearance = await rpc.request.appearance();
-    if (
-      !appearanceInFlight &&
-      !appearancePending &&
-      useStore.getState().appearance === beforeAppearance
-    )
-      useStore.setState({ appearance });
-    const beforeSettings = useStore.getState().settings;
-    const settings = await rpc.request.settings();
-    if (
-      !settingsInFlight &&
-      !settingsPending &&
-      useStore.getState().settings === beforeSettings
-    )
-      useStore.setState({ settings });
-  } catch (error) {
-    showError(error);
-  }
   await refreshSessions();
 }
-export const sends = new SendController(drafts, {
-  syncDraft: (params) => rpc.request.syncDraft(params),
-  prompt: (params) => rpc.request.prompt(params),
-  getPromptReceipt: (params) => rpc.request.getPromptReceipt(params),
+export const sends = new SendController(
+  drafts,
+  {
+    syncDraft: (params) => rpc.request.syncDraft(params),
+    prompt: async (params) => {
+      await selections.flush(params);
+      return rpc.request.prompt(params);
+    },
+    getPromptReceipt: (params) => rpc.request.getPromptReceipt(params),
+  },
+  undefined,
+  undefined,
+  showError,
+);
+const selectionTransfers = new Map<
+  string,
+  { address: SessionAddress; desired: ModelSelection }
+>();
+subscribeOwnership((previous, next) => {
+  sends.transfer(previous, next);
+  const desired =
+    selections.take(previous) ??
+    selectionTransfers.get(addressKey(previous))?.desired;
+  selectionTransfers.delete(addressKey(previous));
+  if (desired)
+    selectionTransfers.set(addressKey(next), { address: next, desired });
 });
-subscribeOwnership((previous, next) => sends.transfer(previous, next));
+function resumeSelectionChanges() {
+  for (const [key, { address, desired }] of selectionTransfers) {
+    const snapshot = useStore.getState().snapshots[address.sessionId];
+    if (
+      !snapshot ||
+      snapshot.ready === false ||
+      !sameAddress(snapshot.address, address)
+    )
+      continue;
+    selectionTransfers.delete(key);
+    const model = desired.model;
+    if (model)
+      void changeSelection(address, desired, () =>
+        requestSelection(address, () => applySelection(address, desired)),
+      );
+  }
+}
+async function applySelection(
+  address: SessionAddress,
+  desired: ModelSelection,
+) {
+  const model = desired.model;
+  if (!model) throw new Error("No model selected");
+  const selected = await rpc.request.setModel({
+    ...address,
+    provider: model.provider,
+    id: model.id,
+  });
+  return selected.effort === desired.effort ||
+    !selected.effortLevels.includes(desired.effort)
+    ? selected
+    : rpc.request.setEffort({ ...address, effort: desired.effort });
+}
+export async function requestSelection(
+  address: SessionAddress,
+  request: () => Promise<ModelSelection>,
+) {
+  try {
+    return await request();
+  } catch (error) {
+    const snapshot = await rpc.request.getSessionSnapshot(address);
+    receiveSnapshot(snapshot);
+    showError(error);
+    return snapshot;
+  }
+}
 const clientId = crypto.randomUUID();
 let rootConnection: Promise<void> | undefined;
 let heartbeatTimer: ReturnType<typeof setInterval> | undefined;
@@ -407,6 +509,7 @@ export function connectRuntime() {
           throw new Error("Runtime synchronization was superseded");
         if (receiveRuntimeState(state, revision)) {
           receiveRecovery(state);
+          resumeSelectionChanges();
           return;
         }
       }
@@ -634,13 +737,16 @@ function currentAddress(sessionId: string): SessionAddress {
 }
 export async function forkChat(sessionId: string, entryId: string) {
   const previous = currentAddress(sessionId);
-  if (isSendUnconfirmed(sends.read(previous))) return;
-  return openSnapshot(async () => {
-    if (isSendUnconfirmed(sends.read(previous))) return;
+  const revision = navigationRevision;
+  await sends.wait(previous);
+  await selections.flush(previous);
+  await rpc.request.abort(previous);
+  const load = async () => {
     const snapshot = await rpc.request.forkSession({ ...previous, entryId });
     receiveRuntime({ type: "replaced", previous, snapshot });
     return snapshot;
-  });
+  };
+  return revision === navigationRevision ? openSnapshot(load) : load();
 }
 /** Rewind by exact persisted entry identity; timestamps are never identities. */
 export async function regenerate(
@@ -649,20 +755,25 @@ export async function regenerate(
   entryId: string,
 ) {
   const previous = currentAddress(sessionId);
-  if (isSendUnconfirmed(sends.read(previous))) return;
+  await sends.wait(previous);
+  await selections.flush(previous);
+  await rpc.request.abort(previous);
   const snapshot = await rpc.request.rewindSession({
     ...previous,
     entryId,
   });
   if (!liveAddress(snapshot.address))
     throw new Error("The rewind response belongs to a replaced session");
+  sends.discard(previous);
   receiveRuntime({ type: "replaced", previous, snapshot });
-  navigate("chat", snapshot.info.id);
+  const state = useStore.getState();
+  if (state.page === "chat" && state.active === sessionId)
+    navigate("chat", snapshot.info.id);
   const blocks =
     typeof user.content === "string"
       ? [{ type: "text" as const, text: user.content }]
       : user.content;
-  drafts.edit(snapshot.address, () => ({
+  await sends.send(snapshot.address, {
     text: blocks
       .filter((b) => b.type === "text")
       .map((b) => b.text)
@@ -671,8 +782,7 @@ export async function regenerate(
     images: blocks
       .filter((b) => b.type === "image")
       .map((image) => ({ id: crypto.randomUUID(), image })),
-  }));
-  await sends.send(snapshot.address);
+  });
 }
 async function openSnapshot(
   load: () => Promise<Snapshot | undefined>,
@@ -725,8 +835,9 @@ async function openSnapshot(
       !liveAddress(snapshot.address)
     )
       return;
-    if (optimistic && !optimistic.id) {
-      const text = useStore.getState().newChatDrafts[optimistic.cwd] ?? "";
+    if (optimistic) {
+      const draftKey = openingDraftKey(optimistic);
+      const text = useStore.getState().newChatDrafts[draftKey] ?? "";
       if (text)
         drafts.edit(snapshot.address, (content) =>
           mergeOpeningText(content, text),
@@ -737,9 +848,37 @@ async function openSnapshot(
         addressKey(snapshot.address),
         merged.slice(0, merged.length - text.length),
       );
-      transferred = { cwd: optimistic.cwd, text };
+      transferred = { cwd: draftKey, text };
     }
     receiveSnapshot(snapshot);
+    while (useStore.getState().pendingOpens[openId]?.selectionChanged) {
+      const selected = useStore.getState().pendingOpens[openId];
+      const desired = selected.selection;
+      useStore.setState((state) => ({
+        pendingOpens: {
+          ...state.pendingOpens,
+          [openId]: { ...state.pendingOpens[openId], selectionChanged: false },
+        },
+      }));
+      const model = desired?.model;
+      if (model && desired)
+        await changeSelection(snapshot.address, desired, () =>
+          requestSelection(snapshot.address, () =>
+            applySelection(snapshot.address, desired),
+          ),
+        );
+    }
+    while (useStore.getState().pendingOpens[openId]?.queuedSends?.length) {
+      const queued = useStore.getState().pendingOpens[openId].queuedSends?.[0];
+      if (!queued) break;
+      removeOpeningSend(openId, queued.id);
+      try {
+        await sends.send(snapshot.address, queued.content);
+      } catch (error) {
+        drafts.restoreSent(snapshot.address, queued.content);
+        throw error;
+      }
+    }
     // Recovery bytes are available only after this project's Trust/startup completed.
     void Promise.resolve()
       .then(() => rpc.request.getRecovery(snapshot.address))
@@ -776,6 +915,7 @@ async function openSnapshot(
       }
     }
   } finally {
+    restoreOpeningSends(openId);
     restoreOpening(openId);
     clearOpeningView(openId);
     useStore.setState((state) => {

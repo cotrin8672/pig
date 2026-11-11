@@ -15,6 +15,7 @@ import { ConfirmButton } from "./ConfirmButton";
 import { useT } from "./i18n";
 import { refresh, rpc } from "./rpc";
 import { showError, useStore } from "./store";
+import { projectNames, updateFlag, waitPreferenceWrites } from "./ui-mutations";
 
 export function ProjectMenu({
   cwd,
@@ -38,19 +39,19 @@ export function ProjectMenu({
     input.current?.focus();
     input.current?.select();
   }, [renaming]);
-  async function setFlags(patch: ProjectFlags) {
-    setBusy(true);
-    try {
-      await rpc.request.setProjectState({ cwd, ...patch });
-    } catch (error) {
-      showError(error);
-    } finally {
-      setBusy(false);
+  function setFlags(patch: ProjectFlags) {
+    for (const field of ["pinned", "archived"] as const) {
+      const value = patch[field];
+      if (value !== undefined)
+        void updateFlag("projects", cwd, field, value, () =>
+          rpc.request.setProjectState({ cwd, [field]: value }),
+        );
     }
   }
   async function remove() {
     setBusy(true);
     try {
+      await waitPreferenceWrites("projects", cwd);
       await rpc.request.removeProject({ cwd });
       await refresh();
     } catch (error) {
@@ -59,25 +60,39 @@ export function ProjectMenu({
       setBusy(false);
     }
   }
-  async function submit() {
-    setBusy(true);
-    setError(undefined);
-    try {
-      await rpc.request.setProjectState({ cwd, name });
-      dialog.current?.close();
-      await refresh();
-    } catch (error) {
-      setError(String(error));
-    } finally {
-      setBusy(false);
-    }
+  function submit() {
+    const desired = name.trim();
+    dialog.current?.close();
+    void projectNames.change(
+      cwd,
+      flags?.name ?? "",
+      desired,
+      (value) => {
+        useStore.setState((state) => ({
+          bootstrap: {
+            ...state.bootstrap,
+            desktop: {
+              ...state.bootstrap.desktop,
+              projects: {
+                ...state.bootstrap.desktop.projects,
+                [cwd]: {
+                  ...state.bootstrap.desktop.projects?.[cwd],
+                  name: value,
+                },
+              },
+            },
+          },
+        }));
+      },
+      async () => {
+        await rpc.request.setProjectState({ cwd, name: desired });
+        return desired;
+      },
+    );
   }
   return (
     <>
-      <ActionsMenu
-        label={`${t["Project actions"]}: ${displayName}`}
-        disabled={busy}
-      >
+      <ActionsMenu label={`${t["Project actions"]}: ${displayName}`}>
         {(close) => (
           <>
             <button
@@ -138,6 +153,7 @@ export function ProjectMenu({
             <ConfirmButton
               role="menuitem"
               className="session-menu-delete"
+              disabled={busy}
               title={
                 t[
                   "Only removes this project from pig’s list. Files on disk and its chats are NOT deleted."
@@ -158,9 +174,6 @@ export function ProjectMenu({
         ref={dialog}
         className="session-dialog"
         aria-labelledby={titleId}
-        onCancel={(event) => {
-          if (busy) event.preventDefault();
-        }}
         onClose={() => {
           setRenaming(false);
           setError(undefined);
@@ -177,7 +190,6 @@ export function ProjectMenu({
             <button
               type="button"
               aria-label={t.Close}
-              disabled={busy}
               onClick={() => dialog.current?.close()}
             >
               <X size={14} />
@@ -189,7 +201,6 @@ export function ProjectMenu({
             placeholder={displayName}
             value={name}
             maxLength={512}
-            disabled={busy}
             onChange={(event) => setName(event.target.value)}
           />
           <p className="muted">{t["Leave empty to use the folder name."]}</p>
@@ -199,14 +210,10 @@ export function ProjectMenu({
             </p>
           )}
           <div className="dialog-actions">
-            <button
-              type="button"
-              disabled={busy}
-              onClick={() => dialog.current?.close()}
-            >
+            <button type="button" onClick={() => dialog.current?.close()}>
               {t.Cancel}
             </button>
-            <button type="submit" className="primary" disabled={busy}>
+            <button type="submit" className="primary">
               {t.Rename}
             </button>
           </div>

@@ -7,12 +7,11 @@ import {
   Sparkles,
   Split,
 } from "lucide-react";
-import { memo, useState, useSyncExternalStore } from "react";
+import { memo, useState } from "react";
 import { useShallow } from "zustand/react/shallow";
 import type { Message, ResponseStats } from "../shared/transcript";
 import { useT } from "./i18n";
-import { forkChat, regenerate, sends } from "./rpc";
-import { isSendUnconfirmed } from "./send-controller";
+import { forkChat, regenerate } from "./rpc";
 import { showError, useStore } from "./store";
 
 function duration(ms: number) {
@@ -43,14 +42,15 @@ export const ResponseFooter = memo(function ResponseFooter({
   const [copied, setCopied] = useState(false);
   const address = useStore(useShallow((s) => s.snapshots[sessionId]?.address));
   const ready = useStore((s) => s.snapshots[sessionId]?.ready !== false);
-  const readSendState = () =>
-    address ? isSendUnconfirmed(sends.read(address)) : false;
-  const sendState = useSyncExternalStore(
-    sends.subscribe,
-    readSendState,
-    readSendState,
-  );
-  const canBranch = !!address && ready && !sendState;
+  const [action, setAction] = useState<"fork" | "regenerate">();
+  const canBranch = !!address && ready;
+  function run(kind: "fork" | "regenerate", request: () => Promise<unknown>) {
+    if (action) return;
+    setAction(kind);
+    void request()
+      .catch(showError)
+      .finally(() => setAction(undefined));
+  }
   const status =
     stats.stopReason === "error"
       ? { icon: <CircleAlert size={14} />, label: t.Failed }
@@ -104,9 +104,9 @@ export const ResponseFooter = memo(function ResponseFooter({
           type="button"
           title={t["Branch into new chat"]}
           aria-label={t["Branch into new chat"]}
-          disabled={!entryId || !canBranch}
+          disabled={!entryId || !canBranch || !!action}
           onClick={() => {
-            if (entryId) void forkChat(sessionId, entryId).catch(showError);
+            if (entryId) run("fork", () => forkChat(sessionId, entryId));
           }}
         >
           <Split size={14} />
@@ -116,9 +116,9 @@ export const ResponseFooter = memo(function ResponseFooter({
             type="button"
             title={t.Regenerate}
             aria-label={t.Regenerate}
-            disabled={!canBranch}
+            disabled={!canBranch || !!action}
             onClick={() =>
-              void regenerate(sessionId, user, userEntryId).catch(showError)
+              run("regenerate", () => regenerate(sessionId, user, userEntryId))
             }
           >
             <RefreshCw size={14} />

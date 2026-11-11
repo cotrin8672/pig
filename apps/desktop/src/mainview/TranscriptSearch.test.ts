@@ -44,3 +44,20 @@ test("loaded search includes Japanese and collapsed tool output but excludes ima
   expect(findMessages(records, "結果")[0]?.toolCallId).toBe("t1");
   expect(findMessages(records, "   ")).toEqual([]);
 });
+
+test("cancelled message search finds the body, not hidden recovery metadata", () => {
+  const state = hydrate([
+    {
+      role: "custom",
+      customType: "Cancelled queued prompt",
+      content: [{ type: "text", text: "楽観的UIの観点も含めて" }],
+      display: true,
+      details: { requestId: "internal-request" },
+      timestamp: 1,
+    },
+  ]);
+  expect(findMessages(state.records, "楽観的UI").map(({ id }) => id)).toEqual([
+    state.records[0].id,
+  ]);
+  expect(findMessages(state.records, "internal-request")).toEqual([]);
+});

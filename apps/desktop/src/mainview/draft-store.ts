@@ -24,6 +24,7 @@ export type EditorDraft = {
   conflict?: DraftState;
   retired?: boolean;
   transferred?: boolean;
+  clearedForSend?: boolean;
   owner?: DraftOwner;
 };
 type Flight = {
@@ -105,12 +106,14 @@ export class DraftStore {
   edit(
     address: SessionAddress,
     change: (content: DraftContent) => DraftContent,
+    allowRetired = false,
   ) {
     const draft = this.read(address);
-    if (draft.retired) return;
+    if (draft.retired && !allowRetired) return;
     this.put(address, {
       ...draft,
       content: change(draft.content),
+      clearedForSend: false,
       version: draft.version + 1,
       dirty: true,
     });
@@ -172,7 +175,7 @@ export class DraftStore {
     const current = this.read(next);
     // A new epoch's startup editor event may beat the replaced publication.
     // Never overwrite that newer extension text with a clean old mirror.
-    if (!old.dirty && current.revision > 0) return;
+    if ((!old.dirty || old.clearedForSend) && current.revision > 0) return;
     this.put(next, {
       ...current,
       content: old.content,
@@ -204,6 +207,46 @@ export class DraftStore {
       dirty: false,
       ...(deleted ? { retired: true } : {}),
     });
+  }
+  restoreSent(address: SessionAddress, sent: DraftContent) {
+    const draft = this.read(address);
+    const current = draft.content;
+    const text = [
+      unfoldPastes(sent.text, sent.pastes),
+      unfoldPastes(current.text, current.pastes),
+    ]
+      .filter(Boolean)
+      .join("\n\n");
+    this.put(address, {
+      ...draft,
+      content: {
+        text,
+        pastes: [],
+        images: [
+          ...new Map(
+            [...sent.images, ...current.images].map((image) => [
+              image.id,
+              image,
+            ]),
+          ).values(),
+        ],
+        files: [
+          ...new Map(
+            [...(sent.files ?? []), ...(current.files ?? [])].map((file) => [
+              file.id,
+              file,
+            ]),
+          ).values(),
+        ],
+      },
+      version: draft.version + 1,
+      dirty: true,
+      clearedForSend: false,
+    });
+  }
+  clearForSend(address: SessionAddress, sentVersion: number) {
+    if (!this.clearAccepted(address, sentVersion)) return;
+    this.put(address, { ...this.read(address), clearedForSend: true });
   }
   clearAccepted(address: SessionAddress, sentVersion: number) {
     const draft = this.read(address);

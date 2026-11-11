@@ -13,6 +13,7 @@ test.skipIf(!existsSync(edge))(
   "transcript in Edge: native wheel scrolling, original appearance, history, search and streaming",
   async () => {
     const dir = await mkdtemp(join(tmpdir(), "piris-transcript-ui-"));
+    let passed = false;
     try {
       const source = (name: string) =>
         JSON.stringify(fileURLToPath(new URL(name, import.meta.url)));
@@ -22,14 +23,20 @@ test.skipIf(!existsSync(edge))(
         `
       import {createRoot} from ${JSON.stringify(fileURLToPath(import.meta.resolve("react-dom/client")))};
       import {flushSync} from ${JSON.stringify(fileURLToPath(import.meta.resolve("react-dom")))};
-      import {Chat} from ${source("./App.tsx")};
+      import {App,Chat} from ${source("./App.tsx")};
+      import {Extensions} from ${source("./Extensions.tsx")};
+      import {Composer} from ${source("./Composer.tsx")};
+      import {SessionPanel} from ${source("./SessionPanel.tsx")};
+      import {UIRequestBroker} from ${source("./UIRequestBroker.tsx")};
+      import {drafts} from ${source("./draft-store.ts")};
+      import {receiveTerminal} from ${source("./runtime-events.ts")};
       import {ToolBlock,ToolGroup,ThinkingBlock} from ${source("./ToolBlock.tsx")};
       import {DisclosureScope} from ${source("./LazyDetails.tsx")};
       import {Markdown,BuiltinMarkdown} from ${source("./MessageContent.tsx")};
       import {installChatRenderers} from ${source("./chat-renderer-registry.ts")};
       import {useStore} from ${source("./store.ts")};
       const root=createRoot(document.getElementById("root"));
-      const wait=()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));
+      const wait=()=>new Promise(resolve=>{const timer=setTimeout(resolve,100);requestAnimationFrame(()=>requestAnimationFrame(()=>{clearTimeout(timer);resolve();}));});
       const pause=ms=>new Promise(resolve=>setTimeout(resolve,ms));
       const check=(value,message)=>{if(!value) throw new Error(message);};
       const until=async(predicate,message)=>{const end=performance.now()+3000;while(!predicate()){check(performance.now()<end,message);await wait();}};
@@ -186,6 +193,7 @@ test.skipIf(!existsSync(edge))(
       check(document.activeElement.closest("[data-record-id]")?.dataset.recordId==="a125" && document.activeElement.closest("[data-tool-call-id]")?.dataset.toolCallId==="t125" && document.activeElement.tagName==="SUMMARY","tool-result search must open work and focus its owning tool beyond the old record page");
       check(document.querySelectorAll(".tool-term").length===150 && !document.querySelector(".text-range"),"unfolded work must contain every tool record");
       for(const grouped of [true,false]){
+        metrics.stage="nested-"+grouped;
         const nestedCalls=Array.from({length:150},(_,i)=>({id:"nested"+i,name:grouped?"read":"bash",arguments:grouped?{path:"file"+i}:{command:"echo "+i}}));
         const nestedTools={};
         const nestedResults=nestedCalls.map((call,i)=>{const text=i===125?"Single-marker-125-end\\n"+output:"small result "+i;nestedTools[call.id]={status:"done",result:{content:[{type:"text",text}]}};return record("nested-result"+i,2+i,{role:"toolResult",toolCallId:call.id,toolName:call.name,content:[{type:"text",text}],isError:false,timestamp:i});});
@@ -197,9 +205,102 @@ test.skipIf(!existsSync(edge))(
         check(focused.open && (grouped?focused.closest(".tool-group").open:!focused.closest(".tool-group")),"search must preserve exploration grouping and separate shell rows");
         check(focused.querySelector("pre").textContent.includes("line 599"),"search must expose complete output beyond the old text range");
         const readingThread=document.querySelector(".thread-scroll");const top=readingThread.scrollTop;
+        metrics.stage="nested-wheel-"+grouped;
         await wheel(focused.querySelector(grouped?".tool-body pre":".tool-term-output"),120);
         check(Math.abs(readingThread.scrollTop-top)<=2,"wheel over a scrollable tool preview must scroll the preview alone");
       }
+      // Pending work must not replace known content or add temporary status rows.
+      const type=async(input,value)=>{Object.getOwnPropertyDescriptor(input instanceof HTMLTextAreaElement?HTMLTextAreaElement.prototype:HTMLInputElement.prototype,"value").set.call(input,value);input.dispatchEvent(new Event("input",{bubbles:true}));await wait();};
+      const deferred=()=>Promise.withResolvers();
+      metrics.stage="startup";
+      const startup=deferred();window.__refresh=()=>startup.promise;
+      flushSync(()=>useStore.setState(state=>({initialized:false,active:undefined,page:"chat",settings:{...state.settings,language:"en"}})));
+      await render(<App/>);
+      check(document.querySelector("main").textContent==="" && !document.querySelector(".welcome"),"startup must not publish English, disconnected or empty-state content");
+      startup.reject(new Error("internal startup details"));await until(()=>document.querySelector('main [role="alert"]'),"failed initialization must offer recovery");
+      check(!document.querySelector("main").textContent.includes("internal startup details"),"startup errors must not expose internal diagnostics");
+      const retryStartup=deferred();window.__refresh=()=>retryStartup.promise;await click(button(document,"Retry"));check(document.querySelector("main").textContent==="","startup retry must retain the shell without temporary text");
+      flushSync(()=>useStore.setState(state=>({initialized:true,settings:{...state.settings,language:"ja"}})));retryStartup.resolve();await wait();
+      check(document.documentElement.lang==="ja" && document.querySelector(".welcome") && !document.querySelector("main").textContent.includes("What shall"),"first real screen must use the saved language");
+      flushSync(()=>useStore.setState({page:"settings"}));await wait();
+      check(document.querySelector(".settings-page") && !document.querySelector("main").textContent.includes("Loading"),"settings navigation must render immediately without a whole-screen fallback");
+      await render(<div/>);flushSync(()=>useStore.setState(state=>({settings:{...state.settings,language:"en"}})));
+      metrics.stage="packages";
+      const searches=[];const installedRead=deferred();
+      window.__requests={searchPackages:params=>{const read=deferred();searches.push({...params,read});return read.promise;},listInstalled:()=>installedRead.promise,packagePreviews:()=>({})};
+      const pkg=name=>({name,version:"1",description:"Package "+name,publisher:"fixture",monthlyDownloads:1,date:"2026-01-01",types:[]});
+      flushSync(()=>useStore.setState({installedLoaded:true,installed:[{source:"npm:cached",name:"cached",scope:"user",types:[]}],packageOps:{}}));
+      await render(<Extensions/>);await until(()=>searches.length===1,"missing initial package search");
+      check(!document.querySelector(".package-skeleton") && !document.body.textContent.includes("Finding packages"),"initial package search must not flash a skeleton or loading message");
+      searches[0].read.resolve({items:[pkg("original")],total:2});await until(()=>document.querySelector(".market-card"),"missing original package result");
+      const originalCard=document.querySelector(".market-card"),originalCount=document.querySelector(".package-results").textContent;
+      const searchInput=document.querySelector(".package-search input");await type(searchInput,"first");await until(()=>searches.some(read=>read.query==="first"),"first search did not start");
+      check(document.querySelector(".market-card")===originalCard && document.querySelector(".package-results").textContent===originalCount,"search must retain both the old cards and their matching count while pending");
+      const more=button(document,"Load more");check(more.disabled && more.textContent==="Load more","pending search must not append to an old query or resize the load-more button");
+      await type(searchInput,"latest");await until(()=>searches.some(read=>read.query==="latest"),"latest search did not start");
+      searches.find(read=>read.query==="latest").read.resolve({items:[pkg("latest")],total:1});await until(()=>document.querySelector(".market-card h2")?.textContent==="latest","latest search did not publish");
+      searches.find(read=>read.query==="first").read.resolve({items:[pkg("stale")],total:1});await wait();
+      check(document.querySelector(".market-card h2").textContent==="latest","late search result must not overwrite the latest query");
+      await type(searchInput,"failed");await until(()=>searches.some(read=>read.query==="failed"),"failed search did not start");
+      searches.find(read=>read.query==="failed").read.reject(new Error("fixture failure"));await until(()=>document.querySelector(".package-error"),"search failure must remain actionable");
+      check(document.querySelector(".market-card h2").textContent==="latest","failed search must retain the last successful result");
+      await click(document.getElementById("extensions-tab-installed"));
+      check(document.querySelector(".installed-card h2").textContent==="cached" && !document.body.textContent.includes("Loading installed packages"),"cached installed packages must remain visible without an inserted loading row");
+      flushSync(()=>useStore.setState({installed:[{source:"npm:newer",name:"newer",scope:"user",types:[]}]}));installedRead.resolve([]);await wait();
+      check(document.querySelector(".installed-card h2").textContent==="newer","a stale installed read must not replace a newer package event");
+      const uninstall=document.querySelector(".installed-card .package-actions button"),uninstallWidth=uninstall.getBoundingClientRect().width;
+      flushSync(()=>useStore.setState({packageOps:{op:{opId:"op",source:"npm:newer",action:"uninstall",status:"running"}}}));await wait();
+      check(document.querySelector(".installed-card .package-actions button")===uninstall && uninstall.disabled && uninstall.getAttribute("aria-busy")==="true" && uninstall.getBoundingClientRect().width===uninstallWidth,"package operations must keep their buttons and not pretend installation or deletion has finished");
+      await render(<div/>);
+      metrics.stage="actions";
+      const actions=[];let actionGate=deferred();
+      const actionState={generation:"ui",commands:[{adapterId:"ui",id:"apply",title:"Apply"}],keymaps:[],diagnostics:[],views:[{adapterId:"ui",revision:1,view:{id:"status",kind:"status",title:"Action",tone:"info",text:"Ready",source:{label:"Fixture",scope:{kind:"session",id:"action"},freshness:"saved",observedAt:"now"},actions:[{id:"apply",label:"Apply",command:"apply",fields:[{name:"note",label:"Note",required:true}]}]}}]};
+      await render(<SessionPanel sessionId="action" state={actionState} onAction={request=>{actions.push(request);return actionGate.promise;}} onReload={async()=>{}}/>);
+      await click(document.querySelector(".session-dock-summary"));
+      const form=document.querySelector(".session-action");await type(form.querySelector("input"),"keep this text");
+      const submit=form.querySelector('[type="submit"]'),height=form.getBoundingClientRect().height,width=submit.getBoundingClientRect().width;
+      await click(submit);form.requestSubmit();await wait();
+      check(actions.length===1 && submit.disabled && submit.getAttribute("aria-busy")==="true" && submit.textContent==="Apply","pending actions must keep their label and block duplicate execution");
+      check(form.getBoundingClientRect().height===height && submit.getBoundingClientRect().width===width && !form.querySelector('[role="status"]'),"pending actions must not add a line or change geometry");
+      actionGate.resolve();await until(()=>!submit.disabled,"action did not settle");actionGate=deferred();await click(submit);actionGate.reject(new Error("action failure"));
+      await until(()=>form.querySelector('[role="alert"]'),"action failure must be visible");check(form.querySelector("input").value==="keep this text","action failure must preserve input");
+      await render(<div/>);
+      metrics.stage="completion";
+      const completions=[];window.__sendCount=0;
+      window.__requests={listSlashCommands:()=>[{name:"hello",category:"extension"},{name:"other",category:"extension"}],completeSlashArguments:params=>{const read=deferred();completions.push({...params,read});return read.promise;}};
+      const composerSnapshot={...base,ready:true,address:{hostId:"completion",sessionId:"completion",epoch:1},info:{...base.info,id:"completion"},transcript:transcript([])};
+      drafts.edit(composerSnapshot.address,content=>({...content,text:"/hello a"}));
+      await render(<div className="chat-shell" style={{height:300}}><Composer snapshot={composerSnapshot}/></div>);
+      const editor=document.querySelector("textarea");editor.setSelectionRange(editor.value.length,editor.value.length);editor.focus();document.dispatchEvent(new Event("selectionchange"));await until(()=>completions.some(read=>read.argumentPrefix==="a"),"initial completion did not start");
+      completions.find(read=>read.argumentPrefix==="a").read.resolve([{label:"alpha",value:"alpha"}]);await until(()=>document.querySelector(".slash-options"),"missing initial suggestions");
+      const popup=document.querySelector(".slash-options");await type(editor,"/hello ab");await until(()=>completions.some(read=>read.argumentPrefix==="ab"),"updated completion did not start");
+      check(document.querySelector(".slash-options")===popup && popup.getAttribute("aria-busy")==="true" && popup.querySelector('[aria-disabled="true"]'),"completion must retain its popup but disable stale choices");
+      const enter=new KeyboardEvent("keydown",{key:"Enter",bubbles:true,cancelable:true});editor.dispatchEvent(enter);await click(popup.querySelector('[role="option"]'));
+      check(enter.defaultPrevented && editor.value==="/hello ab" && window.__sendCount===0,"pending stale choices must neither insert old arguments nor send the command");
+      await type(editor,"/hello abc");await until(()=>completions.some(read=>read.argumentPrefix==="abc"),"latest completion did not start");
+      completions.find(read=>read.argumentPrefix==="abc").read.resolve([{label:"current",value:"abcd"}]);await until(()=>popup.textContent.includes("current"),"latest completion did not publish");
+      completions.find(read=>read.argumentPrefix==="ab").read.resolve([{label:"stale",value:"old"}]);await wait();check(!popup.textContent.includes("stale"),"late completions must not replace the current query");
+      await click(popup.querySelector('[role="option"]'));check(editor.value==="/hello abcd","confirmed current suggestion must still work: "+JSON.stringify({value:editor.value,start:editor.selectionStart,end:editor.selectionEnd,queries:completions.map(read=>read.argumentPrefix),popup:popup.textContent,busy:popup.getAttribute("aria-busy")}));
+      await type(editor,"/other a");await wait();check(!document.querySelector(".slash-options"),"another command must not inherit the previous command's suggestions");
+      await render(<div/>);
+      metrics.stage="terminal";
+      const owner={hostId:"terminal-stability",sessionId:"terminal-stability",epoch:1};const terminalCommands=[];window.__requests={terminalCommand:command=>{terminalCommands.push(command);return {};}};
+      const terminalRequest={...owner,uiId:"pending",kind:"terminal",title:"Fixture terminal"};
+      flushSync(()=>useStore.setState({hostId:owner.hostId,active:owner.sessionId,page:"chat",addresses:{[owner.sessionId]:owner},snapshots:{[owner.sessionId]:{...base,ready:true,address:owner,info:{...base.info,id:owner.sessionId},transcript:transcript([])}},pendingUI:[],terminals:{}}));
+      await render(<div className="app-shell"><main><p>Unchanged main</p></main><UIRequestBroker/></div>);const mainWidth=document.querySelector("main").getBoundingClientRect().width;
+      flushSync(()=>useStore.setState({pendingUI:[terminalRequest]}));await until(()=>document.querySelector('.terminal-dialog[open]'),"terminal shell did not open");
+      const pendingTerminal=document.querySelector(".terminal-dialog");
+      check(document.querySelector("main").getBoundingClientRect().width===mainWidth && !document.querySelector(".ui-starting") && !pendingTerminal.querySelector(".xterm") && terminalCommands.length===0,"pending terminal must retain main width and must not initialize or send ready before host open");
+      await click(pendingTerminal.querySelector("header button"));check(!pendingTerminal.open && terminalCommands.filter(command=>command.type==="cancel").length===1,"pending terminal must close and cancel immediately");
+      receiveTerminal({...owner,uiId:terminalRequest.uiId,type:"open",title:terminalRequest.title});await wait();
+      check(!pendingTerminal.open && !pendingTerminal.querySelector(".xterm"),"a late terminal-open event must not reopen or initialize a cancelled shell");
+      const nextRequest={...terminalRequest,uiId:"ready"};flushSync(()=>useStore.setState({pendingUI:[nextRequest]}));await until(()=>document.querySelector('.terminal-dialog[open]'),"second terminal shell did not open");
+      const readyTerminal=document.querySelector(".terminal-dialog");receiveTerminal({...owner,uiId:nextRequest.uiId,type:"open",title:nextRequest.title});
+      await until(()=>terminalCommands.some(command=>command.uiId==="ready" && command.type==="ready"),"real terminal did not complete its fitted-ready handshake");
+      check(document.querySelector(".terminal-dialog")===readyTerminal && document.querySelector("main").getBoundingClientRect().width===mainWidth,"host open must fill the existing terminal without remounting its shell or resizing main");
+      await click(readyTerminal.querySelector("header button"));flushSync(()=>useStore.setState({pendingUI:[],terminals:{}}));await render(<div/>);
+      check(terminalCommands.filter(command=>command.uiId==="ready" && command.type==="cancel").length===1,"closing and unmounting must not cancel a terminal twice");
+      metrics.stablePendingUI=true;
       window.__transcriptReport={ok:true,metrics};
     `,
       );
@@ -227,9 +328,14 @@ test.skipIf(!existsSync(edge))(
               build.onLoad({ filter: /[\\/]rpc\.ts$/ }, () => ({
                 loader: "ts",
                 contents: `
-          const noop=()=>{};export const rpc={request:new Proxy({},{get:(_,method)=>async params=>method==="getSessionHistory"?window.__getSessionHistory(params):{}}),send:new Proxy({},{get:()=>noop})};
-          export const sends={subscribe:()=>noop,read:()=>undefined};
-          export const updateAppearance=noop,updateSettings=noop,updateUiPreferences=noop,refreshSessions=noop,refresh=noop,connectRuntime=noop,initRuntimeConnection=noop,cancelOpening=noop,openChat=noop,openChatLink=noop,forkChat=noop,regenerate=noop,initSessionLinks=noop,initSessionReadTracking=noop,reconnectRuntime=noop;
+          const noop=()=>{};export const rpc={request:new Proxy({},{get:(_,method)=>async params=>{
+            if(window.__requests?.[method])return window.__requests[method](params);
+            if(method==="getSessionHistory")return window.__getSessionHistory(params);
+            if(method==="syncDraft")return {applied:true,draft:{...params.content,revision:params.expectedRevision+1}};
+            return {};
+          }}),send:new Proxy({},{get:()=>noop})};
+          export const sends={subscribe:()=>noop,getTick:()=>0,read:()=>undefined,optimistic:()=>[],retained:()=>[],send:async()=>{window.__sendCount=(window.__sendCount??0)+1;}};
+          export const updateAppearance=noop,updateSettings=noop,updateUiPreferences=noop,refreshSessions=noop,refresh=()=>window.__refresh?.()??Promise.resolve(),requestSelection=(_address,request)=>request(),connectRuntime=noop,initRuntimeConnection=noop,cancelOpening=noop,openChat=noop,openChatLink=noop,forkChat=noop,regenerate=noop,initSessionLinks=noop,initSessionReadTracking=noop,reconnectRuntime=noop;
         `,
               }));
             },
@@ -240,7 +346,7 @@ test.skipIf(!existsSync(edge))(
       const script = await built.outputs[0].text();
       await Bun.write(
         join(dir, "fixture.js"),
-        `void (async()=>{try{${script}}catch(error){window.__transcriptReport={ok:false,error:String(error),stack:error.stack,metrics:window.__transcriptMetrics};}})()`,
+        `const fail=error=>{window.__transcriptReport={ok:false,error:String(error),stack:error?.stack,metrics:window.__transcriptMetrics};};window.addEventListener("error",event=>fail(event.error??event.message));window.addEventListener("unhandledrejection",event=>fail(event.reason));void (async()=>{try{${script}}catch(error){fail(error);}})()`,
       );
       const cssEntry = join(dir, "styles.css");
       await Bun.write(
@@ -282,6 +388,8 @@ test.skipIf(!existsSync(edge))(
           "--disable-gpu",
           "--no-first-run",
           "--no-default-browser-check",
+          "--disable-extensions",
+          "--disable-background-mode",
           `--user-data-dir=${join(dir, "profile")}`,
           "--remote-debugging-port=0",
           "--disable-background-timer-throttling",
@@ -361,7 +469,16 @@ test.skipIf(!existsSync(edge))(
           exceptionDetails?: unknown;
         };
         let report: Report | undefined;
+        const deadline = Date.now() + 35_000;
         while (!report) {
+          if (Date.now() > deadline) {
+            const debug = await command("Runtime.evaluate", {
+              expression:
+                "({ready:document.readyState,metrics:window.__transcriptMetrics,text:document.body.innerText.slice(-500)})",
+              returnByValue: true,
+            });
+            throw new Error(`UI fixture timed out: ${JSON.stringify(debug)}`);
+          }
           let result: Evaluation;
           try {
             result = await command<Evaluation>("Runtime.evaluate", {
@@ -394,10 +511,14 @@ test.skipIf(!existsSync(edge))(
         }
         expect(report.ok, JSON.stringify(report)).toBe(true);
         expect(report.metrics.wheels.length).toBeGreaterThanOrEqual(10);
+        expect(
+          (report.metrics as { stablePendingUI?: boolean }).stablePendingUI,
+        ).toBe(true);
         console.info(
           "Native transcript Edge regression",
           JSON.stringify(report.metrics),
         );
+        passed = true;
       } finally {
         if (socket?.readyState === WebSocket.OPEN)
           socket.send(JSON.stringify({ id: -1, method: "Browser.close" }));
@@ -408,12 +529,25 @@ test.skipIf(!existsSync(edge))(
         await errors;
       }
     } finally {
-      await rm(dir, {
-        recursive: true,
-        force: true,
-        maxRetries: 10,
-        retryDelay: 100,
-      });
+      if (passed) {
+        try {
+          await rm(dir, {
+            recursive: true,
+            force: true,
+            maxRetries: 10,
+            retryDelay: 100,
+          });
+        } catch (error) {
+          // Edge's Windows profile writers can outlive the browser process; don't mask UI results.
+          if (
+            !["EBUSY", "ENOTEMPTY"].includes(
+              (error as NodeJS.ErrnoException).code ?? "",
+            )
+          )
+            throw error;
+          console.warn("Windows still holds the temporary Edge profile:", dir);
+        }
+      } else console.error("Failed Edge fixture retained at", dir);
     }
   },
   60_000,

@@ -20,6 +20,12 @@ import { navigate } from "./navigation";
 import { openChat, refreshSessions, rpc } from "./rpc";
 import { sessionStatusLabels } from "./session-status";
 import { showError, useStore } from "./store";
+import {
+  publishSessionName,
+  sessionNames,
+  updateFlag,
+  waitPreferenceWrites,
+} from "./ui-mutations";
 import { selectSessionStatus } from "./ui-selectors";
 
 export const SessionList = memo(function SessionList({
@@ -76,22 +82,7 @@ export const SessionList = memo(function SessionList({
 function SessionRow({ session, cwd }: { session: SessionInfo; cwd: string }) {
   const t = useT();
   const active = useStore((s) => s.active === session.id && s.page === "chat");
-  const opening = useStore(
-    (s) =>
-      (s.opening && !s.openingTarget && s.active === session.id) ||
-      Object.values(s.pendingOpens).some(
-        (pending) =>
-          pending.cwd === cwd &&
-          (pending.id === session.id ||
-            pending.address?.sessionId === session.id),
-      ),
-  );
   const flags = useStore((s) => s.bootstrap.desktop.sessions[session.id]);
-  const running = useStore(
-    (s) =>
-      !!s.snapshots[session.id]?.transcript.running ||
-      (s.modelPending && s.active === session.id),
-  );
   const status = useStore((s) => selectSessionStatus(s, session.id));
   const dialog = useRef<HTMLDialogElement>(null);
   const input = useRef<HTMLInputElement>(null);
@@ -108,44 +99,33 @@ function SessionRow({ session, cwd }: { session: SessionInfo; cwd: string }) {
     input.current?.focus();
     input.current?.select();
   }, [renaming]);
-  async function setFlags(patch: SessionFlags) {
-    setBusy(true);
-    try {
-      await rpc.request.setSessionState({ ...target, ...patch });
-    } catch (error) {
-      showError(error);
-    } finally {
-      setBusy(false);
+  function setFlags(patch: SessionFlags) {
+    for (const field of ["pinned", "archived"] as const) {
+      const value = patch[field];
+      if (value !== undefined)
+        void updateFlag("sessions", session.id, field, value, () =>
+          rpc.request.setSessionState({ ...target, [field]: value }),
+        );
     }
   }
-  async function rename() {
-    setBusy(true);
-    setError(undefined);
-    try {
-      const info = await rpc.request.renameSession({ ...target, name });
-      useStore.setState((s) => ({
-        sessions: {
-          ...s.sessions,
-          [cwd]: (s.sessions[cwd] ?? []).map((item) =>
-            item.id === info.id ? info : item,
-          ),
-        },
-        snapshots: s.snapshots[info.id]
-          ? { ...s.snapshots, [info.id]: { ...s.snapshots[info.id], info } }
-          : s.snapshots,
-      }));
-      dialog.current?.close();
-      void refreshSessions(cwd).catch(showError);
-    } catch (error) {
-      setError(String(error));
-    } finally {
-      setBusy(false);
-    }
+  function rename() {
+    const title = name.trim();
+    if (!title) return;
+    dialog.current?.close();
+    void sessionNames.change(
+      session.id,
+      session.title,
+      title,
+      (value) => publishSessionName(session.id, value),
+      async () =>
+        (await rpc.request.renameSession({ ...target, name: title })).title,
+    );
   }
   async function remove() {
-    if (busy || running || opening) return;
+    if (busy) return;
     setBusy(true);
     try {
+      await waitPreferenceWrites("sessions", session.id);
       await rpc.request.deleteSession(target);
       const wasActive = useStore.getState().active === session.id;
       useStore.setState((s) => {
@@ -198,7 +178,6 @@ function SessionRow({ session, cwd }: { session: SessionInfo; cwd: string }) {
       </button>
       <ActionsMenu
         label={`${t["Chat actions"]}: ${session.title}`}
-        disabled={busy || opening}
         onOpen={() => setCopied(false)}
       >
         {(closeMenu) => (
@@ -265,7 +244,7 @@ function SessionRow({ session, cwd }: { session: SessionInfo; cwd: string }) {
             <ConfirmButton
               role="menuitem"
               className="session-menu-delete"
-              disabled={busy || running || opening}
+              disabled={busy}
               title={t["This permanently deletes this chat’s local history."]}
               aria-description={
                 t["This permanently deletes this chat’s local history."]
@@ -285,9 +264,6 @@ function SessionRow({ session, cwd }: { session: SessionInfo; cwd: string }) {
         ref={dialog}
         className="session-dialog"
         aria-labelledby={titleId}
-        onCancel={(event) => {
-          if (busy) event.preventDefault();
-        }}
         onClose={() => {
           setRenaming(false);
           setError(undefined);
@@ -304,7 +280,6 @@ function SessionRow({ session, cwd }: { session: SessionInfo; cwd: string }) {
             <button
               type="button"
               aria-label={t.Close}
-              disabled={busy}
               onClick={() => dialog.current?.close()}
             >
               <X size={14} />
@@ -315,7 +290,6 @@ function SessionRow({ session, cwd }: { session: SessionInfo; cwd: string }) {
             aria-label={t["Chat name"]}
             value={name}
             maxLength={512}
-            disabled={busy}
             onChange={(event) => setName(event.target.value)}
           />
           {error && (
@@ -324,18 +298,10 @@ function SessionRow({ session, cwd }: { session: SessionInfo; cwd: string }) {
             </p>
           )}
           <div className="dialog-actions">
-            <button
-              type="button"
-              disabled={busy}
-              onClick={() => dialog.current?.close()}
-            >
+            <button type="button" onClick={() => dialog.current?.close()}>
               {t.Cancel}
             </button>
-            <button
-              type="submit"
-              className="primary"
-              disabled={busy || !name.trim()}
-            >
+            <button type="submit" className="primary" disabled={!name.trim()}>
               {t.Rename}
             </button>
           </div>

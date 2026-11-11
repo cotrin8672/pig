@@ -29,11 +29,14 @@ export const UIRequestBroker = memo(function UIRequestBroker() {
   const { pendingUI: requests, terminals } = state;
   const [selected, setSelected] = useState<{ key: string; revision: number }>();
   const [started, setStarted] = useState<Set<string>>(() => new Set());
+  const [dismissed, setDismissed] = useState<Set<string>>(() => new Set());
+  const dismiss = (key: string) =>
+    setDismissed((previous) => new Set([...previous, key]));
   const selectedKey =
     selected?.revision === navigationRevision ? selected.key : undefined;
   const focus = focusedRequest(
     foregroundRequests(
-      requests,
+      requests.filter((request) => !dismissed.has(uiKey(request))),
       {
         page: state.page,
         active: state.active,
@@ -49,20 +52,25 @@ export const UIRequestBroker = memo(function UIRequestBroker() {
   );
   const focusKey = focus && uiKey(focus);
   useEffect(() => {
-    if (focus?.kind === "terminal" && terminals[uiKey(focus)]) {
+    if (focus?.kind === "terminal") {
       const key = uiKey(focus);
       setStarted((previous) =>
         previous.has(key) ? previous : new Set([...previous, key]),
       );
     }
-  }, [focus, terminals]);
+  }, [focus]);
   return (
     <>
       {requests.length > 0 && (!focus || requests.length > 1) && (
         <RequestQueue
           requests={requests}
           focusKey={focusKey}
-          select={(key) => setSelected({ key, revision: navigationRevision })}
+          select={(key) => {
+            setDismissed(
+              (previous) => new Set([...previous].filter((id) => id !== key)),
+            );
+            setSelected({ key, revision: navigationRevision });
+          }}
         />
       )}
       {requests.map((request) => {
@@ -73,17 +81,20 @@ export const UIRequestBroker = memo(function UIRequestBroker() {
               key={key}
               request={request}
               active={key === focusKey}
-              modal={previews[request.sessionId]?.ready !== false}
+              modal={false}
+              onDismiss={() => dismiss(key)}
             />
           );
         const terminal = terminals[key];
-        if (!terminal || (!started.has(key) && key !== focusKey)) return null;
+        if (!started.has(key) && key !== focusKey) return null;
         return (
           <TerminalDialog
             key={key}
-            request={terminal}
+            request={terminal ?? { ...request, type: "open" }}
+            ready={!!terminal && !dismissed.has(key)}
             active={key === focusKey}
-            modal={previews[request.sessionId]?.ready !== false}
+            modal={false}
+            onDismiss={() => dismiss(key)}
             subscribe={subscribeTerminal}
             onError={showError}
             openExternal={(url) => rpc.send.openExternal({ url })}
@@ -99,21 +110,6 @@ export const UIRequestBroker = memo(function UIRequestBroker() {
           />
         );
       })}
-      {focus?.kind === "terminal" && !terminals[uiKey(focus)] && (
-        <div className="ui-starting" role="status">
-          Preparing {focus.title}…{" "}
-          <button
-            type="button"
-            onClick={() => {
-              void rpc.request
-                .terminalCommand({ ...focus, type: "cancel" })
-                .catch(showError);
-            }}
-          >
-            Cancel
-          </button>
-        </div>
-      )}
     </>
   );
 });
@@ -121,10 +117,12 @@ function NativeRequest({
   request,
   active,
   modal,
+  onDismiss,
 }: {
   request: Exclude<UIRequest, { kind: "terminal" }>;
   active: boolean;
   modal: boolean;
+  onDismiss: () => void;
 }) {
   const dialog = useRef<HTMLDialogElement>(null);
   const [value, setValue] = useState(
@@ -171,10 +169,13 @@ function NativeRequest({
       submitted.current = false;
       setSubmitting(false);
       setError(String(failure));
+      showError(failure);
     }
   }
   const cancel = () => {
-    void reply({ ...request, kind: "cancel" });
+    onDismiss();
+    // Once submitted, closing the view must not send a contradictory reply.
+    if (!submitted.current) void reply({ ...request, kind: "cancel" });
   };
   useEffect(() => {
     dialog.current?.close();
@@ -209,6 +210,13 @@ function NativeRequest({
       onCancel={(event) => {
         event.preventDefault();
         cancel();
+      }}
+      onKeyDown={(event) => {
+        if (event.key === "Escape" && !event.nativeEvent.isComposing) {
+          event.preventDefault();
+          event.stopPropagation();
+          cancel();
+        }
       }}
     >
       <h2>{request.kind === "project-trust" ? t.trustTitle : request.title}</h2>
@@ -293,7 +301,7 @@ function NativeRequest({
         </p>
       )}
       <div className="dialog-actions">
-        <button type="button" onClick={cancel} disabled={submitting}>
+        <button type="button" onClick={cancel}>
           {t.cancel}
         </button>
         {request.kind === "confirm" && (

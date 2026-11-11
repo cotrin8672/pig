@@ -3,6 +3,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import type { TranscriptRecord } from "../shared/transcript";
 import { customImageSources } from "./custom-data";
 import { RecordData } from "./RecordData";
+import { useStore } from "./store";
 
 const entry = {
   id: "e",
@@ -11,7 +12,7 @@ const entry = {
   branchId: "leaf",
   order: 1,
 };
-test("RND-01 React renders restored/live custom data and details with absent/throwing renderer", () => {
+test("saved/live messages retain their body but not debug metadata when a renderer is absent or fails", () => {
   for (const entryId of ["saved", undefined]) {
     const record: TranscriptRecord = {
       ...entry,
@@ -37,13 +38,16 @@ test("RND-01 React renders restored/live custom data and details with absent/thr
       />,
     );
     expect(failing).toBe(absent);
-    expect(absent).toContain("customDetails");
-    expect(absent).toContain(entryId ? "saved" : "live");
+    expect(absent).not.toContain("customDetails");
+    expect(absent).not.toMatch(/Raw record|Details|>saved<|>live</);
+    expect(record.message.role === "custom" && record.message.details).toEqual({
+      customDetails: "retained",
+    });
     expect(absent).toContain("&lt;script&gt;");
     expect(absent).not.toContain("<script>");
   }
 });
-test("custom-entry data is not confused with message content and hidden metadata is accessible", () => {
+test("custom-entry content is retained without exposing raw records or hidden session metadata", () => {
   const record: TranscriptRecord = {
     ...entry,
     kind: "custom-entry",
@@ -53,7 +57,7 @@ test("custom-entry data is not confused with message content and hidden metadata
   const html = renderToStaticMarkup(<RecordData record={record} />);
   expect(html).toContain("unknownField");
   expect(html).toContain("42");
-  expect(html).toContain("Raw record");
+  expect(html).not.toContain("Raw record");
   const metadata = renderToStaticMarkup(
     <RecordData
       record={{
@@ -64,8 +68,54 @@ test("custom-entry data is not confused with message content and hidden metadata
       }}
     />,
   );
-  expect(metadata).toContain("hidden content / metadata");
-  expect(metadata).toContain("retained");
+  expect(metadata).toBe("");
+});
+test("cancelled queued messages show localized cancellation, plain text and attachments without internal data", () => {
+  const settings = useStore.getState().settings;
+  const initial = useStore.getInitialState();
+  const initialSettings = initial.settings;
+  const record: TranscriptRecord = {
+    ...entry,
+    id: "recovered:internal-id",
+    requestId: "internal-request",
+    kind: "message",
+    customType: "Cancelled queued prompt",
+    message: {
+      role: "custom",
+      customType: "Cancelled queued prompt",
+      display: true,
+      timestamp: 1,
+      content: [
+        { type: "text", text: "楽観的UIの観点も含めて\n<script>" },
+        { type: "image", mimeType: "image/png", data: "YWJj" },
+      ],
+      details: { requestId: "internal-request" },
+    },
+  };
+  try {
+    for (const [language, label] of [
+      ["ja", "キャンセル済み"],
+      ["en", "Cancelled"],
+    ] as const) {
+      initial.settings = { ...settings, language };
+      useStore.setState({ settings: initial.settings });
+      const html = renderToStaticMarkup(
+        <RecordData
+          record={record}
+          images={<img src="data:image/png;base64,YWJj" alt="" />}
+        />,
+      );
+      expect(html).toContain(label);
+      expect(html).toContain("楽観的UIの観点も含めて\n&lt;script&gt;");
+      expect(html).toContain('src="data:image/png;base64,YWJj"');
+      expect(html).not.toMatch(
+        /Cancelled queued prompt|internal-id|internal-request|Raw record|Details|<pre|<details|<script>|&quot;type&quot;/,
+      );
+    }
+  } finally {
+    initial.settings = initialSettings;
+    useStore.setState({ settings });
+  }
 });
 test("nested custom images use inert approved raster MIME data URLs only", () => {
   const images = customImageSources({

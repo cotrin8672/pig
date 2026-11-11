@@ -6,7 +6,6 @@ type ReadingState = {
   active?: string;
   page: string;
   opening: boolean;
-  modelPending: boolean;
   pendingUI?: { sessionId: string }[];
   snapshots: Record<
     string,
@@ -38,8 +37,7 @@ export function visibleChat(
     state.page !== "chat" ||
     state.opening ||
     !state.active ||
-    state.pendingUI?.some((request) => request.sessionId === state.active) ||
-    state.modelPending
+    state.pendingUI?.some((request) => request.sessionId === state.active)
   )
     return;
   const snapshot = state.snapshots[state.active];

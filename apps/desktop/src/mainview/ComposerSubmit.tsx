@@ -1,4 +1,4 @@
-import { ArrowUp, LoaderCircle, Square } from "lucide-react";
+import { ArrowUp, Square } from "lucide-react";
 import { useT } from "./i18n";
 
 export function ComposerSubmit({
@@ -35,18 +35,13 @@ export function ComposerSubmit({
       )}
       {(!busy || hasContent || submitting) && (
         <button
-          type={submitting ? "button" : "submit"}
+          type="submit"
           className="send-button"
-          title={submitting ? t["Sending…"] : t.Send}
-          aria-label={submitting ? t["Sending…"] : t.Send}
-          aria-busy={submitting || undefined}
-          disabled={submitting || stopping || disabled}
+          title={t.Send}
+          aria-label={t.Send}
+          disabled={stopping || disabled}
         >
-          {submitting ? (
-            <LoaderCircle size={19} className="spinner" aria-hidden="true" />
-          ) : (
-            <ArrowUp size={19} aria-hidden="true" />
-          )}
+          <ArrowUp size={19} aria-hidden="true" />
         </button>
       )}
     </>

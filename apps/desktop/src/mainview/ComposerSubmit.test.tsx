@@ -26,7 +26,7 @@ test("Stop stays enabled beside a next draft, images or a pending send", () => {
   }
 });
 
-test("a pending idle send has an independent cancel action and keeps the sending spinner", () => {
+test("a pending send has an independent cancel action without a flashing sending spinner", () => {
   const html = renderToStaticMarkup(
     <ComposerSubmit
       busy={false}
@@ -38,8 +38,8 @@ test("a pending idle send has an independent cancel action and keeps the sending
   );
   expect(html.match(/<button\b/g)).toHaveLength(2);
   expect(html).toContain('aria-label="Cancel send"');
-  expect(html).toContain('aria-busy="true"');
-  expect(html).toContain("spinner");
+  expect(html).not.toContain('aria-busy="true"');
+  expect(html).not.toContain("spinner");
 });
 
 test("idle Send preserves validation, and stopping disables both actions", () => {

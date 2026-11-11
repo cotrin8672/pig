@@ -1,0 +1,22 @@
+.oauth-dialog[aria-modal="false"] {
+  position: fixed;
+  inset: 64px 24px auto auto;
+  margin: 0;
+  z-index: 20;
+}
+.model-divider {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  margin: 1.5rem 0;
+  color: var(--ds-text-secondary);
+  overflow-wrap: anywhere;
+}
+.model-divider::before,
+.model-divider::after {
+  content: "";
+  flex: 1;
+  min-width: 1rem;
+  border-top: 1px solid currentColor;
+  opacity: 0.25;
+}

@@ -19,8 +19,12 @@ export function findMessages(records: TranscriptRecord[], query: string) {
   if (!needle) return matches;
   const calls = new Map<string, string>();
   for (const record of records) {
-    const { content, details, hidden } = customPresentation(record);
+    const { content, hidden, details: metadata } = customPresentation(record);
     if (hidden) continue;
+    const details =
+      record.kind === "message" && record.message.role !== "custom"
+        ? metadata
+        : undefined;
     let id = record.id;
     let toolCallId: string | undefined;
     if (record.kind === "message") {

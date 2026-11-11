@@ -123,6 +123,13 @@ function ActionForm({
   const [error, setError] = useState<string>();
   const reason = actionDisabledReason(context.state, context.envelope, action);
   const disabled = pending || reason !== undefined;
+  const busy = context.state.commands.find(
+    (command) =>
+      command.adapterId === context.envelope.adapterId &&
+      command.id === action.command,
+  )?.busy;
+  const explanation =
+    action.disabled !== undefined || !busy ? reason : undefined;
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const form = event.currentTarget;
@@ -204,19 +211,16 @@ function ActionForm({
         <button
           type="submit"
           disabled={disabled}
+          aria-busy={pending || busy}
           aria-describedby={
-            reason !== undefined
+            explanation !== undefined
               ? `${id}-reason`
               : armed
                 ? `${id}-confirmation`
                 : undefined
           }
         >
-          {pending
-            ? `${action.label}…`
-            : armed
-              ? t.dockConfirm(action.label)
-              : action.label}
+          {armed ? t.dockConfirm(action.label) : action.label}
         </button>
         {armed && (
           <button type="button" onClick={() => setArmed(false)}>
@@ -224,8 +228,9 @@ function ActionForm({
           </button>
         )}
       </div>
-      {reason !== undefined && <small id={`${id}-reason`}>{reason}</small>}
-      {pending && <small role="status">{t.dockPending}</small>}
+      {explanation !== undefined && (
+        <small id={`${id}-reason`}>{explanation}</small>
+      )}
       {error && (
         <p className="session-error" role="alert">
           {error}
@@ -1059,16 +1064,19 @@ export function SessionPanel({
             <button
               type="button"
               disabled={reloading}
+              aria-busy={reloading}
               onClick={() => void reload()}
             >
-              {reloading ? t.dockReloading : t.dockReload}
+              {t.dockReload}
             </button>
             {reloadError && tab !== "info" && <p role="alert">{reloadError}</p>}
             <ul>
               {state?.commands.map((command) => (
-                <li key={JSON.stringify([command.adapterId, command.id])}>
+                <li
+                  key={JSON.stringify([command.adapterId, command.id])}
+                  aria-busy={command.busy}
+                >
                   {command.title} · {command.adapterId}/{command.id}
-                  {command.busy ? ` · ${t.dockPending}` : ""}
                 </li>
               ))}
             </ul>

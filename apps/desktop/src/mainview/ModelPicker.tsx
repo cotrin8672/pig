@@ -13,19 +13,22 @@ import { effortLabels } from "../shared/effort";
 import { filterModels, modelKey } from "../shared/models";
 import type { ModelInfo, ModelSelection, Snapshot } from "../shared/rpc-schema";
 import { EffortPicker } from "./EffortPicker";
+import { EffortSlider } from "./EffortSlider";
 import { useT } from "./i18n";
 import { navigate } from "./navigation";
 import { changeSelection, usePicker } from "./Picker";
 import { ProviderIcon } from "./ProviderIcon";
-import { rpc, updateUiPreferences } from "./rpc";
+import { requestSelection, rpc, updateUiPreferences } from "./rpc";
 import { useStore } from "./store";
 
 export function ModelPicker({
   snapshot,
   selection,
+  onSelect,
 }: {
   snapshot?: Snapshot;
   selection?: ModelSelection;
+  onSelect?: (selection: ModelSelection) => void;
 }) {
   const t = useT();
   const current = selection ?? snapshot ?? { effort: "off", effortLevels: [] };
@@ -34,7 +37,6 @@ export function ModelPicker({
   );
   const providerName = (id: string) =>
     providers.find((p) => p.id === id)?.name ?? id;
-  const pending = useStore((state) => state.modelPending);
   const [query, setQuery] = useState("");
   const recent = desktop.recentModels ?? [];
   const [source, setSource] = useState(current.model?.provider);
@@ -44,8 +46,8 @@ export function ModelPicker({
   const list = useRef<HTMLDivElement>(null);
   const listId = useId();
   const { ref, close } = usePicker();
-  const disabled = pending || !snapshot;
-  const enabled = filterModels(models, disabledModels);
+  const catalog = snapshot?.modelCatalog ?? models;
+  const enabled = filterModels(catalog, disabledModels);
   const recentModels = recent.flatMap((key) => {
     const model = enabled.find((entry) => modelKey(entry) === key);
     return model ? [model] : [];
@@ -54,13 +56,14 @@ export function ModelPicker({
     ...(recentModels.length
       ? [{ id: "recent", label: t.Recent, count: recentModels.length }]
       : []),
-    ...providers.flatMap((provider) => {
-      const count = enabled.filter(
-        (model) => model.provider === provider.id,
-      ).length;
-      return count
-        ? [{ id: provider.id, label: providerName(provider.id), count }]
-        : [];
+    ...[
+      ...new Set([
+        ...providers.map((provider) => provider.id),
+        ...enabled.map((model) => model.provider),
+      ]),
+    ].flatMap((id) => {
+      const count = enabled.filter((model) => model.provider === id).length;
+      return count ? [{ id, label: providerName(id), count }] : [];
     }),
   ];
   const activeSource = sources.some((entry) => entry.id === source)
@@ -68,7 +71,7 @@ export function ModelPicker({
     : sources[0]?.id;
   const searching = !!query.trim();
   const visible = searching
-    ? filterModels(models, disabledModels, query)
+    ? filterModels(catalog, disabledModels, query)
     : activeSource === "recent"
       ? recentModels
       : enabled.filter((model) => model.provider === activeSource);
@@ -88,14 +91,24 @@ export function ModelPicker({
         ?.scrollIntoView({ block: "nearest" });
   }, [open, activeIndex]);
   function select(model: ModelInfo) {
-    if (!snapshot) return;
+    const desired: ModelSelection = {
+      model,
+      effort: model.effectiveDefaultEffort ?? "off",
+      effortLevels: model.effortLevels ?? [],
+    };
     close();
-    void changeSelection(snapshot.address, () =>
-      rpc.request.setModel({
-        ...snapshot.address,
-        provider: model.provider,
-        id: model.id,
-      }),
+    if (!snapshot || snapshot.ready === false) {
+      onSelect?.(desired);
+      return;
+    }
+    void changeSelection(snapshot.address, desired, () =>
+      requestSelection(snapshot.address, () =>
+        rpc.request.setModel({
+          ...snapshot.address,
+          provider: model.provider,
+          id: model.id,
+        }),
+      ),
     ).then(() => {
       const chosen = useStore.getState().snapshots[snapshot.info.id]?.model;
       if (!chosen || modelKey(chosen) !== modelKey(model)) return;
@@ -130,12 +143,7 @@ export function ModelPicker({
           current.model?.name ?? t.None,
           effortLabels[current.effort],
         )}
-        aria-disabled={disabled}
-        onClick={(event) => {
-          if (disabled) {
-            event.preventDefault();
-            return;
-          }
+        onClick={() => {
           if (!ref.current?.open) {
             setQuery("");
             setHighlight(-1);
@@ -191,7 +199,7 @@ export function ModelPicker({
           if (event.key === "Enter" && target === search.current) {
             event.preventDefault();
             const model = visible[Math.max(0, activeIndex)];
-            if (model && !disabled) select(model);
+            if (model) select(model);
           }
         }}
       >
@@ -294,7 +302,6 @@ export function ModelPicker({
                     data-model-index={index}
                     id={`${listId}-${index}`}
                     title={`${model.name}\n${model.id}`}
-                    disabled={disabled}
                     onPointerMove={() => setHighlight(index)}
                     onClick={() => select(model)}
                   >
@@ -328,6 +335,19 @@ export function ModelPicker({
             )}
           </div>
         </div>
+        {!snapshot && onSelect && (
+          <EffortSlider
+            levels={current.effortLevels}
+            value={current.effort}
+            onCommit={async (effort) =>
+              onSelect({
+                model: current.model,
+                effort,
+                effortLevels: current.effortLevels,
+              })
+            }
+          />
+        )}
         {snapshot && (
           <EffortPicker
             key={`${current.model?.provider}/${current.model?.id}/${current.effortLevels.join()}`}

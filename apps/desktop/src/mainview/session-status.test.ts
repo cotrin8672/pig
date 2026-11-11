@@ -17,7 +17,6 @@ function state() {
     active: "chat",
     page: "chat",
     opening: false,
-    modelPending: false,
     bootstrap: { desktop: { sessions: { chat: complete } } },
     snapshots: {
       chat: {
@@ -61,7 +60,6 @@ test("only the rendered, focused, visible, settled chat acknowledges its exact c
     { active: "other" },
     { page: "settings" },
     { opening: true },
-    { modelPending: true },
     { snapshots: {} },
   ])
     expect(

@@ -28,9 +28,18 @@ if (process.env.PIG_CHAT_OPENING_CHILD !== "1") {
     rpc: { send: {}, request: {} },
     cancelOpening: async () => {},
     updateUiPreferences: () => {},
+    requestSelection: async (
+      _address: unknown,
+      request: () => Promise<unknown>,
+    ) => request(),
     updateAppearance: () => {},
     updateSettings: () => {},
-    sends: { subscribe: () => () => {}, read: () => undefined },
+    sends: {
+      subscribe: () => () => {},
+      read: () => undefined,
+      getTick: () => 0,
+      optimistic: () => [],
+    },
     openChat: async () => {},
     openChatLink: async () => {},
     forkChat: async () => {},
@@ -102,7 +111,10 @@ if (process.env.PIG_CHAT_OPENING_CHILD !== "1") {
       expect(html).not.toContain("chat-opening-composer");
       expect(html).not.toContain("chat-opening-heading");
       expect(html.match(/<textarea\b/g)).toHaveLength(1);
-      expect(html).toMatch(/<button[^>]*type="submit"[^>]*disabled=""/);
+      expect(html.includes('title="Send" aria-label="Send" disabled=""')).toBe(
+        existing,
+      );
+      expect(html).not.toContain('aria-disabled="true"');
     }
   });
 
@@ -154,6 +166,7 @@ if (process.env.PIG_CHAT_OPENING_CHILD !== "1") {
     };
     Object.assign(state, {
       page: "chat",
+      initialized: true,
       active: "existing",
       opening: false,
       snapshots: { existing: { ...snapshot, ready: false } },
@@ -170,7 +183,7 @@ if (process.env.PIG_CHAT_OPENING_CHILD !== "1") {
         },
       };
       const active = renderToStaticMarkup(<App />);
-      const main = active.split("<main>")[1].split("</main>")[0];
+      const main = active.split(/<main[^>]*>/)[1].split("</main>")[0];
       expect(main).not.toContain('class="chat-header"');
       expect(main).not.toContain("Live session title");
       const bar = active.slice(active.indexOf('class="window-titlebar"'));
@@ -267,7 +280,7 @@ if (process.env.PIG_CHAT_OPENING_CHILD !== "1") {
     expect(existing).not.toContain('class="chat-opening-content"');
   });
 
-  test("a failed retired preview remains readable without allowing draft edits", async () => {
+  test("a failed retired preview remains editable without granting runtime capabilities", async () => {
     const { OpeningComposer } = await import("./ChatOpening");
     const preview: Snapshot = {
       ...snapshot,
@@ -277,7 +290,7 @@ if (process.env.PIG_CHAT_OPENING_CHILD !== "1") {
     };
     drafts.retire(preview.address);
     const html = renderToStaticMarkup(<OpeningComposer preview={preview} />);
-    expect(html).toContain('readOnly=""');
+    expect(html).not.toContain('readOnly=""');
     expect(html).toMatch(/<button[^>]*type="submit"[^>]*disabled=""/);
   });
 
@@ -303,6 +316,10 @@ if (process.env.PIG_CHAT_OPENING_CHILD !== "1") {
       const foreground = renderToStaticMarkup(<UIRequestBroker />);
       expect(foreground).toContain('aria-modal="false"');
       expect(foreground).not.toContain("ui-waiting-floating");
+      state.snapshots = { existing: snapshot };
+      expect(renderToStaticMarkup(<UIRequestBroker />)).toContain(
+        'aria-modal="false"',
+      );
       state.active = "another-chat";
       const background = renderToStaticMarkup(<UIRequestBroker />);
       expect(background).toContain("ui-waiting-floating");
@@ -310,6 +327,27 @@ if (process.env.PIG_CHAT_OPENING_CHILD !== "1") {
     } finally {
       Object.assign(state, previous);
     }
+  });
+
+  test("logout uses the shared two-press confirmation button", async () => {
+    const { ProviderDetail } = await import("./Providers");
+    const html = renderToStaticMarkup(
+      <ProviderDetail
+        provider={{
+          id: "p",
+          name: "Provider",
+          apiKey: true,
+          configured: true,
+          stored: true,
+          extension: false,
+        }}
+      >
+        <span />
+      </ProviderDetail>,
+    );
+    expect(html).toContain('class="confirm-button');
+    expect(html).toContain("Sign out");
+    expect(html).toContain('class="confirm-armed" aria-hidden="true">Confirm');
   });
 
   test("the real app shows history during startup, without a skeleton or runtime actions", async () => {
@@ -342,6 +380,7 @@ if (process.env.PIG_CHAT_OPENING_CHILD !== "1") {
     };
     Object.assign(state, {
       page: "chat",
+      initialized: true,
       active: "existing",
       opening: true,
       openingViewRevision: navigationRevision,
@@ -367,7 +406,8 @@ if (process.env.PIG_CHAT_OPENING_CHILD !== "1") {
         expect(button).not.toContain("disabled");
       expect(html).not.toContain("chat-opening-content");
       expect(html).not.toContain('aria-busy="true"');
-      expect(html).toMatch(/<button[^>]*type="submit"[^>]*disabled=""/);
+      expect(html).toContain('title="Send" aria-label="Send"');
+      expect(html).not.toContain('title="Send" aria-label="Send" disabled=""');
     } finally {
       Object.assign(state, previous);
     }

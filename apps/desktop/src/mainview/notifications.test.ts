@@ -138,7 +138,6 @@ test("returning to a chat clears only its successful completion toast and marks 
     active: "chat",
     page: "chat",
     opening: false,
-    modelPending: false,
     pendingUI: [],
     snapshots: {
       chat: {

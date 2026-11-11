@@ -107,6 +107,7 @@ export class SDKProjector {
   private liveBefore: string | null = null;
   private liveChecked?: SessionEntry;
   private aliases: Record<string, string> = {};
+  private requestIds = new Map<string, string>();
   private tools: Transcript["tools"] = {};
   private historyRevision = crypto.randomUUID();
   private branchLeaf?: SessionEntry;
@@ -230,7 +231,7 @@ export class SDKProjector {
     this.failure = error instanceof Error ? error.message : String(error);
     this.saveDiagnostic(this.running ? "running" : "failed");
   }
-  event(event: AgentSessionEvent) {
+  event(event: AgentSessionEvent, requestId?: string) {
     // SDK publishes message_end before persistence. Reconcile it at the next
     // event before assigning another live ID, never by timestamp identity.
     this.commitLive();
@@ -258,6 +259,7 @@ export class SDKProjector {
             order: this.entries().length,
             kind: "message",
             message,
+            requestId: message.role === "user" ? requestId : undefined,
           };
         } else this.live.message = message;
         if (message.role === "assistant" && message.stopReason === "error")
@@ -321,6 +323,7 @@ export class SDKProjector {
     );
     if (saved) {
       this.aliases[live.id] = saved.id;
+      if (live.requestId) this.requestIds.set(saved.id, live.requestId);
       this.live = undefined;
     }
   }
@@ -384,10 +387,15 @@ export class SDKProjector {
   snapshot(): Transcript {
     this.commitLive();
     const state = this.historyPage();
+    state.records = state.records.map((record) => {
+      const requestId = this.requestIds.get(record.id);
+      return requestId ? { ...record, requestId } : record;
+    });
     for (const item of this.recovered) {
       if (item.leafId && !this.branchIds.has(item.leafId)) continue;
       state.records.push({
         id: `recovered:${item.id}`,
+        requestId: item.key?.requestId,
         parentId: item.leafId,
         branchId: this.manager.getLeafId() ?? "root",
         order: state.records.length,
@@ -399,15 +407,7 @@ export class SDKProjector {
           customType: "Cancelled queued prompt",
           display: true,
           timestamp: item.message.timestamp,
-          content: [
-            {
-              type: "text",
-              text: "Cancelled before execution by Stop. Retained for review; nothing was resent.",
-            },
-            ...(typeof item.message.content === "string"
-              ? [{ type: "text", text: item.message.content }]
-              : item.message.content),
-          ],
+          content: item.message.content,
           details: { requestId: item.key?.requestId },
         },
       });

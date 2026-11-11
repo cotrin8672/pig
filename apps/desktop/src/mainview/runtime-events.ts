@@ -16,7 +16,9 @@ import {
   sameAddress,
 } from "./chat-snapshot";
 import { drafts } from "./draft-store";
+import { selections } from "./selections";
 import { showNotice, useStore } from "./store";
+import { overlaySessionInfo } from "./ui-mutations";
 import { addRequest, uiKey } from "./ui-request-state";
 
 const ownershipListeners = new Set<
@@ -105,17 +107,22 @@ function replace(previous: SessionAddress, next: SessionAddress) {
 export function receiveSnapshot(incoming: Snapshot) {
   if (!register(incoming.address)) return;
   const wire = latest.get(addressKey(incoming.address));
-  const snapshot = wire ? applyChatEvent(incoming, wire) : incoming;
+  const snapshot = {
+    ...(wire ? applyChatEvent(incoming, wire) : incoming),
+    info: overlaySessionInfo(incoming.info),
+  };
   latest.delete(addressKey(incoming.address));
-  useStore.setState((s) => ({
-    snapshots: {
-      ...s.snapshots,
-      [incoming.info.id]: newerSnapshot(
-        s.snapshots[incoming.info.id],
-        snapshot,
-      ),
-    },
-  }));
+  useStore.setState((s) => {
+    const current = s.snapshots[incoming.info.id];
+    const next = newerSnapshot(current, snapshot);
+    if (next === current) return {};
+    return {
+      snapshots: {
+        ...s.snapshots,
+        [incoming.info.id]: selections.overlay(next),
+      },
+    };
+  });
 }
 export function receiveWire(event: WireEvent) {
   if (!liveAddress(event.address)) return;

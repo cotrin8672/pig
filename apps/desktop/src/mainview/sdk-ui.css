@@ -67,8 +67,7 @@
 .sdk-request .sdk-check input {
   width: auto;
 }
-.ui-waiting,
-.ui-starting {
+.ui-waiting {
   padding: 8px 12px;
   display: flex;
   flex-wrap: wrap;

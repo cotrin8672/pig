@@ -34,7 +34,7 @@ export function focusedRequest(
   }
   return focus;
 }
-/** Startup prompts wait for their chat instead of taking over another view. */
+/** Requests stay with their chat unless explicitly selected from the waiting list. */
 export function foregroundRequests(
   requests: UIRequest[],
   state: {
@@ -48,7 +48,6 @@ export function foregroundRequests(
   const explicit = requests.find((request) => uiKey(request) === selected);
   return requests.filter(
     (request) =>
-      state.snapshots[request.sessionId]?.ready !== false ||
       (explicit && sameAddress(explicit, request)) ||
       (state.page === "chat" &&
         (state.active === request.sessionId ||

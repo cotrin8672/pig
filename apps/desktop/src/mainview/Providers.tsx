@@ -1,6 +1,7 @@
 import { LoaderCircle, LogIn, LogOut, Search, X } from "lucide-react";
 import { type ReactNode, useId, useState } from "react";
 import type { AuthMethod, ProviderInfo } from "../shared/rpc-schema";
+import { ConfirmButton } from "./ConfirmButton";
 import { ContentPage } from "./ContentPage";
 import { useT } from "./i18n";
 import { ProviderIcon } from "./ProviderIcon";
@@ -25,6 +26,8 @@ const matchesFilter = (p: ProviderInfo, filter: Filter) =>
         : p.extension);
 
 function startLogin(provider: string, method: AuthMethod) {
+  const previous = useStore.getState().login;
+  if (previous) rpc.send.cancelLogin({ loginId: previous.loginId });
   const loginId = crypto.randomUUID();
   useStore.setState({ login: { loginId, provider, method } });
   rpc.send.startLogin({ provider, method, loginId });
@@ -95,10 +98,7 @@ export function Providers() {
           <ClassificationSettings />
         </div>
       ) : !providers.length ? (
-        <p className="status" role="status">
-          <LoaderCircle className="spinner" size={14} />{" "}
-          {t["Checking connections…"]}
-        </p>
+        <p className="model-list-empty">{t["No matching providers"]}</p>
       ) : (
         <div className="providers-layout">
           <div className="provider-browser">
@@ -204,7 +204,7 @@ export function ProviderDetail({
   const [loggingOut, setLoggingOut] = useState(false);
   const mine = login?.provider === p.id;
   const error = mine ? login?.error : undefined;
-  const busy = (mine && !error) || loggingOut;
+  const busy = mine && !error;
   const state = error
     ? "error"
     : busy
@@ -245,10 +245,14 @@ export function ProviderDetail({
         </span>
         <div className="inline-actions">
           {p.stored ? (
-            <button
-              type="button"
-              disabled={!!login || loggingOut}
-              onClick={() => {
+            <ConfirmButton
+              disabled={loggingOut}
+              onConfirm={() => {
+                const current = useStore.getState().login;
+                if (current?.provider === p.id) {
+                  rpc.send.cancelLogin({ loginId: current.loginId });
+                  useStore.setState({ login: undefined });
+                }
                 setLoggingOut(true);
                 void rpc.request
                   .logout({ provider: p.id })
@@ -258,14 +262,13 @@ export function ProviderDetail({
               }}
             >
               <LogOut size={14} /> {t["Sign out"]}
-            </button>
+            </ConfirmButton>
           ) : (
             <>
               {p.oauth && (
                 <button
                   type="button"
                   className="primary"
-                  disabled={!!login}
                   onClick={() => startLogin(p.id, "oauth")}
                 >
                   <LogIn size={14} /> {p.oauth.label ?? t["Sign in"]}
@@ -275,7 +278,6 @@ export function ProviderDetail({
                 <button
                   type="button"
                   className={p.oauth ? undefined : "primary"}
-                  disabled={!!login}
                   onClick={() => startLogin(p.id, "api_key")}
                 >
                   {t["API key"]}

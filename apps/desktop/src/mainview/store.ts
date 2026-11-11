@@ -13,7 +13,7 @@ import type {
   PackageOpStatus,
   SessionInfo,
 } from "../shared/rpc-schema";
-import type { SessionAddress } from "../shared/runtime-contract";
+import type { DraftContent, SessionAddress } from "../shared/runtime-contract";
 import { defaultSettings, type Settings } from "../shared/settings";
 import type { TerminalOpenEvent } from "../shared/terminal-ui";
 import type { ChatSnapshot } from "./chat-snapshot";
@@ -39,6 +39,8 @@ export interface OpeningTarget {
   cwd: string;
   id?: string;
   selection?: ModelSelection;
+  selectionChanged?: boolean;
+  queuedSends?: { id: string; content: DraftContent; timestamp: number }[];
 }
 export interface PendingOpen extends OpeningTarget {
   address?: SessionAddress;
@@ -46,6 +48,8 @@ export interface PendingOpen extends OpeningTarget {
 }
 export const useStore = create<{
   bootstrap: Bootstrap;
+  initialized: boolean;
+  installedLoaded: boolean;
   sessions: Record<string, SessionInfo[]>;
   snapshots: Record<string, ChatSnapshot>;
   active?: string;
@@ -72,7 +76,6 @@ export const useStore = create<{
   opening: boolean;
   appearance: Appearance;
   settings: Settings;
-  modelPending: boolean;
   maximized: boolean;
 }>(() => ({
   bootstrap: {
@@ -87,6 +90,8 @@ export const useStore = create<{
     modelOverrides: {},
     desktop: { sessions: {} },
   },
+  initialized: false,
+  installedLoaded: false,
   sessions: {},
   snapshots: {},
   addresses: {},
@@ -103,7 +108,6 @@ export const useStore = create<{
   opening: false,
   pendingOpens: {},
   maximized: false,
-  modelPending: false,
   appearance: defaultAppearance,
   settings: defaultSettings,
 }));

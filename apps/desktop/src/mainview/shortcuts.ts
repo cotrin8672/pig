@@ -11,9 +11,6 @@ export function initShortcuts() {
     const state = useStore.getState();
     if (
       isTerminalKeyboardEvent(event) ||
-      state.pendingUI.some(
-        (request) => state.snapshots[request.sessionId]?.ready !== false,
-      ) ||
       event.defaultPrevented ||
       event.isComposing ||
       event.keyCode === 229 ||
@@ -26,7 +23,7 @@ export function initShortcuts() {
       action && Object.hasOwn(state.settings.keybindings, action);
     const snapshot = state.active ? state.snapshots[state.active] : undefined;
     const target = event.target instanceof Element ? event.target : null;
-    const context = target?.closest("[role=dialog]")
+    const context = target?.closest("dialog, [role=dialog]")
       ? null
       : target?.closest(".composer")
         ? "composer"

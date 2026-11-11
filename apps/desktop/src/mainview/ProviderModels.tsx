@@ -10,6 +10,7 @@ import { formatTokens, ModelSettings } from "./ModelSettings";
 import { useProviderName } from "./ProviderIcon";
 import { refresh, rpc } from "./rpc";
 import { showError, useStore } from "./store";
+import { modelVisibility } from "./ui-mutations";
 
 export function ProviderModels({
   provider,
@@ -22,11 +23,9 @@ export function ProviderModels({
   const { models, disabledModels } = useStore((s) => s.bootstrap);
   const name = useProviderName(provider);
   const [query, setQuery] = useState("");
-  const [pending, setPending] = useState<string[]>([]);
   const [open, setOpen] = useState<string>();
   const [refreshing, setRefreshing] = useState(false);
   const refreshingRef = useRef(false);
-  const pendingKeys = useRef(new Set<string>());
   const group = models.filter((model) => model.provider === provider);
   const visible = group.filter((model) =>
     `${model.name} ${model.id}`
@@ -45,37 +44,48 @@ export function ProviderModels({
     visibleEnabledCount > 0 && visibleEnabledCount < visible.length;
   async function update(ids: string[], enabled: boolean) {
     const keys = ids.map((id) => modelKey({ provider, id }));
-    if (!keys.length || keys.some((key) => pendingKeys.current.has(key)))
-      return;
-    const before = useStore.getState().bootstrap.disabledModels;
+    if (!keys.length) return;
+    const allKeys = group.map(modelKey);
+    const before = useStore
+      .getState()
+      .bootstrap.disabledModels.filter((key) => allKeys.includes(key));
+    const desired = replaceModelVisibility(before, keys, enabled ? [] : keys);
     const merge = (disabled: string[]) =>
       useStore.setState((state) => ({
         bootstrap: {
           ...state.bootstrap,
           disabledModels: replaceModelVisibility(
             state.bootstrap.disabledModels,
-            keys,
+            allKeys,
             disabled,
           ),
         },
       }));
-    for (const key of keys) pendingKeys.current.add(key);
-    setPending([...pendingKeys.current]);
-    merge(enabled ? [] : keys);
-    try {
-      merge(await rpc.request.setModelsEnabled({ provider, ids, enabled }));
-    } catch (error) {
-      merge(before);
-      showError(error);
-    } finally {
-      for (const key of keys) pendingKeys.current.delete(key);
-      setPending([...pendingKeys.current]);
-    }
+    await modelVisibility.change(provider, before, desired, merge, async () => {
+      try {
+        for (const value of [true, false]) {
+          const ids = group
+            .filter((model) => desired.includes(modelKey(model)) !== value)
+            .map((model) => model.id);
+          for (let start = 0; start < ids.length; start += 1000)
+            await rpc.request.setModelsEnabled({
+              provider,
+              ids: ids.slice(start, start + 1000),
+              enabled: value,
+            });
+        }
+        return desired;
+      } catch (error) {
+        showError(error);
+        return (await rpc.request.bootstrap()).disabledModels.filter((key) =>
+          allKeys.includes(key),
+        );
+      }
+    });
   }
   async function refreshModels() {
     if (refreshingRef.current) return;
     refreshingRef.current = true;
-    const started = performance.now();
     setRefreshing(true);
     try {
       await rpc.request.refreshProviderModels({ provider });
@@ -83,9 +93,6 @@ export function ProviderModels({
     } catch (error) {
       showError(error);
     } finally {
-      const remaining = 500 - (performance.now() - started);
-      if (remaining > 0)
-        await new Promise((resolve) => setTimeout(resolve, remaining));
       refreshingRef.current = false;
       setRefreshing(false);
     }
@@ -163,7 +170,7 @@ export function ProviderModels({
               role="switch"
               checked={allVisibleEnabled}
               aria-checked={partiallyEnabled ? "mixed" : allVisibleEnabled}
-              disabled={!!pending.length || !visible.length}
+              disabled={!visible.length}
               onChange={(event) =>
                 void update(
                   visible.map((model) => model.id),
@@ -198,7 +205,6 @@ export function ProviderModels({
                         role="switch"
                         checked={isModelEnabled(model, disabledModels)}
                         aria-checked={isModelEnabled(model, disabledModels)}
-                        disabled={pending.includes(key)}
                         onChange={(event) =>
                           void update([model.id], event.target.checked)
                         }

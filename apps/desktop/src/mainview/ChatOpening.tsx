@@ -6,9 +6,12 @@ import { ComposerFrame } from "./ComposerFrame";
 import { ComposerSubmit } from "./ComposerSubmit";
 import { ContextIndicator } from "./ContextIndicator";
 import { addressKey } from "./chat-snapshot";
-import { drafts } from "./draft-store";
+import { drafts, emptyContent, expandedDraft } from "./draft-store";
 import { useT } from "./i18n";
+import { UserMessage } from "./MessageContent";
 import { ModelPicker } from "./ModelPicker";
+import { openingDraftKey, queueOpeningSend } from "./opening-sends";
+import { openChat } from "./rpc";
 import { useStore } from "./store";
 import "./composer.css";
 
@@ -20,7 +23,7 @@ export function OpeningComposer({ preview }: { preview?: Snapshot }) {
   );
   const snapshot = preview ?? stored;
   const newText = useStore((s) =>
-    target ? (s.newChatDrafts[target.cwd] ?? "") : "",
+    target ? (s.newChatDrafts[openingDraftKey(target)] ?? "") : "",
   );
   const readText = () =>
     snapshot ? drafts.read(snapshot.address).content.text : "";
@@ -30,7 +33,26 @@ export function OpeningComposer({ preview }: { preview?: Snapshot }) {
     readText,
   );
   const existing = !!preview || !!target?.id;
-  const text = existing ? existingText : newText;
+  const text = existing
+    ? [existingText, newText].filter(Boolean).join("\n")
+    : newText;
+  function send() {
+    if (!text.trim()) return;
+    if (!useStore.getState().openId && preview)
+      void openChat(preview.info.cwd, preview.info.id);
+    const state = useStore.getState();
+    const id = state.openId;
+    const opening = id && state.pendingOpens[id];
+    if (!id || !opening) return;
+    const content = snapshot
+      ? { ...drafts.read(snapshot.address).content, text }
+      : { ...emptyContent(), text };
+    queueOpeningSend(id, content);
+    if (snapshot) drafts.edit(snapshot.address, emptyContent, true);
+    useStore.setState((s) => ({
+      newChatDrafts: { ...s.newChatDrafts, [openingDraftKey(opening)]: "" },
+    }));
+  }
   const viewKey = snapshot
     ? addressKey(snapshot.address)
     : target?.id
@@ -38,26 +60,32 @@ export function OpeningComposer({ preview }: { preview?: Snapshot }) {
       : `new:${target?.cwd}`;
   return (
     <ComposerFrame>
-      <form className="composer" onSubmit={(event) => event.preventDefault()}>
+      <form
+        className="composer"
+        onSubmit={(event) => {
+          event.preventDefault();
+          send();
+        }}
+      >
         <ComposerEditor
           viewKey={viewKey}
           aria-label={t.Message}
           placeholder={t["Ask anything, or describe what to build…"]}
           value={text}
-          readOnly={
-            existing && (!snapshot || drafts.read(snapshot.address).retired)
-          }
           onChange={(event) => {
             const value = event.currentTarget.value;
-            if (existing) {
-              if (snapshot)
-                drafts.edit(snapshot.address, (content) => ({
-                  ...content,
-                  text: value,
-                }));
-            } else if (target)
+            if (snapshot)
+              drafts.edit(
+                snapshot.address,
+                (content) => ({ ...content, text: value }),
+                true,
+              );
+            if (target)
               useStore.setState((s) => ({
-                newChatDrafts: { ...s.newChatDrafts, [target.cwd]: value },
+                newChatDrafts: {
+                  ...s.newChatDrafts,
+                  [openingDraftKey(target)]: snapshot ? "" : value,
+                },
               }));
           }}
           onKeyDown={(event) => {
@@ -66,8 +94,10 @@ export function OpeningComposer({ preview }: { preview?: Snapshot }) {
               !event.shiftKey &&
               !event.nativeEvent.isComposing &&
               event.keyCode !== 229
-            )
+            ) {
               event.preventDefault();
+              send();
+            }
           }}
         />
         <div className="composer-toolbar">
@@ -76,13 +106,33 @@ export function OpeningComposer({ preview }: { preview?: Snapshot }) {
           </span>
           <div className="composer-pickers">
             <ContextIndicator usage={snapshot?.contextUsage} />
-            <ModelPicker selection={target?.selection ?? snapshot} />
+            <ModelPicker
+              selection={target?.selection ?? snapshot}
+              onSelect={(selection) => {
+                if (!useStore.getState().openId && preview)
+                  void openChat(preview.info.cwd, preview.info.id);
+                useStore.setState((s) => {
+                  const id = s.openId;
+                  const pending = id && s.pendingOpens[id];
+                  if (!id || !pending) return {};
+                  const updated = {
+                    ...pending,
+                    selection,
+                    selectionChanged: true,
+                  };
+                  return {
+                    openingTarget: updated,
+                    pendingOpens: { ...s.pendingOpens, [id]: updated },
+                  };
+                });
+              }}
+            />
           </div>
           <div className="send-controls">
             <ComposerSubmit
               busy={false}
               hasContent={!!text}
-              disabled
+              disabled={!text.trim()}
               onStop={() => {}}
             />
           </div>
@@ -90,6 +140,28 @@ export function OpeningComposer({ preview }: { preview?: Snapshot }) {
       </form>
     </ComposerFrame>
   );
+}
+
+export function OpeningMessages() {
+  const queued = useStore((state) => state.openingTarget?.queuedSends);
+  return queued?.map((send) => (
+    <div className="response-turn" key={send.id}>
+      <article className="message user">
+        <UserMessage
+          sessionId="opening"
+          disabled
+          message={{
+            role: "user",
+            timestamp: send.timestamp,
+            content: [
+              { type: "text", text: expandedDraft(send.content) },
+              ...send.content.images.map(({ image }) => image),
+            ],
+          }}
+        />
+      </article>
+    </div>
+  ));
 }
 
 export function ChatOpening() {
@@ -103,6 +175,7 @@ export function ChatOpening() {
         </p>
       )}
       {!target?.id && <ChatEmpty cwd={target?.cwd} />}
+      <OpeningMessages />
     </ChatLayout>
   );
 }

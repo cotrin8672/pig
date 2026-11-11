@@ -1,5 +1,5 @@
 import { Brain } from "lucide-react";
-import { useEffect, useId, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { effortLabels } from "../shared/effort";
 import type { Effort } from "../shared/rpc-schema";
 import { useT } from "./i18n";
@@ -20,6 +20,9 @@ export function EffortSlider({
   const id = useId();
   const [draft, setDraft] = useState(value);
   const [dragging, setDragging] = useState(false);
+  const revision = useRef(0);
+  const confirmed = useRef(value);
+  confirmed.current = value;
   useEffect(() => setDraft(value), [value]);
   if (levels.length < 2) return null;
   const index = Math.max(0, levels.indexOf(draft));
@@ -27,7 +30,10 @@ export function EffortSlider({
   function commit(level: Effort) {
     if (disabled || level === value) return;
     // On failure the parent keeps the old value; restore the thumb to it.
-    void onCommit(level).catch(() => setDraft(value));
+    const current = ++revision.current;
+    void onCommit(level).catch(() => {
+      if (revision.current === current) setDraft(confirmed.current);
+    });
   }
   return (
     <div className="model-reasoning">

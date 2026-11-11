@@ -1,6 +1,7 @@
 import type { Settings } from "./settings";
 
 export const en = {
+  startupFailed: "Could not start the app. Please try again.",
   sendRecovery: (sends: number, drafts: number) =>
     `Send recovery (${sends}) / retained drafts (${drafts})`,
   recoveryPending: "Awaiting acceptance (a hook may still be running)",
@@ -461,6 +462,7 @@ export const en = {
 };
 type Dictionary = { [K in keyof typeof en]: (typeof en)[K] };
 export const ja: Dictionary = {
+  startupFailed: "アプリを起動できませんでした。再試行してください。",
   sendRecovery: (sends, drafts) =>
     `送信の確認 (${sends}) / 保持された下書き (${drafts})`,
   recoveryPending: "受付を確認中（フックが処理中の可能性があります）",

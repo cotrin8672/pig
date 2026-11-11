@@ -9,12 +9,15 @@ import type {
   TerminalOpenEvent,
 } from "../shared/terminal-ui";
 import { terminalAddressKey, validDimensions } from "../shared/terminal-ui";
+import { useT } from "./i18n";
 import { createTerminalConnection, safeTerminalURL } from "./terminal-ui";
 import "@xterm/xterm/css/xterm.css";
 import "./terminal.css";
 
 export type TerminalDialogProps = {
   request: TerminalOpenEvent;
+  /** The dialog shell may precede the host's terminal-open event. */
+  ready?: boolean;
   /** Retain started surfaces at root when switching tabs or opening child dialogs. */
   active?: boolean;
   /** Startup UI must not make chat navigation inert. */
@@ -24,6 +27,7 @@ export type TerminalDialogProps = {
   /** Bun must independently reject every non-http(s) scheme. */
   openExternal: (url: string) => void;
   onError?: (error: unknown) => void;
+  onDismiss?: () => void;
 };
 /** The root UI broker selects/retains instances; this component owns no request queue. */
 export function TerminalDialog(props: TerminalDialogProps) {
@@ -33,7 +37,8 @@ export function TerminalDialog(props: TerminalDialogProps) {
   );
 }
 function TerminalModal(props: TerminalDialogProps) {
-  const { request, active = true, modal = true } = props;
+  const { request, active = true, modal = true, ready = true } = props;
+  const t = useT();
   const callbacks = useRef(props);
   callbacks.current = props;
   const dialog = useRef<HTMLDialogElement>(null);
@@ -47,6 +52,7 @@ function TerminalModal(props: TerminalDialogProps) {
   const [error, setError] = useState<string>();
   const { sessionId, epoch, uiId } = request;
   useEffect(() => {
+    if (!ready || (!active && !resources.current)) return;
     const generation = ++lease.current;
     const releaseLater = () => {
       // StrictMode's synchronous setup/cleanup/setup probe must not cancel a real
@@ -174,14 +180,14 @@ function TerminalModal(props: TerminalDialogProps) {
       report(failure);
     }
     return releaseLater;
-  }, [sessionId, epoch, uiId]);
+  }, [sessionId, epoch, uiId, ready, active]);
   useEffect(() => {
     try {
       dialog.current?.close();
       if (active) {
         if (modal) dialog.current?.showModal();
         else dialog.current?.show();
-        fitNow.current?.();
+        if (ready) fitNow.current?.();
       }
     } catch (failure) {
       connection.current?.cancel();
@@ -191,34 +197,42 @@ function TerminalModal(props: TerminalDialogProps) {
           : "Terminal view unavailable",
       );
     }
-  }, [active, modal]);
+  }, [active, modal, ready]);
   return (
     <dialog
       ref={dialog}
       data-terminal-ui
       className="terminal-dialog electrobun-webkit-app-region-no-drag"
-      aria-label={request.title ?? "Extension terminal"}
+      aria-label={request.title ?? t.Extension}
       aria-modal={modal}
       onCancel={(event) => event.preventDefault()}
       onKeyDown={(event) => event.stopPropagation()}
       onKeyUp={(event) => event.stopPropagation()}
     >
       <header>
-        <strong>{request.title ?? "Extension terminal"}</strong>
+        <strong>{request.title ?? t.Extension}</strong>
         <button
           type="button"
-          aria-label="Close terminal"
-          title="Close terminal"
-          onClick={() => connection.current?.cancel()}
+          aria-label={t.Close}
+          title={t.Close}
+          onClick={() => {
+            dialog.current?.close();
+            callbacks.current.onDismiss?.();
+            if (connection.current) connection.current.cancel();
+            else
+              callbacks.current.send({
+                sessionId,
+                epoch,
+                uiId,
+                type: "cancel",
+              });
+          }}
         >
           <X size={18} />
         </button>
       </header>
       <div className="terminal-viewport" ref={viewport} />
       {error && <p role="alert">{error}</p>}
-      <p className="terminal-hint">
-        Esc is handled by the extension. Close cancels this UI.
-      </p>
     </dialog>
   );
 }

@@ -17,6 +17,12 @@
   font-size: var(--text-xs);
   color: var(--ds-text-muted);
 }
+.package-count {
+  min-width: 2ch;
+}
+.package-count[data-known="false"] {
+  visibility: hidden;
+}
 .package-search {
   display: flex;
   align-items: center;
@@ -46,6 +52,7 @@
   color: var(--ds-placeholder-ink);
 }
 .package-results {
+  min-height: 1lh;
   font-size: var(--text-sm);
   margin: 16px 0;
 }
@@ -307,32 +314,6 @@
 }
 .package-error button {
   color: var(--ds-text-primary);
-}
-.package-skeleton {
-  display: grid;
-  grid-template-columns: 56px minmax(0, 1fr);
-  gap: 12px;
-  padding: 16px;
-  background: var(--ds-tile);
-  border-radius: var(--radius-md);
-}
-.package-skeleton > div:first-child {
-  height: 56px;
-  background: var(--ds-bg-chip);
-  border-radius: var(--radius-xs);
-}
-.package-skeleton span {
-  display: block;
-  height: 12px;
-  margin: 4px 0 16px;
-  background: var(--ds-bg-chip);
-  border-radius: var(--radius-3xs);
-}
-.package-skeleton span:first-child {
-  width: 45%;
-}
-.package-skeleton span:last-child {
-  width: 65%;
 }
 .extensions-page [role="tabpanel"]:focus:not(:focus-visible) {
   outline: none;

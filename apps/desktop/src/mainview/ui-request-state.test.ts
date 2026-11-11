@@ -55,6 +55,9 @@ test("an explicit startup selection retains same-owner child priority and does n
   expect(focusedRequest(foregroundRequests(requests, view))).toBe(b);
 });
 
-test("normal runtime permission dialogs retain their existing foreground behavior", () => {
-  expect(foregroundRequests([b], { ...view, page: "settings" })).toEqual([b]);
+test("normal runtime permission dialogs never take over unrelated views", () => {
+  expect(foregroundRequests([b], { ...view, page: "settings" })).toEqual([]);
+  expect(
+    foregroundRequests([b], { ...view, page: "settings" }, uiKey(b)),
+  ).toEqual([b]);
 });

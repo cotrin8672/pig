@@ -1,4 +1,6 @@
+import type { Snapshot } from "../shared/rpc-schema";
 import type {
+  DraftContent,
   DraftSyncParams,
   DraftSyncResult,
   PromptAccepted,
@@ -21,6 +23,8 @@ export type SendState = {
   disposition?: PromptAccepted["disposition"];
   recoveryReason?: "prepared" | "lookup-timeout";
   recoveredQueue?: boolean;
+  optimistic?: boolean;
+  timestamp?: number;
 };
 export function isSendUnconfirmed(state: SendState | undefined) {
   return !!state && ["sending", "checking", "unknown"].includes(state.state);
@@ -33,7 +37,10 @@ type Transport = {
 /** A transport failure is not a rejection. Only read-only lookup is ever retried. */
 export class SendController {
   private states = new Map<string, SendState>();
-  private transfers = new Map<string, SessionAddress>();
+  private transfers = new Map<
+    string,
+    { address: SessionAddress; state: SendState }
+  >();
   private listeners = new Set<() => void>();
   private operations = new Map<string, SendState>();
   private scheduled = new Set<string>();
@@ -52,6 +59,7 @@ export class SendController {
       setTimeout(lookup, delayMs);
     },
     private lookupBudgetMs = 5_000,
+    private rejected: (message: string) => void = () => {},
   ) {}
   subscribe = (listener: () => void) => {
     this.listeners.add(listener);
@@ -61,6 +69,71 @@ export class SendController {
   };
   read(address: SessionAddress) {
     return this.states.get(addressKey(address));
+  }
+  reconcile(snapshot: Snapshot) {
+    const visible = new Set(
+      snapshot.transcript.records.map((record) => record.requestId),
+    );
+    for (const state of this.operations.values()) {
+      if (
+        sameAddress(state.key, snapshot.address) &&
+        state.state === "accepted" &&
+        state.content &&
+        visible.has(state.key.requestId)
+      )
+        this.put(
+          snapshot.address,
+          { ...state, content: undefined, optimistic: false },
+          this.read(snapshot.address)?.key.requestId === state.key.requestId,
+        );
+    }
+  }
+  optimistic(address: SessionAddress) {
+    return [...this.operations.values()].filter(
+      (state) =>
+        sameAddress(state.key, address) &&
+        state.optimistic &&
+        state.content &&
+        state.state !== "rejected" &&
+        state.disposition !== "handled",
+    );
+  }
+  async wait(address: SessionAddress) {
+    const pending = () =>
+      [...this.operations.values()].filter(
+        (state) =>
+          (sameAddress(state.key, address) ||
+            sameAddress(
+              this.transfers.get(this.operationKey(state.key))?.address ??
+                state.key,
+              address,
+            )) &&
+          isSendUnconfirmed(state),
+      );
+    await Promise.all(
+      pending().map((state) => this.lookup(address, state.key)),
+    );
+    if (pending().some((state) => state.state === "unknown"))
+      throw new Error(
+        "Send status is unknown. Check its receipt before changing this conversation.",
+      );
+    if (!pending().length) return;
+    await new Promise<void>((resolve, reject) => {
+      const unsubscribe = this.subscribe(() => {
+        const waiting = pending();
+        if (waiting.some((state) => state.state === "unknown")) {
+          unsubscribe();
+          reject(
+            new Error(
+              "Send status is unknown; the conversation was not changed.",
+            ),
+          );
+        } else if (!waiting.length) {
+          unsubscribe();
+          resolve();
+        }
+      });
+    });
   }
   retained() {
     return [...this.operations.values()].filter(
@@ -76,7 +149,13 @@ export class SendController {
   discard(address: SessionAddress) {
     this.states.delete(addressKey(address));
     for (const [key, state] of this.operations)
-      if (sameAddress(state.key, address)) this.operations.delete(key);
+      if (
+        sameAddress(state.key, address) ||
+        sameAddress(this.transfers.get(key)?.address ?? state.key, address)
+      ) {
+        this.operations.delete(key);
+        this.transfers.delete(key);
+      }
     this.tick++;
     for (const listener of this.listeners) listener();
   }
@@ -149,17 +228,27 @@ export class SendController {
       if (state.state === "checking") this.poll(receipt, state);
     }
   }
-  async send(address: SessionAddress) {
-    const previous = this.read(address);
-    // An unknown receipt never triggers a retry or requires permission for a new send.
-    if (previous && ["sending", "checking"].includes(previous.state)) return;
-    // Reserve before awaiting CAS so double-clicks cannot register two sends.
-    const captured = this.drafts.read(address);
+  async send(address: SessionAddress, content?: DraftContent) {
+    const editor = this.drafts.read(address);
+    const captured = content ? { ...editor, content } : editor;
+    if (!expandedDraft(captured.content) && !captured.content.images.length)
+      return;
+    // Capture and clear synchronously; a second click cannot send the same draft.
+    if (captured.retired || captured.conflict) {
+      if (content)
+        throw new Error(
+          "The editor changed before sending; your message has been restored.",
+        );
+      return;
+    }
+    if (!content) this.drafts.clearForSend(address, captured.version);
     const state: SendState = {
       key: { ...address, requestId: crypto.randomUUID() },
       version: captured.version,
       content: structuredClone(captured.content),
       state: "sending",
+      optimistic: true,
+      timestamp: Date.now(),
     };
     this.put(address, state);
     let payload: PromptParams;
@@ -181,12 +270,23 @@ export class SendController {
         draftRevision: draft.revision,
       };
     } catch (error) {
+      if (this.drafts.read(address).conflict) {
+        this.settle(address, state, {
+          state: "rejected",
+          message: String(error),
+        });
+        return;
+      }
       // A lost CAS ACK may already have reserved this ID on the host.
-      this.put(address, {
-        ...state,
-        state: "checking",
-        message: String(error),
-      });
+      this.put(
+        address,
+        {
+          ...state,
+          state: "checking",
+          message: String(error),
+        },
+        this.read(address)?.key.requestId === state.key.requestId,
+      );
       await this.lookup(address, state.key);
       return;
     }
@@ -201,10 +301,14 @@ export class SendController {
     } catch {
       if (!isSendUnconfirmed(this.operations.get(this.operationKey(state.key))))
         return;
-      this.put(address, {
-        ...state,
-        state: "checking",
-      });
+      this.put(
+        address,
+        {
+          ...state,
+          state: "checking",
+        },
+        this.read(address)?.key.requestId === state.key.requestId,
+      );
       await this.lookup(address, state.key);
     }
   }
@@ -216,25 +320,36 @@ export class SendController {
       message?: string;
       disposition?: PromptAccepted["disposition"];
     },
+    forwarded = false,
   ) {
-    const previous = this.operations.get(this.operationKey(state.key));
+    const id = this.operationKey(state.key);
+    const previous = this.operations.get(id);
     if (
+      !forwarded &&
       previous &&
-      ["accepted", "rejected"].includes(previous.state) &&
-      !isSendUnconfirmed(this.read(address))
+      ["accepted", "rejected"].includes(previous.state)
     )
       return;
     if (previous?.state === "accepted" && result.state !== "accepted") return;
     const current = this.read(address)?.key.requestId === state.key.requestId;
+    if (result.state === "rejected" && !forwarded)
+      this.rejected(result.message ?? "Send failed");
     const cleared =
       current &&
       result.state === "accepted" &&
+      !state.optimistic &&
       this.drafts.clearAccepted(address, state.version);
+    if (state.optimistic && result.state === "rejected" && state.content)
+      this.drafts.restoreSent(address, state.content);
     this.put(
       address,
       {
         ...state,
-        content: state.recoveredQueue ? state.content : undefined,
+        content:
+          state.recoveredQueue ||
+          (state.optimistic && result.state === "accepted")
+            ? state.content
+            : undefined,
         message: undefined,
         ...result,
       },
@@ -243,11 +358,10 @@ export class SendController {
     // Mirror the accepted clear, without risking a newer extension revision.
     if (cleared)
       void this.drafts.flush(address, this.transport.syncDraft).catch(() => {});
-    const next = this.transfers.get(addressKey(address));
-    const transferred = next && this.read(next);
-    this.transfers.delete(addressKey(address));
-    if (next && transferred?.key.requestId === state.key.requestId)
-      this.settle(next, transferred, result);
+    const next = this.transfers.get(id);
+    this.transfers.delete(id);
+    if (next && !sameAddress(next.address, address))
+      this.settle(next.address, next.state, result, true);
   }
   lookup(
     address: SessionAddress,
@@ -348,20 +462,29 @@ export class SendController {
     return bounded;
   }
   transfer(previous: SessionAddress, next: SessionAddress) {
-    const state = this.read(previous);
-    if (!state || !isSendUnconfirmed(state)) return;
+    if (sameAddress(previous, next)) return;
+    const active = this.read(previous)?.key.requestId;
     const old = this.drafts.read(previous);
     const current = this.drafts.read(next);
-    this.transfers.set(addressKey(previous), next);
-    this.put(next, {
-      ...state,
-      // Only the unchanged transferred draft may be cleared by a late receipt.
-      version:
-        old.version === state.version && current.content === old.content
-          ? current.version
-          : -1,
-      state: "unknown",
-      message: undefined,
-    });
+    for (const [id, state] of this.operations) {
+      const transfer = this.transfers.get(id);
+      if (
+        !isSendUnconfirmed(state) ||
+        !sameAddress(transfer?.address ?? state.key, previous)
+      )
+        continue;
+      const source = transfer?.state ?? state;
+      const moved: SendState = {
+        ...source,
+        version:
+          old.version === source.version && current.content === old.content
+            ? current.version
+            : -1,
+        state: "unknown",
+        message: undefined,
+      };
+      this.transfers.set(id, { address: next, state: moved });
+      this.put(next, moved, active === state.key.requestId);
+    }
   }
 }

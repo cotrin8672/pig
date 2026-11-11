@@ -40,7 +40,7 @@ function fixture(
   );
   return { drafts, sends, callbacks, delays };
 }
-test("timeout checks receipt without retransmission; pending retains complete draft", async () => {
+test("timeout checks receipt without retransmission; pending retains the complete optimistic message", async () => {
   let calls = 0;
   let key: SendKey | undefined;
   const f = fixture(
@@ -56,7 +56,8 @@ test("timeout checks receipt without retransmission; pending retains complete dr
   await f.sends.send(address);
   expect(calls).toBe(1);
   expect(f.sends.read(address)?.state).toBe("checking");
-  expect(f.drafts.read(address).content.images).toHaveLength(1);
+  expect(f.drafts.read(address).content.images).toHaveLength(0);
+  expect(f.sends.optimistic(address)[0].content?.images).toHaveLength(1);
   await f.sends.send(address);
   await f.sends.lookup(address);
   expect(calls).toBe(1);
@@ -100,8 +101,9 @@ test.each([
   await f.sends.send(address);
   expect(f.sends.read(address)?.state).toBe("checking");
   expect(f.sends.read(address)?.message).toBeUndefined();
-  expect(f.drafts.read(address).content.text).toBe("Hello");
-  expect(f.drafts.read(address).content.images).toHaveLength(1);
+  expect(f.drafts.read(address).content).toEqual(emptyContent());
+  expect(f.sends.optimistic(address)[0].content?.text).toBe("Hello");
+  expect(f.sends.optimistic(address)[0].content?.images).toHaveLength(1);
   expect(f.callbacks).toHaveLength(1);
   await f.sends.send(address);
 
@@ -176,9 +178,14 @@ test("unknown acceptance retains the draft without warnings, automatic retry or 
   expect(f.sends.read(address)?.message).toBeUndefined();
   expect(isSendUnconfirmed(f.sends.read(address))).toBe(true);
   await f.sends.send(address);
+  expect(ids).toHaveLength(1);
+  f.drafts.edit(address, () => ({ ...emptyContent(), text: "new message" }));
+  await f.sends.send(address);
   expect(ids).toHaveLength(2);
   expect(ids[0]).not.toBe(ids[1]);
-  expect(f.drafts.read(address).content.text).toBe("Hello");
+  expect(f.sends.optimistic(address).map((send) => send.content?.text)).toEqual(
+    ["Hello", "new message"],
+  );
 });
 test("late acceptance preserves edits made during pending prompt", async () => {
   let finish: (value: PromptAccepted) => void = () => {};
@@ -201,7 +208,7 @@ test("late acceptance preserves edits made during pending prompt", async () => {
   finish(accepted);
   await result;
   expect(f.drafts.read(address).content.text).toBe("newer");
-  expect(f.drafts.read(address).content.images).toHaveLength(1);
+  expect(f.drafts.read(address).content.images).toHaveLength(0);
 });
 test("replacement during admission resolves internally and clears the unchanged sent draft", async () => {
   let finish: (value: PromptAccepted) => void = () => {};
@@ -278,7 +285,8 @@ test("an indeterminate transferred send prevents branching but needs no confirma
   expect(f.sends.read(next)?.state).toBe("unknown");
   expect(f.sends.read(next)?.message).toBeUndefined();
   expect(isSendUnconfirmed(f.sends.read(next))).toBe(true);
-  expect(f.drafts.read(next).content.text).toBe("Hello");
+  expect(f.drafts.read(next).content.text).toBe("");
+  f.drafts.edit(next, () => ({ ...emptyContent(), text: "next" }));
   await f.sends.send(next);
   expect(calls).toBe(2);
 });
@@ -528,7 +536,8 @@ test("a lost preflight CAS ACK is checked independently and never dispatches pro
   await sends.send(address);
   expect({ prompts, lookups }).toEqual({ prompts: 0, lookups: 1 });
   expect(sends.read(address)?.state).toBe("unknown");
-  expect(drafts.read(address).content.text).toBe("not dispatched");
+  expect(drafts.read(address).content.text).toBe("");
+  expect(sends.optimistic(address)[0].content?.text).toBe("not dispatched");
 });
 
 test("checking an old unknown ID after a new send does not query or overwrite the current operation", async () => {
@@ -578,7 +587,7 @@ test("same and fresh controllers both restore retired queued payloads without ro
   await f.sends.send(address);
   const key = f.sends.read(address)?.key as SendKey;
   expect(f.sends.read(address)?.state).toBe("accepted");
-  expect(f.sends.read(address)?.content).toBeUndefined();
+  expect(f.sends.read(address)?.content).toEqual(original);
   f.drafts.retire(address);
   const intent: SendIntent = {
     receipt: {

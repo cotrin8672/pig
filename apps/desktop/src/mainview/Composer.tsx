@@ -78,10 +78,13 @@ subscribeOwnership((previous, next) =>
 );
 export function Composer({ snapshot }: { snapshot: Snapshot }) {
   const t = useT();
-  const { address, transcript, model } = snapshot;
+  const { address, transcript } = snapshot;
   const key = addressKey(address);
   const { models: available, disabledModels } = useStore((s) => s.bootstrap);
-  const models = filterModels(available, disabledModels);
+  const models = filterModels(
+    snapshot.modelCatalog ?? available,
+    disabledModels,
+  );
   const slashAddress = useMemo(
     () => ({
       hostId: address.hostId,
@@ -90,10 +93,7 @@ export function Composer({ snapshot }: { snapshot: Snapshot }) {
     }),
     [address.hostId, address.sessionId, address.epoch],
   );
-  const modelPending = useStore((s) => s.modelPending);
-  const canSend = models.some(
-    (m) => m.provider === model?.provider && m.id === model.id,
-  );
+  const canSend = models.length > 0;
   const draft = useSyncExternalStore(drafts.subscribe, () =>
     drafts.read(address),
   );
@@ -133,9 +133,10 @@ export function Composer({ snapshot }: { snapshot: Snapshot }) {
   const [dismissed, setDismissed] = useState(false);
   const [selected, setSelected] = useState(0);
   const [argumentState, setArgumentState] = useState<{
+    owner: string;
     query: string;
     items: SlashArgument[];
-  }>({ query: "", items: [] });
+  }>({ owner: "", query: "", items: [] });
   const context =
     selection.key === key && focused && !composing && !dismissed
       ? slashContext(text, selection.start, selection.end)
@@ -174,12 +175,12 @@ export function Composer({ snapshot }: { snapshot: Snapshot }) {
   const name = context?.kind === "argument" ? context.name : undefined;
   const prefix = context?.kind === "argument" ? context.prefix : undefined;
   const query = name === undefined ? "" : JSON.stringify([key, name, prefix]);
+  const argumentOwner = name === undefined ? "" : JSON.stringify([key, name]);
   const hasExtension = commands.some(
     (c) => c.name === name && c.category === "extension",
   );
   useEffect(() => {
     let live = true;
-    setArgumentState({ query: "", items: [] });
     if (name !== undefined && prefix !== undefined && hasExtension) {
       void rpc.request
         .completeSlashArguments({
@@ -188,16 +189,20 @@ export function Composer({ snapshot }: { snapshot: Snapshot }) {
           argumentPrefix: prefix,
         })
         .then((items) => {
-          if (live) setArgumentState({ query, items });
+          if (live) setArgumentState({ owner: argumentOwner, query, items });
         })
         .catch((error) => {
-          if (live) showError(error);
+          if (!live) return;
+          setArgumentState({ owner: argumentOwner, query, items: [] });
+          showError(error);
         });
     }
     return () => {
       live = false;
     };
-  }, [query, name, prefix, hasExtension, slashAddress]);
+  }, [query, name, prefix, hasExtension, slashAddress, argumentOwner]);
+  const argumentsPending =
+    !!query && hasExtension && argumentState.query !== query;
   const options =
     context?.kind === "command"
       ? commands
@@ -208,10 +213,10 @@ export function Composer({ snapshot }: { snapshot: Snapshot }) {
             description: c.description,
             category: c.category,
           }))
-      : query && argumentState.query === query
+      : query && hasExtension && argumentState.owner === argumentOwner
         ? argumentState.items.map((item) => ({ ...item, category: undefined }))
         : [];
-  const active = Math.min(selected, options.length - 1);
+  const active = argumentsPending ? -1 : Math.min(selected, options.length - 1);
   useEffect(() => {
     if (active >= 0)
       document
@@ -230,7 +235,7 @@ export function Composer({ snapshot }: { snapshot: Snapshot }) {
     setSelected(0);
   }
   function acceptOption(index: number) {
-    if (!context || !options[index]) return;
+    if (!context || argumentsPending || !options[index]) return;
     const { text: next, cursor } = applySlashCompletion(
       text,
       context,
@@ -272,9 +277,7 @@ export function Composer({ snapshot }: { snapshot: Snapshot }) {
     if (
       (!expanded && !images.length) ||
       (!canSend && !extensionSend) ||
-      (useStore.getState().modelPending && !extensionSend) ||
       reading ||
-      submitting ||
       stopping === key ||
       draft.conflict
     )
@@ -433,27 +436,26 @@ export function Composer({ snapshot }: { snapshot: Snapshot }) {
             })}
           </div>
         )}
-        {loads.map((load) => (
-          <p
-            className="composer-hint"
-            key={load.id}
-            role={load.state === "error" ? "alert" : "status"}
-          >
-            {load.name}: {load.error ?? "Loading image…"}{" "}
-            <button
-              type="button"
-              onClick={() => attachmentReads.cancel(load.id)}
-            >
-              {t["Remove attachment"]}: {load.name}
-            </button>
-          </p>
-        ))}
+        {loads
+          .filter((load) => load.state === "error")
+          .map((load) => (
+            <p className="composer-hint" key={load.id} role="alert">
+              {load.name}: {load.error}{" "}
+              <button
+                type="button"
+                onClick={() => attachmentReads.cancel(load.id)}
+              >
+                {t["Remove attachment"]}: {load.name}
+              </button>
+            </p>
+          ))}
         {options.length > 0 && (
           <div
             className="slash-options"
             id={listId}
             role="listbox"
             aria-label={t.slashSuggestions}
+            aria-busy={argumentsPending}
           >
             {options.map((option, index) => (
               <div
@@ -462,6 +464,7 @@ export function Composer({ snapshot }: { snapshot: Snapshot }) {
                 role="option"
                 tabIndex={-1}
                 aria-selected={index === active}
+                aria-disabled={argumentsPending}
                 onKeyDown={(event) => {
                   if (event.key === "Enter" || event.key === " ") {
                     event.preventDefault();
@@ -607,12 +610,13 @@ export function Composer({ snapshot }: { snapshot: Snapshot }) {
             ) {
               if (event.key === "ArrowDown" || event.key === "ArrowUp") {
                 event.preventDefault();
-                setSelected(
-                  (active +
-                    (event.key === "ArrowDown" ? 1 : -1) +
-                    options.length) %
-                    options.length,
-                );
+                if (!argumentsPending)
+                  setSelected(
+                    (active +
+                      (event.key === "ArrowDown" ? 1 : -1) +
+                      options.length) %
+                      options.length,
+                  );
                 return;
               }
               if (event.key === "Enter" || event.key === "Tab") {
@@ -664,9 +668,7 @@ export function Composer({ snapshot }: { snapshot: Snapshot }) {
               disabled={
                 (!expanded && !images.length) ||
                 (!canSend && !extensionSend) ||
-                (modelPending && !extensionSend) ||
                 reading > 0 ||
-                submitting ||
                 !!draft.conflict
               }
             />

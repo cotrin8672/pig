@@ -105,6 +105,8 @@ type Managed = {
   controller: AbortController;
   runtime?: AgentSessionRuntime;
   models?: ModelRuntime;
+  modelCatalog?: ModelInfo[];
+  catalogSource?: readonly Model<Api>[];
   projector?: SDKProjector;
   ui: ExtensionUIHost;
   unsubscribe?: () => void;
@@ -124,6 +126,7 @@ type Managed = {
     string | undefined
   >;
   admissionRequestId?: string;
+  requestIds: WeakMap<object, string>;
   startedSends: SendKey[];
   queuedImages: boolean;
   preparingImages?: boolean;
@@ -547,6 +550,7 @@ export class SessionHost {
         reloadPending: false,
         stopping: false,
         queued: new Map(),
+        requestIds: new WeakMap(),
         startedSends: [],
         queuedImages: false,
       };
@@ -664,18 +668,31 @@ export class SessionHost {
         const branch = target.sessionManager.getBranch();
         const enabled = (candidate: Model<Api>) =>
           isModelEnabled(candidate, this.options.disabled?.() ?? []);
-        const model = context.model
-          ? available.find(
-              (candidate) =>
-                candidate.provider === context.model?.provider &&
-                candidate.id === context.model.modelId &&
-                enabled(candidate),
-            )
-          : available.find(enabled);
-        if ((context.model || available.length) && !model)
-          throw new Error(
-            "Saved model is unavailable or hidden; choose an enabled model before continuing",
-          );
+        const model =
+          (context.model
+            ? available.find(
+                (candidate) =>
+                  candidate.provider === context.model?.provider &&
+                  candidate.id === context.model.modelId &&
+                  enabled(candidate),
+              )
+            : undefined) ??
+          available.find(
+            (candidate) =>
+              enabled(candidate) &&
+              candidate.provider ===
+                services.settingsManager.getDefaultProvider() &&
+              candidate.id === services.settingsManager.getDefaultModel(),
+          ) ??
+          available.find(
+            (candidate) =>
+              enabled(candidate) &&
+              candidate.provider ===
+                (context.model?.provider ??
+                  managed.runtime?.session.model?.provider),
+          ) ??
+          available.find(enabled);
+        managed.modelCatalog = available.map(this.options.modelInfo);
         const savedEffort = [...branch]
           .reverse()
           .find((entry) => entry.type === "thinking_level_change");
@@ -791,6 +808,9 @@ export class SessionHost {
     }
   }
   private async bind(m: Managed, session: AgentSession) {
+    m.modelCatalog = (await required(m.models).getAvailable()).map(
+      this.options.modelInfo,
+    );
     m.manager = session.sessionManager;
     m.projector ??= new SDKProjector(
       m.manager,
@@ -804,6 +824,17 @@ export class SessionHost {
         m.controller.signal.throwIfAborted();
         m.admissionSignal?.throwIfAborted();
         if (m.stopping) throw new Error("Session is stopping");
+        for (const message of Array.isArray(args[0]) ? args[0] : [args[0]]) {
+          if (
+            message &&
+            typeof message === "object" &&
+            message.role === "user"
+          ) {
+            m.queued.set(message, m.admissionRequestId);
+            if (m.admissionRequestId)
+              m.requestIds.set(message, m.admissionRequestId);
+          }
+        }
         return Reflect.apply(target, agent, args);
       },
     });
@@ -814,6 +845,7 @@ export class SessionHost {
       if (m.stopping) throw new Error("Session is stopping");
       const queued = this.settings.blockImages ? scrubImages(message) : message;
       m.queued.set(queued, m.admissionRequestId);
+      if (m.admissionRequestId) m.requestIds.set(queued, m.admissionRequestId);
       return followUp(queued);
     };
     const steer = session.agent.steer.bind(session.agent);
@@ -823,6 +855,7 @@ export class SessionHost {
       if (m.stopping) throw new Error("Session is stopping");
       const queued = this.settings.blockImages ? scrubImages(message) : message;
       m.queued.set(queued, m.admissionRequestId);
+      if (m.admissionRequestId) m.requestIds.set(queued, m.admissionRequestId);
       return steer(queued);
     };
     // Public adapters apply image policy to persistence and final context, including extension insertion.
@@ -857,10 +890,8 @@ export class SessionHost {
     const setModel = session.setModel.bind(session);
     session.setModel = async (model, options) => {
       m.controller.signal.throwIfAborted();
-      if (m.queuedImages || m.preparingImages)
-        throw new Error(
-          "Model change deferred until queued images are consumed",
-        );
+      if (m.queuedImages || m.preparingImages) await session.waitForIdle();
+      m.controller.signal.throwIfAborted();
       return setModel(model, options);
     };
     this.subscribe(m, session);
@@ -944,6 +975,9 @@ export class SessionHost {
       const failure = m.projector?.failure;
       m.projector?.event(
         this.settings.blockImages ? scrubImages(event) : event,
+        event.type === "message_start"
+          ? m.requestIds.get(event.message)
+          : undefined,
       );
       if (event.type === "agent_settled") {
         for (const key of m.startedSends.splice(0)) {
@@ -1073,7 +1107,7 @@ export class SessionHost {
   private publish(m: Managed) {
     this.cancelPublish(m);
     if (m.phase === "closing" || !m.runtime || !m.projector) return;
-    const snapshot = this.snapshot(m);
+    const snapshot = this.snapshot(m, false);
     this.options.emit({ type: "snapshot", snapshot });
     this.options.emitSession?.(m.address.sessionId, {
       type: "snapshot",
@@ -1171,13 +1205,21 @@ export class SessionHost {
     m.infoCache = { leaf, count, value };
     return value;
   }
-  private snapshot(m: Managed): Snapshot {
+  private snapshot(m: Managed, includeCatalog = true): Snapshot {
     const projector = required(m.projector);
     m.adapterSnapshot ??= m.adapters?.snapshot();
+    const catalog = m.models?.getAvailableSnapshot();
+    const catalogChanged = catalog && catalog !== m.catalogSource;
+    if (catalogChanged) {
+      m.catalogSource = catalog;
+      m.modelCatalog = catalog.map(this.options.modelInfo);
+    }
     const snapshot: Snapshot = {
       ...(m.phase === "ready" ? {} : { ready: false }),
       address: { ...m.address },
       snapshotSeq: ++m.seq,
+      modelCatalog:
+        includeCatalog || catalogChanged ? m.modelCatalog : undefined,
       info: this.info(m),
       transcript: projector.snapshot(),
       failure: projector.failure,
@@ -1338,8 +1380,25 @@ export class SessionHost {
             throw new Error("DRAFT_REVISION_CONFLICT");
           if (!params.text.trim() && !params.images?.length)
             throw new Error("Message is empty");
-          if (!session.model && !params.text.startsWith("/"))
-            throw new Error("Choose an available model first");
+          if (!params.text.startsWith("/")) {
+            const available = required(m.models).getAvailableSnapshot();
+            if (
+              !available.some(
+                (model) =>
+                  model.provider === session.model?.provider &&
+                  model.id === session.model.id &&
+                  isModelEnabled(model, this.options.disabled?.() ?? []),
+              )
+            ) {
+              await this.setModel({
+                ...params,
+                provider: session.model?.provider ?? "",
+                id: session.model?.id ?? "",
+              });
+              signal.throwIfAborted();
+              this.current(params);
+            }
+          }
           // Images go to the agent as file paths (like pi's TUI paste); its read
           // tool loads them on demand. Extensions may swap them back via `input`.
           const paths = await Promise.all(
@@ -1668,13 +1727,31 @@ export class SessionHost {
   async setModel(params: SessionAddress & { provider: string; id: string }) {
     const m = this.current(params);
     return this.serialize(m, async () => {
-      const model = (await required(m.models).getAvailable()).find(
-        (model) =>
-          model.provider === params.provider &&
-          model.id === params.id &&
-          isModelEnabled(model, this.options.disabled?.() ?? []),
+      const session = required(m.runtime).session;
+      if (session.isStreaming || m.projector?.running)
+        await session.waitForIdle();
+      m.controller.signal.throwIfAborted();
+      const available = required(m.models).getAvailableSnapshot();
+      m.modelCatalog = available.map(this.options.modelInfo);
+      const enabled = available.filter((model) =>
+        isModelEnabled(model, this.options.disabled?.() ?? []),
       );
-      if (!model) throw new Error("Model unavailable or hidden");
+      const model =
+        enabled.find(
+          (model) =>
+            model.provider === params.provider && model.id === params.id,
+        ) ??
+        enabled.find(
+          (candidate) =>
+            candidate.provider ===
+              required(
+                m.runtime,
+              ).session.settingsManager.getDefaultProvider() &&
+            candidate.id ===
+              required(m.runtime).session.settingsManager.getDefaultModel(),
+        ) ??
+        enabled[0];
+      if (!model) throw new Error("No enabled models available");
       await required(m.runtime).session.setModel(model);
       required(m.runtime).session.setThinkingLevel(
         defaultEffort(model.provider, model.id) ?? "medium",
@@ -1686,6 +1763,10 @@ export class SessionHost {
   async setEffort(params: SessionAddress & { effort: Effort }) {
     const m = this.current(params);
     return this.serialize(m, async () => {
+      const session = required(m.runtime).session;
+      if (session.isStreaming || m.projector?.running)
+        await session.waitForIdle();
+      m.controller.signal.throwIfAborted();
       if (!this.selection(m).effortLevels.includes(params.effort))
         throw new Error("Unsupported reasoning effort");
       required(m.runtime).session.setThinkingLevel(params.effort);
@@ -1763,11 +1844,6 @@ export class SessionHost {
   }
   async deleteSession(info: SessionInfo) {
     const m = this.sessions.get(info.id);
-    if (
-      m &&
-      (m.runtime?.session.isStreaming || this.receipts.pending(m.address))
-    )
-      throw new Error("Stop active chats before deleting a chat");
     if (m) await this.closeSession(m.address);
     if (this.sessions.has(info.id))
       throw new Error(

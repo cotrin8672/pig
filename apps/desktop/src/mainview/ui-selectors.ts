@@ -16,6 +16,7 @@ export function selectAppView(s: State) {
       ? s.snapshots[s.openingTarget.id]
       : undefined;
   return {
+    initialized: s.initialized,
     page: s.page,
     language: s.settings.language,
     appearance: s.appearance,
@@ -58,8 +59,7 @@ export function selectRequestPreviews(s: State) {
 
 export function selectSessionStatus(s: State, id: string) {
   return sessionStatus(
-    !!s.snapshots[id]?.transcript.running ||
-      (s.modelPending && s.active === id),
+    !!s.snapshots[id]?.transcript.running,
     s.pendingUI.some((request) => {
       const owner = s.addresses[id] ?? s.snapshots[id]?.address;
       return (

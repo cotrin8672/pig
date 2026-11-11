@@ -14,8 +14,7 @@ import {
 } from "lucide-react";
 import {
   Fragment,
-  lazy,
-  Suspense,
+  useCallback,
   useEffect,
   useLayoutEffect,
   useMemo,
@@ -28,21 +27,26 @@ import { finishedWork, groupBlocks } from "../shared/tool-view";
 import type { TranscriptRecord } from "../shared/transcript";
 import { ChatHeader } from "./ChatHeader";
 import { ChatEmpty, ChatLayout } from "./ChatLayout";
-import { ChatOpening, OpeningComposer } from "./ChatOpening";
+import { ChatOpening, OpeningComposer, OpeningMessages } from "./ChatOpening";
 import { Composer } from "./Composer";
 import { CustomRecord } from "./CustomRecord";
 import type { ChatSnapshot } from "./chat-snapshot";
 import { addressKey, prependHistory, sameAddress } from "./chat-snapshot";
 import { customPresentation, dataText } from "./custom-data";
 import { DraftRecovery } from "./DraftRecovery";
+import { Extensions } from "./Extensions";
 import { workingLabel } from "./extension-status";
 import { getT, useT } from "./i18n";
 import { DisclosureScope, LazyDetails } from "./LazyDetails";
 import { Markdown, UserMessage } from "./MessageContent";
+import { modelDividers } from "./model-dividers";
 import { NotificationCenter } from "./NotificationCenter";
+import { OptimisticMessages } from "./OptimisticMessages";
+import "./model-dividers.css";
 import { Notifications } from "./Notifications";
 import { initNavigation, navigate } from "./navigation";
 import { ProviderIcon, useProviderName } from "./ProviderIcon";
+import { Providers } from "./Providers";
 
 import { ResponseFooter } from "./ResponseFooter";
 import { createResponseFooterIndex } from "./response-footers";
@@ -55,6 +59,7 @@ import {
   rpc,
 } from "./rpc";
 import { SessionPanel } from "./SessionPanel";
+import { Settings } from "./Settings";
 
 import { SidebarSessions } from "./SidebarSessions";
 import { initShortcuts } from "./shortcuts";
@@ -73,16 +78,6 @@ import { UIRequestBroker } from "./UIRequestBroker";
 import { selectAppView } from "./ui-selectors";
 import { WindowTitlebar } from "./WindowTitlebar";
 
-const Providers = lazy(() =>
-  import("./Providers").then((m) => ({ default: m.Providers })),
-);
-const Settings = lazy(() =>
-  import("./Settings").then((m) => ({ default: m.Settings })),
-);
-const Extensions = lazy(() =>
-  import("./Extensions").then((m) => ({ default: m.Extensions })),
-);
-
 function isWindowDragTarget(target: EventTarget) {
   return (
     target instanceof Element &&
@@ -94,6 +89,15 @@ export function App() {
   const t = useT();
   const state = useStore(useShallow(selectAppView));
   const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [startupFailed, setStartupFailed] = useState(false);
+  const initialize = useCallback(() => {
+    setStartupFailed(false);
+    void refresh().catch((error) => {
+      console.error("App initialization failed", error);
+      if (useStore.getState().initialized) showError(error);
+      else setStartupFailed(true);
+    });
+  }, []);
   useEffect(() => {
     let pending = false;
     return useStore.subscribe((state, previous) => {
@@ -106,9 +110,7 @@ export function App() {
     });
   }, []);
   useEffect(initRuntimeConnection, []);
-  useEffect(() => {
-    void refresh().catch(showError);
-  }, []);
+  useEffect(initialize, [initialize]);
   useEffect(initNavigation, []);
   useEffect(initShortcuts, []);
   useEffect(initSessionLinks, []);
@@ -149,6 +151,7 @@ export function App() {
         title={t["Toggle sidebar"]}
         aria-expanded={sidebarOpen}
         aria-controls="app-sidebar"
+        hidden={!state.initialized}
         onClick={() => setSidebarOpen((open) => !open)}
       >
         <PanelLeft size={16} aria-hidden="true" />
@@ -160,110 +163,123 @@ export function App() {
             pig
           </strong>
         </header>
-        <SidebarSessions />
-        <div className="sidebar-footer">
-          <button
-            type="button"
-            className={`sidebar-icon ${state.page === "settings" ? "active" : ""}`}
-            aria-label={t.Settings}
-            title={t.Settings}
-            onClick={() =>
-              navigate(state.page === "settings" ? "chat" : "settings")
-            }
-          >
-            <SettingsIcon size={16} aria-hidden="true" />
-          </button>
-          <button
-            type="button"
-            className={`sidebar-icon ${state.page === "providers" ? "active" : ""}`}
-            aria-label={`${t.Providers}: ${state.login?.error || (state.login ? t["Signing in…"] : connected ? t.Connected : t["Not connected"])}`}
-            title={`${t.Providers}: ${state.login?.error || (state.login ? t["Signing in…"] : connected ? t.Connected : t["Not connected"])}`}
-            onClick={() =>
-              navigate(state.page === "providers" ? "chat" : "providers")
-            }
-          >
-            <Settings2 size={16} aria-hidden="true" />
-            <span
-              className={`sidebar-provider-dot ${state.login?.error ? "error" : state.login ? "busy" : connected ? "connected" : ""}`}
-              aria-hidden="true"
-            />
-          </button>
-          <button
-            type="button"
-            className={`sidebar-icon ${state.page === "extensions" ? "active" : ""}`}
-            aria-label={t.Extensions}
-            title={t.Extensions}
-            onClick={() =>
-              navigate(state.page === "extensions" ? "chat" : "extensions")
-            }
-          >
-            <Puzzle size={16} aria-hidden="true" />
-          </button>
-          <NotificationCenter />
-        </div>
-      </aside>
-      <main>
-        <Suspense fallback={<p role="status">{t["Loading…"]}</p>}>
-          {state.page === "providers" ? (
-            <Providers />
-          ) : state.page === "extensions" ? (
-            <Extensions />
-          ) : state.page === "settings" ? (
-            <Settings />
-          ) : openingView ? (
-            openingSnapshot ? (
-              <Chat
-                key={addressKey(openingSnapshot.address)}
-                snapshot={openingSnapshot}
-              />
-            ) : (
-              <ChatOpening />
-            )
-          ) : active ? (
-            <Chat key={addressKey(active.address)} snapshot={active} />
-          ) : (
-            <div className="welcome">
-              <h1>{t["What shall we build?"]}</h1>
-              <p className="muted">
-                {connected
-                  ? t["Start a chat, or add a project folder."]
-                  : t["Connect a provider to start building with pi."]}
-              </p>
+        {state.initialized && (
+          <>
+            <SidebarSessions />
+            <div className="sidebar-footer">
               <button
-                className="primary"
                 type="button"
+                className={`sidebar-icon ${state.page === "settings" ? "active" : ""}`}
+                aria-label={t.Settings}
+                title={t.Settings}
                 onClick={() =>
-                  connected
-                    ? void openChat(state.generalCwd)
-                    : navigate("providers")
+                  navigate(state.page === "settings" ? "chat" : "settings")
                 }
               >
-                {connected ? <Plus size={16} /> : <Settings2 size={16} />}{" "}
-                {connected ? t["New chat"] : t["Connect a provider"]}
+                <SettingsIcon size={16} aria-hidden="true" />
+              </button>
+              <button
+                type="button"
+                className={`sidebar-icon ${state.page === "providers" ? "active" : ""}`}
+                aria-label={`${t.Providers}: ${state.login?.error || (state.login ? t["Signing in…"] : connected ? t.Connected : t["Not connected"])}`}
+                title={`${t.Providers}: ${state.login?.error || (state.login ? t["Signing in…"] : connected ? t.Connected : t["Not connected"])}`}
+                onClick={() =>
+                  navigate(state.page === "providers" ? "chat" : "providers")
+                }
+              >
+                <Settings2 size={16} aria-hidden="true" />
+                <span
+                  className={`sidebar-provider-dot ${state.login?.error ? "error" : state.login ? "busy" : connected ? "connected" : ""}`}
+                  aria-hidden="true"
+                />
+              </button>
+              <button
+                type="button"
+                className={`sidebar-icon ${state.page === "extensions" ? "active" : ""}`}
+                aria-label={t.Extensions}
+                title={t.Extensions}
+                onClick={() =>
+                  navigate(state.page === "extensions" ? "chat" : "extensions")
+                }
+              >
+                <Puzzle size={16} aria-hidden="true" />
+              </button>
+              <NotificationCenter />
+            </div>
+          </>
+        )}
+      </aside>
+      <main aria-busy={!state.initialized}>
+        {!state.initialized ? (
+          startupFailed && (
+            <div className="welcome" role="alert">
+              <p>{t.startupFailed}</p>
+              <button type="button" onClick={initialize}>
+                {t.Retry}
               </button>
             </div>
-          )}
-        </Suspense>
+          )
+        ) : state.page === "providers" ? (
+          <Providers />
+        ) : state.page === "extensions" ? (
+          <Extensions />
+        ) : state.page === "settings" ? (
+          <Settings />
+        ) : openingView ? (
+          openingSnapshot ? (
+            <Chat
+              key={addressKey(openingSnapshot.address)}
+              snapshot={openingSnapshot}
+            />
+          ) : (
+            <ChatOpening />
+          )
+        ) : active ? (
+          <Chat key={addressKey(active.address)} snapshot={active} />
+        ) : (
+          <div className="welcome">
+            <h1>{t["What shall we build?"]}</h1>
+            <p className="muted">
+              {connected
+                ? t["Start a chat, or add a project folder."]
+                : t["Connect a provider to start building with pi."]}
+            </p>
+            <button
+              className="primary"
+              type="button"
+              onClick={() =>
+                connected
+                  ? void openChat(state.generalCwd)
+                  : navigate("providers")
+              }
+            >
+              {connected ? <Plus size={16} /> : <Settings2 size={16} />}{" "}
+              {connected ? t["New chat"] : t["Connect a provider"]}
+            </button>
+          </div>
+        )}
       </main>
-      <DraftRecovery />
+      {state.initialized && <DraftRecovery />}
       <UIRequestBroker />
       <WindowTitlebar
         maximized={state.maximized}
         onAction={(action) => rpc.send.windowControl({ action })}
       >
-        {state.page === "chat" && (openingView || displayedChat) && (
-          <ChatHeader
-            cwd={displayedChat?.info.cwd ?? state.openingTarget?.cwd}
-            title={
-              displayedChat
-                ? ((openingView ? state.openingTitle : state.activeTitle) ??
-                  displayedChat.info.title)
-                : state.openingTarget?.id
-                  ? t["Opening chat…"]
-                  : t["New chat"]
-            }
-          />
-        )}
+        {state.initialized &&
+          state.page === "chat" &&
+          (openingView || displayedChat) && (
+            <ChatHeader
+              cwd={displayedChat?.info.cwd ?? state.openingTarget?.cwd}
+              title={
+                displayedChat
+                  ? ((openingView ? state.openingTitle : state.activeTitle) ??
+                    displayedChat.info.title)
+                  : state.openingTarget?.id
+                    ? t["Opening chat…"]
+                    : t["New chat"]
+              }
+            />
+          )}
       </WindowTitlebar>
       {state.login && (
         <OAuthLoginDialog key={state.login.loginId} login={state.login} />
@@ -283,7 +299,7 @@ function OAuthLoginDialog({ login }: { login: LoginState }) {
   const { prompt, authUrl, deviceCode, event } = login;
   const name = useProviderName(login.provider);
   useEffect(() => {
-    dialog.current?.showModal();
+    dialog.current?.show();
   }, []);
   useEffect(() => {
     if (prompt) {
@@ -318,7 +334,15 @@ function OAuthLoginDialog({ login }: { login: LoginState }) {
     <dialog
       ref={dialog}
       className="oauth-dialog"
+      aria-modal="false"
       aria-labelledby="oauth-title"
+      onKeyDown={(event) => {
+        if (event.key === "Escape" && !event.nativeEvent.isComposing) {
+          event.preventDefault();
+          event.stopPropagation();
+          cancel();
+        }
+      }}
       onCancel={(e) => {
         e.preventDefault();
         cancel();
@@ -493,6 +517,10 @@ function isVisibleRecord(record: TranscriptRecord) {
 export function Chat({ snapshot }: { snapshot: ChatSnapshot }) {
   const t = useT();
   const { info, transcript } = snapshot;
+  const dividers = useMemo(
+    () => modelDividers(transcript.records),
+    [transcript.records],
+  );
   const hasConversation =
     !!transcript.history?.before || transcript.records.some(isVisibleRecord);
   const [observedRun, setObservedRun] = useState(transcript.running);
@@ -516,6 +544,10 @@ export function Chat({ snapshot }: { snapshot: ChatSnapshot }) {
   const [jump, setJump] = useState<
     TranscriptSearchTarget & { id: string; serial: number; runIndex?: number }
   >();
+  const followOptimistic = useCallback(() => {
+    if (thread.current && view.follow)
+      thread.current.scrollTop = thread.current.scrollHeight;
+  }, [view]);
   const [loadingHistory, setLoadingHistory] = useState(false);
   const [historyError, setHistoryError] = useState<string>();
   async function loadEarlier() {
@@ -623,7 +655,7 @@ export function Chat({ snapshot }: { snapshot: ChatSnapshot }) {
         userEntryId={userRecord?.entryId}
         stats={stats}
         user={user?.role === "user" ? user : undefined}
-        canRegenerate={!readOnly && !transcript.running}
+        canRegenerate={!readOnly}
       />
     );
   };
@@ -739,6 +771,13 @@ export function Chat({ snapshot }: { snapshot: ChatSnapshot }) {
       )}
       {!hasConversation && <ChatEmpty cwd={info.cwd} />}
       {transcript.records.map((record, index) => {
+        const divider = dividers.get(record.id);
+        if (divider)
+          return (
+            <div className="model-divider" key={record.id}>
+              {divider}
+            </div>
+          );
         if (!isVisibleRecord(record)) return null;
         const range = work.get(index);
         const folded = range !== undefined && !openWork[range.key];
@@ -789,7 +828,7 @@ export function Chat({ snapshot }: { snapshot: ChatSnapshot }) {
                     message={message}
                     sessionId={info.id}
                     entryId={record.entryId}
-                    disabled={readOnly || transcript.running || !snapshot.model}
+                    disabled={readOnly || !snapshot.model}
                   />
                 ) : message.role === "assistant" ? (
                   <>
@@ -907,6 +946,8 @@ export function Chat({ snapshot }: { snapshot: ChatSnapshot }) {
           </div>
         );
       })}
+      {readOnly && <OpeningMessages />}
+      <OptimisticMessages snapshot={snapshot} onChange={followOptimistic} />
       {snapshot.failure && (
         <p className="error" role="alert">
           {snapshot.failure}

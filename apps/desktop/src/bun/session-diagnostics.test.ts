@@ -215,11 +215,8 @@ test("cancelled queue metadata stores send references and restores full payload 
           record.kind === "message" &&
           record.customType === "Cancelled queued prompt",
       );
+    expect(recovered?.requestId).toBe(key.requestId);
     expect(recovered?.kind === "message" && recovered.message.content).toEqual([
-      {
-        type: "text",
-        text: "Cancelled before execution by Stop. Retained for review; nothing was resent.",
-      },
       { type: "text", text: "before body\nbytes after" },
       image,
       secondImage,

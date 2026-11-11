@@ -5,7 +5,6 @@ import {
   Copy,
   Download,
   ExternalLink,
-  LoaderCircle,
   Package,
   Puzzle,
   Search,
@@ -157,21 +156,6 @@ function operation(source: string, ops: Record<string, PackageOpStatus>) {
   );
   return matches.find((op) => op.status === "running") ?? matches.at(-1);
 }
-function Progress({ op }: { op?: PackageOpStatus }) {
-  const t = useT();
-  if (op?.status === "running")
-    return (
-      <span className="status" role="status">
-        <LoaderCircle size={14} className="spinner" />
-        {op.action === "install"
-          ? t["Installing…"]
-          : op.action === "uninstall"
-            ? t["Removing…"]
-            : t["Updating…"]}
-      </span>
-    );
-  return null;
-}
 function OpError({ op }: { op?: PackageOpStatus }) {
   return op?.status === "error" ? (
     <p className="package-op-error error" role="alert">
@@ -183,6 +167,7 @@ function OpError({ op }: { op?: PackageOpStatus }) {
 export function Extensions() {
   const t = useT();
   const installed = useStore((s) => s.installed);
+  const installedLoaded = useStore((s) => s.installedLoaded);
   const ops = useStore((s) => s.packageOps);
   const [tab, setTab] = useState<"marketplace" | "installed">("marketplace");
   const [query, setQuery] = useState("");
@@ -192,6 +177,7 @@ export function Extensions() {
   const [previews, setPreviews] = useState<Record<string, string | null>>({});
   const [page, setPage] = useState(0);
   const [total, setTotal] = useState(0);
+  const [resultQuery, setResultQuery] = useState<string>();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string>();
   const [installedLoading, setInstalledLoading] = useState(true);
@@ -209,7 +195,6 @@ export function Extensions() {
     let cancelled = false;
     setLoading(true);
     setError(undefined);
-    if (page === 0) setItems([]);
     void request(rpc.request.searchPackages({ query: search, page }))
       .then(async (result) => {
         if (cancelled) return;
@@ -224,6 +209,7 @@ export function Extensions() {
               ],
         );
         setTotal(result.total);
+        setResultQuery(search);
         setLoading(false);
         for (let i = 0; i < result.items.length; i += 64) {
           try {
@@ -257,8 +243,11 @@ export function Extensions() {
     setInstalledError(undefined);
     void request(rpc.request.listInstalled())
       .then((next) => {
-        if (!cancelled && useStore.getState().installed === previous)
-          useStore.setState({ installed: next });
+        if (!cancelled)
+          useStore.setState((state) => ({
+            installedLoaded: true,
+            ...(state.installed === previous ? { installed: next } : {}),
+          }));
       })
       .catch((e: unknown) => {
         if (!cancelled) setInstalledError(String(e));
@@ -339,7 +328,13 @@ export function Extensions() {
             )}
             {name === "marketplace" ? t.Marketplace : t.Installed}
             {name === "installed" && (
-              <span className="package-count">{installed.length}</span>
+              <span
+                className="package-count"
+                data-known={installedLoaded}
+                aria-hidden={!installedLoaded}
+              >
+                {installed.length}
+              </span>
             )}
           </button>
         ))}
@@ -372,11 +367,8 @@ export function Extensions() {
               )}
             </div>
             <p className="package-results muted" role="status">
-              {loading && !items.length
-                ? t["Finding packages…"]
-                : error && !items.length
-                  ? t["Marketplace unavailable"]
-                  : t.packageResults(total, search)}
+              {resultQuery !== undefined &&
+                t.packageResults(total, resultQuery)}
             </p>
             <div className="package-list market-grid" aria-busy={loading}>
               {items.map((pkg) => {
@@ -428,9 +420,7 @@ export function Extensions() {
                     <div className="package-card-footer">
                       <CopyCommand name={pkg.name} />
                       <div className="package-actions">
-                        {op?.status === "running" ? (
-                          <Progress op={op} />
-                        ) : match ? (
+                        {match ? (
                           <ConfirmButton
                             className="primary package-uninstall"
                             title={
@@ -438,6 +428,8 @@ export function Extensions() {
                                 "This package will be removed from your pi configuration. Open chats will be reloaded."
                               ]
                             }
+                            disabled={op?.status === "running"}
+                            aria-busy={op?.status === "running"}
                             onConfirm={() => run("uninstall", source)}
                           >
                             <Trash2 size={13} />
@@ -446,7 +438,12 @@ export function Extensions() {
                         ) : (
                           <ConfirmButton
                             className="primary"
-                            disabled={installedLoading || !!installedError}
+                            disabled={
+                              !installedLoaded ||
+                              !!installedError ||
+                              op?.status === "running"
+                            }
+                            aria-busy={op?.status === "running"}
                             title={
                               installedError
                                 ? t["Installed packages could not be checked"]
@@ -467,18 +464,6 @@ export function Extensions() {
                   </article>
                 );
               })}
-              {loading &&
-                !items.length &&
-                [0, 1, 2].map((n) => (
-                  <div className="package-skeleton" key={n} aria-hidden="true">
-                    <div />
-                    <div>
-                      <span />
-                      <span />
-                      <span />
-                    </div>
-                  </div>
-                ))}
             </div>
             {error && (
               <ErrorState
@@ -501,13 +486,11 @@ export function Extensions() {
                 <button
                   type="button"
                   className="secondary"
-                  disabled={loading}
+                  disabled={loading || resultQuery !== query.trim()}
+                  aria-busy={loading}
                   onClick={() => setPage((n) => n + 1)}
                 >
-                  {loading ? (
-                    <LoaderCircle size={14} className="spinner" />
-                  ) : null}
-                  {loading ? t["Loading…"] : t["Load more"]}
+                  {t["Load more"]}
                 </button>
                 <span className="muted">{t.countOf(items.length, total)}</span>
               </div>
@@ -524,20 +507,13 @@ export function Extensions() {
             <p className="package-results muted">
               {t["Packages from your user and project configuration."]}
             </p>
-            {installedLoading && (
-              <p className="status" role="status">
-                <LoaderCircle size={14} className="spinner" />
-
-                {t["Loading installed packages…"]}
-              </p>
-            )}
             {installedError && (
               <ErrorState
                 message={installedError}
                 retry={() => setInstalledRetry((n) => n + 1)}
               />
             )}
-            {!installedLoading && !installedError && !installed.length && (
+            {installedLoaded && !installed.length && (
               <div className="package-empty">
                 <Package size={32} />
                 <h2>{t["No extensions installed"]}</h2>
@@ -553,7 +529,7 @@ export function Extensions() {
                 </button>
               </div>
             )}
-            <div className="package-list">
+            <div className="package-list" aria-busy={installedLoading}>
               {installed.map((pkg: InstalledPackage) => {
                 const name = npmName(pkg.source)
                   ? (pkg.name ?? npmName(pkg.source) ?? pkg.source)
@@ -586,36 +562,34 @@ export function Extensions() {
                       <OpError op={op} />
                     </div>
                     <div className="package-actions">
-                      {op?.status === "running" ? (
-                        <Progress op={op} />
-                      ) : (
-                        <>
-                          {pkg.updateAvailable && (
-                            <button
-                              type="button"
-                              className="primary"
-                              onClick={() => run("update", pkg.source)}
-                            >
-                              <ArrowUpCircle size={14} />
+                      {pkg.updateAvailable && (
+                        <button
+                          type="button"
+                          className="primary"
+                          disabled={op?.status === "running"}
+                          aria-busy={op?.status === "running"}
+                          onClick={() => run("update", pkg.source)}
+                        >
+                          <ArrowUpCircle size={14} />
 
-                              {t.Update}
-                            </button>
-                          )}
-                          <ConfirmButton
-                            className="primary package-uninstall"
-                            title={
-                              t[
-                                "This package will be removed from your pi configuration. Open chats will be reloaded."
-                              ]
-                            }
-                            onConfirm={() => run("uninstall", pkg.source)}
-                          >
-                            <Trash2 size={13} />
-
-                            {t.Uninstall}
-                          </ConfirmButton>
-                        </>
+                          {t.Update}
+                        </button>
                       )}
+                      <ConfirmButton
+                        className="primary package-uninstall"
+                        title={
+                          t[
+                            "This package will be removed from your pi configuration. Open chats will be reloaded."
+                          ]
+                        }
+                        disabled={op?.status === "running"}
+                        aria-busy={op?.status === "running"}
+                        onConfirm={() => run("uninstall", pkg.source)}
+                      >
+                        <Trash2 size={13} />
+
+                        {t.Uninstall}
+                      </ConfirmButton>
                     </div>
                   </article>
                 );

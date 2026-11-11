@@ -160,11 +160,7 @@ export const UserMessage = memo(function UserMessage({
             rows={Math.min(12, Math.max(3, draft.split("\n").length))}
           />
           <div className="user-edit-actions">
-            <button
-              type="button"
-              disabled={busy}
-              onClick={() => setEditing(false)}
-            >
+            <button type="button" onClick={() => setEditing(false)}>
               {t.Cancel}
             </button>
             <button

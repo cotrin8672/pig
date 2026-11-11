@@ -57,6 +57,9 @@ if (process.env.PIG_SEND_RECOVERY_CHILD !== "1") {
   const user = { role: "user" as const, content: "hello", timestamp: 1 };
   let sendState: SendState | undefined;
   spyOn(sends, "read").mockImplementation(() => sendState);
+  spyOn(sends, "wait").mockImplementation(async () => {
+    throw new Error("Send status is unknown");
+  });
   const initial = useStore.getInitialState();
   initial.snapshots = { recovery: snapshot };
   useStore.setState({ hostId: "h", snapshots: initial.snapshots });
@@ -87,15 +90,17 @@ if (process.env.PIG_SEND_RECOVERY_CHILD !== "1") {
     "sending",
     "checking",
     "unknown",
-  ] as const)("%s disables branching and regeneration, including direct RPC callers", async (state) => {
+  ] as const)("%s leaves actions enabled but keeps destructive RPCs behind receipt reconciliation", async (state) => {
     sendState = {
       key: { ...snapshot.address, requestId: "pending" },
       version: 1,
       state,
     };
-    expect(render().match(/disabled=""/g)).toHaveLength(2);
-    await forkChat("recovery", "answer");
-    await regenerate("recovery", user, "prompt");
+    expect(render()).not.toContain('disabled=""');
+    await expect(forkChat("recovery", "answer")).rejects.toThrow("unknown");
+    await expect(regenerate("recovery", user, "prompt")).rejects.toThrow(
+      "unknown",
+    );
     expect(forkRequest).not.toHaveBeenCalled();
     expect(rewindRequest).not.toHaveBeenCalled();
     expect(useStore.getState().opening).toBe(false);

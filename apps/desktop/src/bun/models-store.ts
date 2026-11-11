@@ -9,7 +9,11 @@ import { withFileLock } from "./file-lock";
 
 /** Each provider owns one catalog, independently atomically replaced. */
 export class FileModelsStore implements ModelsStore {
-  constructor(private readonly directory: string) {}
+  private cache = new Map<string, Promise<ModelsStoreEntry | undefined>>();
+  constructor(
+    private readonly directory: string,
+    private readonly cached = false,
+  ) {}
   private file(provider: string) {
     return join(this.directory, `${encodeURIComponent(provider)}.json`);
   }
@@ -18,6 +22,23 @@ export class FileModelsStore implements ModelsStore {
     options?: ModelsStoreOperationOptions,
   ): Promise<ModelsStoreEntry | undefined> {
     options?.signal?.throwIfAborted();
+    if (!this.cached) return this.readFile(provider, options);
+    let entry = this.cache.get(provider);
+    if (!entry) {
+      entry = this.readFile(provider);
+      this.cache.set(provider, entry);
+      void entry.catch(() => {
+        if (this.cache.get(provider) === entry) this.cache.delete(provider);
+      });
+    }
+    const value = await entry;
+    options?.signal?.throwIfAborted();
+    return structuredClone(value);
+  }
+  private async readFile(
+    provider: string,
+    options?: ModelsStoreOperationOptions,
+  ) {
     try {
       const value = JSON.parse(
         await readFile(this.file(provider), {
@@ -48,14 +69,16 @@ export class FileModelsStore implements ModelsStore {
         });
         options?.signal?.throwIfAborted();
         await rename(temporary, this.file(provider));
+        this.cache.set(provider, Promise.resolve(structuredClone(entry)));
       } finally {
         await rm(temporary, { force: true });
       }
     });
   }
   async delete(provider: string, options?: ModelsStoreOperationOptions) {
-    await withFileLock(this.file(provider), options?.signal, () =>
-      rm(this.file(provider), { force: true }),
-    );
+    await withFileLock(this.file(provider), options?.signal, async () => {
+      await rm(this.file(provider), { force: true });
+      this.cache.set(provider, Promise.resolve(undefined));
+    });
   }
 }
