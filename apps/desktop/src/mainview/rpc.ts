@@ -3,6 +3,7 @@ import {
   legacyUiPreferences,
   type UiPreferences,
 } from "../shared/desktop-state";
+import { isModelEnabled } from "../shared/models";
 import type { Appearance, RPCSchema, Snapshot } from "../shared/rpc-schema";
 import {
   type RuntimeRecoveryState,
@@ -681,14 +682,23 @@ async function openSnapshot(
 ): Promise<Snapshot | undefined> {
   const previous = useStore.getState();
   if (optimistic) {
+    const { models, disabledModels } = previous.bootstrap;
+    const model =
+      !optimistic.id && models.find((m) => isModelEnabled(m, disabledModels));
     useStore.setState({
       pendingOpens: {
         ...previous.pendingOpens,
         [openId]: {
           ...optimistic,
-          selection:
-            (optimistic.id ? previous.snapshots[optimistic.id] : undefined) ??
-            (previous.active ? previous.snapshots[previous.active] : undefined),
+          selection: optimistic.id
+            ? previous.snapshots[optimistic.id]
+            : model
+              ? {
+                  model,
+                  effort: model.effectiveDefaultEffort ?? "off",
+                  effortLevels: model.effortLevels ?? [],
+                }
+              : undefined,
         },
       },
     });

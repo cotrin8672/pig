@@ -1,6 +1,6 @@
 import { afterAll, expect, mock, test } from "bun:test";
 import { fileURLToPath } from "node:url";
-import type { Snapshot } from "../shared/rpc-schema";
+import type { ModelInfo, Snapshot } from "../shared/rpc-schema";
 import type { OpenSessionParams, OpenState } from "../shared/runtime-contract";
 import { emptyTranscript } from "../shared/transcript";
 
@@ -117,6 +117,36 @@ if (process.env.PIG_OPEN_NAVIGATION_CHILD !== "1") {
     receiveSnapshot({ ...ready, ready: false, snapshotSeq: 1 });
     return { ...call, promise, ready };
   }
+
+  test("a new chat previews the first enabled model and its default effort before startup", async () => {
+    const { bootstrap } = useStore.getState();
+    const hidden = { provider: "test", id: "hidden", name: "Hidden" };
+    const model: ModelInfo = {
+      provider: "test",
+      id: "default",
+      name: "Default",
+      effectiveDefaultEffort: "high",
+      effortLevels: ["low", "high"],
+    };
+    useStore.setState({
+      bootstrap: {
+        ...bootstrap,
+        models: [hidden, model],
+        disabledModels: ["test/hidden"],
+      },
+    });
+    const promise = openChat("project");
+    const selection = useStore.getState().openingTarget?.selection;
+    await Bun.sleep(1);
+    calls[calls.length - 1].deferred.resolve(snapshot(crypto.randomUUID()));
+    await promise;
+    useStore.setState({ bootstrap });
+    expect(selection).toMatchObject({
+      model,
+      effort: "high",
+      effortLevels: ["low", "high"],
+    });
+  });
 
   test("A → B → A reuses startup; a background completion cannot clear or replace the foreground", async () => {
     const aId = crypto.randomUUID(),
