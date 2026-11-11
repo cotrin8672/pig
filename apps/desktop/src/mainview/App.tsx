@@ -35,13 +35,11 @@ import { ProviderIcon, useProviderName } from "./ProviderIcon";
 import { Providers } from "./Providers";
 import { ResponseFooter } from "./ResponseFooter";
 import {
-  cancelOpening,
   initRuntimeConnection,
   initSessionLinks,
   initSessionReadTracking,
   openChat,
   refresh,
-  refreshSessions,
   rpc,
 } from "./rpc";
 import { SessionPanel } from "./SessionPanel";
@@ -83,11 +81,6 @@ export function App() {
   const openingView =
     state.opening && state.openingViewRevision === navigationRevision;
   const displayedChat = openingView ? openingSnapshot : active;
-  const displayedChatOpening =
-    displayedChat &&
-    state.opening &&
-    state.openingAddress &&
-    sameAddress(state.openingAddress, displayedChat.address);
   const connected = state.bootstrap.models.length > 0;
   return (
     // biome-ignore lint/a11y/noStaticElementInteractions: Native drag handles; maximize is also available as a keyboard-accessible button.
@@ -225,30 +218,6 @@ export function App() {
                   ? t["Opening chat…"]
                   : t["New chat"]
             }
-            closeLabel={
-              !displayedChat || displayedChatOpening
-                ? t.Cancel
-                : t["Close chat (history is kept)"]
-            }
-            onClose={() => {
-              if (!displayedChat || displayedChatOpening) {
-                void cancelOpening().catch(showError);
-                return;
-              }
-              if (displayedChat.ready === false) {
-                useStore.setState((current) => {
-                  const snapshots = { ...current.snapshots };
-                  delete snapshots[displayedChat.info.id];
-                  return { snapshots };
-                });
-                navigate("chat", null);
-                return;
-              }
-              void rpc.request
-                .closeSession(displayedChat.address)
-                .then(() => refreshSessions(), showError);
-              navigate("chat", null);
-            }}
           />
         )}
       </WindowTitlebar>

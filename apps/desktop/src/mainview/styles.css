@@ -1905,8 +1905,7 @@ input:not([type="range"]) {
 .chat-shell {
   position: relative;
 }
-.chat-heading,
-.chat-header-actions {
+.chat-heading {
   display: flex;
   align-items: center;
   gap: 8px;
@@ -1924,8 +1923,7 @@ input:not([type="range"]) {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.chat-heading > svg,
-.chat-header-actions {
+.chat-heading > svg {
   flex: none;
 }
 .chat-heading > span {
@@ -1934,17 +1932,6 @@ input:not([type="range"]) {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-.chat-header-actions {
-  gap: 2px;
-}
-.chat-header-actions button {
-  width: 28px;
-  height: 28px;
-  padding: 0;
-}
-.chat-header-actions button:focus-visible {
-  outline-offset: -2px;
 }
 .chat-width-guides {
   position: absolute;

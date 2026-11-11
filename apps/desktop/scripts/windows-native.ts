@@ -58,6 +58,17 @@ export function patchNativeSource(source: string) {
   for (const [before, after] of [
     ["view->setWebView(webview);", settings],
     [
+      "        case WM_NCCALCSIZE:",
+      `        case WM_NCACTIVATE:
+            if (data && data->chromeStyle == ChromeStyle::HiddenInset) {
+                // Update activation without repainting a standard frame over custom chrome.
+                return DefWindowProc(hwnd, msg, wParam, -1);
+            }
+            break;
+
+        case WM_NCCALCSIZE:`,
+    ],
+    [
       style,
       `${style.slice(0, -1)} | WS_SYSMENU | WS_MINIMIZEBOX | WS_MAXIMIZEBOX;`,
     ],

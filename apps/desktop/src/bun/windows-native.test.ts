@@ -3,6 +3,7 @@ import { patchNativeSource } from "../../scripts/windows-native";
 
 const source = `view->setWebView(webview);
 windowStyle = WS_VISIBLE | WS_CAPTION | WS_THICKFRAME | WS_CLIPCHILDREN | WS_CLIPSIBLINGS;
+        case WM_NCCALCSIZE:
             // WebView2 operations must be called from main thread to avoid TYPE_E_BADVARTYPE
             MainThreadDispatcher::dispatch_async([this, frame]() {
                 HRESULT result = controller->put_Bounds(frame);
@@ -19,6 +20,25 @@ test("native drag backport enables WebView2 regions and standard caption styles"
   expect(patched).toContain("ComPtr<ICoreWebView2Settings9>");
   expect(patched).toContain("WS_SYSMENU | WS_MINIMIZEBOX | WS_MAXIMIZEBOX");
   expect(patched.match(/view->setWebView\(webview\);/g)).toHaveLength(1);
+});
+
+test("custom chrome activation skips standard frame painting without changing default windows", () => {
+  const patched = patchNativeSource(source);
+  expect(patched).toContain(`        case WM_NCACTIVATE:
+            if (data && data->chromeStyle == ChromeStyle::HiddenInset) {
+                // Update activation without repainting a standard frame over custom chrome.
+                return DefWindowProc(hwnd, msg, wParam, -1);
+            }
+            break;
+
+        case WM_NCCALCSIZE:`);
+  expect(patched.match(/case WM_NCACTIVATE:/g)).toHaveLength(1);
+});
+
+test("native activation patch rejects missing or ambiguous window procedures", () => {
+  const anchor = "        case WM_NCCALCSIZE:";
+  expect(() => patchNativeSource(source.replace(anchor, ""))).toThrow();
+  expect(() => patchNativeSource(`${source}\n${anchor}`)).toThrow();
 });
 
 test("native resize runs inline on the UI thread and resolves current bounds", () => {

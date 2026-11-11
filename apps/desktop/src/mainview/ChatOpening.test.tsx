@@ -106,7 +106,7 @@ if (process.env.PIG_CHAT_OPENING_CHILD !== "1") {
     }
   });
 
-  test("chat headings and actions render inside the collapsible titlebar", () => {
+  test("chat headings render in the titlebar without width or close buttons", () => {
     const state = useStore.getInitialState();
     const previous = { ...state };
     Object.assign(state, {
@@ -120,12 +120,7 @@ if (process.env.PIG_CHAT_OPENING_CHILD !== "1") {
       ]) {
         const html = renderToStaticMarkup(
           <WindowTitlebar maximized={false} onAction={() => {}}>
-            <ChatHeader
-              cwd={cwd}
-              title="Session <title>"
-              closeLabel="Close chat (history is kept)"
-              onClose={() => {}}
-            />
+            <ChatHeader cwd={cwd} title="Session <title>" />
           </WindowTitlebar>,
         );
         expect(html).toContain('data-expanded="false"');
@@ -134,11 +129,12 @@ if (process.env.PIG_CHAT_OPENING_CHILD !== "1") {
         );
         expect(html).toContain(`<span title="${project}">${project}</span>`);
         expect(html).toContain("Session &lt;title&gt;");
-        expect(html).toContain(
-          'class="chat-header-actions electrobun-webkit-app-region-no-drag"',
-        );
-        expect(html).toContain('aria-label="Reset chat width"');
-        expect(html).toContain('aria-label="Close chat (history is kept)"');
+        expect(html).not.toContain("chat-header-actions");
+        expect(html).not.toContain('aria-label="Reset chat width"');
+        expect(html).not.toContain('aria-label="Close chat (history is kept)"');
+        expect(html.match(/<button\b/g)).toHaveLength(3);
+        for (const action of ["Minimize", "Maximize", "Close window"])
+          expect(html).toContain(`aria-label="${action}"`);
       }
     } finally {
       Object.assign(state, previous);
@@ -180,7 +176,7 @@ if (process.env.PIG_CHAT_OPENING_CHILD !== "1") {
       const bar = active.slice(active.indexOf('class="window-titlebar"'));
       expect(bar).toContain('class="chat-header"');
       expect(bar).toContain("Live session title");
-      expect(bar).toContain('aria-label="Close chat (history is kept)"');
+      expect(bar).not.toContain("chat-header-actions");
 
       state.opening = true;
       state.openingViewRevision = navigationRevision;
@@ -190,7 +186,7 @@ if (process.env.PIG_CHAT_OPENING_CHILD !== "1") {
       expect(freshBar).toContain("new-project");
       expect(freshBar).toContain("New chat");
       expect(freshBar).not.toContain("Live session title");
-      expect(freshBar).toContain('aria-label="Cancel"');
+      expect(freshBar).not.toContain("chat-header-actions");
 
       state.openingTarget = { cwd: "project", id: "existing" };
       state.openingAddress = snapshot.address;
@@ -199,7 +195,7 @@ if (process.env.PIG_CHAT_OPENING_CHILD !== "1") {
         preview.indexOf('class="window-titlebar"'),
       );
       expect(previewBar).toContain("Live session title");
-      expect(previewBar).toContain('aria-label="Cancel"');
+      expect(previewBar).not.toContain("chat-header-actions");
 
       state.page = "settings";
       expect(renderToStaticMarkup(<App />)).not.toContain(
