@@ -19,9 +19,9 @@ Neither relocates the AppData profile or uses Scoop `persist`.
   `version: "nightly"` intentionally omits a hash: Scoop updates re-download the
   rolling ZIP without integrity checking. The release body includes the base
   version, UTC date and short commit SHA.
-- Both are built with `electrobun build --env=stable` and retain the legacy
-  identifier `dev.piris.desktop` for data compatibility, so settings/projects share
-  `%LOCALAPPDATA%/dev.piris.desktop/stable`. Quit before switching/updating, and
+- Both are built with `electrobun build --env=stable` and use the
+  identifier `dev.pig.desktop`, so their WebView profiles share
+  `%LOCALAPPDATA%/dev.pig.desktop/stable`. Quit before switching/updating, and
   back up the shared profile before testing nightly.
 
 Electrobun 1.18.1 replaces `build/stable-win-x64/pig/` with a self-extracting

@@ -18,7 +18,7 @@ import { UIRequestBroker } from "./ui-request-broker";
 
 // Theme/keybindings are deliberately process-wide in production. Run this suite
 // in its own process so terminal-ui.test.ts can independently verify its profile.
-if (process.env.PIRIS_EXTENSION_UI_TEST_CHILD !== "1") {
+if (process.env.PIG_EXTENSION_UI_TEST_CHILD !== "1") {
   test("Extension UI integration in an isolated process", async () => {
     const home = mkdtempSync(
       join(process.env.PI_SCRATCH_DIR ?? tmpdir(), "extension-ui-test-"),
@@ -44,7 +44,7 @@ if (process.env.PIRIS_EXTENSION_UI_TEST_CHILD !== "1") {
       TMPDIR: home,
       PI_CODING_AGENT_DIR: home,
       PI_OFFLINE: "1",
-      PIRIS_EXTENSION_UI_TEST_CHILD: "1",
+      PIG_EXTENSION_UI_TEST_CHILD: "1",
     });
     try {
       const child = Bun.spawn([process.execPath, "test", import.meta.path], {

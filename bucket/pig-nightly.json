@@ -13,6 +13,6 @@
   "notes": [
     "Requires Microsoft Edge WebView2 Runtime. This build is unsigned. Nightly downloads skip hash verification and are re-downloaded by Scoop updates.",
     "pig and pig-nightly are separate Scoop apps sharing the pig shim and shortcut; installing both causes conflicts. Switch with 'scoop reset pig' or 'scoop reset pig-nightly'.",
-    "Exit all pig instances before updating or switching. Both builds share %LOCALAPPDATA%/dev.piris.desktop/stable; uninstall does not delete your data."
+    "Exit all pig instances before updating or switching. Both builds share %LOCALAPPDATA%/dev.pig.desktop/stable; uninstall does not delete your data."
   ]
 }

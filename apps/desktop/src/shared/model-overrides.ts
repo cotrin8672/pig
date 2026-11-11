@@ -9,7 +9,7 @@ const efforts: readonly Effort[] = [
   "xhigh",
   "max",
 ];
-// The subset of pi's models.json `modelOverrides` entry that piris edits.
+// The subset of pi's models.json `modelOverrides` entry that pig edits.
 export interface ModelOverride {
   name?: string;
   contextWindow?: number;

@@ -14,7 +14,7 @@ if ($LASTEXITCODE -ne 0) { throw 'Failed to decompress the app tarball' }
 if ($LASTEXITCODE -ne 0) { throw 'Failed to extract the app tarball' }
 if (!(Test-Path "$stage/pig/bin/launcher.exe")) { throw 'Missing portable launcher' }
 $version = Get-Content "$stage/pig/Resources/version.json" -Raw | ConvertFrom-Json
-if ($version.identifier -ne 'dev.piris.desktop' -or $version.channel -ne 'stable') {
+if ($version.identifier -ne 'dev.pig.desktop' -or $version.channel -ne 'stable') {
     throw 'Stable and nightly must share the stable user-data profile'
 }
 

@@ -19,14 +19,12 @@ and Start menu shortcut. **Scoop treats them as separate apps, not replacements:
 installing both conflicts on the `pig` shim and shortcut. Fully exit the app,
 then use `scoop reset pig` or `scoop reset pig-nightly` to select which runs
 (also reset the remaining package after uninstalling the other).
-Both builds retain the legacy identifier `dev.piris.desktop` and use channel
+Both builds use the identifier `dev.pig.desktop` and channel
 `stable`. Desktop settings/projects live in `~/.config/pig`; pi credentials and
 sessions keep their existing SDK locations. The WebView profile/cache remains
-under `%LOCALAPPDATA%/dev.piris.desktop/stable`. Do not run both clients
+under `%LOCALAPPDATA%/dev.pig.desktop/stable`. Do not run both clients
 concurrently; back up data before switching.
 Scoop uninstall does not remove this data. No Scoop `persist` directory is needed.
-If upgrading from piris, quit the app and uninstall the old `piris` or
-`piris-nightly` Scoop package before installing pig; the shared profile is retained.
 
 Update with `scoop update` followed by `scoop update pig` or
 `scoop update pig-nightly`. Nightly uses a rolling prerelease and Scoop's
@@ -85,8 +83,8 @@ does not support OS-level URL activation on Windows/Linux, so links do not
 launch the app from other applications.
 
 On Windows, `mise run dev` focuses the running development app, or starts
-`pnpm dev` in the background. Logs are written to `%TEMP%/piris-dev.stdout.log`
-and `%TEMP%/piris-dev.stderr.log`. Close the development app before a fresh launch.
+`pnpm dev` in the background. Logs are written to `%TEMP%/pig-dev.stdout.log`
+and `%TEMP%/pig-dev.stderr.log`. Close the development app before a fresh launch.
 For foreground logs, use `mise exec -- pnpm dev` instead.
 
 `pnpm dev` builds the webview, starts Vite with HMR, and launches the app.

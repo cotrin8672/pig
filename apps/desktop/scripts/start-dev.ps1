@@ -28,8 +28,8 @@ public static class DevWindow {
     return
 }
 
-$outLog = Join-Path $env:TEMP 'piris-dev.stdout.log'
-$errLog = Join-Path $env:TEMP 'piris-dev.stderr.log'
+$outLog = Join-Path $env:TEMP 'pig-dev.stdout.log'
+$errLog = Join-Path $env:TEMP 'pig-dev.stderr.log'
 $process = Start-Process -FilePath (Get-Command mise.exe).Source `
     -ArgumentList @('exec', '--', 'pnpm', 'dev') -WorkingDirectory $root `
     -WindowStyle Hidden -RedirectStandardOutput $outLog `

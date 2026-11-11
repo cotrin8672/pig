@@ -1,6 +1,6 @@
 # Pi SDK return — implementation contract
 
-Status: **SDK application migration implemented; bounded automated verification passed; P5 native/manual release acceptance incomplete** (2026-11-09). Evidence/current limitations: §8 and [verification record](../../docs/sdk-runtime-verification.md). This plan supersedes the SDK→Durable goal dated 2026-11-08. Repository: `cotrin8672/piris`; baseline `53e0a280515975b4be8916f2ee402da1dc48fef9`. Preserve all existing uncommitted UI work. Do not reset/restore whole donor files, commit, or push.
+Status: **SDK application migration implemented; bounded automated verification passed; P5 native/manual release acceptance incomplete** (2026-11-09). Evidence/current limitations: §8 and [verification record](../../docs/sdk-runtime-verification.md). This plan supersedes the SDK→Durable goal dated 2026-11-08. Repository: `cotrin8672/pig`; baseline `53e0a280515975b4be8916f2ee402da1dc48fef9`. Preserve all existing uncommitted UI work. Do not reset/restore whole donor files, commit, or push.
 
 > Superseding user requirement (2026-11-09): remove the legacy Archive feature, reader/schema/RPC/continuation metadata, standalone exporter and numeric/Durable link compatibility outright. Remove the manual Reconnect runtime button only; retain automatic connection/heartbeat/reconnect, ordinary SDK chat archive/pin state and custom-record rendering. Archive/export/legacy-link requirements below are historical and no longer desired; no legacy data is read, migrated or deleted. Prior verification/build evidence predates this removal and does not verify the changed source.
 
@@ -283,7 +283,7 @@ Lifecycle ordering (all mutations serialized per Host session; cancellation sign
 ```ts
 export type JsonValue = null | boolean | number | string | JsonValue[] | { [key: string]: JsonValue };
 export type ArchiveV1 = {
-  format: 'piris-archive'; version: 1;
+  format: 'pig-archive'; version: 1;
   source: { engine: 'pi-durable'; version: '1.5.0'; files: Record<string, string> };
   conversations: { legacyId: string; raw: JsonValue; entries: JsonValue[] }[];
   tasks: JsonValue[];

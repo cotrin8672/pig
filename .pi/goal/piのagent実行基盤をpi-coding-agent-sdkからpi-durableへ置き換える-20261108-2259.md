@@ -24,7 +24,7 @@
    - 受理前に失敗した送信がエラーとして返り、成功として扱われない。
    - 指定したEntryからForkでき、元の会話の履歴が変わらない。
 6. 既存のチャット用RPCハンドラー（`apps/desktop/src/bun/index.ts`と`shared/rpc-schema.ts`）がDurableサービスへ接続されている。RPC型に`AgentSession`などpi-coding-agentの型が残っていない。
-7. Durable Storageの保存先がPiris専用のディレクトリ（`~/.config/pig/durable/`配下）である。テストでは一時HOMEを使い、`~/.pi/agent`配下へ書き込みがないことを確認する。
+7. Durable Storageの保存先がpig専用のディレクトリ（`~/.config/pig/durable/`配下）である。テストでは一時HOMEを使い、`~/.pi/agent`配下へ書き込みがないことを確認する。
 8. pi-coding-agent専用で、Durableに相当機能がないものは撤去されている。
    - 旧Marketplace / Package検索・インストール
    - `ctx.ui.custom()` / TUI Host

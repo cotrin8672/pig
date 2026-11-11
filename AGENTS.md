@@ -4,7 +4,7 @@
 
 Use `mise run dev`. It focuses the existing development window without rebuilding,
 or starts `pnpm dev` in the background if the app is not running. Startup logs are
-in `%TEMP%/piris-dev.stdout.log` and `%TEMP%/piris-dev.stderr.log`.
+in `%TEMP%/pig-dev.stdout.log` and `%TEMP%/pig-dev.stderr.log`.
 Do not start another `pnpm dev` while the development app is running.
 
 ## Toolchain

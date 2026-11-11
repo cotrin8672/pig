@@ -5,8 +5,7 @@ import {
 } from "./scripts/sdk-runtime-assets";
 
 export default {
-  // Keep the original identifier to preserve existing projects and appearance settings.
-  app: { name: "pig", identifier: "dev.piris.desktop", version: "0.1.0" },
+  app: { name: "pig", identifier: "dev.pig.desktop", version: "0.1.0" },
   build: {
     bun: { external: SDK_RUNTIME_EXTERNALS },
     copy: {

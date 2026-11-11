@@ -32,7 +32,7 @@ import {
 } from "./terminal-ui";
 
 // Run under the isolated runner; no auth/provider or real profile is consulted.
-const profile = mkdtempSync(join(tmpdir(), "piris-terminal-"));
+const profile = mkdtempSync(join(tmpdir(), "pig-terminal-"));
 const keymapFile = join(profile, "keybindings.json");
 writeFileSync(
   keymapFile,

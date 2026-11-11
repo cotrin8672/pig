@@ -1728,7 +1728,7 @@ export class SessionHost {
         }
         // branch()/resetLeaf() move only the in-memory cursor. A real SDK custom
         // entry persists the selected leaf without inventing a model message.
-        m.manager.appendCustomEntry("piris.rewind", {
+        m.manager.appendCustomEntry("pig.rewind", {
           entryId: params.entryId,
         });
         m.projector = new SDKProjector(

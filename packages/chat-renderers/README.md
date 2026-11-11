@@ -71,7 +71,7 @@ pi-lens 4.4.11 の13個の登録ツールに組み込み `ChatRenderer` を用�
 設定ディレクトリに型補完用のローカル依存を入れる場合（このパッケージは未公開）:
 
 ```powershell
-mise exec -- pnpm add -D 'C:\path\to\piris\packages\chat-renderers' @types/react
+mise exec -- pnpm add -D 'C:\path\to\pig\packages\chat-renderers' @types/react
 ```
 
 ## 信頼境界

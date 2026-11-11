@@ -64,7 +64,7 @@ export function initializeRuntimeTheme() {
         toolErrorBg: "#4c343a",
       },
       "truecolor",
-      { name: "piris-desktop", appearance: "dark" },
+      { name: "pig-desktop", appearance: "dark" },
     ),
   );
   initialized = true;
