@@ -3,7 +3,7 @@ import type { ComponentType } from "react";
 
 export interface ChatRenderData {
   markdown: { text: string };
-  image: { sources: string[] };
+  image: { sources: string[]; alt?: string };
   thinking: { text: string; label: string; active: boolean };
   tool: {
     call: { id: string; name: string; arguments: Record<string, unknown> };

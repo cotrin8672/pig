@@ -9,7 +9,7 @@ import {
   Trash2,
   X,
 } from "lucide-react";
-import { useEffect, useId, useRef, useState } from "react";
+import { memo, useEffect, useId, useRef, useState } from "react";
 import type { SessionFlags } from "../shared/desktop-state";
 import type { SessionInfo } from "../shared/rpc-schema";
 import { sessionLink } from "../shared/session-links";
@@ -18,20 +18,32 @@ import { ConfirmButton } from "./ConfirmButton";
 import { useT } from "./i18n";
 import { navigate } from "./navigation";
 import { openChat, refreshSessions, rpc } from "./rpc";
-import { sessionStatus, sessionStatusLabels } from "./session-status";
+import { sessionStatusLabels } from "./session-status";
 import { showError, useStore } from "./store";
+import { selectSessionStatus } from "./ui-selectors";
 
-export function SessionList({ cwd }: { cwd: string }) {
+export const SessionList = memo(function SessionList({
+  cwd,
+  expanded = true,
+  needle = "",
+}: {
+  cwd: string;
+  expanded?: boolean;
+  needle?: string;
+}) {
   const t = useT();
   const sessions = useStore((s) => s.sessions[cwd]);
   const desktop = useStore((s) => s.bootstrap.desktop);
   const [archived, setArchived] = useState(false);
+  if (!expanded) return null;
   const archivedCount = (sessions ?? []).filter(
     (session) => desktop.sessions[session.id]?.archived,
   ).length;
   const visible = (sessions ?? [])
     .filter(
-      (session) => Boolean(desktop.sessions[session.id]?.archived) === archived,
+      (session) =>
+        Boolean(desktop.sessions[session.id]?.archived) === archived &&
+        session.title.toLowerCase().includes(needle),
     )
     .sort(
       (a, b) =>
@@ -40,6 +52,7 @@ export function SessionList({ cwd }: { cwd: string }) {
     );
   return (
     <>
+      {needle && !visible.length && <span role="status">{t.noMatches}</span>}
       {visible.map((session) => (
         <SessionRow key={session.id} session={session} cwd={cwd} />
       ))}
@@ -58,7 +71,7 @@ export function SessionList({ cwd }: { cwd: string }) {
       )}
     </>
   );
-}
+});
 
 function SessionRow({ session, cwd }: { session: SessionInfo; cwd: string }) {
   const t = useT();
@@ -79,10 +92,7 @@ function SessionRow({ session, cwd }: { session: SessionInfo; cwd: string }) {
       !!s.snapshots[session.id]?.transcript.running ||
       (s.modelPending && s.active === session.id),
   );
-  const waiting = useStore((s) =>
-    s.pendingUI.some((request) => request.sessionId === session.id),
-  );
-  const status = sessionStatus(running, waiting, flags);
+  const status = useStore((s) => selectSessionStatus(s, session.id));
   const dialog = useRef<HTMLDialogElement>(null);
   const input = useRef<HTMLInputElement>(null);
   const titleId = useId();
@@ -125,7 +135,7 @@ function SessionRow({ session, cwd }: { session: SessionInfo; cwd: string }) {
           : s.snapshots,
       }));
       dialog.current?.close();
-      void refreshSessions().catch(showError);
+      void refreshSessions(cwd).catch(showError);
     } catch (error) {
       setError(String(error));
     } finally {
@@ -154,7 +164,7 @@ function SessionRow({ session, cwd }: { session: SessionInfo; cwd: string }) {
       });
       if (wasActive && useStore.getState().page === "chat")
         navigate("chat", null);
-      void refreshSessions().catch(showError);
+      void refreshSessions(cwd).catch(showError);
     } catch (error) {
       showError(error);
     } finally {

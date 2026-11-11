@@ -8,19 +8,27 @@ import {
   useSyncExternalStore,
 } from "react";
 import { filterModels } from "../shared/models";
-import { makeMarker, shouldCollapse } from "../shared/paste";
+import {
+  editFoldedText,
+  makeMarker,
+  shouldCollapse,
+  unfoldPastes,
+} from "../shared/paste";
 import type { SlashCommand, Snapshot } from "../shared/rpc-schema";
+import { AttachmentReads, maxImageBase64 } from "./attachment-reads";
 import { ComposerEditor } from "./ComposerEditor";
 import { ComposerFrame } from "./ComposerFrame";
 import { ComposerSubmit } from "./ComposerSubmit";
 import { ContextIndicator } from "./ContextIndicator";
 import { addressKey } from "./chat-snapshot";
+import { createDraftMirror } from "./draft-mirror";
 import { drafts, expandedDraft } from "./draft-store";
 import { ExtensionWidgets } from "./extension-status";
 import { useT } from "./i18n";
 import { ModelPicker } from "./ModelPicker";
 import { navigate } from "./navigation";
 import { rpc, sends } from "./rpc";
+import { subscribeOwnership } from "./runtime-events";
 import {
   applySlashCompletion,
   extensionCommand,
@@ -39,19 +47,10 @@ const imageTypes = new Set([
   "image/gif",
   "image/webp",
 ]);
-const maxBase64 = 4.5 * 1024 * 1024;
-const pendingReads = new Map<string, number>();
-const readListeners = new Set<() => void>();
-const subscribeReads = (listener: () => void) => {
-  readListeners.add(listener);
-  return () => {
-    readListeners.delete(listener);
-  };
-};
-function changeReads(key: string, delta: number) {
-  pendingReads.set(key, (pendingReads.get(key) ?? 0) + delta);
-  for (const listener of readListeners) listener();
-}
+const attachmentReads = new AttachmentReads(drafts, showError);
+subscribeOwnership((previous, next) =>
+  attachmentReads.transfer(previous, next),
+);
 export function Composer({ snapshot }: { snapshot: Snapshot }) {
   const t = useT();
   const { address, transcript, model } = snapshot;
@@ -76,12 +75,22 @@ export function Composer({ snapshot }: { snapshot: Snapshot }) {
   const sendState = useSyncExternalStore(sends.subscribe, () =>
     sends.read(address),
   );
-  const reading = useSyncExternalStore(
-    subscribeReads,
-    () => pendingReads.get(key) ?? 0,
-  );
+  useSyncExternalStore(attachmentReads.subscribe, attachmentReads.getTick);
+  const loads = attachmentReads.read(address);
+  const reading = loads.length;
   const { text, images, pastes } = draft.content;
   const [mirrorError, setMirrorError] = useState<string>();
+  const [stopping, setStopping] = useState<string>();
+  function stop() {
+    if (stopping === key) return;
+    setStopping(key);
+    void rpc.request
+      .abort(address)
+      .catch(showError)
+      .finally(() => {
+        setStopping((current) => (current === key ? undefined : current));
+      });
+  }
   const nextPaste = useRef(1);
   const imageBlocked = images.length > 0 && model?.vision !== true;
   const expanded = expandedDraft(draft.content);
@@ -211,19 +220,29 @@ export function Composer({ snapshot }: { snapshot: Snapshot }) {
       textareaRef.current?.setSelectionRange(cursor, cursor);
     });
   }
+  const mirror = useMemo(
+    () => createDraftMirror((params) => rpc.request.syncDraft(params)),
+    [],
+  );
+  useEffect(
+    () => () => {
+      const latest = drafts.read(slashAddress);
+      if (latest.dirty && !latest.conflict && !latest.retired)
+        void drafts.flush(slashAddress, mirror, latest).catch(showError);
+    },
+    [slashAddress, mirror],
+  );
   // Background mirror is not the command barrier: send still awaits the ordered CAS queue.
   useEffect(() => {
     if (!draft.dirty || draft.conflict || draft.retired) return;
     const timer = setTimeout(() => {
-      void drafts
-        .flush(address, (params) => rpc.request.syncDraft(params))
-        .then(
-          () => setMirrorError(undefined),
-          (error) => setMirrorError(String(error)),
-        );
+      void drafts.flush(slashAddress, mirror).then(
+        () => setMirrorError(undefined),
+        (error) => setMirrorError(String(error)),
+      );
     }, 120);
     return () => clearTimeout(timer);
-  }, [address, draft]);
+  }, [slashAddress, draft, mirror]);
   function send() {
     if (
       (!expanded && !images.length) ||
@@ -232,12 +251,13 @@ export function Composer({ snapshot }: { snapshot: Snapshot }) {
       imageBlocked ||
       reading ||
       submitting ||
+      stopping === key ||
       draft.conflict
     )
       return;
     void sends.send(address).catch(showError);
   }
-  async function attach(files: File[]) {
+  function attach(files: File[]) {
     // Capture the address, not whichever session happens to be active at FileReader completion.
     for (const file of files) {
       if (!imageTypes.has(file.type)) {
@@ -246,45 +266,19 @@ export function Composer({ snapshot }: { snapshot: Snapshot }) {
       }
       if (
         drafts.read(address).content.images.length +
-          (pendingReads.get(key) ?? 0) >=
+          attachmentReads
+            .read(address)
+            .filter((load) => load.state === "pending").length >=
         8
       ) {
         showError(t["You can attach up to 8 images."]);
         continue;
       }
-      if (4 * Math.ceil(file.size / 3) > maxBase64) {
+      if (4 * Math.ceil(file.size / 3) > maxImageBase64) {
         showError(t["Each image must be at most 4.5 MiB of base64 data."]);
         continue;
       }
-      changeReads(key, 1);
-      try {
-        const data = await new Promise<string>((resolve, reject) => {
-          const reader = new FileReader();
-          reader.onload = () =>
-            resolve(String(reader.result).replace(/^data:[^,]*;base64,/, ""));
-          reader.onerror = reader.onabort = () =>
-            reject(new Error(t["Could not read image."]));
-          reader.readAsDataURL(file);
-        });
-        if (data.length > maxBase64)
-          throw new Error(
-            t["Each image must be at most 4.5 MiB of base64 data."],
-          );
-        drafts.edit(address, (content) => ({
-          ...content,
-          images: [
-            ...content.images,
-            {
-              id: crypto.randomUUID(),
-              image: { type: "image", data, mimeType: file.type },
-            },
-          ],
-        }));
-      } catch (error) {
-        showError(error);
-      } finally {
-        changeReads(key, -1);
-      }
+      attachmentReads.start(address, file);
     }
   }
   return (
@@ -329,9 +323,24 @@ export function Composer({ snapshot }: { snapshot: Snapshot }) {
           send();
         }}
       >
+        {pastes.some((p) => text.includes(p.marker)) && (
+          <button
+            type="button"
+            onClick={() => {
+              drafts.edit(address, (content) => ({
+                ...content,
+                text: unfoldPastes(content.text, content.pastes),
+                pastes: [],
+              }));
+              textareaRef.current?.focus();
+            }}
+          >
+            {t.editPastes}
+          </button>
+        )}
         {images.length > 0 && (
           <div className="composer-attachments">
-            {images.map(({ id, image }) => (
+            {images.map(({ id, image }, index) => (
               <div className="composer-attachment" key={id}>
                 <img
                   src={`data:${image.mimeType};base64,${image.data}`}
@@ -339,7 +348,7 @@ export function Composer({ snapshot }: { snapshot: Snapshot }) {
                 />
                 <button
                   type="button"
-                  aria-label={t["Remove attachment"]}
+                  aria-label={`${t["Remove attachment"]}: ${t.imageN(index + 1, images.length)}`}
                   title={t["Remove attachment"]}
                   onClick={() =>
                     drafts.edit(address, (content) => ({
@@ -354,6 +363,21 @@ export function Composer({ snapshot }: { snapshot: Snapshot }) {
             ))}
           </div>
         )}
+        {loads.map((load) => (
+          <p
+            className="composer-hint"
+            key={load.id}
+            role={load.state === "error" ? "alert" : "status"}
+          >
+            {load.name}: {load.error ?? "Loading image…"}{" "}
+            <button
+              type="button"
+              onClick={() => attachmentReads.cancel(load.id)}
+            >
+              {t["Remove attachment"]}: {load.name}
+            </button>
+          </p>
+        ))}
         {options.length > 0 && (
           <div
             className="slash-options"
@@ -437,8 +461,19 @@ export function Composer({ snapshot }: { snapshot: Snapshot }) {
             updateSelection(target);
             drafts.edit(address, (content) => ({
               ...content,
-              text: target.value,
+              ...editFoldedText(content.text, target.value, content.pastes),
             }));
+          }}
+          onCopy={(event) => {
+            const field = event.currentTarget;
+            const selected = field.value.slice(
+              field.selectionStart,
+              field.selectionEnd,
+            );
+            const copied = unfoldPastes(selected, pastes);
+            if (copied === selected) return;
+            event.clipboardData.setData("text/plain", copied);
+            event.preventDefault();
           }}
           onPaste={(event) => {
             const files = Array.from(event.clipboardData.files);
@@ -451,9 +486,9 @@ export function Composer({ snapshot }: { snapshot: Snapshot }) {
               .getData("text/plain")
               .replace(/\r\n/g, "\n");
             if (!shouldCollapse(pasted)) return;
-            event.preventDefault();
             let id = nextPaste.current++;
             while (
+              text.includes(makeMarker(id, pasted)) ||
               pastes.some((paste) => paste.marker === makeMarker(id, pasted))
             )
               id = nextPaste.current++;
@@ -464,9 +499,16 @@ export function Composer({ snapshot }: { snapshot: Snapshot }) {
               selectionEnd: end,
               value,
             } = textarea;
+            const next = editFoldedText(
+              value,
+              value.slice(0, start) + marker + value.slice(end),
+              pastes,
+            );
+            if (next.pastes !== pastes) return;
+            event.preventDefault();
             drafts.edit(address, (content) => ({
               ...content,
-              text: value.slice(0, start) + marker + value.slice(end),
+              text: next.text,
               pastes: [
                 ...content.pastes,
                 { id: crypto.randomUUID(), marker, text: pasted },
@@ -515,6 +557,18 @@ export function Composer({ snapshot }: { snapshot: Snapshot }) {
               }
             }
             if (
+              event.key === "Escape" &&
+              !event.shiftKey &&
+              !event.ctrlKey &&
+              !event.metaKey &&
+              !event.altKey &&
+              (transcript.running || submitting)
+            ) {
+              event.preventDefault();
+              stop();
+              return;
+            }
+            if (
               event.key === "Enter" &&
               !event.shiftKey &&
               !event.nativeEvent.isComposing &&
@@ -534,8 +588,9 @@ export function Composer({ snapshot }: { snapshot: Snapshot }) {
             <ComposerSubmit
               busy={transcript.running}
               submitting={submitting}
+              stopping={stopping === key}
               hasContent={!!expanded || images.length > 0}
-              onStop={() => void rpc.request.abort(address).catch(showError)}
+              onStop={stop}
               disabled={
                 (!expanded && !images.length) ||
                 (!canSend && !extensionSend) ||

@@ -34,8 +34,16 @@ manifest).
 `build.copy` places `node_modules` and the manifest under `Resources/app`, beside
 `bun/`, so standard resolution works from the host and unbundled SDK. No runtime
 `NODE_PATH`, `PI_PACKAGE_DIR`, global cache or repository path is needed. The
-stage is regenerated per build and replaced only after successful
-copying; an interrupted `.next` stage requires explicit removal/review. Keep the
+stage is reused when its complete file/directory tree, manifest and dependency
+placements match the installed production sources byte for byte. Missing,
+changed or extra contents, including symlinks, cause a cache miss. The check
+does not repair the stage or modify installed packages.
+
+On a cache miss, the hook copies into `.next` before replacing the generated
+stage. An existing interrupted `.next` blocks rebuilding until explicit
+removal/review; it is never reused as a cache. Replacement removes the old stage
+before renaming `.next`, so interruption in that window also requires manual
+recovery. A copy failure leaves the old stage intact. Keep the
 normal directory layout; enabling ASAR needs separate WASM/worker resolver tests.
 
 ## Verification

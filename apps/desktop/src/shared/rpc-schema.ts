@@ -20,6 +20,7 @@ import type {
   PromptParams,
   PromptReceipt,
   RuntimeEvent,
+  RuntimeRecoveryState,
   RuntimeViewState,
   SendKey,
   SessionAddress,
@@ -274,7 +275,13 @@ export type RPCSchema = {
         response: { value: string; label: string; description?: string }[];
       };
       getPromptReceipt: { params: SendKey; response: PromptReceipt };
+      getRecovery: { params: SessionAddress; response: RuntimeRecoveryState };
       syncDraft: { params: DraftSyncParams; response: DraftSyncResult };
+      discardRecovery: {
+        params: { current: SessionAddress; retained: SessionAddress };
+        // biome-ignore lint/suspicious/noConfusingVoidType: Electrobun convention.
+        response: void;
+      };
       // biome-ignore lint/suspicious/noConfusingVoidType: Electrobun convention.
       resolveExtensionUI: { params: UIReply; response: void };
       terminalCommand: {
@@ -355,7 +362,10 @@ export type RPCSchema = {
     };
   };
   webview: {
-    requests: Record<never, never>;
+    requests: {
+      // biome-ignore lint/suspicious/noConfusingVoidType: Electrobun convention.
+      flushDrafts: { params: void; response: void };
+    };
     messages: {
       runtimeEvent: RuntimeEvent;
       extensionUIEvent: ExtensionUIEvent;

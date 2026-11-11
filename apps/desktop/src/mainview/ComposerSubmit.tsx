@@ -4,36 +4,51 @@ import { useT } from "./i18n";
 export function ComposerSubmit({
   busy,
   submitting = false,
+  stopping = false,
   hasContent,
   disabled,
   onStop,
 }: {
   busy: boolean;
   submitting?: boolean;
+  stopping?: boolean;
   hasContent: boolean;
   disabled: boolean;
   onStop: () => void;
 }) {
   const t = useT();
-  const stop = !submitting && busy && !hasContent;
-  const label = submitting ? t["Sending…"] : stop ? t.Stop : t.Send;
   return (
-    <button
-      type={stop || submitting ? "button" : "submit"}
-      className="send-button"
-      title={label}
-      aria-label={label}
-      aria-busy={submitting || undefined}
-      disabled={submitting || (!stop && disabled)}
-      onClick={stop ? onStop : undefined}
-    >
-      {submitting ? (
-        <LoaderCircle size={19} className="spinner" aria-hidden="true" />
-      ) : stop ? (
-        <Square size={15} fill="currentColor" aria-hidden="true" />
-      ) : (
-        <ArrowUp size={19} aria-hidden="true" />
+    <>
+      {(busy || submitting || stopping) && (
+        <button
+          type="button"
+          className="send-button"
+          title={stopping ? "Stopping…" : busy ? t.Stop : "Cancel send"}
+          aria-label={stopping ? "Stopping…" : busy ? t.Stop : "Cancel send"}
+          aria-keyshortcuts="Escape"
+          aria-busy={stopping || undefined}
+          disabled={stopping}
+          onClick={onStop}
+        >
+          <Square size={15} fill="currentColor" aria-hidden="true" />
+        </button>
       )}
-    </button>
+      {(!busy || hasContent || submitting) && (
+        <button
+          type={submitting ? "button" : "submit"}
+          className="send-button"
+          title={submitting ? t["Sending…"] : t.Send}
+          aria-label={submitting ? t["Sending…"] : t.Send}
+          aria-busy={submitting || undefined}
+          disabled={submitting || stopping || disabled}
+        >
+          {submitting ? (
+            <LoaderCircle size={19} className="spinner" aria-hidden="true" />
+          ) : (
+            <ArrowUp size={19} aria-hidden="true" />
+          )}
+        </button>
+      )}
+    </>
   );
 }

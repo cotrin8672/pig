@@ -11,12 +11,17 @@ test("source retains parent identity and observes committed changes even after c
   let listener!: (event: AgentSessionEvent) => void;
   const entries: SessionEntry[] = [];
   let calls = 0;
+  let scans = 0;
   const session = {
     isStreaming: false,
     sessionManager: {
       getSessionId: () => "s",
       getCwd: () => "test",
-      getBranch: () => entries,
+      getLeafId: () => entries.at(-1)?.id ?? null,
+      getBranch: () => {
+        scans++;
+        return entries;
+      },
       getEntries: () => entries,
     },
     subscribe(fn: typeof listener) {
@@ -90,6 +95,10 @@ test("source retains parent identity and observes committed changes even after c
     isError: false,
   });
   expect(source.backend.tools()[0].parentToolCallId).toBe("parent");
+  expect(source.backend.tools()[0].phase).toBe("finished");
+  expect(scans).toBe(2);
+  entries.pop();
+  expect(source.backend.tools()).toEqual([]);
   const before = notifications;
   await expect(
     source.backend.invoke({ name: "change", source: "extension.ts" }),

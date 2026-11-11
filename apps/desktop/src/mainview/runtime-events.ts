@@ -30,21 +30,31 @@ export function subscribeOwnership(
     ownershipListeners.delete(listener);
   };
 }
-const retired = new Set<string>();
+const retired = new Map<string, number>();
 const latest = new Map<string, WireEvent>();
 const terminalListeners = new Set<(event: TerminalHostEvent) => void>();
 export let runtimeRevision = 0;
+function retire(address: SessionAddress) {
+  retired.set(
+    address.sessionId,
+    Math.max(address.epoch, retired.get(address.sessionId) ?? -1),
+  );
+  latest.delete(addressKey(address));
+}
 export function liveAddress(address: SessionAddress) {
   const state = useStore.getState();
   const current = state.addresses[address.sessionId];
   return (
     (!state.hostId || state.hostId === address.hostId) &&
-    !retired.has(addressKey(address)) &&
+    address.epoch > (retired.get(address.sessionId) ?? -1) &&
     (!current || address.epoch >= current.epoch)
   );
 }
 function register(address: SessionAddress) {
   if (!liveAddress(address)) return false;
+  const previous = useStore.getState().addresses[address.sessionId];
+  if (previous && !sameAddress(previous, address))
+    latest.delete(addressKey(previous));
   useStore.setState((s) => ({
     hostId: address.hostId,
     addresses: { ...s.addresses, [address.sessionId]: address },
@@ -73,8 +83,12 @@ function removeSurfaces(address: SessionAddress) {
   }));
 }
 function replace(previous: SessionAddress, next: SessionAddress) {
-  if (sameAddress(previous, next) || retired.has(addressKey(previous))) return;
-  retired.add(addressKey(previous));
+  if (
+    sameAddress(previous, next) ||
+    previous.epoch <= (retired.get(previous.sessionId) ?? -1)
+  )
+    return;
+  retire(previous);
   drafts.transfer(previous, next);
   for (const listener of ownershipListeners) listener(previous, next);
   removeSurfaces(previous);
@@ -92,6 +106,7 @@ export function receiveSnapshot(incoming: Snapshot) {
   if (!register(incoming.address)) return;
   const wire = latest.get(addressKey(incoming.address));
   const snapshot = wire ? applyChatEvent(incoming, wire) : incoming;
+  latest.delete(addressKey(incoming.address));
   useStore.setState((s) => ({
     snapshots: {
       ...s.snapshots,
@@ -106,10 +121,13 @@ export function receiveWire(event: WireEvent) {
   if (!liveAddress(event.address)) return;
   const key = addressKey(event.address);
   if ((latest.get(key)?.snapshotSeq ?? -1) >= event.snapshotSeq) return;
-  latest.set(key, event);
   useStore.setState((s) => {
     const snapshot = s.snapshots[event.address.sessionId];
-    if (!snapshot) return {};
+    if (!snapshot || !sameAddress(snapshot.address, event.address)) {
+      latest.set(key, event);
+      return {};
+    }
+    latest.delete(key);
     return {
       snapshots: {
         ...s.snapshots,
@@ -151,9 +169,8 @@ export function receiveRuntime(event: RuntimeEvent) {
     receiveSnapshot(event.snapshot);
   else {
     if (!liveAddress(event.address)) return;
-    retired.add(addressKey(event.address));
+    retire(event.address);
     drafts.retire(event.address);
-    latest.delete(addressKey(event.address));
     removeSurfaces(event.address);
     useStore.setState((s) => {
       const snapshots = { ...s.snapshots };
@@ -223,6 +240,8 @@ export function receiveRuntimeState(state: RuntimeViewState, since: number) {
   const old = useStore.getState();
   if (old.hostId && old.hostId !== state.hostId) {
     for (const address of Object.values(old.addresses)) drafts.retire(address);
+    latest.clear();
+    retired.clear();
     useStore.setState({
       snapshots: {},
       addresses: {},
@@ -240,13 +259,13 @@ export function receiveRuntimeState(state: RuntimeViewState, since: number) {
   const present = new Set(
     state.sessions.map((session) => addressKey(session.address)),
   );
-  for (const snapshot of Object.values(useStore.getState().snapshots)) {
-    if (!present.has(addressKey(snapshot.address))) {
-      retired.add(addressKey(snapshot.address));
-      drafts.retire(snapshot.address);
-      removeSurfaces(snapshot.address);
+  for (const [key, wire] of latest) if (!present.has(key)) retire(wire.address);
+  for (const address of Object.values(useStore.getState().addresses))
+    if (!present.has(addressKey(address))) {
+      retire(address);
+      drafts.retire(address);
+      removeSurfaces(address);
     }
-  }
   useStore.setState((s) => ({
     snapshots: Object.fromEntries(
       Object.entries(s.snapshots).filter(([, snapshot]) =>

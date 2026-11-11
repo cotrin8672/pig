@@ -28,6 +28,7 @@ if (process.env.PIG_OPEN_NAVIGATION_CHILD !== "1") {
   }[] = [];
   const states = new Map<string, OpenState>();
   const cancelled: string[] = [];
+  let failRecovery = false;
   mock.module("electrobun/view", () => ({
     Electroview: class {
       constructor(readonly options: unknown) {}
@@ -43,6 +44,15 @@ if (process.env.PIG_OPEN_NAVIGATION_CHILD !== "1") {
               statuses: [],
             }),
             heartbeatUI: async () => ({ connected: true }),
+            getRecovery: () => {
+              if (failRecovery)
+                throw new Error("Recovery transport failed synchronously");
+              return Promise.resolve({
+                hostId: "navigation",
+                sendIntents: [],
+                retainedDrafts: [],
+              });
+            },
             listSessions: async () => [],
             openSession: (params: OpenSessionParams) => {
               const deferred = Promise.withResolvers<Snapshot>();
@@ -254,5 +264,25 @@ if (process.env.PIG_OPEN_NAVIGATION_CHILD !== "1") {
     c.deferred.resolve(c.ready);
     await c.promise;
     expect(useStore.getState().active).toBe(c.ready.info.id);
+  });
+  test("optional recovery transport failure cannot fail a successful open or erase its new draft", async () => {
+    failRecovery = true;
+    try {
+      useStore.setState({
+        newChatDrafts: { recoveryFailure: "Keep this draft" },
+      });
+      const chat = await start(undefined, "recoveryFailure");
+      chat.deferred.resolve(chat.ready);
+      expect(await chat.promise).toMatchObject({
+        info: { id: chat.ready.info.id },
+      });
+      await Bun.sleep(0);
+      expect(useStore.getState().active).toBe(chat.ready.info.id);
+      expect(drafts.read(chat.ready.address).content.text).toBe(
+        "Keep this draft",
+      );
+    } finally {
+      failRecovery = false;
+    }
   });
 }

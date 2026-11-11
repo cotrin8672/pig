@@ -26,6 +26,7 @@ import type {
 import { displayedEffort } from "../shared/effort";
 import type { ExtensionUIEvent, UIReply } from "../shared/extension-ui";
 import { isModelEnabled } from "../shared/models";
+import { unfoldPastes } from "../shared/paste";
 import type {
   Effort,
   ModelInfo,
@@ -41,6 +42,7 @@ import type {
   OpenState,
   PromptParams,
   RuntimeEvent,
+  RuntimeRecoveryState,
   RuntimeViewState,
   SendKey,
   SessionAddress,
@@ -82,7 +84,13 @@ import {
 import { SDKProjector } from "./sdk-projector";
 import { addressKey, SendReceipts } from "./sdk-send-receipts";
 import {
+  type SendRecoveryStore,
+  sendRecoveryStore,
+} from "./send-recovery-store";
+import { SessionDiagnosticStore } from "./session-diagnostics";
+import {
   listSessionFiles,
+  readSessionFile,
   removeSessionFile,
   resolveSessionFile,
   sameSessionPath,
@@ -107,16 +115,39 @@ type Managed = {
   eventBus: EventBusController;
   adapterSource?: ReturnType<typeof createAdapterSource>;
   adapters?: AdapterRuntime;
+  adapterSnapshot?: Snapshot["sessionUI"];
   disposing?: Promise<void>;
   closing?: Promise<void>;
   operation: Promise<unknown>;
   reloadPending: boolean;
   stopping: boolean;
+  stopPromise?: Promise<void>;
+  quarantined?: boolean;
+  queued: Map<
+    Parameters<AgentSession["agent"]["followUp"]>[0],
+    string | undefined
+  >;
+  admissionRequestId?: string;
+  startedSends: SendKey[];
   queuedImages: boolean;
   preparingImages?: boolean;
   images: ReturnType<typeof createQueuedImagePolicy>;
   admissionSignal?: AbortSignal;
   transition?: AbortController;
+  publishTimer?: ReturnType<typeof setTimeout>;
+  infoCache?: {
+    leaf: ReturnType<SDKSessionManager["getLeafEntry"]>;
+    count: number;
+    value: SessionInfo;
+  };
+  contextCache?: {
+    leaf: ReturnType<SDKSessionManager["getLeafEntry"]>;
+    count: number;
+    epoch: number;
+    model?: Model<Api>;
+    contextWindow?: number;
+    value: ReturnType<AgentSession["getContextUsage"]>;
+  };
 };
 type Opening = {
   input: OpenSessionParams;
@@ -124,6 +155,12 @@ type Opening = {
   promise: Promise<Snapshot>;
   controller: AbortController;
   managed?: Managed;
+};
+type OpenResult = {
+  input: OpenSessionParams;
+  state:
+    | { state: "ready"; address: SessionAddress }
+    | Extract<OpenState, { state: "failed" | "cancelled" }>;
 };
 type Options = {
   credentials: CredentialStore;
@@ -138,9 +175,32 @@ type Options = {
   configFile?: string;
   configureModels?: (runtime: ModelRuntime) => void | Promise<void>;
   connectionNow?: () => number;
+  recoveryFile?: string;
 };
 // SDK's low-level API registry is process-global: serialize loader/reload work.
 let loaderQueue = Promise.resolve();
+const stopWaitMs = 2_000;
+async function stopBudget<T>(task: Promise<T>, phase: string): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      task,
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(
+          () =>
+            reject(
+              new Error(
+                `Stop unconfirmed: ${phase} did not finish within ${stopWaitMs}ms. This runtime is isolated; external work may still be running.`,
+              ),
+            ),
+          stopWaitMs,
+        );
+      }),
+    ]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
 export function loadExclusive<T>(fn: () => Promise<T>): Promise<T> {
   const task = loaderQueue.then(fn);
   loaderQueue = task.then(
@@ -154,12 +214,25 @@ import { UIConnectionLease } from "./ui-connection-lease";
 
 export class SessionHost {
   readonly hostId = crypto.randomUUID();
-  readonly receipts = new SendReceipts(this.hostId);
+  readonly receipts: SendReceipts;
+  private readonly recovery: SendRecoveryStore;
+  private readonly runDiagnostics: SessionDiagnosticStore;
   readonly broker: UIRequestBroker;
   readonly drafts: ComposerBridge;
   private epoch = 0;
   private sessions = new Map<string, Managed>();
+  private failedHistory = new Map<
+    string,
+    {
+      address: SessionAddress;
+      cwd: string;
+      revision: string;
+      leaf: string | null;
+      snapshot: Snapshot;
+    }
+  >();
   private opens = new Map<string, Opening>();
+  private openResults = new Map<string, OpenResult>();
   private cancelledOpens = new Set<string>();
   private readonly clients: UIConnectionLease;
   private shuttingDown = false;
@@ -175,8 +248,31 @@ export class SessionHost {
     );
     this.configReady = this.configLoader.reload();
     initializeRuntimeTheme();
-    this.broker = new UIRequestBroker(options.emitUI);
-    this.drafts = new ComposerBridge(options.emitUI);
+    this.broker = new UIRequestBroker((event) => {
+      if (event.type === "request") {
+        const m = this.sessions.get(event.request.sessionId);
+        if (m?.publishTimer) this.publish(m);
+      }
+      options.emitUI(event);
+    });
+    this.recovery = sendRecoveryStore(
+      options.recoveryFile ?? join(desktopConfigDir, "send-recovery.sqlite"),
+    );
+    this.runDiagnostics = new SessionDiagnosticStore(
+      options.recoveryFile ?? join(desktopConfigDir, "send-recovery.sqlite"),
+    );
+    this.receipts = new SendReceipts(this.hostId, this.recovery);
+    this.drafts = new ComposerBridge(
+      options.emitUI,
+      (address, draft, previous, keepImages) =>
+        this.recovery.draft(
+          address,
+          draft,
+          this.draftOwner(address),
+          previous,
+          keepImages,
+        ),
+    );
     this.clients = new UIConnectionLease(
       () => {
         this.broker.setAvailable(false);
@@ -221,7 +317,7 @@ export class SessionHost {
       !m ||
       addressKey(m.address) !== addressKey(address) ||
       m.phase === "closing" ||
-      (ready && (m.phase !== "ready" || !!m.transition))
+      (ready && (m.phase !== "ready" || !!m.transition || m.stopping))
     )
       throw new Error("STALE_SESSION_ADDRESS");
     return m;
@@ -287,6 +383,24 @@ export class SessionHost {
       });
   }
   getOpenState({ openId }: { openId: string }): OpenState {
+    const result = this.openResults.get(openId);
+    if (result) {
+      if (result.state.state !== "ready") return result.state;
+      const m = this.sessions.get(result.state.address.sessionId);
+      if (
+        !m ||
+        m.phase !== "ready" ||
+        m.transition ||
+        addressKey(m.address) !== addressKey(result.state.address)
+      ) {
+        result.state = {
+          state: "cancelled",
+          message: "Session was closed or replaced",
+        };
+        return result.state;
+      }
+      return { state: "ready", snapshot: this.snapshot(m) };
+    }
     return (
       this.opens.get(openId)?.state ??
       (this.cancelledOpens.has(openId)
@@ -315,6 +429,17 @@ export class SessionHost {
       return old.input.cwd === input.cwd && old.input.id === input.id
         ? old.promise
         : Promise.reject(new Error("OPEN_ID_CONFLICT"));
+    const result = this.openResults.get(input.openId);
+    if (result) {
+      if (result.input.cwd !== input.cwd || result.input.id !== input.id)
+        return Promise.reject(new Error("OPEN_ID_CONFLICT"));
+      const state = this.getOpenState(input);
+      return state.state === "ready"
+        ? Promise.resolve(state.snapshot)
+        : Promise.reject(
+            new Error("message" in state ? state.message : "Opening cancelled"),
+          );
+    }
     if (this.cancelledOpens.has(input.openId))
       return Promise.reject(new Error("Opening cancelled"));
     const controller = new AbortController();
@@ -326,12 +451,33 @@ export class SessionHost {
       promise: deferred.promise,
     };
     this.opens.set(input.openId, open);
-    void this.open(open).then(deferred.resolve, deferred.reject);
+    void this.open(open).then(
+      (snapshot) => {
+        this.opens.delete(input.openId);
+        this.openResults.set(input.openId, {
+          input: open.input,
+          state: { state: "ready", address: { ...snapshot.address } },
+        });
+        deferred.resolve(snapshot);
+      },
+      (error) => {
+        this.opens.delete(input.openId);
+        this.openResults.set(input.openId, {
+          input: open.input,
+          state:
+            open.state.state === "failed" || open.state.state === "cancelled"
+              ? open.state
+              : { state: "failed", message: String(error) },
+        });
+        deferred.reject(error);
+      },
+    );
     void open.promise.catch(() => {});
     return open.promise;
   }
   private async open(open: Opening): Promise<Snapshot> {
     let m: Managed | undefined;
+    let historyPreview: { snapshot: Snapshot; leaf: string | null } | undefined;
     try {
       const { input, controller } = open;
       controller.signal.throwIfAborted();
@@ -364,6 +510,7 @@ export class SessionHost {
         : SessionManager.create(input.cwd);
       controller.signal.throwIfAborted();
       const address = this.address(manager.getSessionId());
+      this.failedHistory.delete(address.sessionId);
       const ui = createExtensionUIHost({
         address,
         broker: this.broker,
@@ -378,7 +525,11 @@ export class SessionHost {
         seq: 0,
         openId: input.openId,
         manager,
-        projector: new SDKProjector(manager, address.epoch),
+        projector: new SDKProjector(
+          manager,
+          address.epoch,
+          this.runDiagnostics,
+        ),
         controller,
         ui,
         eventBus: createEventBus(),
@@ -400,6 +551,8 @@ export class SessionHost {
         operation: Promise.resolve(),
         reloadPending: false,
         stopping: false,
+        queued: new Map(),
+        startedSends: [],
         queuedImages: false,
       };
       open.managed = m;
@@ -412,7 +565,9 @@ export class SessionHost {
         cwd: input.cwd,
       });
       // History is independent of model availability, Trust UI and startup hooks.
-      this.options.emit({ type: "snapshot", snapshot: this.snapshot(m) });
+      const preview = this.snapshot(m);
+      historyPreview = { snapshot: preview, leaf: manager.getLeafId() };
+      this.options.emit({ type: "snapshot", snapshot: preview });
       const managed = m;
       const factory: Parameters<typeof createAgentSessionRuntime>[0] = async (
         target,
@@ -561,6 +716,7 @@ export class SessionHost {
         sessionManager: manager,
       });
       managed.runtime.setBeforeSessionInvalidate(() => {
+        this.cancelPublish(managed);
         this.invalidated.add(required(managed.runtime).session);
         this.detachAdapters(managed);
         managed.unsubscribe?.();
@@ -611,6 +767,23 @@ export class SessionHost {
         message: String(error),
       };
       if (m) {
+        // Retain only verified ownership and a branch token, never a failed runtime.
+        const preview =
+          !cancelled && m.manager.getSessionFile() && historyPreview
+            ? {
+                ...historyPreview.snapshot,
+                failure: String(error),
+              }
+            : undefined;
+        const history = preview?.transcript.history;
+        if (history && preview)
+          this.failedHistory.set(m.address.sessionId, {
+            address: { ...m.address },
+            cwd: m.cwd,
+            revision: history.revision,
+            leaf: historyPreview?.leaf ?? null,
+            snapshot: preview,
+          });
         await this.destroy(m);
         this.options.emit({
           type: "closed",
@@ -624,12 +797,18 @@ export class SessionHost {
   }
   private async bind(m: Managed, session: AgentSession) {
     m.manager = session.sessionManager;
-    m.projector ??= new SDKProjector(m.manager, m.address.epoch);
+    m.projector ??= new SDKProjector(
+      m.manager,
+      m.address.epoch,
+      this.runDiagnostics,
+    );
+    this.restoreQueue(m);
     const agentPrompt = session.agent.prompt.bind(session.agent);
     session.agent.prompt = new Proxy(agentPrompt, {
       apply(target, agent, args) {
         m.controller.signal.throwIfAborted();
         m.admissionSignal?.throwIfAborted();
+        if (m.stopping) throw new Error("Session is stopping");
         return Reflect.apply(target, agent, args);
       },
     });
@@ -637,29 +816,52 @@ export class SessionHost {
     session.agent.followUp = (message) => {
       m.controller.signal.throwIfAborted();
       m.admissionSignal?.throwIfAborted();
-      return followUp(
-        this.settings.blockImages ? scrubImages(message) : message,
-      );
+      if (m.stopping) throw new Error("Session is stopping");
+      const queued = this.settings.blockImages ? scrubImages(message) : message;
+      m.queued.set(queued, m.admissionRequestId);
+      return followUp(queued);
+    };
+    const steer = session.agent.steer.bind(session.agent);
+    session.agent.steer = (message) => {
+      m.controller.signal.throwIfAborted();
+      m.admissionSignal?.throwIfAborted();
+      if (m.stopping) throw new Error("Session is stopping");
+      const queued = this.settings.blockImages ? scrubImages(message) : message;
+      m.queued.set(queued, m.admissionRequestId);
+      return steer(queued);
     };
     // Public adapters apply image policy to persistence and final context, including extension insertion.
     const appendMessage = m.manager.appendMessage.bind(m.manager);
-    m.manager.appendMessage = (message) =>
-      appendMessage(this.settings.blockImages ? scrubImages(message) : message);
+    m.manager.appendMessage = (message) => {
+      if (m.quarantined) throw new Error("STOP_UNCONFIRMED");
+      return appendMessage(
+        this.settings.blockImages ? scrubImages(message) : message,
+      );
+    };
     const appendCustom = m.manager.appendCustomMessageEntry.bind(m.manager);
-    m.manager.appendCustomMessageEntry = (type, content, display, details) =>
-      appendCustom(
+    m.manager.appendCustomMessageEntry = (type, content, display, details) => {
+      if (m.quarantined) throw new Error("STOP_UNCONFIRMED");
+      return appendCustom(
         type,
         this.settings.blockImages ? scrubImages(content) : content,
         display,
         this.settings.blockImages ? scrubImages(details) : details,
       );
+    };
+    const appendEntry = m.manager.appendCustomEntry.bind(m.manager);
+    m.manager.appendCustomEntry = (type, data) => {
+      if (m.quarantined) throw new Error("STOP_UNCONFIRMED");
+      return appendEntry(type, data);
+    };
     const transform = session.agent.transformContext;
     session.agent.transformContext = async (messages, signal) => {
       const result = transform ? await transform(messages, signal) : messages;
+      m.controller.signal.throwIfAborted();
       return this.settings.blockImages ? scrubImages(result) : result;
     };
     const setModel = session.setModel.bind(session);
     session.setModel = async (model, options) => {
+      m.controller.signal.throwIfAborted();
       if (m.queuedImages || m.preparingImages)
         throw new Error(
           "Model change deferred until queued images are consumed",
@@ -683,14 +885,18 @@ export class SessionHost {
       uiContext: m.ui.uiContext,
       mode: "rpc",
       abortHandler: () => {
-        void this.abort(m.address);
+        void this.abort(m.address).catch((error) =>
+          console.error("Stop failed", error),
+        );
       },
       shutdownHandler: () => {
         queueMicrotask(() => {
           void this.closeSession(m.address);
         });
       },
-      onError: (error) => this.failure(m, error.error),
+      onError: (error) => {
+        if (m.runtime?.session === session) this.failure(m, error.error);
+      },
       commandContextActions: {
         waitForIdle: () => session.waitForIdle(),
         newSession: (options) =>
@@ -726,16 +932,47 @@ export class SessionHost {
     this.attachAdapters(m);
   }
   private subscribe(m: Managed, session: AgentSession) {
-    m.unsubscribe = session.subscribe((event) => {
+    const epoch = m.address.epoch;
+    const current = () =>
+      !m.quarantined &&
+      m.address.epoch === epoch &&
+      m.runtime?.session === session;
+    const dequeue = session.agent.subscribe((event) => {
+      if (current() && event.type === "message_start") {
+        const requestId = m.queued.get(event.message);
+        m.queued.delete(event.message);
+        if (requestId) m.startedSends.push({ ...m.address, requestId });
+      }
+    });
+    const unsubscribe = session.subscribe((event) => {
+      if (!current()) return;
+      const failure = m.projector?.failure;
       m.projector?.event(
         this.settings.blockImages ? scrubImages(event) : event,
       );
       if (event.type === "agent_settled") {
+        for (const key of m.startedSends.splice(0)) {
+          try {
+            this.receipts.releasePayload(key);
+          } catch (error) {
+            this.failure(m, error);
+          }
+        }
         m.queuedImages = false;
         this.maybeReload(m);
       }
-      this.publish(m);
+      if (
+        (event.type === "message_update" ||
+          event.type === "tool_execution_update") &&
+        m.projector?.failure === failure
+      )
+        this.schedulePublish(m);
+      else this.publish(m);
     });
+    m.unsubscribe = () => {
+      dequeue();
+      unsubscribe();
+    };
   }
   private maybeReload(m: Managed) {
     if (!m.reloadPending || m.phase !== "ready") return;
@@ -749,17 +986,20 @@ export class SessionHost {
   private detachAdapters(m: Managed) {
     m.adapters?.dispose();
     m.adapters = undefined;
+    m.adapterSnapshot = undefined;
     m.adapterSource?.dispose();
     m.adapterSource = undefined;
   }
   private attachAdapters(m: Managed) {
     m.adapters?.dispose();
+    m.adapterSnapshot = undefined;
     if (!m.adapterSource || m.phase === "closing") return;
     m.adapters = new AdapterRuntime(
       this.configLoader.config,
       m.adapterSource.backend,
       () => {
-        this.publish(m);
+        m.adapterSnapshot = undefined;
+        if (!m.publishTimer) this.publish(m);
         if (m.reloadPending && !m.adapters?.busy) this.maybeReload(m);
         this.maybeReloadAdapterConfig();
       },
@@ -826,11 +1066,17 @@ export class SessionHost {
         `Extension loading failed: ${extensions.errors.map((e) => `${e.path}: ${e.error}`).join("; ")}`,
       );
   }
+  private restoreQueue(m: Managed) {
+    if (!m.runtime?.session.settingsManager.isProjectTrusted()) return;
+    m.projector?.restoreQueue((key) => this.receipts.queuedIntent(key));
+  }
   private failure(m: Managed, error: unknown) {
+    if (m.quarantined || m.phase === "closing") return;
     m.projector?.fail(error);
     this.publish(m);
   }
   private publish(m: Managed) {
+    this.cancelPublish(m);
     if (m.phase === "closing" || !m.runtime || !m.projector) return;
     const snapshot = this.snapshot(m);
     this.options.emit({ type: "snapshot", snapshot });
@@ -845,11 +1091,38 @@ export class SessionHost {
       configError: snapshot.configError,
     });
   }
+  private cancelPublish(m: Managed) {
+    clearTimeout(m.publishTimer);
+    m.publishTimer = undefined;
+  }
+  private schedulePublish(m: Managed) {
+    if (m.publishTimer || m.phase === "closing") return;
+    m.publishTimer = setTimeout(() => this.publish(m), 32);
+  }
   private selection(m: Managed): ModelSelection {
     const session = required(m.runtime).session;
     const model = session.model;
     const info = model && this.options.modelInfo(model);
-    const usage = session.getContextUsage();
+    const leaf = m.manager.getLeafEntry();
+    const count = m.manager.getEntryCount();
+    const limitsModel = session.routedModel?.model ?? model;
+    if (
+      !m.contextCache ||
+      m.contextCache.leaf !== leaf ||
+      m.contextCache.count !== count ||
+      m.contextCache.epoch !== m.address.epoch ||
+      m.contextCache.model !== limitsModel ||
+      m.contextCache.contextWindow !== limitsModel?.contextWindow
+    )
+      m.contextCache = {
+        leaf,
+        count,
+        epoch: m.address.epoch,
+        model: limitsModel,
+        contextWindow: limitsModel?.contextWindow,
+        value: session.getContextUsage(),
+      };
+    const usage = m.contextCache.value;
     return {
       model: info,
       effort: displayedEffort(
@@ -868,6 +1141,14 @@ export class SessionHost {
     };
   }
   private info(m: Managed): SessionInfo {
+    const leaf = m.manager.getLeafEntry();
+    const count = m.manager.getEntryCount();
+    if (
+      m.infoCache?.leaf === leaf &&
+      m.infoCache?.count === count &&
+      m.infoCache.value.id === m.address.sessionId
+    )
+      return m.infoCache.value;
     const first = m.manager
       .getBranch()
       .find(
@@ -884,7 +1165,7 @@ export class SessionHost {
             .filter((c) => c.type === "text")
             .map((c) => c.text)
             .join(" ");
-    return {
+    const value: SessionInfo = {
       id: m.address.sessionId,
       cwd: m.cwd,
       title: m.manager.getSessionName() ?? (title || "New chat"),
@@ -892,9 +1173,12 @@ export class SessionHost {
         Date.parse(m.manager.getEntries().at(-1)?.timestamp ?? "") ||
         Date.now(),
     };
+    m.infoCache = { leaf, count, value };
+    return value;
   }
   private snapshot(m: Managed): Snapshot {
     const projector = required(m.projector);
+    m.adapterSnapshot ??= m.adapters?.snapshot();
     const snapshot: Snapshot = {
       ...(m.phase === "ready" ? {} : { ready: false }),
       address: { ...m.address },
@@ -903,7 +1187,7 @@ export class SessionHost {
       transcript: projector.snapshot(),
       failure: projector.failure,
       aborted: projector.aborted,
-      sessionUI: m.adapters?.snapshot(),
+      sessionUI: m.adapterSnapshot,
       configError: this.configLoader.error,
       ...(m.runtime
         ? this.selection(m)
@@ -914,16 +1198,44 @@ export class SessionHost {
   getSessionSnapshot(address: SessionAddress) {
     return this.snapshot(this.current(address, false));
   }
-  getSessionHistory(
+  async getSessionHistory(
     input: SessionAddress & { revision: string; before: string },
   ) {
-    const m = this.current(input, false);
     if (typeof input.revision !== "string" || typeof input.before !== "string")
       throw new Error("Invalid history cursor");
-    const page = required(m.projector).historyPage(
-      input.before,
-      input.revision,
-    );
+    let page: ReturnType<SDKProjector["historyPage"]>;
+    if (this.sessions.has(input.sessionId)) {
+      const m = this.current(input, false);
+      page = required(m.projector).historyPage(input.before, input.revision);
+    } else {
+      const owner = this.failedHistory.get(input.sessionId);
+      if (
+        this.shuttingDown ||
+        !owner ||
+        addressKey(owner.address) !== addressKey(input)
+      )
+        throw new Error("STALE_SESSION_ADDRESS");
+      if (owner.revision !== input.revision)
+        throw new Error("STALE_HISTORY_CURSOR");
+      // The same header/path checks used by open; no extensions, Trust grant or model startup.
+      const manager = await readSessionFile(owner.cwd, input.sessionId);
+      if (
+        this.failedHistory.get(input.sessionId) !== owner ||
+        this.sessions.has(input.sessionId)
+      )
+        throw new Error("STALE_SESSION_ADDRESS");
+      if (
+        owner.leaf &&
+        !manager.getBranch().some((entry) => entry.id === owner.leaf)
+      )
+        throw new Error("STALE_HISTORY_CURSOR");
+      page = new SDKProjector(
+        manager,
+        input.epoch,
+        this.runDiagnostics,
+      ).historyPage(input.before);
+      if (page.history) page.history.revision = owner.revision;
+    }
     return this.settings.blockImages ? scrubImages(page) : page;
   }
   listSlashCommands(address: SessionAddress): SlashCommand[] {
@@ -967,10 +1279,31 @@ export class SessionHost {
   getPromptReceipt(key: SendKey) {
     return this.receipts.lookup(key);
   }
+  private draftOwner(address: SessionAddress) {
+    const m = this.current(address, false);
+    return {
+      cwd: m.cwd,
+      sessionFile: m.manager.getSessionFile() ?? null,
+      branchId: m.manager.getLeafId(),
+    };
+  }
   prompt(params: PromptParams) {
     // Ledger lookup remains usable across closed/old epochs; mutation never does.
     const m = this.current(params),
       session = required(m.runtime).session;
+    const reserved = this.receipts.has(params);
+    if (!reserved)
+      this.receipts.register(params, {
+        owner: this.draftOwner(params),
+        content: {
+          text: params.text,
+          pastes: [],
+          images: (params.images ?? []).map((image, index) => ({
+            id: String(index),
+            image,
+          })),
+        },
+      });
     return this.receipts
       .send(
         params,
@@ -979,6 +1312,7 @@ export class SessionHost {
           signal.throwIfAborted();
           this.current(params);
           m.admissionSignal = signal;
+          m.admissionRequestId = params.requestId;
           m.preparingImages = !!params.images?.length;
           // SDK defers prompt() while extension agent_settled hooks execute and can
           // resolve its Promise before preflight. Wait on the public settled event
@@ -1003,7 +1337,10 @@ export class SessionHost {
               if (signal.aborted) abort();
             });
           if (m.stopping) throw new Error("Session is stopping");
-          if (this.drafts.read(params).revision !== params.draftRevision)
+          if (
+            !reserved &&
+            this.drafts.read(params).revision !== params.draftRevision
+          )
             throw new Error("DRAFT_REVISION_CONFLICT");
           if (!params.text.trim() && !params.images?.length)
             throw new Error("Message is empty");
@@ -1038,9 +1375,23 @@ export class SessionHost {
             images: result.images,
           };
         },
-        (error) => this.failure(m, error),
+        (error) => {
+          if (addressKey(params) === addressKey(m.address))
+            this.failure(m, error);
+        },
+        (intent) =>
+          this.drafts.consume(params, params.draftRevision, (consumed) =>
+            this.recovery.intent(
+              intent,
+              consumed
+                ? { ...consumed, owner: this.draftOwner(consumed.address) }
+                : undefined,
+            ),
+          ),
       )
       .finally(() => {
+        if (m.admissionRequestId === params.requestId)
+          m.admissionRequestId = undefined;
         if (!this.receipts.pending(params)) m.preparingImages = false;
         this.maybeReload(m);
       });
@@ -1049,7 +1400,38 @@ export class SessionHost {
     this.current(params, false);
     if (this.sessions.get(params.sessionId)?.transition)
       throw new Error("STALE_SESSION_ADDRESS");
-    return this.drafts.sync(params);
+    const result = this.drafts.sync(params);
+    if (result.applied && params.requestId)
+      this.receipts.register(
+        {
+          hostId: params.hostId,
+          sessionId: params.sessionId,
+          epoch: params.epoch,
+          requestId: params.requestId,
+          draftRevision: result.draft.revision,
+          text: this.drafts.expandedText(params).trim(),
+          images: result.draft.images.length
+            ? result.draft.images.map((item) => item.image)
+            : undefined,
+        },
+        { content: params.content, owner: this.draftOwner(params) },
+      );
+    return result;
+  }
+  discardRecovery(input: {
+    current: SessionAddress;
+    retained: SessionAddress;
+  }) {
+    const m = this.current(input.current);
+    if (!m.runtime?.session.settingsManager.isProjectTrusted())
+      throw new Error("Trust this project before recovering drafts");
+    if (
+      input.retained.hostId === this.hostId &&
+      this.sessions.has(input.retained.sessionId)
+    )
+      throw new Error("Only retained drafts can be discarded");
+    this.recovery.discard(input.retained, m.cwd);
+    this.receipts.forget(input.retained);
   }
   resolveExtensionUI(reply: UIReply) {
     const m = this.current(reply, false);
@@ -1059,25 +1441,101 @@ export class SessionHost {
   terminalCommand(command: TerminalClientCommand & SessionAddress) {
     this.current(command, false).ui.handleTerminal(command);
   }
-  async abort(address: SessionAddress) {
+  private recoverQueue(m: Managed) {
+    const intents = new Map(
+      this.receipts
+        .intents()
+        .filter(
+          (intent) => addressKey(intent.receipt) === addressKey(m.address),
+        )
+        .map((intent) => [intent.receipt.requestId, intent.content]),
+    );
+    const queued = [...m.queued].flatMap(([message, requestId]) => {
+      if (message.role !== "user") return [];
+      const content = requestId ? intents.get(requestId) : undefined;
+      return [
+        {
+          message: content
+            ? {
+                ...message,
+                content: [
+                  {
+                    type: "text" as const,
+                    text: unfoldPastes(content.text, content.pastes).trim(),
+                  },
+                  ...content.images.map(({ image }) => image),
+                ],
+              }
+            : structuredClone(message),
+          key: requestId ? { ...m.address, requestId } : undefined,
+        },
+      ];
+    });
+    m.projector?.recoverQueue(queued);
+    m.runtime?.session.clearQueue();
+    m.queued.clear();
+    if (queued.length) this.publish(m);
+  }
+  private quarantine(m: Managed, error: unknown) {
+    if (m.quarantined) return;
+    m.quarantined = true;
+    m.phase = "closing";
+    this.cancelPublish(m);
+    m.controller.abort(error);
+    m.transition?.abort(error);
+    this.receipts.cancel(m.address);
+    m.projector?.stopUnconfirmed(error);
+    m.unsubscribe?.();
+    this.detachAdapters(m);
+    this.broker.cancelSession(m.address);
+    m.ui.cancelAll("stop");
+    this.options.emit({
+      type: "closed",
+      address: m.address,
+      reason: "failed",
+      message: String(error),
+    });
+  }
+  abort(address: SessionAddress): Promise<void> {
     const m = this.current(address, false);
+    if (m.stopPromise) return m.stopPromise;
+    if (m.publishTimer) this.publish(m);
     m.stopping = true;
     m.transition?.abort(new Error("Session transition cancelled by Stop"));
     this.receipts.cancel(address);
     this.broker.cancelSession(address);
     m.ui.cancelAll("stop");
-    try {
-      await m.runtime?.session.abort();
-      await this.receipts.settled(address);
-      m.runtime?.session.clearQueue();
-    } finally {
-      m.stopping = false;
-      m.admissionSignal = undefined;
-      m.queuedImages = false;
-      this.maybeReload(m);
-    }
+    this.recoverQueue(m);
+    m.stopPromise = stopBudget(
+      (async () => {
+        await m.runtime?.session.abort();
+        await this.receipts.settled(address);
+      })(),
+      "input/start/settled",
+    )
+      .catch((error) => {
+        this.quarantine(m, error);
+        void this.destroy(m);
+        throw error;
+      })
+      .finally(() => {
+        if (!m.quarantined) {
+          m.stopping = false;
+          m.admissionSignal = undefined;
+          m.queuedImages = false;
+          m.stopPromise = undefined;
+          this.maybeReload(m);
+        }
+      });
+    return m.stopPromise;
   }
   closeSession(address: SessionAddress): Promise<void> {
+    const history = this.failedHistory.get(address.sessionId);
+    if (history && addressKey(history.address) === addressKey(address)) {
+      this.failedHistory.delete(address.sessionId);
+      this.options.emit({ type: "closed", address, reason: "close" });
+      return Promise.resolve();
+    }
     const existing = this.sessions.get(address.sessionId);
     if (
       existing?.phase === "closing" &&
@@ -1085,6 +1543,7 @@ export class SessionHost {
     )
       return existing.closing ?? existing.disposing ?? Promise.resolve();
     const m = this.current(address, false);
+    if (m.publishTimer) this.publish(m);
     m.phase = "closing";
     m.controller.abort(new Error("Chat closed"));
     m.transition?.abort(new Error("Session transition cancelled by Close"));
@@ -1096,23 +1555,30 @@ export class SessionHost {
       this.cancelOpen({ openId: m.openId });
     m.closing = Promise.resolve().then(async () => {
       if (opening && opening.state.state !== "ready") {
-        await opening.promise.catch(() => {});
+        await stopBudget(
+          opening.promise.catch(() => {}),
+          "startup/close",
+        ).catch((error) => this.quarantine(m, error));
         return;
       }
-      await m.operation.catch(() => {});
       await this.destroy(m);
-      this.options.emit({
-        type: "closed",
-        address: m.address,
-        reason: "close",
-      });
+      if (!m.quarantined)
+        this.options.emit({
+          type: "closed",
+          address: m.address,
+          reason: "close",
+        });
     });
     return m.closing;
   }
   private destroy(m: Managed) {
-    m.disposing ??= Promise.resolve().then(async () => {
+    this.cancelPublish(m);
+    if (m.disposing) return m.disposing;
+    this.recoverQueue(m);
+    const cleanup = Promise.resolve().then(async () => {
       const errors: unknown[] = [];
       this.detachAdapters(m);
+      await m.operation.catch(() => {});
       try {
         await m.runtime?.session.abort();
       } catch (error) {
@@ -1131,6 +1597,7 @@ export class SessionHost {
         errors.push(error);
       }
       try {
+        if (!m.quarantined) m.projector?.checkpoint();
         m.unsubscribe?.();
         m.ui.dispose();
         this.broker.cancelSession(m.address);
@@ -1144,6 +1611,9 @@ export class SessionHost {
         this.sessions.delete(m.address.sessionId);
       if (errors.length) console.error("Session cleanup failures", errors);
     });
+    m.disposing = stopBudget(cleanup, "close/shutdown").catch((error) =>
+      this.quarantine(m, error),
+    );
     return m.disposing;
   }
   async reloadSession(
@@ -1172,11 +1642,17 @@ export class SessionHost {
             session.reload({
               beforeSessionStart: () => {
                 signal.throwIfAborted();
+                this.cancelPublish(m);
                 m.address = this.address(previous.sessionId);
                 this.drafts.transfer(previous, m.address);
                 m.ui.rotate(m.address);
                 m.unsubscribe?.();
-                m.projector = new SDKProjector(m.manager, m.address.epoch);
+                m.projector = new SDKProjector(
+                  m.manager,
+                  m.address.epoch,
+                  this.runDiagnostics,
+                );
+                this.restoreQueue(m);
                 this.subscribe(m, session);
                 const address = { ...m.address };
                 m.adapterSource = createAdapterSource(
@@ -1283,7 +1759,12 @@ export class SessionHost {
         m.manager.appendCustomEntry("piris.rewind", {
           entryId: params.entryId,
         });
-        m.projector = new SDKProjector(m.manager, m.address.epoch);
+        m.projector = new SDKProjector(
+          m.manager,
+          m.address.epoch,
+          this.runDiagnostics,
+        );
+        this.restoreQueue(m);
         this.attachAdapters(m);
         this.publish(m);
         return this.snapshot(m);
@@ -1316,18 +1797,78 @@ export class SessionHost {
     )
       throw new Error("Stop active chats before deleting a chat");
     if (m) await this.closeSession(m.address);
+    if (this.sessions.has(info.id))
+      throw new Error(
+        "Stop is unconfirmed; session cannot be deleted while external work may be running",
+      );
+    const file = await resolveSessionFile(info.cwd, info.id);
+    const manager = SessionManager.open(file);
     await removeSessionFile(info.cwd, info.id);
+    for (const address of this.recovery.deleteSession(info.id, info.cwd)) {
+      this.receipts.forget(address);
+      this.options.emit({
+        type: "closed",
+        address,
+        reason: "close",
+        discardDraft: true,
+      });
+    }
+    this.runDiagnostics.delete(manager);
+    this.failedHistory.delete(info.id);
+  }
+  private recoveryState(sessions: Managed[]): RuntimeRecoveryState {
+    const allowed = sessions
+      .filter(
+        (m) =>
+          m.phase === "ready" &&
+          m.runtime?.session.settingsManager.isProjectTrusted(),
+      )
+      .map((m) => this.draftOwner(m.address));
+    const saved = this.recovery.snapshot(allowed, this.hostId);
+    const intents = new Map(
+      saved.intents.map((intent) => [
+        JSON.stringify(intent.receipt.requestId) + addressKey(intent.receipt),
+        intent,
+      ]),
+    );
+    for (const intent of this.receipts.intents())
+      if (allowed.some((owner) => owner.cwd === intent.owner.cwd))
+        intents.set(
+          JSON.stringify(intent.receipt.requestId) + addressKey(intent.receipt),
+          intent,
+        );
+    return {
+      hostId: this.hostId,
+      sendIntents: [...intents.values()],
+      retainedDrafts: saved.drafts.filter((item) => {
+        const current = this.sessions.get(item.address.sessionId);
+        return (
+          !current || addressKey(current.address) !== addressKey(item.address)
+        );
+      }),
+      recoveryError: this.recovery.error,
+    };
+  }
+  getRecovery(address: SessionAddress): RuntimeRecoveryState {
+    return this.recoveryState([this.current(address)]);
   }
   runtimeState(): RuntimeViewState {
     const sessions = [...this.sessions.values()];
     return {
-      hostId: this.hostId,
-      sessions: sessions.map((m) => ({
-        phase: m.phase,
-        address: { ...m.address },
-        openId: m.openId,
-        snapshot: m.projector ? this.snapshot(m) : undefined,
-      })),
+      ...this.recoveryState(sessions),
+      sessions: [
+        ...sessions.map((m) => ({
+          phase: m.phase,
+          address: { ...m.address },
+          openId: m.openId,
+          snapshot: m.projector ? this.snapshot(m) : undefined,
+        })),
+        ...[...this.failedHistory.values()].map((history) => ({
+          phase: "closing" as const,
+          address: { ...history.address },
+          snapshot: history.snapshot,
+        })),
+      ],
       pendingUI: this.broker.pending(),
       drafts: sessions.map((m) => ({
         address: { ...m.address },
@@ -1342,12 +1883,14 @@ export class SessionHost {
   dispose(): Promise<void> {
     if (this.disposal) return this.disposal;
     this.shuttingDown = true;
+    this.failedHistory.clear();
     const opening = [...this.opens.values()].filter(
       (open) =>
         open.state.state === "opening" || open.state.state === "unknown",
     );
     for (const open of opening) this.cancelOpen({ openId: open.input.openId });
     for (const m of this.sessions.values()) {
+      if (m.publishTimer) this.publish(m);
       m.phase = "closing";
       m.controller.abort(new Error("Host is shutting down"));
       this.receipts.cancel(m.address);
@@ -1356,10 +1899,20 @@ export class SessionHost {
     }
     this.disconnectAll();
     this.disposal = Promise.resolve().then(async () => {
-      await Promise.all(opening.map((open) => open.promise.catch(() => {})));
+      await Promise.all(
+        opening.map((open) =>
+          stopBudget(
+            open.promise.catch(() => {}),
+            "startup/shutdown",
+          ).catch((error) => {
+            if (open.managed) this.quarantine(open.managed, error);
+          }),
+        ),
+      );
       const sessions = [...this.sessions.values()];
-      await Promise.all(sessions.map((m) => m.operation.catch(() => {})));
       await Promise.all(sessions.map((m) => this.destroy(m)));
+      this.runDiagnostics.close();
+      this.recovery.close();
     });
     return this.disposal;
   }

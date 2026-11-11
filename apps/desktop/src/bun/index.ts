@@ -10,12 +10,7 @@ import Electrobun, {
 import { dictionary } from "../shared/i18n";
 import { sanitizeOverride } from "../shared/model-overrides";
 import { knownProject, withoutProject } from "../shared/projects";
-import type {
-  Appearance,
-  Notice,
-  RPCSchema,
-  SessionTarget,
-} from "../shared/rpc-schema";
+import type { Notice, RPCSchema, SessionTarget } from "../shared/rpc-schema";
 import type { OpenSessionParams } from "../shared/runtime-contract";
 import { sessionIdFromLink } from "../shared/session-links";
 import { patchSettings } from "../shared/settings";
@@ -33,6 +28,7 @@ import {
   prepareDesktopConfig,
 } from "./desktop-config";
 import { DesktopStateStore } from "./desktop-state";
+import { flushDraftsBeforeClose } from "./draft-close";
 import { copyImage, initImageMenu, saveImage, showImageMenu } from "./images";
 import {
   cancelAllLogins,
@@ -92,11 +88,11 @@ const desktopState = new DesktopStateStore(
   join(desktopConfigDir, "desktop.json"),
   (state) => rpc.send.desktopState(state),
 );
-await desktopState.load();
+
 const modelPreferences = new ModelPreferences(
   join(desktopConfigDir, "disabled-models.json"),
 );
-await modelPreferences.load();
+await Promise.all([desktopState.load(), modelPreferences.load()]);
 const projectFile = join(desktopConfigDir, "projects.json");
 let projects: string[] = [];
 let corruptProjects = false;
@@ -156,10 +152,12 @@ function openManagedSession(input: OpenSessionParams) {
   return openSession(input);
 }
 const settingsFile = join(desktopConfigDir, "settings.json");
-let settings = await loadSettings(settingsFile);
-let settingsQueue = Promise.resolve();
 const appearanceFile = join(desktopConfigDir, "appearance.json");
-let appearance: Appearance = await loadAppearance(appearanceFile);
+let [settings, appearance] = await Promise.all([
+  loadSettings(settingsFile),
+  loadAppearance(appearanceFile),
+]);
+let settingsQueue = Promise.resolve();
 let appearanceQueue = Promise.resolve();
 function updateAppearance(value: unknown) {
   appearanceQueue = appearanceQueue
@@ -217,7 +215,9 @@ const rpc = BrowserView.defineRPC<RPCSchema>({
       completeSlashArguments: (input) =>
         sessionHost.completeSlashArguments(input),
       getPromptReceipt: (input) => sessionHost.getPromptReceipt(input),
+      getRecovery: (input) => sessionHost.getRecovery(input),
       syncDraft: (input) => sessionHost.syncDraft(input),
+      discardRecovery: (input) => sessionHost.discardRecovery(input),
       resolveExtensionUI: (input) => sessionHost.resolveExtensionUI(input),
       terminalCommand: (input) => sessionHost.terminalCommand(input),
       runtimeState: () => sessionHost.runtimeState(),
@@ -415,7 +415,11 @@ const rpc = BrowserView.defineRPC<RPCSchema>({
             else window.maximize();
             break;
           case "close":
-            window.close();
+            void confirmDraftsBeforeClose()
+              .then((close) => {
+                if (close) window.close();
+              })
+              .catch(report);
             break;
         }
       },
@@ -496,7 +500,7 @@ const rpc = BrowserView.defineRPC<RPCSchema>({
 });
 const completions = new Map<
   string,
-  ReturnType<typeof createCompletionTracker>
+  { track: ReturnType<typeof createCompletionTracker>; running: boolean }
 >();
 configureSessionHost(
   {
@@ -504,6 +508,7 @@ configureSessionHost(
     terminal: (event) => rpc.send.terminalEvent(event),
     runtime: (event) => {
       rpc.send.runtimeEvent(event);
+      if (event.type === "closed") completions.delete(event.address.sessionId);
       if (event.type !== "snapshot") return;
       const snapshot = event.snapshot;
       const sessionId = snapshot.address.sessionId;
@@ -515,15 +520,19 @@ configureSessionHost(
         failure: snapshot.failure,
         aborted: snapshot.aborted,
       };
-      rpc.send.sessionEvent(wire);
       let completion = completions.get(sessionId);
       if (!completion) {
-        completion = createCompletionTracker();
+        completion = { track: createCompletionTracker(), running: false };
         completions.set(sessionId, completion);
       }
-      const outcome = completion(wire);
-      if (wire.transcript.running)
+      const outcome = completion.track(wire);
+      const flags = desktopState.value.sessions[sessionId];
+      if (
+        wire.transcript.running &&
+        (!completion.running || flags?.completion || flags?.readCompletionId)
+      )
         void desktopState.clearCompletion(sessionId).catch(report);
+      completion.running = wire.transcript.running;
       if (!outcome) return;
       void desktopState.completeSession(sessionId, outcome).catch(report);
       const t = dictionary(settings.language);
@@ -610,6 +619,46 @@ function dispose() {
   cancelAllLogins();
   void disposeSessions().catch(console.error);
 }
+let quitReady = false;
+let quitting = false;
+function confirmDraftsBeforeClose() {
+  return flushDraftsBeforeClose(
+    () => rpc.request.flushDrafts(),
+    async (error) => {
+      report(error);
+      const t = dictionary(settings.language);
+      const { response } = await Utils.showMessageBox({
+        type: "warning",
+        title: t.draftUnsavedTitle,
+        message: t.draftCloseFailed,
+        buttons: [t.draftRetry, t.cancel, t.draftCloseUnsaved],
+        defaultId: 1,
+        cancelId: 1,
+      });
+      return response === 0 ? "retry" : response === 2 ? "discard" : "cancel";
+    },
+  );
+}
 window.on("close", dispose);
-Electrobun.events.on("before-quit", dispose);
+Electrobun.events.on("before-quit", (event) => {
+  // Native window destruction has already removed its WebView; only ACKed drafts survive that path.
+  if (quitReady || !BrowserWindow.getById(window.id)) {
+    dispose();
+    return;
+  }
+  event.response = { allow: false };
+  if (quitting) return;
+  quitting = true;
+  void confirmDraftsBeforeClose()
+    .then(async (close) => {
+      if (!close) return;
+      await disposeSessions();
+      quitReady = true;
+      Utils.quit();
+    })
+    .catch(report)
+    .finally(() => {
+      quitting = false;
+    });
+});
 process.on("exit", dispose);

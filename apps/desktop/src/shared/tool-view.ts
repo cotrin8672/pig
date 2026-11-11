@@ -37,9 +37,12 @@ export function shellOutcome(text: string): {
 export function diffStats(diff: string): { added: number; removed: number } {
   let added = 0;
   let removed = 0;
-  for (const line of diff.split("\n")) {
-    if (line.startsWith("+")) added++;
-    else if (line.startsWith("-")) removed++;
+  for (let start = 0; start < diff.length; ) {
+    if (diff[start] === "+") added++;
+    else if (diff[start] === "-") removed++;
+    const end = diff.indexOf("\n", start);
+    if (end < 0) break;
+    start = end + 1;
   }
   return { added, removed };
 }

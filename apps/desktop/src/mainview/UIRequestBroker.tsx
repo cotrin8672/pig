@@ -1,5 +1,6 @@
-import { useEffect, useRef, useState } from "react";
+import { memo, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import { useShallow } from "zustand/react/shallow";
 import type { UIReply, UIRequest } from "../shared/extension-ui";
 import { addressKey, sameAddress } from "./chat-snapshot";
 import { useT } from "./i18n";
@@ -18,11 +19,13 @@ import {
   uiKey,
   validReply,
 } from "./ui-request-state";
+import { selectBrokerView, selectRequestPreviews } from "./ui-selectors";
 import "./sdk-ui.css";
 
 /** Root-owned: startup/trust UI must not depend on a Chat or Composer mounting. */
-export function UIRequestBroker() {
-  const state = useStore();
+export const UIRequestBroker = memo(function UIRequestBroker() {
+  const state = useStore(useShallow(selectBrokerView));
+  const previews = useStore(useShallow(selectRequestPreviews));
   const { pendingUI: requests, terminals } = state;
   const [selected, setSelected] = useState<{ key: string; revision: number }>();
   const [started, setStarted] = useState<Set<string>>(() => new Set());
@@ -34,7 +37,7 @@ export function UIRequestBroker() {
       {
         page: state.page,
         active: state.active,
-        snapshots: state.snapshots,
+        snapshots: previews,
         openingAddress:
           state.opening && state.openingViewRevision === navigationRevision
             ? state.openingAddress
@@ -70,7 +73,7 @@ export function UIRequestBroker() {
               key={key}
               request={request}
               active={key === focusKey}
-              modal={state.snapshots[request.sessionId]?.ready !== false}
+              modal={previews[request.sessionId]?.ready !== false}
             />
           );
         const terminal = terminals[key];
@@ -80,7 +83,7 @@ export function UIRequestBroker() {
             key={key}
             request={terminal}
             active={key === focusKey}
-            modal={state.snapshots[request.sessionId]?.ready !== false}
+            modal={previews[request.sessionId]?.ready !== false}
             subscribe={subscribeTerminal}
             onError={showError}
             openExternal={(url) => rpc.send.openExternal({ url })}
@@ -113,7 +116,7 @@ export function UIRequestBroker() {
       )}
     </>
   );
-}
+});
 function NativeRequest({
   request,
   active,

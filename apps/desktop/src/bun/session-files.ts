@@ -2,6 +2,7 @@ import { createReadStream } from "node:fs";
 import { unlink } from "node:fs/promises";
 import { resolve } from "node:path";
 import { createInterface } from "node:readline";
+import type { FileEntry } from "@earendil-works/pi-coding-agent";
 import type { SessionInfo } from "../shared/rpc-schema";
 import { SessionManager } from "./sdk";
 
@@ -63,4 +64,44 @@ export async function resolveSessionFile(cwd: string, id: string) {
 }
 export async function removeSessionFile(cwd: string, id: string) {
   await unlink(await resolveSessionFile(cwd, id));
+}
+
+/** SDK open repairs files and skips malformed lines; browsing must do neither. */
+export async function readSessionFile(cwd: string, id: string) {
+  const file = await resolveSessionFile(cwd, id);
+  const stream = createReadStream(file, { encoding: "utf8" });
+  const lines = createInterface({ input: stream, crlfDelay: Infinity });
+  const entries: FileEntry[] = [];
+  try {
+    for await (const line of lines) {
+      if (!line.trim()) continue;
+      const entry = JSON.parse(line) as FileEntry;
+      if (!entry || typeof entry !== "object" || Array.isArray(entry))
+        throw new Error("Invalid session history entry");
+      entries.push(entry);
+    }
+  } finally {
+    lines.close();
+    stream.destroy();
+  }
+  const header = entries[0];
+  if (
+    header?.type !== "session" ||
+    header.id !== id ||
+    typeof header.cwd !== "string" ||
+    !sameSessionPath(header.cwd, cwd)
+  )
+    throw new Error("Session does not belong to this project or was not found");
+  const manager = SessionManager.inMemory(cwd, undefined, entries);
+  const seen = new Set<string>();
+  for (const entry of manager.getEntries()) {
+    if (
+      typeof entry.id !== "string" ||
+      seen.has(entry.id) ||
+      (entry.parentId !== null && !seen.has(entry.parentId))
+    )
+      throw new Error("Invalid session history branch");
+    seen.add(entry.id);
+  }
+  return manager;
 }

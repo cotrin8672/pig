@@ -3,12 +3,20 @@ import type {
   SessionEntry,
   SessionManager,
 } from "@earendil-works/pi-coding-agent";
+import { unfoldPastes } from "../shared/paste";
+import type { SendIntent, SendKey } from "../shared/runtime-contract";
 import {
   emptyTranscript,
   type Message,
   type Transcript,
   type TranscriptRecord,
 } from "../shared/transcript";
+import {
+  type RecoveredPrompt,
+  type RunDiagnostic,
+  type SessionDiagnosticStore,
+  SessionDiagnostics,
+} from "./session-diagnostics";
 
 function wireMessage(
   message: Extract<SessionEntry, { type: "message" }>["message"],
@@ -96,20 +104,131 @@ export function projectEntries(
 export class SDKProjector {
   private counter = 0;
   private live?: TranscriptRecord & { kind: "message" };
-  private liveBefore = new Set<string>();
+  private liveBefore: string | null = null;
+  private liveChecked?: SessionEntry;
   private aliases: Record<string, string> = {};
   private tools: Transcript["tools"] = {};
   private historyRevision = crypto.randomUUID();
-  private historyLeaf: string | null = null;
+  private branchLeaf?: SessionEntry;
+  private branch: SessionEntry[] = [];
+  private branchIds = new Set<string>();
+  private page?: Transcript;
   running = false;
   failure?: string;
   aborted = false;
+  readonly diagnostics: SessionDiagnostics;
+  private recovered: (RecoveredPrompt & {
+    message: Extract<Message, { role: "user" }>;
+  })[] = [];
   constructor(
     private readonly manager: SessionManager,
     private readonly epoch: number,
-  ) {}
+    diagnostics?: SessionDiagnosticStore,
+  ) {
+    this.diagnostics = new SessionDiagnostics(manager, diagnostics);
+    const run = this.diagnostics.value.run;
+    const branch = this.entries();
+    if (
+      run &&
+      (run.leafId === manager.getLeafId() ||
+        (run.status === "running" &&
+          (!run.leafId || branch.some((entry) => entry.id === run.leafId))))
+    ) {
+      this.failure =
+        run.status === "running"
+          ? "Previous run ended without a confirmed completion; execution status is unknown."
+          : run.failure;
+      this.aborted = run.status === "aborted";
+    } else {
+      this.diagnostics.value.run = undefined;
+      this.failure = this.diagnostics.error;
+    }
+  }
+  private saveDiagnostic(status: RunDiagnostic["status"]) {
+    const previous = this.diagnostics.value.run;
+    this.diagnostics.value.run = {
+      id: previous?.id ?? crypto.randomUUID(),
+      revision: (previous?.revision ?? 0) + 1,
+      leafId: this.manager.getLeafId(),
+      status,
+      failure: this.failure,
+    };
+    if (!this.diagnostics.save())
+      this.failure = [this.failure, this.diagnostics.error]
+        .filter(Boolean)
+        .join("\n");
+  }
+  stopUnconfirmed(error: unknown) {
+    this.failure = error instanceof Error ? error.message : String(error);
+    this.saveDiagnostic("stop-unconfirmed");
+  }
+  checkpoint() {
+    const run = this.diagnostics.value.run;
+    if (
+      run &&
+      run.status !== "stop-unconfirmed" &&
+      run.leafId !== this.manager.getLeafId()
+    )
+      this.saveDiagnostic(run.status);
+  }
+  restoreQueue(lookup: (key: SendKey) => SendIntent | undefined) {
+    for (const item of this.diagnostics.value.recovered) {
+      if (this.recovered.some((old) => old.id === item.id)) continue;
+      if (item.message) {
+        this.recovered.push({ ...item, message: item.message });
+        continue;
+      }
+      const intent = item.key && lookup(item.key);
+      if (
+        intent?.content &&
+        intent.owner.cwd === this.manager.getCwd() &&
+        intent.owner.sessionFile === this.manager.getSessionFile()
+      )
+        this.recovered.push({
+          ...item,
+          message: {
+            role: "user",
+            timestamp: 0,
+            content: [
+              {
+                type: "text",
+                text: unfoldPastes(
+                  intent.content.text,
+                  intent.content.pastes,
+                ).trim(),
+              },
+              ...intent.content.images.map(({ image }) => image),
+            ],
+          },
+        });
+      else
+        this.failure =
+          "Cancelled queued input could not be restored. Original send recovery data was preserved; inspect history before resending.";
+    }
+  }
+  recoverQueue(
+    messages: { message: Extract<Message, { role: "user" }>; key?: SendKey }[],
+  ) {
+    if (!messages.length) return;
+    const recovered = messages.map((item) => ({
+      ...item,
+      id: crypto.randomUUID(),
+      leafId: this.manager.getLeafId(),
+    }));
+    this.recovered.push(...recovered);
+    this.diagnostics.value.recovered.push(
+      ...recovered.map(({ message, ...item }) =>
+        item.key ? item : { ...item, message },
+      ),
+    );
+    if (!this.diagnostics.save())
+      this.failure = [this.failure, this.diagnostics.error]
+        .filter(Boolean)
+        .join("\n");
+  }
   fail(error: unknown) {
     this.failure = error instanceof Error ? error.message : String(error);
+    this.saveDiagnostic(this.running ? "running" : "failed");
   }
   event(event: AgentSessionEvent) {
     // SDK publishes message_end before persistence. Reconcile it at the next
@@ -119,6 +238,8 @@ export class SDKProjector {
       this.running = true;
       this.failure = undefined;
       this.aborted = false;
+      this.diagnostics.value.run = undefined;
+      this.saveDiagnostic("running");
     }
     if (
       event.type === "message_start" ||
@@ -128,21 +249,23 @@ export class SDKProjector {
       const message = wireMessage(event.message);
       if (message) {
         if (!this.live || event.type === "message_start") {
-          this.liveBefore = new Set(
-            this.manager.getEntries().map((entry) => entry.id),
-          );
+          this.liveBefore = this.manager.getLeafId();
+          this.liveChecked = this.manager.getLeafEntry();
           this.live = {
             id: `live:${this.epoch}:${++this.counter}`,
             parentId: this.manager.getLeafId(),
             branchId: this.manager.getLeafId() ?? "root",
-            order: this.manager.getBranch().length,
+            order: this.entries().length,
             kind: "message",
             message,
           };
         } else this.live.message = message;
         if (message.role === "assistant" && message.stopReason === "error")
           this.failure = message.errorMessage ?? "Model request failed";
-        if (event.type === "message_end") this.commitLive();
+        if (event.type === "message_end") {
+          this.liveChecked = undefined;
+          this.commitLive();
+        }
       }
     }
     if (event.type === "entry_appended") this.commitLive();
@@ -159,43 +282,74 @@ export class SDKProjector {
         result: event.result,
       };
     if (event.type === "compaction_end" && event.errorMessage)
-      this.failure = event.errorMessage;
+      this.fail(event.errorMessage);
     if (event.type === "auto_retry_end" && event.finalError)
-      this.failure = event.finalError;
+      this.fail(event.finalError);
     // agent_end is not completion: before-settle hooks may still be executing.
     if (event.type === "agent_settled") {
       this.running = false;
       this.aborted = event.aborted;
       this.commitLive();
+      this.saveDiagnostic(
+        this.aborted ? "aborted" : this.failure ? "failed" : "completed",
+      );
     }
   }
   private commitLive() {
-    if (!this.live) return;
+    const leaf = this.manager.getLeafEntry();
+    if (!this.live || !leaf || leaf === this.liveChecked) return;
+    this.liveChecked = leaf;
     const live = this.live;
-    const saved = [...projectEntries(this.manager).records]
-      .reverse()
-      .find(
-        (r) =>
-          r.kind === "message" &&
-          !this.liveBefore.has(r.id) &&
-          JSON.stringify(r.message) === JSON.stringify(live.message) &&
-          !Object.values(this.aliases).includes(r.id),
-      );
+    const appended: SessionEntry[] = [];
+    let entry: SessionEntry | undefined = leaf;
+    while (entry && entry.id !== this.liveBefore) {
+      appended.push(entry);
+      entry = entry.parentId
+        ? this.manager.getEntry(entry.parentId)
+        : undefined;
+    }
+    if (this.liveBefore && !entry) return;
+    const message = JSON.stringify(live.message);
+    const saved = projectEntries({
+      getLeafId: () => leaf.id,
+      getBranch: () => appended,
+    }).records.find(
+      (r) =>
+        r.kind === "message" &&
+        JSON.stringify(r.message) === message &&
+        !Object.values(this.aliases).includes(r.id),
+    );
     if (saved) {
       this.aliases[live.id] = saved.id;
       this.live = undefined;
     }
   }
+  private entries() {
+    const leaf = this.manager.getLeafEntry();
+    if (leaf !== this.branchLeaf) {
+      const branch = this.manager.getBranch();
+      if (
+        this.branchLeaf &&
+        !branch.some((entry) => entry.id === this.branchLeaf?.id)
+      )
+        this.historyRevision = crypto.randomUUID();
+      this.branchLeaf = leaf;
+      this.branch = branch;
+      this.branchIds = new Set(branch.map((entry) => entry.id));
+      this.page = undefined;
+    }
+    return this.branch;
+  }
   historyPage(before?: string, revision?: string): Transcript {
-    const branch = this.manager.getBranch();
-    if (
-      this.historyLeaf &&
-      !branch.some((entry) => entry.id === this.historyLeaf)
-    )
-      this.historyRevision = crypto.randomUUID();
-    this.historyLeaf = this.manager.getLeafId();
+    const branch = this.entries();
     if (revision !== undefined && revision !== this.historyRevision)
       throw new Error("STALE_HISTORY_CURSOR");
+    if (before === undefined && this.page)
+      return {
+        ...this.page,
+        records: [...this.page.records],
+        tools: { ...this.page.tools },
+      };
     const end =
       before === undefined
         ? branch.length
@@ -219,11 +373,45 @@ export class SDKProjector {
       revision: this.historyRevision,
       before: start > 0 ? branch[start].id : undefined,
     };
+    if (before === undefined)
+      this.page = {
+        ...state,
+        records: [...state.records],
+        tools: { ...state.tools },
+      };
     return state;
   }
   snapshot(): Transcript {
     this.commitLive();
     const state = this.historyPage();
+    for (const item of this.recovered) {
+      if (item.leafId && !this.branchIds.has(item.leafId)) continue;
+      state.records.push({
+        id: `recovered:${item.id}`,
+        parentId: item.leafId,
+        branchId: this.manager.getLeafId() ?? "root",
+        order: state.records.length,
+        kind: "message",
+        customType: "Cancelled queued prompt",
+        display: true,
+        message: {
+          role: "custom",
+          customType: "Cancelled queued prompt",
+          display: true,
+          timestamp: item.message.timestamp,
+          content: [
+            {
+              type: "text",
+              text: "Cancelled before execution by Stop. Retained for review; nothing was resent.",
+            },
+            ...(typeof item.message.content === "string"
+              ? [{ type: "text", text: item.message.content }]
+              : item.message.content),
+          ],
+          details: { requestId: item.key?.requestId },
+        },
+      });
+    }
     if (this.live) state.records.push(structuredClone(this.live));
     const calls = new Set(Object.keys(state.tools));
     for (const record of state.records)

@@ -5,6 +5,8 @@ import {
   useRef,
 } from "react";
 
+import { frameTask } from "./thread-scroll";
+
 type EditorView = {
   text: string;
   start: number;
@@ -79,10 +81,11 @@ export function ComposerEditor({
       input.scrollTop = view.scrollTop;
       view.restoreFocus = false;
     }
+    const resize = frameTask(() => sizeEditor(input));
     const observer = new ResizeObserver(() => {
       if (width === input.clientWidth) return;
       width = input.clientWidth;
-      sizeEditor(input);
+      resize.schedule();
     });
     let width = input.clientWidth;
     observer.observe(input);
@@ -90,6 +93,7 @@ export function ComposerEditor({
       remember(input);
       if (mounted.get(viewKey) === input) mounted.delete(viewKey);
       observer.disconnect();
+      resize.dispose();
     };
   }, [viewKey, ref]);
   // biome-ignore lint/correctness/useExhaustiveDependencies: The controlled value changes the DOM's scrollHeight.

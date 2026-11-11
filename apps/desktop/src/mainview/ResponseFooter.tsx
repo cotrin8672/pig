@@ -7,7 +7,8 @@ import {
   Sparkles,
   Split,
 } from "lucide-react";
-import { useState, useSyncExternalStore } from "react";
+import { memo, useState, useSyncExternalStore } from "react";
+import { useShallow } from "zustand/react/shallow";
 import type { Message, ResponseStats } from "../shared/transcript";
 import { useT } from "./i18n";
 import { forkChat, regenerate, sends } from "./rpc";
@@ -22,7 +23,7 @@ function duration(ms: number) {
   return `${Math.floor(m / 60)}h ${m % 60}m`;
 }
 
-export function ResponseFooter({
+export const ResponseFooter = memo(function ResponseFooter({
   sessionId,
   entryId,
   userEntryId,
@@ -40,16 +41,16 @@ export function ResponseFooter({
   const t = useT();
   const language = useStore((s) => s.settings.language);
   const [copied, setCopied] = useState(false);
-  const snapshot = useStore((s) => s.snapshots[sessionId]);
+  const address = useStore(useShallow((s) => s.snapshots[sessionId]?.address));
+  const ready = useStore((s) => s.snapshots[sessionId]?.ready !== false);
   const readSendState = () =>
-    snapshot ? sends.read(snapshot.address) : undefined;
+    address ? isSendUnconfirmed(sends.read(address)) : false;
   const sendState = useSyncExternalStore(
     sends.subscribe,
     readSendState,
     readSendState,
   );
-  const canBranch =
-    !!snapshot && snapshot.ready !== false && !isSendUnconfirmed(sendState);
+  const canBranch = !!address && ready && !sendState;
   const status =
     stats.stopReason === "error"
       ? { icon: <CircleAlert size={14} />, label: t.Failed }
@@ -126,4 +127,4 @@ export function ResponseFooter({
       </div>
     </div>
   );
-}
+});

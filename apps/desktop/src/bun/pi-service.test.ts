@@ -44,7 +44,7 @@ test("application uses the fixed SDK profile and preserves model/auth helpers", 
       const model = faux.getModel();
       expect(app.modelInfo({...model, api: "anthropic-messages", compat: {forceAdaptiveThinking: true}}).adaptiveThinking).toBe(true);
       await app.credentials.modify(model.provider, async () => ({type: "api_key", key: "test-only"}));
-      await expect(host.prompt({...send, text: "", requestId: "empty"})).rejects.toThrow("empty");
+      await expect(host.prompt({...send, text: "", requestId: "empty", draftRevision: host.drafts.read(chat.address).revision})).rejects.toThrow("empty");
       await host.closeSession(chat.address);
       expect(host.getPromptReceipt(send).state).toBe("accepted");
       const reopened = await host.openSession({...input, openId: "open-2", id: chat.info.id});

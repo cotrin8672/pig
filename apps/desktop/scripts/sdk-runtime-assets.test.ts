@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { createHash } from "node:crypto";
 import {
+  copyFileSync,
   existsSync,
   lstatSync,
   mkdirSync,
@@ -14,7 +15,13 @@ import {
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import config from "../electrobun.config";
-import { copySdkRuntime, SDK_RUNTIME_EXTERNALS } from "./sdk-runtime-assets";
+import {
+  copySdkRuntime,
+  SDK_RUNTIME_EXTERNALS,
+  SDK_RUNTIME_ROOTS,
+  SDK_RUNTIME_STAGE,
+  sdkStageMatches,
+} from "./sdk-runtime-assets";
 
 const fixtures: string[] = [];
 afterEach(() => {
@@ -69,6 +76,23 @@ describe("SDK runtime production packaging", () => {
     expect(config.scripts.postBuild).toBe("scripts/post-build.ts");
     expect(config.build.win.bundleCEF).toBe(false);
   });
+  test("stage reuse compares installed bytes, rejects extras and does not repair or follow stage links", () => {
+    const f = fixture();
+    const pkgDir = pkg(join(f.installRoot, "sdk"), "sdk");
+    copySdkRuntime(f);
+    expect(sdkStageMatches(f)).toBe(true);
+    const entry = join(pkgDir, "index.js");
+    const original = readFileSync(entry);
+    writeFileSync(entry, "changed without a version bump");
+    expect(sdkStageMatches(f)).toBe(false);
+    writeFileSync(entry, original);
+    writeFileSync(join(f.destination, "extra"), "extra");
+    expect(sdkStageMatches(f)).toBe(false);
+    rmSync(join(f.destination, "extra"));
+    link(pkgDir, join(f.destination, "unsafe"));
+    expect(sdkStageMatches(f)).toBe(false);
+    expect(readFileSync(entry)).toEqual(original);
+  });
   test("pnpm links, exports-hidden manifests, cycles, assets, versions and manifest edges survive without links", () => {
     const f = fixture();
     const sdk = pkg(
@@ -116,6 +140,7 @@ describe("SDK runtime production packaging", () => {
     writeFileSync(join(sdk, "themes/dark.json"), "{}");
     link(join(sdk, "themes"), join(sdk, "theme-alias"));
     const manifest = copySdkRuntime(f);
+    expect(sdkStageMatches(f)).toBe(true);
     expect(
       manifest.packages.map((p) => `${p.name}@${p.version}`).sort(),
     ).toEqual([
@@ -150,6 +175,52 @@ describe("SDK runtime production packaging", () => {
       }
     }
     expect(JSON.stringify(manifest)).not.toContain(f.projectDir);
+  });
+  test("an interrupted rebuild preserves the previous stage and never trusts partial next contents", () => {
+    const f = fixture();
+    for (const name of SDK_RUNTIME_ROOTS) pkg(join(f.installRoot, name), name);
+    const script = join(f.projectDir, "scripts", "sdk-runtime-assets.ts");
+    mkdirSync(dirname(script), { recursive: true });
+    copyFileSync(join(import.meta.dir, "sdk-runtime-assets.ts"), script);
+    const stage = join(f.projectDir, SDK_RUNTIME_STAGE);
+    const options = { ...f, destination: stage, roots: SDK_RUNTIME_ROOTS };
+    copySdkRuntime(options);
+    const run = () =>
+      Bun.spawnSync([process.execPath, "--no-install", script], {
+        cwd: f.projectDir,
+        stdout: "pipe",
+        stderr: "pipe",
+      });
+    const outside = join(f.root, "outside-stage");
+    mkdirSync(outside);
+    writeFileSync(join(outside, "private"), "keep outside data");
+    link(outside, join(stage, "extra-link"));
+    const rebuilt = run();
+    expect(rebuilt.exitCode, rebuilt.stderr.toString()).toBe(0);
+    expect(readFileSync(join(outside, "private"), "utf8")).toBe(
+      "keep outside data",
+    );
+    expect(existsSync(join(stage, "extra-link"))).toBe(false);
+    expect(sdkStageMatches(options)).toBe(true);
+    const temporary = `${stage}.next`;
+    mkdirSync(temporary);
+    writeFileSync(join(temporary, "incomplete"), "keep for review");
+    const reused = run();
+    expect(reused.exitCode, reused.stderr.toString()).toBe(0);
+    expect(reused.stdout.toString()).toContain("Reusing verified SDK runtime");
+    const entry = join("node_modules", SDK_RUNTIME_ROOTS[0], "index.js");
+    const original = readFileSync(join(stage, entry), "utf8");
+    writeFileSync(join(f.projectDir, entry), "updated installed source");
+    const interrupted = run();
+    expect(interrupted.exitCode).not.toBe(0);
+    expect(interrupted.stderr.toString()).toContain(
+      "Remove interrupted SDK stage first",
+    );
+    expect(readFileSync(join(stage, entry), "utf8")).toBe(original);
+    expect(readFileSync(join(temporary, "incomplete"), "utf8")).toBe(
+      "keep for review",
+    );
+    expect(sdkStageMatches(options)).toBe(false);
   });
   test("required missing dependency fails without partial output", () => {
     const f = fixture();

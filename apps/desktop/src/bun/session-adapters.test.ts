@@ -78,6 +78,15 @@ test("session adapters attach, invoke, reload independently and reject stale own
     expect(globalThis.__starts).toBe(starts);
     expect(globalThis.__stops ?? 0).toBe(0);
     await expect(host.invokeSessionAction(old)).rejects.toThrow("STALE");
+    const cachedUI=snapshot().sessionUI;
+    expect(snapshot().sessionUI).toBe(cachedUI);
+    await writeFile(configFile,'export default {apiVersion:1,sessionAdapters:[{id:"broken",connect(){throw new Error("cached adapter failure");}}]};');
+    expect(await host.reloadAdapterConfig()).toEqual({state:"applied"});
+    await wait(()=>snapshot().sessionUI.diagnostics.some(d=>d.message==="cached adapter failure"));
+    expect(snapshot().sessionUI).not.toBe(cachedUI);
+    await writeFile(configFile,config);
+    expect(await host.reloadAdapterConfig()).toEqual({state:"applied"});
+    await wait(()=>snapshot().sessionUI.views.length===2 && snapshot().sessionUI.diagnostics.length===0);
     const goodGeneration=snapshot().sessionUI.generation;
     await writeFile(configFile,"export default {broken");
     expect(await host.reloadAdapterConfig()).toEqual({state:"failed"});

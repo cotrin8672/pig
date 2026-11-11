@@ -41,7 +41,9 @@ export class DesktopStateStore {
   }
   private update(change: (current: DesktopState) => DesktopState) {
     const save = this.queue.then(async () => {
-      const next = validateDesktopState(change(this.value));
+      const changed = change(this.value);
+      if (changed === this.value) return this.value;
+      const next = validateDesktopState(changed);
       await mkdir(dirname(this.file), { recursive: true });
       if (this.corrupt) {
         await rename(this.file, `${this.file}.corrupt-${crypto.randomUUID()}`);
@@ -69,6 +71,13 @@ export class DesktopStateStore {
         ...(flags.pinned ? { pinned: true } : {}),
         ...(flags.archived ? { archived: true } : {}),
       };
+      const previous = current.projects?.[cwd];
+      if (
+        previous?.name === next.name &&
+        !!previous?.pinned === !!next.pinned &&
+        !!previous?.archived === !!next.archived
+      )
+        return current;
       const projects = { ...current.projects };
       if (Object.keys(next).length) projects[cwd] = next;
       else delete projects[cwd];
@@ -77,7 +86,19 @@ export class DesktopStateStore {
   }
   setUiPreferences(value: unknown) {
     const patch = validateUiPreferences(value);
-    return this.update((current) => ({ ...current, ...patch }));
+    return this.update((current) => {
+      if (
+        (patch.chatWidth === undefined ||
+          patch.chatWidth === current.chatWidth) &&
+        (patch.recentModels === undefined ||
+          (patch.recentModels.length === current.recentModels?.length &&
+            patch.recentModels.every(
+              (key, i) => key === current.recentModels?.[i],
+            )))
+      )
+        return current;
+      return { ...current, ...patch };
+    });
   }
   setSession(id: string, value: unknown) {
     const validated = validateSessionFlags(value);
@@ -91,6 +112,11 @@ export class DesktopStateStore {
       throw new Error("Choose a session state to change.");
     return this.update((current) => {
       const flags = { ...current.sessions[id], ...patch };
+      if (
+        !!flags.pinned === !!current.sessions[id]?.pinned &&
+        !!flags.archived === !!current.sessions[id]?.archived
+      )
+        return current;
       const next = {
         ...(flags.pinned ? { pinned: true } : {}),
         ...(flags.archived ? { archived: true } : {}),
@@ -117,6 +143,11 @@ export class DesktopStateStore {
   }
   clearCompletion(id: string) {
     return this.update((current) => {
+      if (
+        !current.sessions[id]?.completion &&
+        !current.sessions[id]?.readCompletionId
+      )
+        return current;
       const {
         completion: _completion,
         readCompletionId: _read,
@@ -137,7 +168,11 @@ export class DesktopStateStore {
       throw new Error("Invalid completion ID.");
     return this.update((current) => {
       const flags = current.sessions[id];
-      if (flags?.completion?.id !== completionId) return current;
+      if (
+        flags?.completion?.id !== completionId ||
+        flags.readCompletionId === completionId
+      )
+        return current;
       return {
         ...current,
         sessions: {
@@ -149,6 +184,7 @@ export class DesktopStateStore {
   }
   forgetSession(id: string) {
     return this.update((current) => {
+      if (!Object.hasOwn(current.sessions, id)) return current;
       const sessions = { ...current.sessions };
       delete sessions[id];
       return { ...current, sessions };

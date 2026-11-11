@@ -1,6 +1,36 @@
 import type { Settings } from "./settings";
 
 export const en = {
+  sendRecovery: (sends: number, drafts: number) =>
+    `Send recovery (${sends}) / retained drafts (${drafts})`,
+  recoveryPending: "Awaiting acceptance (a hook may still be running)",
+  recoveryUnknown: "Acceptance unknown",
+  recoveryQueued: "Queue accepted; execution unconfirmed",
+  recoveryInspect:
+    "This send may have executed. Check its receipt or inspect history before sending the same content again. New drafts can be edited separately.",
+  recoveryPrepared:
+    "Send preparation was saved; prompt dispatch is unconfirmed. Recovery only checks the original receipt and never sends it.",
+  recoveryLookupTimeout:
+    "Receipt lookup timed out. The previous send may have executed; check its receipt or inspect history.",
+  recoveryRequest: (id: string) => `Request: ${id}`,
+  recoveryOwner: (cwd: string, branch: string) => `${cwd} / branch ${branch}`,
+  recoveryRaw: "Raw draft / folded pastes",
+  recoveryCopy: "Copy into current session after reviewing history",
+  recoveryCopyConfirm:
+    "I inspected history and understand the old send may have executed. Copy this content into the current session? This replaces its draft but does not send it.",
+  recoveryDiscard: "Discard retained draft",
+  recoveryDiscardConfirm:
+    "Discard this retained draft and its saved attachments? This does not cancel a previous send.",
+  recoveryRetainedInfo:
+    "These drafts belonged to a closed or restarted runtime. Inspect history before explicitly copying a draft into a new session. Nothing is resent automatically.",
+  recoveryCheck: "Check original receipt",
+  draftCloseFailed:
+    "Drafts could not be saved before closing. Retry, cancel closing to keep editing, or close without saving. Closing without saving may lose the latest text, pastes and attachments.",
+  draftUnsavedTitle: "Unsaved drafts",
+  draftRetry: "Retry saving",
+  draftCloseUnsaved: "Close without saving",
+  runtimeUnsynchronized:
+    "Runtime connected but state is not synchronized. Retrying automatically.",
   "Toggle sidebar": "Toggle sidebar",
   "Chat renderers": "Chat renderers",
   "Reload chat renderers": "Reload chat renderers",
@@ -338,6 +368,11 @@ export const en = {
   "Try a different name or keyword.": "Try a different name or keyword.",
   "Loading…": "Loading…",
   "Load more": "Load more",
+  responseComplete: "Response completed.",
+  searchChats: "Filter chat titles",
+  searchLoaded: "Find in loaded messages",
+  noMatches: "No matches",
+  editPastes: "Expand pasted text to edit",
   "Load earlier messages": "Load earlier messages",
   "Packages from your user and project configuration.":
     "Packages from your user and project configuration.",
@@ -426,6 +461,36 @@ export const en = {
 };
 type Dictionary = { [K in keyof typeof en]: (typeof en)[K] };
 export const ja: Dictionary = {
+  sendRecovery: (sends, drafts) =>
+    `送信の確認 (${sends}) / 保持された下書き (${drafts})`,
+  recoveryPending: "受付を確認中（フックが処理中の可能性があります）",
+  recoveryUnknown: "受付状態が不明です",
+  recoveryQueued: "キューへの受付済み・実行は未確認です",
+  recoveryInspect:
+    "この送信は実行済みの可能性があります。同じ内容を再送する前に、受付記録または履歴を確認してください。新しい下書きは別に編集できます。",
+  recoveryPrepared:
+    "送信準備は保存されましたが、prompt の配送は未確認です。回復処理は元の受付記録を照会するだけで、再送しません。",
+  recoveryLookupTimeout:
+    "受付記録の照会がタイムアウトしました。送信が実行済みの可能性があるため、受付記録または履歴を確認してください。",
+  recoveryRequest: (id) => `リクエスト: ${id}`,
+  recoveryOwner: (cwd, branch) => `${cwd} / ブランチ ${branch}`,
+  recoveryRaw: "下書きと折りたたまれた貼り付けの詳細",
+  recoveryCopy: "履歴を確認して現在のセッションへコピー",
+  recoveryCopyConfirm:
+    "履歴を確認し、以前の送信が実行済みの可能性を理解しました。この内容を現在のセッションへコピーしますか？ 下書きを置き換えますが、送信はしません。",
+  recoveryDiscard: "保持された下書きを破棄",
+  recoveryDiscardConfirm:
+    "保持された下書きと保存済みの添付を破棄しますか？ 以前の送信は取り消されません。",
+  recoveryRetainedInfo:
+    "閉じた、または再起動前のランタイムの下書きです。履歴を確認してから、新しいセッションへ明示的にコピーしてください。自動再送はしません。",
+  recoveryCheck: "元の受付記録を確認",
+  draftCloseFailed:
+    "終了前に下書きを保存できませんでした。保存を再試行するか、終了を取り消して編集を続けるか、保存せずに終了できます。保存せず終了すると、最新の本文・貼り付け・添付が失われる可能性があります。",
+  draftUnsavedTitle: "未保存の下書き",
+  draftRetry: "保存を再試行",
+  draftCloseUnsaved: "保存せず終了",
+  runtimeUnsynchronized:
+    "ランタイムには接続済みですが、状態は未同期です。自動的に再試行します。",
   "Toggle sidebar": "サイドバーの開閉",
   "Chat renderers": "チャット描画コンポーネント",
   "Reload chat renderers": "描画コンポーネントを再読込",
@@ -762,6 +827,11 @@ export const ja: Dictionary = {
   "Try a different name or keyword.": "別の名前やキーワードを試してください。",
   "Loading…": "読み込み中…",
   "Load more": "さらに読み込む",
+  responseComplete: "応答が完了しました。",
+  searchChats: "チャット名で絞り込み",
+  searchLoaded: "読み込み済みのメッセージを検索",
+  noMatches: "一致なし",
+  editPastes: "貼り付けた本文を展開して編集",
   "Load earlier messages": "以前のメッセージを読み込む",
   "Packages from your user and project configuration.":
     "ユーザーとプロジェクトの設定にあるパッケージ。",

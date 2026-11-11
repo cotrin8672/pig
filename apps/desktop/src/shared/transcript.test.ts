@@ -80,3 +80,19 @@ test("response statistics aggregate tool turns without treating custom data as a
     text: "Looking\n\nDone",
   });
 });
+
+test("response copy text preserves message and block order, skipping empty text", () => {
+  const first = fauxAssistantMessage("first");
+  first.content.push(
+    { type: "text", text: "  " },
+    { type: "text", text: "second" },
+  );
+  const second = fauxAssistantMessage("third");
+  second.content.push({ type: "text", text: "fourth" });
+  expect(
+    responseStats(
+      [user, first, second].map((message) => ({ message })),
+      2,
+    )?.text,
+  ).toBe("first\n\nsecond\n\nthird\n\nfourth");
+});

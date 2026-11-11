@@ -4,6 +4,7 @@ import type {
   PromptAccepted,
   PromptParams,
   PromptReceipt,
+  SendIntent,
   SendKey,
 } from "../shared/runtime-contract";
 import { DraftStore, emptyContent } from "./draft-store";
@@ -28,14 +29,16 @@ function fixture(
     ],
   }));
   const callbacks: (() => void)[] = [];
+  const delays: number[] = [];
   const sends = new SendController(
     drafts,
     { syncDraft, prompt, getPromptReceipt: receipt },
-    (callback) => {
+    (callback, delay) => {
       callbacks.push(callback);
+      delays.push(delay);
     },
   );
-  return { drafts, sends, callbacks };
+  return { drafts, sends, callbacks, delays };
 }
 test("timeout checks receipt without retransmission; pending retains complete draft", async () => {
   let calls = 0;
@@ -380,4 +383,242 @@ test("a retired owner's late acceptance cannot clear a new send's subsequent edi
   expect(f.sends.read(next)).toBe(state);
   expect(f.drafts.read(next).content.text).toBe("still typing");
   expect(calls).toBe(2);
+});
+
+test("the independent 1500ms check settles acceptance while prompt is still unresolved", async () => {
+  let prompts = 0,
+    lookups = 0;
+  const prompt = Promise.withResolvers<PromptAccepted>();
+  const f = fixture(
+    async () => {
+      prompts++;
+      return prompt.promise;
+    },
+    async (key) => {
+      lookups++;
+      return { ...key, state: "accepted", accepted, acceptedAt: 1 };
+    },
+  );
+  const send = f.sends.send(address);
+  while (!f.callbacks.length) await Bun.sleep(0);
+  expect(f.delays[0]).toBe(1500);
+  expect(f.sends.retained()).toHaveLength(0);
+  f.callbacks.shift()?.();
+  while (f.sends.read(address)?.state !== "accepted") await Bun.sleep(0);
+  expect({ prompts, lookups }).toEqual({ prompts: 1, lookups: 1 });
+  expect(f.drafts.read(address).content).toEqual(emptyContent());
+  // A late transport failure must not move a terminal acceptance back to checking.
+  prompt.reject(new Error("late timeout"));
+  await send;
+  expect(f.sends.read(address)?.state).toBe("accepted");
+});
+
+test("a hung lookup has a finite UI budget and only one underlying request; late acceptance is monotone", async () => {
+  const drafts = new DraftStore();
+  drafts.edit(address, () => ({ ...emptyContent(), text: "one" }));
+  const receipt = Promise.withResolvers<PromptReceipt>();
+  let calls = 0;
+  let key: SendKey | undefined;
+  const sends = new SendController(
+    drafts,
+    {
+      syncDraft,
+      prompt: async () => {
+        throw new Error("lost reply");
+      },
+      getPromptReceipt: async (input) => {
+        calls++;
+        key = input;
+        return receipt.promise;
+      },
+    },
+    () => {},
+    5,
+  );
+  await sends.send(address);
+  expect(sends.read(address)?.state).toBe("unknown");
+  await Promise.all([sends.lookup(address), sends.lookup(address)]);
+  expect(calls).toBe(1);
+  receipt.resolve({
+    ...(key as SendKey),
+    state: "accepted",
+    accepted,
+    acceptedAt: 1,
+  });
+  await Bun.sleep(0);
+  expect(sends.read(address)?.state).toBe("accepted");
+  expect(drafts.read(address).content.text).toBe("");
+});
+
+test("Send fixes the text, paste and image order before an ACK; continuous edits do not extend its barrier", async () => {
+  const drafts = new DraftStore();
+  const original = {
+    text: "[paste #1 3 chars]",
+    pastes: [{ id: "p", marker: "[paste #1 3 chars]", text: "old" }],
+    images: [
+      {
+        id: "first",
+        image: { type: "image" as const, mimeType: "image/png", data: "YWJj" },
+      },
+    ],
+  };
+  drafts.edit(address, () => original);
+  const ack = Promise.withResolvers<void>();
+  const inputs: DraftSyncParams[] = [];
+  const prompts: PromptParams[] = [];
+  const sends = new SendController(
+    drafts,
+    {
+      syncDraft: async (input) => {
+        inputs.push(input);
+        await ack.promise;
+        return syncDraft(input);
+      },
+      prompt: async (input) => {
+        prompts.push(input);
+        return accepted;
+      },
+      getPromptReceipt: async (key) => ({ ...key, state: "pending" }),
+    },
+    () => {},
+  );
+  const send = sends.send(address);
+  while (!inputs.length) await Bun.sleep(0);
+  drafts.edit(address, () => ({
+    text: "next",
+    pastes: [],
+    images: [...original.images, { ...original.images[0], id: "next" }],
+  }));
+  ack.resolve();
+  await send;
+  expect(inputs).toHaveLength(1);
+  expect(inputs[0].requestId).toBe(prompts[0].requestId);
+  expect(prompts).toHaveLength(1);
+  expect(prompts[0].text).toBe("old");
+  expect(prompts[0].images).toEqual(original.images.map((item) => item.image));
+  expect(drafts.read(address).content.text).toBe("next");
+  expect(drafts.read(address).content.images).toHaveLength(2);
+});
+
+test("a lost preflight CAS ACK is checked independently and never dispatches prompt", async () => {
+  const drafts = new DraftStore();
+  drafts.edit(address, () => ({ ...emptyContent(), text: "not dispatched" }));
+  let reserved: SendKey | undefined,
+    prompts = 0,
+    lookups = 0;
+  const sends = new SendController(
+    drafts,
+    {
+      syncDraft: async (input) => {
+        reserved = { ...address, requestId: input.requestId as string };
+        throw new Error("CAS applied; ACK dropped");
+      },
+      prompt: async () => {
+        prompts++;
+        return accepted;
+      },
+      getPromptReceipt: async (key) => {
+        lookups++;
+        expect(key).toEqual(reserved as SendKey);
+        return { ...key, state: "pending", stage: "prepared" };
+      },
+    },
+    () => {},
+  );
+  await sends.send(address);
+  expect({ prompts, lookups }).toEqual({ prompts: 0, lookups: 1 });
+  expect(sends.read(address)?.state).toBe("unknown");
+  expect(drafts.read(address).content.text).toBe("not dispatched");
+});
+
+test("checking an old unknown ID after a new send does not query or overwrite the current operation", async () => {
+  const ids: string[] = [],
+    lookedUp: string[] = [];
+  const f = fixture(
+    async (input) => {
+      ids.push(input.requestId);
+      if (ids.length === 1) throw new Error("lost reply");
+      return accepted;
+    },
+    async (input) => {
+      lookedUp.push(input.requestId);
+      return { ...input, state: "unknown", reason: "not-found" };
+    },
+  );
+  await f.sends.send(address);
+  const old = f.sends.read(address) as NonNullable<
+    ReturnType<typeof f.sends.read>
+  >;
+  f.drafts.edit(address, () => ({ ...emptyContent(), text: "new operation" }));
+  await f.sends.send(address);
+  const current = f.sends.read(address);
+  await f.sends.lookup(old.key, old.key);
+  expect(lookedUp).toEqual([ids[0], ids[0]]);
+  expect(ids).toHaveLength(2);
+  expect(ids[0]).not.toBe(ids[1]);
+  expect(f.sends.read(address)).toBe(current);
+  expect(f.sends.retained()[0].key.requestId).toBe(ids[0]);
+});
+
+test("same and fresh controllers both restore retired queued payloads without rolling back acceptance or replaying", async () => {
+  let prompts = 0;
+  const f = fixture(
+    async () => {
+      prompts++;
+      return { disposition: "queued" };
+    },
+    async (key) => ({
+      ...key,
+      state: "accepted",
+      accepted: { disposition: "queued" },
+      acceptedAt: 1,
+    }),
+  );
+  const original = f.drafts.read(address).content;
+  await f.sends.send(address);
+  const key = f.sends.read(address)?.key as SendKey;
+  expect(f.sends.read(address)?.state).toBe("accepted");
+  expect(f.sends.read(address)?.content).toBeUndefined();
+  f.drafts.retire(address);
+  const intent: SendIntent = {
+    receipt: {
+      ...key,
+      state: "accepted",
+      accepted: { disposition: "queued" },
+      acceptedAt: 1,
+    },
+    draftRevision: 1,
+    content: original,
+    hash: "a".repeat(64),
+    owner: {
+      cwd: "C:/project",
+      sessionFile: "C:/project/session.jsonl",
+      branchId: "leaf",
+    },
+  };
+  f.sends.restore([intent]);
+  const fresh = new SendController(
+    f.drafts,
+    {
+      syncDraft,
+      prompt: async () => {
+        prompts++;
+        throw new Error("No replay");
+      },
+      getPromptReceipt: async () => intent.receipt,
+    },
+    () => {},
+  );
+  fresh.restore([intent]);
+  for (const sends of [f.sends, fresh]) {
+    expect(sends.retained()).toHaveLength(1);
+    expect(sends.retained()[0]).toMatchObject({
+      state: "accepted",
+      recoveredQueue: true,
+      content: original,
+    });
+    await sends.lookup(key, key);
+    expect(sends.read(address)?.state).toBe("accepted");
+  }
+  expect(prompts).toBe(1);
 });

@@ -31,6 +31,7 @@ if (process.env.PIG_RENDERER_BUILTINS_CHILD !== "1") {
   const { ImageGallery } = await import("./ImageGallery");
   const { ToolBlock, ThinkingBlock } = await import("./ToolBlock");
   const { CustomRecord } = await import("./CustomRecord");
+  const { DisclosureScope } = await import("./LazyDetails");
   afterEach(() => installChatRenderers([]));
 
   test("existing markdown, gallery, shell, thinking and custom records use the shared dispatch", () => {
@@ -95,6 +96,11 @@ if (process.env.PIG_RENDERER_BUILTINS_CHILD !== "1") {
     );
     expect(image).toContain('data-test="image"');
     expect(image).toContain("image-preview");
+    const diagram = renderToStaticMarkup(
+      <Markdown text="![分岐図](diagram.png)" />,
+    );
+    expect(diagram).toContain('alt="分岐図"');
+    expect(diagram).toMatch(/aria-label="[^"]*分岐図"/);
     const bash = renderToStaticMarkup(
       <ToolBlock
         call={{
@@ -112,7 +118,24 @@ if (process.env.PIG_RENDERER_BUILTINS_CHILD !== "1") {
     expect(bash).toContain('data-test="bash"');
     expect(bash).toContain("bash-call");
     expect(bash).toContain("echo hello");
-    expect(bash).toContain("tool-term-output");
+    expect(bash).not.toContain("tool-term-output");
+    const opened = renderToStaticMarkup(
+      <DisclosureScope id="shell" reveal={1}>
+        <ToolBlock
+          call={{
+            id: "shell",
+            name: "bash",
+            arguments: { command: "echo hello" },
+          }}
+          state={{
+            status: "done",
+            result: { content: [{ type: "text", text: "hello" }] },
+          }}
+          live={false}
+        />
+      </DisclosureScope>,
+    );
+    expect(opened).toContain('class="tool-term-output">hello');
     expect(
       renderToStaticMarkup(
         <ThinkingBlock text="Reason" label="Thinking" active={false} />,
@@ -149,15 +172,17 @@ if (process.env.PIG_RENDERER_BUILTINS_CHILD !== "1") {
       },
     ] satisfies ChatRenderer[]);
     const html = renderToStaticMarkup(
-      <ToolBlock
-        call={{ id: "t", name: "unknown", arguments: {} }}
-        state={{ status: "done" }}
-        live={false}
-        card={{
-          title: "Existing card",
-          body: [{ type: "text", text: "Existing content" }],
-        }}
-      />,
+      <DisclosureScope id="card" reveal={1}>
+        <ToolBlock
+          call={{ id: "t", name: "unknown", arguments: {} }}
+          state={{ status: "done" }}
+          live={false}
+          card={{
+            title: "Existing card",
+            body: [{ type: "text", text: "Existing content" }],
+          }}
+        />
+      </DisclosureScope>,
     );
     expect(html).toContain("Existing card");
     expect(html).toContain("Existing content");

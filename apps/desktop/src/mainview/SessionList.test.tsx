@@ -8,10 +8,12 @@ mock.module("./rpc", () => ({
   rpc: { send: {}, request: {} },
   openChat: async () => {},
   refreshSessions: async () => {},
+  refresh: async () => {},
   openChatLink: async () => {},
   regenerate: async () => {},
 }));
 const { SessionList } = await import("./SessionList");
+const { SidebarSessions } = await import("./SidebarSessions");
 
 function render(opening = false, running = false, otherOpening = false) {
   const state = useStore.getInitialState();
@@ -76,4 +78,47 @@ test("chat selection stays enabled during startup and another chat's startup doe
     "disabled",
   );
   expect(deleteButton(render(false, false, true))).not.toContain("disabled");
+});
+
+test("collapsed lists mount no rows, while project headings expose a background wait", () => {
+  const state = useStore.getInitialState();
+  const previous = { ...state };
+  const session = {
+    id: "waiting",
+    cwd: "project",
+    title: "Background",
+    modified: 1,
+  };
+  Object.assign(state, {
+    settings: { ...state.settings, language: "ja" },
+    bootstrap: {
+      ...state.bootstrap,
+      projects: [session.cwd],
+      generalCwd: "",
+      desktop: { sessions: {} },
+    },
+    sessions: { [session.cwd]: [session] },
+    snapshots: {},
+    pendingUI: [
+      {
+        hostId: "waiting",
+        sessionId: session.id,
+        epoch: 1,
+        uiId: "approval",
+        kind: "confirm",
+        title: "Continue?",
+        message: "Continue?",
+      },
+    ],
+  });
+  try {
+    expect(
+      renderToStaticMarkup(<SessionList cwd={session.cwd} expanded={false} />),
+    ).toBe("");
+    const html = renderToStaticMarkup(<SidebarSessions />);
+    expect(html).toContain(`aria-label="${ja["Waiting for your answer"]}: 1"`);
+    expect(html).toContain('class="session-dot waiting"');
+  } finally {
+    Object.assign(state, previous);
+  }
 });

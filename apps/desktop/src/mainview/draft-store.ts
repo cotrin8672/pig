@@ -1,11 +1,14 @@
+import { unfoldPastes } from "../shared/paste";
 import type {
   DraftContent,
+  DraftOwner,
   DraftState,
   DraftSyncParams,
   DraftSyncResult,
   SessionAddress,
 } from "../shared/runtime-contract";
 import { addressKey } from "./chat-snapshot";
+import { sameImages } from "./draft-mirror";
 
 export const emptyContent = (): DraftContent => ({
   text: "",
@@ -20,6 +23,7 @@ export type EditorDraft = {
   conflict?: DraftState;
   retired?: boolean;
   transferred?: boolean;
+  owner?: DraftOwner;
 };
 type Flight = {
   content: DraftContent;
@@ -33,8 +37,15 @@ const contentOf = ({ text, pastes, images }: DraftContent): DraftContent => ({
 });
 const equal = (a: DraftContent, b: DraftContent) =>
   a.text === b.text &&
-  JSON.stringify(a.pastes) === JSON.stringify(b.pastes) &&
-  JSON.stringify(a.images) === JSON.stringify(b.images);
+  (a.pastes === b.pastes ||
+    (a.pastes.length === b.pastes.length &&
+      a.pastes.every(
+        (p, i) =>
+          p.id === b.pastes[i].id &&
+          p.marker === b.pastes[i].marker &&
+          p.text === b.pastes[i].text,
+      ))) &&
+  sameImages(a.images, b.images);
 /** Address-owned drafts outlive React mounts, tab navigation and asynchronous file reads. */
 export class DraftStore {
   private entries = new Map<string, EditorDraft>();
@@ -101,7 +112,13 @@ export class DraftStore {
       flight &&
       remote.revision === flight.expectedRevision + 1 &&
       equal(remote, flight.content);
-    if (own || equal(draft.content, remote)) {
+    if (draft.dirty && remote.consumedRevision === draft.revision) {
+      this.put(address, {
+        ...draft,
+        revision: remote.revision,
+        conflict: undefined,
+      });
+    } else if (own || equal(draft.content, remote)) {
       this.put(address, {
         ...draft,
         revision: remote.revision,
@@ -162,6 +179,21 @@ export class DraftStore {
     const draft = this.read(address);
     this.put(address, { ...draft, retired: true });
   }
+  recover(address: SessionAddress, remote: DraftState, owner?: DraftOwner) {
+    if (this.entries.has(addressKey(address))) return;
+    this.receive(address, remote);
+    this.put(address, { ...this.read(address), retired: true, owner });
+  }
+  discard(address: SessionAddress, deleted = false) {
+    const draft = this.read(address);
+    if (!draft.retired && !deleted) return;
+    this.put(address, {
+      ...draft,
+      content: emptyContent(),
+      dirty: false,
+      ...(deleted ? { retired: true } : {}),
+    });
+  }
   clearAccepted(address: SessionAddress, sentVersion: number) {
     const draft = this.read(address);
     if (draft.retired || draft.version !== sentVersion || draft.conflict)
@@ -169,46 +201,63 @@ export class DraftStore {
     this.edit(address, emptyContent);
     return true;
   }
+  flushAll(sync: (params: DraftSyncParams) => Promise<DraftSyncResult>) {
+    return Promise.all(
+      [...this.owners.values()].flatMap((address) => {
+        const draft = this.read(address);
+        return draft.dirty && !draft.retired
+          ? [this.flush(address, sync, draft)]
+          : [];
+      }),
+    );
+  }
   flush(
     address: SessionAddress,
     sync: (params: DraftSyncParams) => Promise<DraftSyncResult>,
+    target = this.read(address),
+    requestId?: string,
   ): Promise<EditorDraft> {
+    target = { ...target, content: structuredClone(target.content) };
     const key = addressKey(address);
     const run = async () => {
-      // Serialize the mirror before every command/send, including edits made during an ACK.
-      while (true) {
-        const draft = this.read(address);
-        if (draft.retired)
-          throw new Error("This draft belongs to a replaced or closed session");
-        if (draft.conflict)
+      const draft = this.read(address);
+      if (draft.retired)
+        throw new Error("This draft belongs to a replaced or closed session");
+      if (draft.conflict)
+        throw new Error(
+          "Extension changed the editor. Choose which draft to keep before sending.",
+        );
+      // A queued mirror must never overwrite a newer acknowledged edit.
+      if (draft.version !== target.version && !draft.dirty)
+        throw new Error(
+          "Editor changed before synchronization; your draft has been retained",
+        );
+      if (!requestId && !draft.dirty) return draft;
+      const flight = {
+        content: target.content,
+        version: target.version,
+        expectedRevision: draft.revision,
+      };
+      this.flights.set(key, flight);
+      try {
+        const result = await sync({
+          ...address,
+          expectedRevision: flight.expectedRevision,
+          content: flight.content,
+          ...(requestId ? { requestId } : {}),
+        });
+        this.receive(address, result.draft);
+        if (!result.applied) {
+          const now = this.read(address);
+          if (!equal(now.content, result.draft))
+            this.put(address, { ...now, conflict: result.draft });
           throw new Error(
-            "Extension changed the editor. Choose which draft to keep before sending.",
+            "Editor revision conflict; your draft has been retained",
           );
-        if (!draft.dirty) return draft;
-        const flight = {
-          content: draft.content,
-          version: draft.version,
-          expectedRevision: draft.revision,
-        };
-        this.flights.set(key, flight);
-        try {
-          const result = await sync({
-            ...address,
-            expectedRevision: flight.expectedRevision,
-            content: flight.content,
-          });
-          this.receive(address, result.draft);
-          if (!result.applied) {
-            const now = this.read(address);
-            if (!equal(now.content, result.draft))
-              this.put(address, { ...now, conflict: result.draft });
-            throw new Error(
-              "Editor revision conflict; your draft has been retained",
-            );
-          }
-        } finally {
-          this.flights.delete(key);
         }
+        return { ...target, revision: result.draft.revision, dirty: false };
+      } finally {
+        this.flights.delete(key);
       }
     };
     const pending = (this.queues.get(key) ?? Promise.resolve())
@@ -226,13 +275,5 @@ export class DraftStore {
 export const drafts = new DraftStore();
 
 export function expandedDraft(content: DraftContent): string {
-  const pastes = new Map(
-    content.pastes.map((paste) => [paste.marker, paste.text]),
-  );
-  return content.text
-    .replace(
-      /\[paste #\d+ (?:\+\d+ lines|\d+ chars)\]/g,
-      (marker) => pastes.get(marker) ?? marker,
-    )
-    .trim();
+  return unfoldPastes(content.text, content.pastes).trim();
 }

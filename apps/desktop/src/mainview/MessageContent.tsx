@@ -1,7 +1,7 @@
 import type { ImageContent, TextContent } from "@earendil-works/pi-ai";
 import type { ChatRendererProps } from "@pig/chat-renderers";
 import { Check, Copy, Pencil } from "lucide-react";
-import { memo, useCallback, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useState } from "react";
 import ReactMarkdown, { defaultUrlTransform } from "react-markdown";
 import rehypeKatex from "rehype-katex";
 import remarkGfm from "remark-gfm";
@@ -14,10 +14,33 @@ import { ChatContent } from "./ChatContent";
 import { dataText } from "./custom-data";
 import { ImageGallery } from "./ImageGallery";
 import { useT } from "./i18n";
+import { LargeText } from "./LargeText";
+import { DisclosureScope } from "./LazyDetails";
 import { openChatLink, regenerate, rpc } from "./rpc";
-import { showError } from "./store";
+import { showError, useStore } from "./store";
+import { createTextSampler } from "./streaming-text";
 
-export const Markdown = memo(function Markdown({ text }: { text: string }) {
+export const Markdown = memo(function Markdown({
+  text,
+  streaming = false,
+}: {
+  text: string;
+  streaming?: boolean;
+}) {
+  const [sample, setSample] = useState(text);
+  const sampler = useMemo(() => createTextSampler(setSample), []);
+  useEffect(() => {
+    sampler.update(text, streaming);
+  }, [sampler, text, streaming]);
+  useEffect(() => () => sampler.dispose(), [sampler]);
+  return <RenderedMarkdown text={streaming ? sample : text} />;
+});
+
+const RenderedMarkdown = memo(function RenderedMarkdown({
+  text,
+}: {
+  text: string;
+}) {
   return (
     <ChatContent kind="markdown" data={{ text }} builtin={BuiltinMarkdown} />
   );
@@ -26,6 +49,23 @@ export const Markdown = memo(function Markdown({ text }: { text: string }) {
 export function BuiltinMarkdown({
   data: { text },
 }: ChatRendererProps<"markdown">) {
+  const ja = useStore((s) => s.settings.language === "ja");
+  const [full, setFull] = useState(false);
+  // shortcut: oversized Markdown uses explicit source ranges; full parsing is opt-in until incremental parsing preserves references/tables/math.
+  if (text.length > 131_072 && !full)
+    return (
+      <>
+        <p>
+          {ja
+            ? "大きな本文をソースの範囲で表示しています。"
+            : "Large message shown in source ranges."}
+        </p>
+        <button type="button" onClick={() => setFull(true)}>
+          {ja ? "全文を Markdown で表示" : "Render full Markdown"}
+        </button>
+        <LargeText text={text} />
+      </>
+    );
   return (
     <ReactMarkdown
       remarkPlugins={[remarkGfm, remarkMath]}
@@ -49,9 +89,9 @@ export function BuiltinMarkdown({
             {children}
           </a>
         ),
-        img: ({ src }) =>
+        img: ({ src, alt }) =>
           typeof src === "string" && src ? (
-            <ImageGallery sources={[src]} />
+            <ImageGallery sources={[src]} alt={alt} />
           ) : null,
       }}
     >
@@ -215,12 +255,15 @@ export const MessageContent = memo(function MessageContent({
           "text" in block &&
           typeof block.text === "string"
         )
-          return markdown ? (
+          return (
             // biome-ignore lint/suspicious/noArrayIndexKey: SDK content blocks retain their indexes.
-            <Markdown key={index} text={block.text} />
-          ) : (
-            // biome-ignore lint/suspicious/noArrayIndexKey: SDK content blocks retain their indexes.
-            <pre key={index}>{block.text}</pre>
+            <DisclosureScope key={index} id={`text:${index}`}>
+              {markdown ? (
+                <Markdown text={block.text} />
+              ) : (
+                <LargeText text={block.text} />
+              )}
+            </DisclosureScope>
           );
         // All images of a message share one gallery, placed at the first image.
         if (index === firstImage)
@@ -237,7 +280,7 @@ export const ToolResultContent = memo(function ToolResultContent({
   result: unknown;
 }) {
   if (!result || typeof result !== "object")
-    return result === undefined ? null : <pre>{dataText(result)}</pre>;
+    return result === undefined ? null : <LargeText text={dataText(result)} />;
   return (
     <>
       {"content" in result && Array.isArray(result.content) && (
@@ -247,7 +290,7 @@ export const ToolResultContent = memo(function ToolResultContent({
         <p className="error">Tool failed</p>
       )}
       {!("content" in result) && !("details" in result) && (
-        <pre>{dataText(result)}</pre>
+        <LargeText text={dataText(result)} />
       )}
     </>
   );

@@ -1,4 +1,5 @@
 import { expect, test } from "bun:test";
+import { createDraftMirror } from "../mainview/draft-mirror";
 import type { ExtensionUIEvent } from "../shared/extension-ui";
 import type { DraftContent, SessionAddress } from "../shared/runtime-contract";
 import { ComposerBridge } from "./composer-bridge";
@@ -52,6 +53,37 @@ test("CAS mirror is synchronous, server revision wins and returned objects canno
   const read = bridge.read(a);
   read.images.length = 0;
   expect(bridge.read(a).images).toEqual([image]);
+});
+
+test("text-only mirror omits known image bytes both ways, stale revision returns full host images", async () => {
+  const { bridge } = fixture();
+  const bytes: number[][] = [];
+  const sync = createDraftMirror(async (params) => {
+    const result = bridge.sync(params);
+    bytes.push([params.content.images.length, result.draft.images.length]);
+    return result;
+  });
+  const content = { text: "a", pastes: [], images: [image] };
+  await sync({ ...a, expectedRevision: 0, content });
+  const second = await sync({
+    ...a,
+    expectedRevision: 1,
+    content: { ...content, text: "b" },
+  });
+  expect(second.draft.images).toEqual([image]);
+  bridge.setText(a, "extension");
+  const stale = await sync({ ...a, expectedRevision: 2, content });
+  expect(stale).toMatchObject({
+    applied: false,
+    draft: { text: "extension", images: [image] },
+  });
+  await sync({ ...b, expectedRevision: 0, content });
+  expect(bytes).toEqual([
+    [1, 1],
+    [0, 0],
+    [0, 1],
+    [1, 1],
+  ]);
 });
 
 test("paste folding shares Composer rules; setText reconciles markers and preserves images", () => {

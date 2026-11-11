@@ -124,7 +124,7 @@ export function responseStats(
       if (block.type === "toolCall") tools++;
       else if (block.type === "text" && block.text.trim())
         parts.push(block.text);
-    text.unshift(...parts);
+    text.push(...parts.reverse());
   }
   const endedAt = last.timestamp + (last.durationMs ?? 0);
   return {
@@ -137,6 +137,6 @@ export function responseStats(
     totalTokens,
     tokensPerSecond: timedMs ? (timedOutput * 1000) / timedMs : undefined,
     model: last.model,
-    text: text.join("\n\n"),
+    text: text.reverse().join("\n\n"),
   };
 }

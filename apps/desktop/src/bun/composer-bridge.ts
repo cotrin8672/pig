@@ -1,10 +1,11 @@
 import type { ExtensionUIEvent } from "../shared/extension-ui";
-import { makeMarker, shouldCollapse } from "../shared/paste";
+import { makeMarker, shouldCollapse, unfoldPastes } from "../shared/paste";
 import type {
   DraftContent,
   DraftState,
   DraftSyncParams,
   DraftSyncResult,
+  RecoveredDraft,
   SessionAddress,
 } from "../shared/runtime-contract";
 import { checkText, sessionKey } from "./ui-request-broker";
@@ -14,8 +15,21 @@ const CONTENT_LIMIT = 64 * 1024 * 1024;
 export class ComposerBridge {
   private readonly drafts = new Map<string, DraftState>();
   private readonly retired = new Set<string>();
+  private readonly transfers = new Map<
+    string,
+    { next: SessionAddress; revision: number; nextRevision: number }
+  >();
   private pasteId = 0;
-  constructor(private readonly emit: (event: ExtensionUIEvent) => void) {}
+  private imageSizes = new WeakMap<DraftContent["images"], number>();
+  constructor(
+    private readonly emit: (event: ExtensionUIEvent) => void,
+    private readonly save?: (
+      address: SessionAddress,
+      draft: DraftState,
+      previous?: SessionAddress,
+      keepImages?: boolean,
+    ) => void,
+  ) {}
   read(address: SessionAddress): DraftState {
     return structuredClone(this.current(address));
   }
@@ -28,13 +42,27 @@ export class ComposerBridge {
       throw new TypeError("Invalid draft revision");
     if (current.revision !== params.expectedRevision)
       return { applied: false, draft: structuredClone(current) };
-    this.validate(params.content);
+    if (params.keepImages && (params.requestId || params.content.images.length))
+      throw new Error("Invalid image reuse request");
+    const content = params.keepImages
+      ? { ...params.content, images: current.images }
+      : params.content;
+    this.validate(content);
     const next = {
-      ...structuredClone(params.content),
+      ...structuredClone(content),
       revision: this.revision(current),
     };
-    this.commit(params, next);
-    return { applied: true, draft: structuredClone(next) };
+    this.imageSizes.set(
+      next.images,
+      this.imageSizes.get(content.images) as number,
+    );
+    this.commit(params, next, true, !!params.keepImages);
+    return {
+      applied: true,
+      draft: structuredClone(
+        params.keepImages ? { ...next, images: [] } : next,
+      ),
+    };
   }
   setText(address: SessionAddress, text: string): void {
     checkText(text, CONTENT_LIMIT);
@@ -46,7 +74,7 @@ export class ComposerBridge {
       revision: this.revision(current),
     };
     this.validate(next);
-    this.commit(address, next);
+    this.commit(address, next, true, true);
   }
   paste(address: SessionAddress, text: string): void {
     checkText(text, CONTENT_LIMIT);
@@ -73,13 +101,7 @@ export class ComposerBridge {
   /** Expanded editor text, single pass (paste payloads are never recursively expanded). */
   expandedText(address: SessionAddress): string {
     const draft = this.current(address);
-    const pastes = new Map(
-      draft.pastes.map((paste) => [paste.marker, paste.text]),
-    );
-    return draft.text.replace(
-      /\[paste #\d+ (?:\+\d+ lines|\d+ chars)\]/g,
-      (marker) => pastes.get(marker) ?? marker,
-    );
+    return unfoldPastes(draft.text, draft.pastes);
   }
   transfer(previous: SessionAddress, next: SessionAddress): void {
     const from = sessionKey(previous);
@@ -90,10 +112,45 @@ export class ComposerBridge {
     if (this.drafts.has(to) || this.retired.has(to))
       throw new Error("Draft transfer target already exists");
     const draft = structuredClone(this.current(previous));
+    const revision = draft.revision;
     draft.revision = this.revision(draft);
+    this.save?.(next, draft, previous);
     this.drafts.delete(from);
     this.retired.add(from);
-    this.commit(next, draft);
+    this.transfers.set(from, { next, revision, nextRevision: draft.revision });
+    this.commit(next, draft, false);
+  }
+  consume(
+    address: SessionAddress,
+    revision: number,
+    save: (consumed?: Pick<RecoveredDraft, "address" | "draft">) => void,
+  ): void {
+    const transfer = this.transfers.get(sessionKey(address));
+    if (transfer && transfer.revision === revision) {
+      this.consume(transfer.next, transfer.nextRevision, save);
+      return;
+    }
+    const current = this.drafts.get(sessionKey(address));
+    if (
+      this.retired.has(sessionKey(address)) ||
+      current?.revision !== revision
+    ) {
+      save();
+      return;
+    }
+    const draft = {
+      text: "",
+      pastes: [],
+      images: [],
+      revision: this.revision(current),
+      consumedRevision: revision,
+    };
+    // SDK acceptance cannot be rolled back when a disk write fails.
+    try {
+      save({ address, draft });
+    } finally {
+      this.commit(address, draft, false);
+    }
   }
   remove(address: SessionAddress): void {
     const id = sessionKey(address);
@@ -115,7 +172,19 @@ export class ComposerBridge {
       throw new RangeError("Draft revision exhausted");
     return draft.revision + 1;
   }
-  private commit(address: SessionAddress, draft: DraftState): void {
+  private commit(
+    address: SessionAddress,
+    draft: DraftState,
+    persist = true,
+    keepImages = false,
+  ): void {
+    if (persist)
+      this.save?.(
+        address,
+        draft,
+        undefined,
+        keepImages && draft.images.length > 0,
+      );
     this.drafts.set(sessionKey(address), draft);
     this.emit({
       type: "draft",
@@ -128,41 +197,62 @@ export class ComposerBridge {
     });
   }
   private validate(content: DraftContent): void {
-    if (
-      !content ||
-      !Array.isArray(content.pastes) ||
-      !Array.isArray(content.images) ||
-      content.pastes.length > 10_000 ||
-      content.images.length > 256
-    )
-      throw new TypeError("Invalid draft content");
-    checkText(content.text, CONTENT_LIMIT);
-    const ids = new Set<string>();
-    const markers = new Set<string>();
-    for (const paste of content.pastes) {
-      checkText(paste.id, 256);
-      checkText(paste.marker, 256);
-      checkText(paste.text, CONTENT_LIMIT);
-      if (
-        !paste.id ||
-        ids.has(paste.id) ||
-        markers.has(paste.marker) ||
-        !/^\[paste #\d+ (?:\+\d+ lines|\d+ chars)\]$/.test(paste.marker)
-      )
-        throw new TypeError("Invalid paste record");
-      ids.add(paste.id);
-      markers.add(paste.marker);
-    }
-    ids.clear();
-    for (const item of content.images) {
-      checkText(item.id, 256);
-      if (!item.id || ids.has(item.id) || item.image?.type !== "image")
-        throw new TypeError("Invalid draft image");
-      checkText(item.image.data, CONTENT_LIMIT);
-      checkText(item.image.mimeType, 256);
-      ids.add(item.id);
-    }
-    if (Buffer.byteLength(JSON.stringify(content)) > CONTENT_LIMIT)
-      throw new RangeError("Draft size exceeded");
+    const imageBytes = this.imageSizes.get(content.images);
+    validateDraftContent(content, imageBytes);
+    if (imageBytes === undefined)
+      this.imageSizes.set(
+        content.images,
+        Buffer.byteLength(JSON.stringify(content.images)) - 2,
+      );
   }
+}
+export function validateDraftContent(
+  content: DraftContent,
+  imageBytes?: number,
+): void {
+  if (
+    !content ||
+    !Array.isArray(content.pastes) ||
+    !Array.isArray(content.images) ||
+    content.pastes.length > 10_000 ||
+    content.images.length > 256
+  )
+    throw new TypeError("Invalid draft content");
+  checkText(content.text, CONTENT_LIMIT);
+  const ids = new Set<string>();
+  const markers = new Set<string>();
+  for (const paste of content.pastes) {
+    checkText(paste.id, 256);
+    checkText(paste.marker, 256);
+    checkText(paste.text, CONTENT_LIMIT);
+    if (
+      !paste.id ||
+      ids.has(paste.id) ||
+      markers.has(paste.marker) ||
+      !/^\[paste #\d+ (?:\+\d+ lines|\d+ chars)\]$/.test(paste.marker)
+    )
+      throw new TypeError("Invalid paste record");
+    ids.add(paste.id);
+    markers.add(paste.marker);
+  }
+  ids.clear();
+  for (const item of content.images) {
+    checkText(item.id, 256);
+    if (!item.id || ids.has(item.id) || item.image?.type !== "image")
+      throw new TypeError("Invalid draft image");
+    checkText(item.image.data, CONTENT_LIMIT);
+    checkText(item.image.mimeType, 256);
+    ids.add(item.id);
+  }
+  const size =
+    imageBytes === undefined
+      ? Buffer.byteLength(JSON.stringify(content))
+      : Buffer.byteLength(
+          JSON.stringify({
+            text: content.text,
+            pastes: content.pastes,
+            images: [],
+          }),
+        ) + imageBytes;
+  if (size > CONTENT_LIMIT) throw new RangeError("Draft size exceeded");
 }

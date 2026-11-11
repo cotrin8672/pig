@@ -43,6 +43,9 @@ if (process.env.PIG_SEND_RECOVERY_CHILD !== "1") {
   }));
   const { forkChat, regenerate, sends } = await import("./rpc");
   const { ResponseFooter } = await import("./ResponseFooter");
+  const { DraftRecovery } = await import("./DraftRecovery");
+  const customData = await import("./custom-data");
+  const dataText = spyOn(customData, "dataText");
   const snapshot: Snapshot = {
     address: { hostId: "h", sessionId: "recovery", epoch: 1 },
     snapshotSeq: 1,
@@ -114,5 +117,45 @@ if (process.env.PIG_SEND_RECOVERY_CHILD !== "1") {
     sendState = undefined;
     snapshot.ready = false;
     expect(render().match(/disabled=""/g)).toHaveLength(2);
+  });
+  test.each([
+    "en",
+    "ja",
+  ] as const)("closed recovery details do no payload work during repeated %s renders", (language) => {
+    const settings = { ...useStore.getState().settings, language };
+    useStore.getInitialState().settings = settings;
+    useStore.setState({ settings });
+    const state: SendState = {
+      key: { ...snapshot.address, requestId: "unknown-original" },
+      version: 1,
+      state: "unknown",
+      content: {
+        text: "private payload",
+        pastes: [],
+        images: [
+          {
+            id: "image",
+            image: {
+              type: "image",
+              mimeType: "image/png",
+              data: "ATTACHMENT_SENTINEL",
+            },
+          },
+        ],
+      },
+    };
+    const retained = spyOn(sends, "retained").mockReturnValue([state]);
+    dataText.mockClear();
+    for (let i = 0; i < 10; i++) {
+      const html = renderToStaticMarkup(<DraftRecovery />);
+      expect(html).toContain(
+        language === "ja" ? "送信の確認" : "Send recovery",
+      );
+      expect(html).not.toContain("private payload");
+      expect(html).not.toContain("ATTACHMENT_SENTINEL");
+      expect(html).not.toContain("<img");
+    }
+    expect(dataText).not.toHaveBeenCalled();
+    retained.mockRestore();
   });
 }

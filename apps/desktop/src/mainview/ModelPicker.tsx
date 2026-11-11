@@ -203,7 +203,9 @@ export function ModelPicker({
             aria-expanded={open}
             aria-controls={listId}
             aria-activedescendant={
-              activeIndex >= 0 ? `${listId}-${activeIndex}` : undefined
+              open && visible[activeIndex]
+                ? `${listId}-${activeIndex}`
+                : undefined
             }
             aria-label={t["Search models"]}
             placeholder={t["Search models"]}
@@ -267,7 +269,7 @@ export function ModelPicker({
             className="model-results"
             id={listId}
             ref={list}
-            role="menu"
+            role="listbox"
             aria-label={t.Models}
           >
             {visible.map((model, index) => {
@@ -286,8 +288,8 @@ export function ModelPicker({
                   <button
                     type="button"
                     className="model-option"
-                    role="menuitemradio"
-                    aria-checked={!!selected}
+                    role="option"
+                    aria-selected={!!selected}
                     data-highlighted={index === activeIndex || undefined}
                     data-model-index={index}
                     id={`${listId}-${index}`}

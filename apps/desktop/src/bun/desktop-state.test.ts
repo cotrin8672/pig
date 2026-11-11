@@ -1,4 +1,5 @@
 import { afterEach, expect, spyOn, test } from "bun:test";
+import * as fs from "node:fs/promises";
 import {
   mkdir,
   mkdtemp,
@@ -208,4 +209,67 @@ test("Durable numeric string IDs persist pins and archive state independently", 
   expect(reopened.value.sessions["2"]).toEqual({ archived: true });
   await reopened.forgetSession("1");
   expect(reopened.value.sessions["2"]).toEqual({ archived: true });
+});
+
+test("unchanged desktop updates do not write, rename or notify, including queued completion races", async () => {
+  const file = await fixture();
+  const emitted: unknown[] = [];
+  const store = new DesktopStateStore(file, (state) => emitted.push(state));
+  const writes = spyOn(fs, "writeFile");
+  const renames = spyOn(fs, "rename");
+  try {
+    const original = store.value;
+    await Promise.all(
+      Array.from({ length: 100 }, () => store.clearCompletion("chat")),
+    );
+    expect(store.value).toBe(original);
+    expect(writes).not.toHaveBeenCalled();
+    expect(renames).not.toHaveBeenCalled();
+    expect(emitted).toHaveLength(0);
+
+    await Promise.all([
+      store.completeSession("chat", "success"),
+      store.clearCompletion("chat"),
+      store.setSession("chat", { pinned: true }),
+      store.completeSession("chat", "error"),
+      store.setSession("chat", { archived: true }),
+      store.clearCompletion("chat"),
+      ...Array.from({ length: 100 }, () => store.clearCompletion("chat")),
+    ]);
+    expect(store.value.sessions.chat).toEqual({ pinned: true, archived: true });
+    expect(writes).toHaveBeenCalledTimes(6);
+    expect(renames).toHaveBeenCalledTimes(6);
+    expect(emitted).toHaveLength(6);
+
+    await store.setProject("fixture", { name: "Fixture", pinned: true });
+    await store.setUiPreferences({
+      chatWidth: 900,
+      recentModels: ["provider/model"],
+    });
+    await store.completeSession("chat", "success");
+    const completion = store.value.sessions.chat.completion?.id;
+    if (!completion) throw new Error("Missing completion");
+    await store.markSessionRead("chat", completion);
+    const committed = store.value;
+    const saved = writes.mock.calls.length;
+    await Promise.all([
+      store.setProject("fixture", { name: "Fixture", pinned: true }),
+      store.setSession("chat", { pinned: true, archived: true }),
+      store.setUiPreferences({
+        chatWidth: 900,
+        recentModels: ["provider/model"],
+      }),
+      store.markSessionRead("chat", completion),
+      store.markSessionRead("chat", "stale"),
+      store.forgetSession("missing"),
+    ]);
+    expect(store.value).toBe(committed);
+    expect(writes).toHaveBeenCalledTimes(saved);
+    expect(renames).toHaveBeenCalledTimes(saved);
+    expect(emitted).toHaveLength(saved);
+    expect(JSON.parse(await readFile(file, "utf8"))).toEqual(committed);
+  } finally {
+    writes.mockRestore();
+    renames.mockRestore();
+  }
 });

@@ -1,58 +1,201 @@
-import { useSyncExternalStore } from "react";
+import { memo, useSyncExternalStore } from "react";
+import type { SessionAddress } from "../shared/runtime-contract";
 import { addressKey } from "./chat-snapshot";
 import { dataText } from "./custom-data";
-import { drafts, expandedDraft } from "./draft-store";
+import { drafts, type EditorDraft, expandedDraft } from "./draft-store";
 import { ImageGallery } from "./ImageGallery";
-import { useStore } from "./store";
+import { useT } from "./i18n";
+import { LazyDetails as Disclosure } from "./LazyDetails";
+import { rpc, sends } from "./rpc";
+import type { SendState } from "./send-controller";
+import { showError, useStore } from "./store";
 
-/** Retained old-host drafts are inspectable, not silently reassigned to a new runtime. */
-export function DraftRecovery() {
-  useSyncExternalStore(drafts.subscribe, drafts.getTick);
-  const active = useStore((state) =>
-    state.active ? state.snapshots[state.active] : undefined,
-  );
-  const retained = drafts.retained();
-  if (!retained.length) return null;
+function currentAddress() {
+  const state = useStore.getState();
+  const active = state.active ? state.snapshots[state.active] : undefined;
+  return active?.ready === false ? undefined : active?.address;
+}
+const RecoveryContent = memo(function RecoveryContent({
+  content,
+}: {
+  content: EditorDraft["content"];
+}) {
+  const t = useT();
   return (
-    <details className="draft-recovery">
-      <summary>Retained drafts ({retained.length})</summary>
-      <p>
-        These drafts belonged to a closed/restarted runtime. A previous send may
-        have executed. Inspect history before explicitly copying a draft into a
-        new session. Nothing is resent automatically.
-      </p>
-      {retained.map(({ address, draft }) => (
-        <details key={addressKey(address)}>
-          <summary>
-            {address.sessionId} · epoch {address.epoch}
-          </summary>
-          <pre>{expandedDraft(draft.content)}</pre>
-          <ImageGallery
-            sources={draft.content.images.map(
-              ({ image }) => `data:${image.mimeType};base64,${image.data}`,
-            )}
-          />
-          <details>
-            <summary>Raw draft / folded pastes</summary>
-            <pre>{dataText(draft.content)}</pre>
-          </details>
+    <>
+      <pre>{expandedDraft(content)}</pre>
+      <ImageGallery
+        sources={content.images.map(
+          ({ image }) => `data:${image.mimeType};base64,${image.data}`,
+        )}
+      />
+      <Disclosure summary={t.recoveryRaw}>
+        {() => <pre>{dataText(content)}</pre>}
+      </Disclosure>
+    </>
+  );
+});
+const SendItem = memo(function SendItem({
+  send,
+  activeKey,
+}: {
+  send: SendState;
+  activeKey?: string;
+}) {
+  const t = useT();
+  return (
+    <Disclosure
+      summary={
+        <>
+          {send.key.sessionId}:{" "}
+          {send.recoveredQueue
+            ? t.recoveryQueued
+            : send.state === "checking"
+              ? t.recoveryPending
+              : t.recoveryUnknown}
+        </>
+      }
+    >
+      {() => (
+        <>
+          <p role="status">
+            {send.message ??
+              (send.recoveryReason === "prepared"
+                ? t.recoveryPrepared
+                : send.recoveryReason === "lookup-timeout"
+                  ? t.recoveryLookupTimeout
+                  : t.recoveryInspect)}
+          </p>
+          <p>{t.recoveryRequest(send.key.requestId)}</p>
+          {send.owner && (
+            <p>
+              {t.recoveryOwner(send.owner.cwd, send.owner.branchId ?? "root")}
+            </p>
+          )}
+          {send.content && <RecoveryContent content={send.content} />}
           <button
             type="button"
-            disabled={!active}
+            onClick={() => void sends.lookup(send.key, send.key)}
+          >
+            {t.recoveryCheck}
+          </button>
+          {send.content && (
+            <button
+              type="button"
+              disabled={!activeKey}
+              onClick={() => {
+                const active = currentAddress();
+                const content = send.content;
+                if (active && content && window.confirm(t.recoveryCopyConfirm))
+                  drafts.edit(active, () => content);
+              }}
+            >
+              {t.recoveryCopy}
+            </button>
+          )}
+        </>
+      )}
+    </Disclosure>
+  );
+});
+const DraftItem = memo(function DraftItem({
+  address,
+  draft,
+  activeKey,
+}: {
+  address: SessionAddress;
+  draft: EditorDraft;
+  activeKey?: string;
+}) {
+  const t = useT();
+  return (
+    <Disclosure
+      summary={
+        <>
+          {address.sessionId} · epoch {address.epoch}
+        </>
+      }
+    >
+      {() => (
+        <>
+          {draft.owner && (
+            <p>
+              {t.recoveryOwner(draft.owner.cwd, draft.owner.branchId ?? "root")}
+            </p>
+          )}
+          <RecoveryContent content={draft.content} />
+          <button
+            type="button"
+            disabled={!activeKey}
             onClick={() => {
-              if (
-                active &&
-                window.confirm(
-                  "I inspected history and understand the old send may have executed. Copy this retained draft into the current SDK session? This replaces its current draft but does not send it.",
-                )
-              )
-                drafts.edit(active.address, () => draft.content);
+              const active = currentAddress();
+              if (active && window.confirm(t.recoveryCopyConfirm))
+                drafts.edit(active, () => draft.content);
             }}
           >
-            Copy into current SDK session after reviewing history
+            {t.recoveryCopy}
           </button>
-        </details>
-      ))}
-    </details>
+          <button
+            type="button"
+            disabled={!activeKey}
+            onClick={() => {
+              const active = currentAddress();
+              if (active && window.confirm(t.recoveryDiscardConfirm))
+                void rpc.request
+                  .discardRecovery({ current: active, retained: address })
+                  .then(() => {
+                    drafts.discard(address);
+                    sends.discard(address);
+                  })
+                  .catch(showError);
+            }}
+          >
+            {t.recoveryDiscard}
+          </button>
+        </>
+      )}
+    </Disclosure>
+  );
+});
+/** Old operations retain their original identities; closed details do no payload work. */
+export function DraftRecovery() {
+  const t = useT();
+  useSyncExternalStore(drafts.subscribe, drafts.getTick, drafts.getTick);
+  useSyncExternalStore(sends.subscribe, sends.getTick, sends.getTick);
+  const activeKey = useStore((state) => {
+    const active = state.active ? state.snapshots[state.active] : undefined;
+    return active && active.ready !== false
+      ? addressKey(active.address)
+      : undefined;
+  });
+  const retained = drafts.retained();
+  const unconfirmed = sends.retained();
+  if (!retained.length && !unconfirmed.length) return null;
+  return (
+    <Disclosure
+      className="draft-recovery"
+      summary={t.sendRecovery(unconfirmed.length, retained.length)}
+    >
+      {() => (
+        <>
+          {unconfirmed.map((send) => (
+            <SendItem
+              key={JSON.stringify(send.key)}
+              send={send}
+              activeKey={activeKey}
+            />
+          ))}
+          {retained.length > 0 && <p>{t.recoveryRetainedInfo}</p>}
+          {retained.map(({ address, draft }) => (
+            <DraftItem
+              key={addressKey(address)}
+              address={address}
+              draft={draft}
+              activeKey={activeKey}
+            />
+          ))}
+        </>
+      )}
+    </Disclosure>
   );
 }

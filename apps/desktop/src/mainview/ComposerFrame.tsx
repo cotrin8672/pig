@@ -1,5 +1,5 @@
 import { type ReactNode, useLayoutEffect, useRef } from "react";
-import { isThreadAtBottom } from "./thread-scroll";
+import { frameTask, isThreadAtBottom } from "./thread-scroll";
 
 export function ComposerFrame({ children }: { children: ReactNode }) {
   const dockRef = useRef<HTMLDivElement>(null);
@@ -17,10 +17,12 @@ export function ComposerFrame({ children }: { children: ReactNode }) {
       if (follow) thread.scrollTop = thread.scrollHeight;
     };
     measure();
-    const observer = new ResizeObserver(measure);
+    const resize = frameTask(measure);
+    const observer = new ResizeObserver(resize.schedule);
     observer.observe(dock);
     return () => {
       observer.disconnect();
+      resize.dispose();
       shell.style.removeProperty("--composer-height");
     };
   }, []);

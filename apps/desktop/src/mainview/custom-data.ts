@@ -1,7 +1,7 @@
 import type { TranscriptRecord } from "../shared/transcript";
 
 /** Text only: never HTML, executable renderer source, or inferred Plan/Goal semantics. */
-export function dataText(value: unknown): string {
+export function dataText(value: unknown, omitImages = false): string {
   if (typeof value === "string") return value;
   const seen = new WeakSet<object>();
   try {
@@ -11,6 +11,8 @@ export function dataText(value: unknown): string {
         (_key, item: unknown) => {
           if (typeof item === "bigint") return String(item);
           if (item && typeof item === "object") {
+            if (omitImages && "type" in item && item.type === "image")
+              return undefined;
             if (seen.has(item)) return "[Circular]";
             seen.add(item);
           }

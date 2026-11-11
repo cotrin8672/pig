@@ -1,25 +1,25 @@
 import { Archive, ChevronRight, Folder, Pin, Plus } from "lucide-react";
-import { useId, useState } from "react";
+import { memo, useId, useState } from "react";
+import { useShallow } from "zustand/react/shallow";
 import { visibleProjects } from "../shared/projects";
 import { useT } from "./i18n";
 import { ProjectMenu } from "./ProjectMenu";
 import { openChat, rpc } from "./rpc";
 import { SessionList } from "./SessionList";
-import {
-  hasUnreadCompletion,
-  sessionStatus,
-  sessionStatusLabels,
-} from "./session-status";
+import { type SessionStatus, sessionStatusLabels } from "./session-status";
 import { useStore } from "./store";
+import { selectProjectActivity } from "./ui-selectors";
 
 const basename = (path: string) =>
   path.split(/[\\/]/).filter(Boolean).pop() || path;
 
-export function SidebarSessions() {
+export const SidebarSessions = memo(function SidebarSessions() {
   const t = useT();
   const projects = useStore((s) => s.bootstrap.projects);
   const projectFlags = useStore((s) => s.bootstrap.desktop.projects);
   const [archived, setArchived] = useState(false);
+  const [query, setQuery] = useState("");
+  const needle = query.trim().toLowerCase();
   const archivedCount = projects.filter(
     (cwd) => projectFlags?.[cwd]?.archived,
   ).length;
@@ -28,6 +28,13 @@ export function SidebarSessions() {
   const projectsId = useId();
   return (
     <div className="project-list">
+      <input
+        type="search"
+        aria-label={t.searchChats}
+        placeholder={t.searchChats}
+        value={query}
+        onChange={(e) => setQuery(e.target.value)}
+      />
       <section className="sidebar-section" aria-labelledby={chatsId}>
         <div className="sidebar-section-heading">
           <h2 id={chatsId}>{t.Chats}</h2>
@@ -41,7 +48,7 @@ export function SidebarSessions() {
             <Plus size={14} aria-hidden="true" />
           </button>
         </div>
-        {generalCwd && <SessionList cwd={generalCwd} />}
+        {generalCwd && <SessionList cwd={generalCwd} needle={needle} />}
       </section>
       <section className="sidebar-section" aria-labelledby={projectsId}>
         <div className="sidebar-section-heading">
@@ -56,7 +63,7 @@ export function SidebarSessions() {
           </button>
         </div>
         {visibleProjects(projects, projectFlags, archived).map((cwd) => (
-          <ProjectSessions key={cwd} cwd={cwd} />
+          <ProjectSessions key={cwd} cwd={cwd} needle={needle} />
         ))}
         {(archivedCount > 0 || archived) && (
           <button
@@ -77,31 +84,25 @@ export function SidebarSessions() {
       </section>
     </div>
   );
-}
+});
 
-function ProjectSessions({ cwd }: { cwd: string }) {
+function ProjectSessions({ cwd, needle }: { cwd: string; needle: string }) {
   const t = useT();
   const projectFlags = useStore((s) => s.bootstrap.desktop.projects?.[cwd]);
   const displayName = projectFlags?.name || basename(cwd);
-  const [expanded, setExpanded] = useState(true);
+  const [opened, setExpanded] = useState(true);
+  const expanded = opened || !!needle;
+  const sessions = useStore((s) => (needle ? s.sessions[cwd] : undefined));
   const listId = useId();
-  const sessions = useStore((s) => s.sessions[cwd]);
-  const flags = useStore((s) => s.bootstrap.desktop.sessions);
-  const snapshots = useStore((s) => s.snapshots);
-  const active = useStore((s) => s.active);
-  const modelPending = useStore((s) => s.modelPending);
+  const activity = useStore(useShallow((s) => selectProjectActivity(s, cwd)));
+  if (needle && !sessions?.some((s) => s.title.toLowerCase().includes(needle)))
+    return null;
   const counts = { waiting: 0, running: 0, completed: 0, failed: 0 };
   let unread = 0;
-  for (const session of sessions ?? []) {
-    if (flags[session.id]?.archived) continue;
-    const status = sessionStatus(
-      !!snapshots[session.id]?.transcript.running ||
-        (modelPending && active === session.id),
-      false,
-      flags[session.id],
-    );
+  for (let index = 0; index < activity.length; index += 2) {
+    const status = activity[index] as SessionStatus | undefined;
     if (status) counts[status]++;
-    if (hasUnreadCompletion(flags[session.id])) unread++;
+    if (activity[index + 1]) unread++;
   }
   const leading = (["waiting", "running", "failed", "completed"] as const).find(
     (status) => counts[status],
@@ -113,6 +114,7 @@ function ProjectSessions({ cwd }: { cwd: string }) {
           className="project-toggle"
           type="button"
           aria-expanded={expanded}
+          disabled={!!needle}
           aria-controls={listId}
           title={cwd}
           onClick={() => setExpanded(!expanded)}
@@ -163,7 +165,7 @@ function ProjectSessions({ cwd }: { cwd: string }) {
         </div>
       </div>
       <div id={listId} className="project-threads" hidden={!expanded}>
-        <SessionList cwd={cwd} />
+        <SessionList cwd={cwd} expanded={expanded} needle={needle} />
       </div>
     </section>
   );

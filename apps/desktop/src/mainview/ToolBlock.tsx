@@ -23,7 +23,11 @@ import {
 import type { Transcript } from "../shared/transcript";
 import { ChatContent } from "./ChatContent";
 import { useT } from "./i18n";
+import { LargeText } from "./LargeText";
+import { DisclosureScope, LazyDetails } from "./LazyDetails";
 import { Markdown, MessageContent, ToolResultContent } from "./MessageContent";
+import { TranscriptRange } from "./TranscriptRange";
+import { lastLines, lineCount } from "./text-range";
 
 type ToolState = Transcript["tools"][string] | undefined;
 type Tone = "running" | "done" | "error";
@@ -71,30 +75,40 @@ function Row({
   meta?: ReactNode;
   state: ToolState;
   status: Tone;
-  children?: ReactNode;
+  children?: ReactNode | (() => ReactNode);
 }) {
   const t = useT();
   return (
-    <details className={`tool-row ${status}`}>
-      <summary>
-        {icon}
-        <span className="tool-verb">{verb}</span>
-        <code className="tool-target" title={target}>
-          {target}
-        </code>
-        <span className="tool-meta">
-          {status === "running" ? (
-            <LoaderCircle size={12} className="spinner" />
-          ) : status === "error" ? (
-            <span className="tool-failed">{t.Failed}</span>
-          ) : (
-            meta
-          )}
-          <Chevron />
-        </span>
-      </summary>
-      <div className="tool-body">{children ?? <Output state={state} />}</div>
-    </details>
+    <LazyDetails
+      className={`tool-row ${status}`}
+      summary={
+        <>
+          {icon}
+          <span className="tool-verb">{verb}</span>
+          <code className="tool-target" title={target}>
+            {target}
+          </code>
+          <span className="tool-meta">
+            {status === "running" ? (
+              <LoaderCircle size={12} className="spinner" />
+            ) : status === "error" ? (
+              <span className="tool-failed">{t.Failed}</span>
+            ) : (
+              meta
+            )}
+            <Chevron />
+          </span>
+        </>
+      }
+    >
+      {() => (
+        <div className="tool-body">
+          {typeof children === "function"
+            ? children()
+            : (children ?? <Output state={state} />)}
+        </div>
+      )}
+    </LazyDetails>
   );
 }
 
@@ -111,48 +125,59 @@ function Shell({
   const { output, exitCode } = shellOutcome(resultText(state?.result));
   const text = output.trimEnd();
   return (
-    <details className={`tool-term ${status}`}>
-      <summary>
-        <span className="tool-prompt">$</span>
-        <code className="tool-cmd" title={command}>
-          {command}
-        </code>
-        <span className="tool-meta">
-          {status === "running" ? (
-            <LoaderCircle size={12} className="spinner" />
-          ) : (
-            <span className={`tool-badge ${status}`}>
-              {status === "done"
-                ? "exit 0"
-                : exitCode === undefined
-                  ? t.Failed
-                  : `exit ${exitCode}`}
-            </span>
+    <LazyDetails
+      className={`tool-term ${status}`}
+      summary={
+        <>
+          <span className="tool-prompt">$</span>
+          <code className="tool-cmd" title={command}>
+            {command}
+          </code>
+          <span className="tool-meta">
+            {status === "running" ? (
+              <LoaderCircle size={12} className="spinner" />
+            ) : (
+              <span className={`tool-badge ${status}`}>
+                {status === "done"
+                  ? "exit 0"
+                  : exitCode === undefined
+                    ? t.Failed
+                    : `exit ${exitCode}`}
+              </span>
+            )}
+            <Chevron />
+          </span>
+          {text && (
+            <span className="tool-peek">{lastLines(text).slice(-16_384)}</span>
           )}
-          <Chevron />
-        </span>
-      </summary>
-      {text && (
-        <pre className="tool-peek">{text.split("\n").slice(-2).join("\n")}</pre>
+        </>
+      }
+    >
+      {() => (
+        <LargeText className="tool-term-output" text={text || t["No output"]} />
       )}
-      <pre className="tool-term-output">{text || t["No output"]}</pre>
-    </details>
+    </LazyDetails>
   );
 }
 
 function Diff({ text }: { text: string }) {
   return (
-    <pre className="tool-diff">
-      {text.split("\n").map((line, index) => (
-        <span
-          // biome-ignore lint/suspicious/noArrayIndexKey: Diff lines are static and ordered.
-          key={index}
-          className={line[0] === "+" ? "add" : line[0] === "-" ? "del" : ""}
-        >
-          {line}
-        </span>
-      ))}
-    </pre>
+    <LargeText
+      text={text}
+      render={(page) => (
+        <pre className="tool-diff">
+          {page.split("\n").map((line, index) => (
+            <span
+              // biome-ignore lint/suspicious/noArrayIndexKey: Diff lines are static and ordered.
+              key={index}
+              className={line[0] === "+" ? "add" : line[0] === "-" ? "del" : ""}
+            >
+              {line}
+            </span>
+          ))}
+        </pre>
+      )}
+    />
   );
 }
 
@@ -165,11 +190,11 @@ function CardBlock({ block }: { block: ToolCardBlock }) {
           <Markdown text={block.text} />
         </div>
       ) : (
-        <pre className="tool-code">{block.text}</pre>
+        <LargeText className="tool-code" text={block.text} />
       );
     case "code":
     case "terminal":
-      return <pre className="tool-code">{block.text}</pre>;
+      return <LargeText className="tool-code" text={block.text} />;
     case "diff":
       return <Diff text={block.text} />;
     case "facts":
@@ -207,12 +232,14 @@ const ICON = 14;
 
 export const ToolBlock = memo(function ToolBlock(data: ChatRenderData["tool"]) {
   return (
-    <ChatContent
-      kind="tool"
-      data={data}
-      contentKey={data.call.id}
-      builtin={BuiltinTool}
-    />
+    <DisclosureScope id={`tool:${data.call.id}`}>
+      <ChatContent
+        kind="tool"
+        data={data}
+        contentKey={data.call.id}
+        builtin={BuiltinTool}
+      />
+    </DisclosureScope>
   );
 });
 
@@ -231,10 +258,14 @@ export function BuiltinTool({
         state={state}
         status={status}
       >
-        {card.body?.map((block, index) => (
-          // biome-ignore lint/suspicious/noArrayIndexKey: Card blocks are ordered data.
-          <CardBlock key={index} block={block} />
-        ))}
+        {() =>
+          card.body?.map((block, index) => (
+            // biome-ignore lint/suspicious/noArrayIndexKey: Card blocks are ordered data.
+            <DisclosureScope key={index} id={`card:${index}`}>
+              <CardBlock block={block} />
+            </DisclosureScope>
+          ))
+        }
       </Row>
     );
   const args = (call.arguments ?? {}) as Record<string, unknown>;
@@ -311,11 +342,13 @@ export function BuiltinTool({
           state={state}
           status={status}
         >
-          {diff && state?.status === "done" ? (
-            <Diff text={diff} />
-          ) : (
-            <Output state={state} />
-          )}
+          {() =>
+            diff && state?.status === "done" ? (
+              <Diff text={diff} />
+            ) : (
+              <Output state={state} />
+            )
+          }
         </Row>
       );
     }
@@ -326,15 +359,17 @@ export function BuiltinTool({
           icon={<FilePlus size={ICON} />}
           verb={t.Write}
           target={path}
-          meta={<span className="tool-add">+{content.split("\n").length}</span>}
+          meta={<span className="tool-add">+{lineCount(content)}</span>}
           state={state}
           status={status}
         >
-          {state?.status === "error" ? (
-            <Output state={state} />
-          ) : (
-            <pre className="tool-code">{content}</pre>
-          )}
+          {() =>
+            state?.status === "error" ? (
+              <Output state={state} />
+            ) : (
+              <LargeText className="tool-code" text={content} />
+            )
+          }
         </Row>
       );
     }
@@ -343,12 +378,21 @@ export function BuiltinTool({
         <Row
           icon={<Plug size={ICON} />}
           verb={call.name}
-          target={JSON.stringify(args)}
+          target={JSON.stringify(args).slice(0, 512)}
           state={state}
           status={status}
         >
-          <pre className="tool-code">{JSON.stringify(args, null, 2)}</pre>
-          <ToolResultContent result={state?.result} />
+          {() => (
+            <>
+              <DisclosureScope id="arguments">
+                <LargeText
+                  className="tool-code"
+                  text={JSON.stringify(args, null, 2)}
+                />
+              </DisclosureScope>
+              <ToolResultContent result={state?.result} />
+            </>
+          )}
         </Row>
       );
   }
@@ -360,11 +404,13 @@ export const ToolGroup = memo(function ToolGroup({
   tools,
   live,
   cards,
+  target,
 }: {
   calls: ToolCall[];
   tools: Transcript["tools"];
   live: boolean;
   cards?: Record<string, ToolCard>;
+  target?: { toolCallId: string; serial: number };
 }) {
   const t = useT();
   const tones = calls.map((call) => tone(tools[call.id], live));
@@ -373,35 +419,65 @@ export const ToolGroup = memo(function ToolGroup({
   const count = (...names: string[]) =>
     calls.filter((call) => names.includes(call.name)).length;
   return (
-    <details
+    <LazyDetails
+      name={`group:${calls[0]?.id}`}
       className={`tool-row tool-group ${running ? "running" : failed ? "error" : "done"}`}
+      summary={
+        <>
+          <Layers size={ICON} />
+          <span className="tool-verb">{t.Explored}</span>
+          <span className="tool-target">
+            {t.exploreSummary(
+              count("read"),
+              count("grep", "find"),
+              count("ls"),
+            )}
+          </span>
+          <span className="tool-meta">
+            {running && <LoaderCircle size={12} className="spinner" />}
+            {!running && failed && (
+              <span className="tool-failed">{t.Failed}</span>
+            )}
+            <Chevron />
+          </span>
+        </>
+      }
     >
-      <summary>
-        <Layers size={ICON} />
-        <span className="tool-verb">{t.Explored}</span>
-        <span className="tool-target">
-          {t.exploreSummary(count("read"), count("grep", "find"), count("ls"))}
-        </span>
-        <span className="tool-meta">
-          {running && <LoaderCircle size={12} className="spinner" />}
-          {!running && failed && (
-            <span className="tool-failed">{t.Failed}</span>
-          )}
-          <Chevron />
-        </span>
-      </summary>
-      <div className="tool-group-body">
-        {calls.map((call) => (
-          <ToolBlock
-            key={call.id}
-            call={call}
-            state={tools[call.id]}
-            live={live}
-            card={cards?.[call.id]}
-          />
-        ))}
-      </div>
-    </details>
+      {() => (
+        <div className="tool-group-body">
+          <TranscriptRange
+            items={calls}
+            target={
+              target
+                ? {
+                    index: calls.findIndex(
+                      (call) => call.id === target.toolCallId,
+                    ),
+                    serial: target.serial,
+                  }
+                : undefined
+            }
+          >
+            {(call) => (
+              <DisclosureScope
+                key={call.id}
+                id={`call:${call.id}`}
+                reveal={target?.toolCallId === call.id ? target.serial : 0}
+              >
+                <div data-tool-call-id={call.id} tabIndex={-1}>
+                  <ToolBlock
+                    call={call}
+                    state={tools[call.id]}
+                    live={live}
+                    card={cards?.[call.id]}
+                  />
+                </div>
+              </DisclosureScope>
+            )}
+          </TranscriptRange>
+        </div>
+      )}
+    </LazyDetails>
   );
 });
 
@@ -423,18 +499,24 @@ export function BuiltinThinking({
       </div>
     );
   return (
-    <details className="thinking">
-      <summary>
-        <Brain size={ICON} />
-        {label}
-        {text && <Chevron />}
-      </summary>
-      {text && (
-        <div className="thinking-body">
-          <Markdown text={text} />
-        </div>
-      )}
-    </details>
+    <LazyDetails
+      className="thinking"
+      summary={
+        <>
+          <Brain size={ICON} />
+          {label}
+          {text && <Chevron />}
+        </>
+      }
+    >
+      {() =>
+        text && (
+          <div className="thinking-body">
+            <Markdown text={text} />
+          </div>
+        )
+      }
+    </LazyDetails>
   );
 }
 

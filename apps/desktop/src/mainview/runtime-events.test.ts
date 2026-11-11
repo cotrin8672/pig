@@ -1,6 +1,6 @@
-import { afterEach, expect, test } from "bun:test";
+import { afterEach, expect, spyOn, test } from "bun:test";
 import type { UIRequest } from "../shared/extension-ui";
-import type { Snapshot } from "../shared/rpc-schema";
+import type { Snapshot, WireEvent } from "../shared/rpc-schema";
 import { emptyTranscript } from "../shared/transcript";
 import { addressKey } from "./chat-snapshot";
 import { drafts, emptyContent } from "./draft-store";
@@ -286,4 +286,111 @@ test.each([
   expect(useStore.getState().noticeHistory).toHaveLength(
     reason === "failed" ? 1 : 0,
   );
+});
+
+// Capture the actual buffer without exporting a production cache for tests.
+function bufferWire(wire: WireEvent) {
+  let buffer: Map<string, WireEvent> | undefined;
+  const set = Map.prototype.set;
+  const tracking = spyOn(Map.prototype, "set").mockImplementation(function (
+    this: Map<string, WireEvent>,
+    key,
+    value,
+  ) {
+    if (value === wire) buffer = this;
+    return set.call(this, key, value);
+  });
+  try {
+    receiveWire(wire);
+  } finally {
+    tracking.mockRestore();
+  }
+  if (!buffer) throw new Error("Expected a pre-snapshot wire buffer");
+  return buffer;
+}
+
+test("wire buffers release transcripts after hydration, replace, reconnect omission and host change", () => {
+  const { address, snapshot } = fixture();
+  const wire: WireEvent = {
+    type: "snapshot",
+    address,
+    snapshotSeq: 4,
+    transcript: { ...emptyTranscript(), running: true },
+  };
+  const buffer = bufferWire(wire);
+  receiveSnapshot(snapshot);
+  expect(buffer.has(addressKey(address))).toBe(false);
+  expect(useStore.getState().snapshots[address.sessionId].snapshotSeq).toBe(4);
+  receiveWire({ ...wire, snapshotSeq: 3 });
+  expect(buffer.has(addressKey(address))).toBe(false);
+  expect(useStore.getState().snapshots[address.sessionId].snapshotSeq).toBe(4);
+
+  let previous = address;
+  for (let epoch = 2; epoch <= 101; epoch++) {
+    const next = { ...address, epoch };
+    const buffered = { ...wire, address: next, snapshotSeq: epoch + 10 };
+    bufferWire(buffered);
+    receiveRuntime({
+      type: "replaced",
+      previous,
+      snapshot: { ...snapshot, address: next },
+    });
+    expect(buffer.size).toBe(0);
+    previous = next;
+  }
+  receiveSnapshot({ ...snapshot, snapshotSeq: 1000 });
+  expect(useStore.getState().snapshots[address.sessionId].address).toEqual(
+    previous,
+  );
+
+  const missing = fixture();
+  bufferWire({ ...wire, address: missing.address });
+  expect(
+    receiveRuntimeState(
+      {
+        hostId: address.hostId,
+        sessions: [],
+        pendingUI: [],
+        drafts: [],
+        statuses: [],
+      },
+      runtimeRevision,
+    ),
+  ).toBe(true);
+  expect(buffer.size).toBe(0);
+  receiveSnapshot(missing.snapshot);
+  expect(
+    useStore.getState().snapshots[missing.address.sessionId],
+  ).toBeUndefined();
+
+  const pending = fixture();
+  bufferWire({ ...wire, address: pending.address });
+  const nextHost = `${address.hostId}-restarted`;
+  expect(
+    receiveRuntimeState(
+      {
+        hostId: nextHost,
+        sessions: [],
+        pendingUI: [],
+        drafts: [],
+        statuses: [],
+      },
+      runtimeRevision,
+    ),
+  ).toBe(true);
+  expect(buffer.size).toBe(0);
+  receiveSnapshot(pending.snapshot);
+  expect(
+    useStore.getState().snapshots[pending.address.sessionId],
+  ).toBeUndefined();
+  receiveRuntime({
+    type: "ready",
+    snapshot: {
+      ...pending.snapshot,
+      address: { ...pending.address, hostId: nextHost },
+    },
+  });
+  expect(
+    useStore.getState().snapshots[pending.address.sessionId].address.hostId,
+  ).toBe(nextHost);
 });

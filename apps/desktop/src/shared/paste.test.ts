@@ -1,5 +1,28 @@
 import { expect, test } from "bun:test";
-import { expandMarkers, makeMarker, shouldCollapse } from "./paste";
+import {
+  editFoldedText,
+  expandMarkers,
+  makeMarker,
+  shouldCollapse,
+  unfoldPastes,
+} from "./paste";
+
+test("folded tokens are atomic and expanding to edit preserves whitespace and literal text", () => {
+  const marker = "[paste #1 +11 lines]";
+  const pastes = [
+    { id: "p", marker, text: " 貼り付け\n[paste #1 +11 lines] " },
+  ];
+  expect(unfoldPastes(`>${marker}<`, pastes)).toBe(
+    "> 貼り付け\n[paste #1 +11 lines] <",
+  );
+  expect(
+    editFoldedText(`${marker} next`, `${marker.slice(0, -1)} next`, pastes),
+  ).toEqual({ text: `${pastes[0].text} next`, pastes: [] });
+  expect(editFoldedText(marker, `${marker}!`, pastes).text).toBe(`${marker}!`);
+  expect(editFoldedText(marker, marker.slice(0, -1), []).text).toBe(
+    marker.slice(0, -1),
+  );
+});
 
 test("collapse thresholds are strictly above 10 lines or 1000 characters", () => {
   expect(shouldCollapse(Array(10).fill("x").join("\n"))).toBe(false);

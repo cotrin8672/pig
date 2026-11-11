@@ -22,35 +22,40 @@ function openImageMenu(event: MouseEvent, src: string) {
 }
 
 /** One large preview plus a vertical thumbnail rail for multiple images (PI-Desktop style). */
-export function ImageGallery({ sources }: { sources: string[] }) {
+export function ImageGallery({
+  sources,
+  alt,
+}: ChatRendererProps<"image">["data"]) {
   return (
     <ChatContent
       kind="image"
-      data={{ sources }}
+      data={{ sources, alt }}
       builtin={BuiltinImageGallery}
     />
   );
 }
 
 export function BuiltinImageGallery({
-  data: { sources },
+  data: { sources, alt },
 }: ChatRendererProps<"image">) {
   const t = useT();
   const [current, setCurrent] = useState(0);
   const [viewing, setViewing] = useState(false);
   const index = Math.min(current, sources.length - 1);
   const src = sources[index];
+  const trigger = useRef<HTMLButtonElement>(null);
   if (!src) return null;
   return (
     <span className={`image-set${sources.length > 1 ? " is-multiple" : ""}`}>
       <button
         type="button"
         className="image-preview"
-        aria-label={t["Open image"]}
+        ref={trigger}
+        aria-label={alt ? `${t["Open image"]}: ${alt}` : t["Open image"]}
         onClick={() => setViewing(true)}
         onContextMenu={(e) => openImageMenu(e, src)}
       >
-        <img src={src} alt={t.Image} loading="lazy" />
+        <img src={src} alt={alt ?? t.Image} loading="lazy" />
       </button>
       {sources.length > 1 && (
         <span className="image-thumbnails">
@@ -75,9 +80,11 @@ export function BuiltinImageGallery({
           <ImageViewer
             sources={sources}
             start={index}
+            alt={alt}
             onClose={(last) => {
               setCurrent(last);
               setViewing(false);
+              requestAnimationFrame(() => trigger.current?.focus());
             }}
           />,
           document.body,
@@ -89,10 +96,12 @@ export function BuiltinImageGallery({
 function ImageViewer({
   sources,
   start,
+  alt,
   onClose,
 }: {
   sources: string[];
   start: number;
+  alt?: string;
   onClose: (index: number) => void;
 }) {
   const t = useT();
@@ -188,7 +197,7 @@ function ImageViewer({
             onClick={() => setActualSize(!actualSize)}
             onContextMenu={(e) => openImageMenu(e, src)}
           >
-            <img src={src} alt={t.Image} />
+            <img src={src} alt={alt ?? t.Image} />
           </button>
         </div>
       </div>

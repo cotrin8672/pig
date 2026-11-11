@@ -1,4 +1,4 @@
-import { expect, test } from "bun:test";
+import { expect, spyOn, test } from "bun:test";
 import { fauxAssistantMessage } from "@earendil-works/pi-ai";
 import { SessionManager } from "./sdk";
 import { projectEntries, SDKProjector } from "./sdk-projector";
@@ -192,4 +192,118 @@ test("append preserves cursors, but branch changes reject stale pages even in th
   expect(() => projector.historyPage("not-on-branch")).toThrow(
     "STALE_HISTORY_CURSOR",
   );
+});
+
+test("live updates reuse a saved page without scanning or projecting the branch again", () => {
+  const manager = SessionManager.inMemory("fixture");
+  for (let i = 0; i < 1000; i++)
+    manager.appendMessage({
+      role: "user",
+      content: `Saved ${i}`,
+      timestamp: i,
+    });
+  const branch = spyOn(manager, "getBranch");
+  const entries = spyOn(manager, "getEntries");
+  try {
+    const projector = new SDKProjector(manager, 1);
+    const saved = projector.snapshot();
+    const first = saved.records[0];
+    const message = fauxAssistantMessage("Live");
+    projector.event({ type: "agent_start" });
+    projector.event({ type: "message_start", message });
+    for (let i = 0; i < 100; i++) {
+      projector.event({
+        type: "message_update",
+        message,
+        assistantMessageEvent: {
+          type: "text_delta",
+          contentIndex: 0,
+          delta: "x",
+          partial: message,
+        },
+      });
+      const state = projector.snapshot();
+      expect(state.records[0]).toBe(first);
+      expect(state.records).toHaveLength(51);
+    }
+    expect(branch).toHaveBeenCalledTimes(1);
+    expect(entries).not.toHaveBeenCalled();
+    projector.event({ type: "message_end", message });
+    expect(projector.snapshot().current).toBe("live:1:1");
+    const id = manager.appendMessage(message);
+    const committed = projector.snapshot();
+    expect(committed.current).toBeNull();
+    expect(committed.liveToEntry["live:1:1"]).toBe(id);
+    expect(committed.records).toEqual(
+      projectEntries(
+        {
+          getLeafId: () => manager.getLeafId(),
+          getBranch: () => manager.getBranch().slice(-50),
+        },
+        manager.getBranch().length - 50,
+      ).records,
+    );
+    expect(saved.records).toHaveLength(50);
+  } finally {
+    branch.mockRestore();
+    entries.mockRestore();
+  }
+});
+
+test("cached history invalidates on rewind/reset and preserves final tool results", () => {
+  const manager = SessionManager.inMemory("fixture");
+  const root = manager.appendMessage({
+    role: "user",
+    content: "Root",
+    timestamp: 1,
+  });
+  const projector = new SDKProjector(manager, 1);
+  const call = fauxAssistantMessage("Tool");
+  call.content = [
+    { type: "toolCall", id: "tool", name: "read", arguments: {} },
+  ];
+  manager.appendMessage(call);
+  projector.event({
+    type: "tool_execution_update",
+    toolCallId: "tool",
+    toolName: "read",
+    args: {},
+    partialResult: {
+      content: [{ type: "text", text: "partial" }],
+      details: {},
+    },
+  });
+  const partial = projector.snapshot();
+  const result = {
+    role: "toolResult" as const,
+    toolCallId: "tool",
+    toolName: "read",
+    content: [{ type: "text" as const, text: "final" }],
+    isError: false,
+    timestamp: 2,
+  };
+  manager.appendMessage(result);
+  projector.event({
+    type: "tool_execution_end",
+    toolCallId: "tool",
+    toolName: "read",
+    result: { content: result.content, details: {} },
+    isError: false,
+  });
+  expect(projector.snapshot().tools.tool).toMatchObject({
+    result: { content: result.content },
+  });
+  const revision = partial.history?.revision;
+  manager.branch(root);
+  const rewound = projector.snapshot();
+  expect(rewound.history?.revision).not.toBe(revision);
+  expect(rewound.records).toEqual(projectEntries(manager).records);
+  expect(rewound.tools).toEqual({});
+  manager.resetLeaf();
+  expect(projector.snapshot().records).toEqual([]);
+  manager.appendCustomEntry("fixture.compacted", { summary: true });
+  expect(projector.snapshot().records).toEqual(projectEntries(manager).records);
+  manager.branch(root);
+  manager.appendCompaction("Fixture summary", root, 1000);
+  expect(projector.snapshot().records).toEqual(projectEntries(manager).records);
 });

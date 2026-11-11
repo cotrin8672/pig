@@ -34,6 +34,7 @@ if (process.env.PIG_LENS_RENDERER_TEST_CHILD !== "1") {
   }));
   const { piLensRenderer, piLensSummary } = await import("./PiLensRenderer");
   const { ToolBlock, WorkToggle } = await import("./ToolBlock");
+  const { DisclosureScope } = await import("./LazyDetails");
   const { Markdown, UserMessage, ToolResultContent } = await import(
     "./MessageContent"
   );
@@ -53,7 +54,11 @@ if (process.env.PIG_LENS_RENDERER_TEST_CHILD !== "1") {
   });
   const render = (data: ToolData) => {
     registerBuiltinChatRenderers([piLensRenderer]);
-    return renderToStaticMarkup(<ToolBlock {...data} />);
+    return renderToStaticMarkup(
+      <DisclosureScope id="test" reveal={1}>
+        <ToolBlock {...data} />
+      </DisclosureScope>,
+    );
   };
   afterEach(() => {
     installChatRenderers([]);

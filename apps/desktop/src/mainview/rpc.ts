@@ -5,6 +5,7 @@ import {
 } from "../shared/desktop-state";
 import type { Appearance, RPCSchema, Snapshot } from "../shared/rpc-schema";
 import {
+  type RuntimeRecoveryState,
   type SessionAddress,
   UI_HEARTBEAT_INTERVAL_MS,
 } from "../shared/runtime-contract";
@@ -18,6 +19,7 @@ import type { Message } from "../shared/transcript";
 import { transferEditorView } from "./ComposerEditor";
 import { addressKey, sameAddress } from "./chat-snapshot";
 import { drafts } from "./draft-store";
+import { getT } from "./i18n";
 import { navigate, navigationRevision } from "./navigation";
 import { OpenController } from "./open-controller";
 import { mergeOpeningText } from "./opening-draft";
@@ -112,11 +114,21 @@ function flushUiPreferences() {
 export const rpc = Electroview.defineRPC<RPCSchema>({
   maxRequestTime: 600_000,
   handlers: {
-    requests: {},
+    requests: {
+      flushDrafts: async () => {
+        await drafts.flushAll((params) => rpc.request.syncDraft(params));
+      },
+    },
     messages: {
       packageOp: receivePackageOp,
       installed: (installed) => useStore.setState({ installed }),
       runtimeEvent: (event) => {
+        if (event.type === "closed" && event.discardDraft) {
+          receiveRuntime(event);
+          drafts.discard(event.address, true);
+          sends.discard(event.address);
+          return;
+        }
         const address =
           event.type === "ready" ||
           event.type === "snapshot" ||
@@ -130,14 +142,31 @@ export const rpc = Electroview.defineRPC<RPCSchema>({
           void reconnectRuntime().catch(showError);
           return;
         }
+        const before = useStore.getState();
+        const previousAddress =
+          event.type === "replaced" ? event.previous : address;
+        const previousCwd =
+          before.snapshots[previousAddress.sessionId]?.info.cwd ??
+          (event.type === "closed"
+            ? Object.keys(before.sessions).find((cwd) =>
+                before.sessions[cwd].some(
+                  (session) => session.id === address.sessionId,
+                ),
+              )
+            : undefined);
         receiveRuntime(event);
         if (
           event.type === "ready" ||
           event.type === "replaced" ||
           event.type === "closed" ||
           (event.type === "snapshot" && !event.snapshot.transcript.running)
-        )
-          void refreshSessions().catch(showError);
+        ) {
+          const cwd =
+            event.type === "closed" ? previousCwd : event.snapshot.info.cwd;
+          void refreshSessions(cwd).catch(showError);
+          if (event.type === "replaced" && previousCwd && previousCwd !== cwd)
+            void refreshSessions(previousCwd).catch(showError);
+        }
       },
       extensionUIEvent: receiveExtension,
       terminalEvent: receiveTerminal,
@@ -212,17 +241,55 @@ export const rpc = Electroview.defineRPC<RPCSchema>({
   },
 });
 new Electroview({ rpc });
-let sessionsRevision = 0;
-export async function refreshSessions() {
-  const revision = ++sessionsRevision;
+const sessionRefreshes = new Map<
+  string,
+  { dirty: boolean; promise: Promise<void> }
+>();
+function sessionCwds() {
   const { projects, generalCwd } = useStore.getState().bootstrap;
-  const entries = await Promise.all(
-    [...new Set([generalCwd, ...projects].filter(Boolean))].map(
-      async (cwd) => [cwd, await rpc.request.listSessions({ cwd })] as const,
+  return new Set([generalCwd, ...projects].filter(Boolean));
+}
+function refreshProjectSessions(cwd: string): Promise<void> {
+  const current = sessionRefreshes.get(cwd);
+  if (current) {
+    current.dirty = true;
+    return current.promise;
+  }
+  const flight = { dirty: false, promise: Promise.resolve() };
+  sessionRefreshes.set(cwd, flight);
+  flight.promise = Promise.resolve().then(async () => {
+    try {
+      do {
+        flight.dirty = false;
+        if (!sessionCwds().has(cwd)) return;
+        const before = useStore.getState().sessions[cwd];
+        const sessions = await rpc.request.listSessions({ cwd });
+        if (!sessionCwds().has(cwd)) return;
+        if (useStore.getState().sessions[cwd] !== before) flight.dirty = true;
+        if (!flight.dirty)
+          useStore.setState((s) => ({
+            sessions: { ...s.sessions, [cwd]: sessions },
+          }));
+      } while (flight.dirty);
+    } finally {
+      sessionRefreshes.delete(cwd);
+    }
+  });
+  return flight.promise;
+}
+export async function refreshSessions(cwd?: string) {
+  const cwds = sessionCwds();
+  if (Object.keys(useStore.getState().sessions).some((key) => !cwds.has(key)))
+    useStore.setState((s) => ({
+      sessions: Object.fromEntries(
+        Object.entries(s.sessions).filter(([key]) => cwds.has(key)),
+      ),
+    }));
+  await Promise.all(
+    (cwd === undefined ? [...cwds] : cwds.has(cwd) ? [cwd] : []).map(
+      refreshProjectSessions,
     ),
   );
-  if (revision === sessionsRevision)
-    useStore.setState({ sessions: Object.fromEntries(entries) });
 }
 export async function refresh() {
   const before = useStore.getState();
@@ -294,6 +361,16 @@ const clientId = crypto.randomUUID();
 let rootConnection: Promise<void> | undefined;
 let heartbeatTimer: ReturnType<typeof setInterval> | undefined;
 let heartbeatInFlight = false;
+let connectionGeneration = 0;
+let recoveryError: string | undefined;
+function receiveRecovery(state: RuntimeRecoveryState) {
+  for (const item of state.retainedDrafts ?? [])
+    drafts.recover(item.address, item.draft, item.owner);
+  sends.restore(state.sendIntents ?? []);
+  if (state.recoveryError && state.recoveryError !== recoveryError)
+    showNotice({ level: "error", message: state.recoveryError });
+  recoveryError = state.recoveryError;
+}
 function startHeartbeat() {
   if (heartbeatTimer) return;
   heartbeatTimer = setInterval(() => {
@@ -302,12 +379,13 @@ function startHeartbeat() {
     void rpc.request
       .heartbeatUI({ clientId })
       .then(({ connected }) => {
-        if (!connected) {
-          rootConnection = undefined;
+        if (!connected || !rootConnection) {
+          if (!connected) rootConnection = undefined;
           void connectRuntime().catch(showError);
         }
       })
       .catch(() => {
+        rootConnection = undefined;
         /* Host lease fails closed; never resend prompts here. */
       })
       .finally(() => {
@@ -319,14 +397,21 @@ export function connectRuntime() {
   if (!rootConnection) {
     rpc.send.connectUI({ clientId });
     startHeartbeat();
+    const generation = ++connectionGeneration;
     rootConnection = (async () => {
       for (let attempt = 0; attempt < 3; attempt++) {
         const revision = runtimeRevision;
         const state = await rpc.request.runtimeState();
-        if (receiveRuntimeState(state, revision)) return;
+        if (generation !== connectionGeneration)
+          throw new Error("Runtime synchronization was superseded");
+        if (receiveRuntimeState(state, revision)) {
+          receiveRecovery(state);
+          return;
+        }
       }
+      throw new Error(getT().runtimeUnsynchronized);
     })().catch((error) => {
-      rootConnection = undefined;
+      if (generation === connectionGeneration) rootConnection = undefined;
       throw error;
     });
   }
@@ -335,6 +420,7 @@ export function connectRuntime() {
 export function initRuntimeConnection() {
   void connectRuntime().catch(showError);
   const disconnect = () => {
+    connectionGeneration++;
     clearInterval(heartbeatTimer);
     heartbeatTimer = undefined;
     rootConnection = undefined;
@@ -644,6 +730,18 @@ async function openSnapshot(
       transferred = { cwd: optimistic.cwd, text };
     }
     receiveSnapshot(snapshot);
+    // Recovery bytes are available only after this project's Trust/startup completed.
+    void Promise.resolve()
+      .then(() => rpc.request.getRecovery(snapshot.address))
+      .then((state) => {
+        if (
+          liveAddress(snapshot.address) &&
+          state.hostId === snapshot.address.hostId &&
+          useStore.getState().hostId === state.hostId
+        )
+          receiveRecovery(state);
+      })
+      .catch(showError);
     if (ownsOpeningView(openId, revision)) {
       useStore.setState({ active: snapshot.info.id });
       if (push && optimistic)
@@ -654,7 +752,7 @@ async function openSnapshot(
       else if (push) navigate("chat", snapshot.info.id);
     }
     openingReturns.delete(openId);
-    void refreshSessions().catch(showError);
+    void refreshSessions(snapshot.info.cwd).catch(showError);
     return useStore.getState().snapshots[snapshot.info.id];
   } catch (error) {
     if (!opens.isCancelled(openId)) {
@@ -724,6 +822,8 @@ export function initSessionReadTracking() {
   const onFocus = () => {
     attempted.clear();
     schedule();
+    if (document.visibilityState === "visible" && document.hasFocus())
+      void refreshSessions().catch(showError);
   };
   const unsubscribe = useStore.subscribe(schedule);
   window.addEventListener("focus", onFocus);
@@ -740,6 +840,7 @@ export function initSessionReadTracking() {
 let reconnecting: Promise<void> | undefined;
 export function reconnectRuntime() {
   if (!reconnecting) {
+    connectionGeneration++;
     rootConnection = undefined;
     reconnecting = connectRuntime().finally(() => {
       reconnecting = undefined;

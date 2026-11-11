@@ -12,10 +12,19 @@ import {
   Settings as SettingsIcon,
   X,
 } from "lucide-react";
-import { Fragment, useEffect, useLayoutEffect, useRef, useState } from "react";
+import {
+  Fragment,
+  lazy,
+  Suspense,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
+import { useShallow } from "zustand/react/shallow";
 import appIcon from "../../assets/icon.svg";
 import { finishedWork, groupBlocks } from "../shared/tool-view";
-import { responseStats } from "../shared/transcript";
 import { ChatHeader } from "./ChatHeader";
 import { ChatEmpty, ChatLayout } from "./ChatLayout";
 import { ChatOpening, OpeningComposer } from "./ChatOpening";
@@ -25,16 +34,18 @@ import type { ChatSnapshot } from "./chat-snapshot";
 import { addressKey, prependHistory, sameAddress } from "./chat-snapshot";
 import { customPresentation, dataText } from "./custom-data";
 import { DraftRecovery } from "./DraftRecovery";
-import { Extensions } from "./Extensions";
 import { workingLabel } from "./extension-status";
 import { getT, useT } from "./i18n";
+import { LargeText } from "./LargeText";
+import { DisclosureScope, LazyDetails } from "./LazyDetails";
 import { Markdown, UserMessage } from "./MessageContent";
 import { NotificationCenter } from "./NotificationCenter";
 import { Notifications } from "./Notifications";
-import { initNavigation, navigate, navigationRevision } from "./navigation";
+import { initNavigation, navigate } from "./navigation";
 import { ProviderIcon, useProviderName } from "./ProviderIcon";
-import { Providers } from "./Providers";
+
 import { ResponseFooter } from "./ResponseFooter";
+import { createResponseFooterIndex } from "./response-footers";
 import {
   initRuntimeConnection,
   initSessionLinks,
@@ -44,14 +55,38 @@ import {
   rpc,
 } from "./rpc";
 import { SessionPanel } from "./SessionPanel";
-import { Settings } from "./Settings";
+
 import { SidebarSessions } from "./SidebarSessions";
 import { initShortcuts } from "./shortcuts";
 import { type LoginState, showError, useStore } from "./store";
 import { ThinkingBlock, ToolBlock, ToolGroup, WorkToggle } from "./ToolBlock";
-import { isThreadAtBottom } from "./thread-scroll";
+import { TranscriptRange } from "./TranscriptRange";
+import {
+  TranscriptSearch,
+  type TranscriptSearchTarget,
+} from "./TranscriptSearch";
+import {
+  captureThreadAnchor,
+  frameTask,
+  isThreadAtBottom,
+  pruneThreadViews,
+  recordWindow,
+  restoreThreadAnchor,
+  threadView,
+} from "./thread-scroll";
 import { UIRequestBroker } from "./UIRequestBroker";
+import { selectAppView } from "./ui-selectors";
 import { WindowTitlebar } from "./WindowTitlebar";
+
+const Providers = lazy(() =>
+  import("./Providers").then((m) => ({ default: m.Providers })),
+);
+const Settings = lazy(() =>
+  import("./Settings").then((m) => ({ default: m.Settings })),
+);
+const Extensions = lazy(() =>
+  import("./Extensions").then((m) => ({ default: m.Extensions })),
+);
 
 function isWindowDragTarget(target: EventTarget) {
   return (
@@ -62,8 +97,19 @@ function isWindowDragTarget(target: EventTarget) {
 }
 export function App() {
   const t = useT();
-  const state = useStore();
+  const state = useStore(useShallow(selectAppView));
   const [sidebarOpen, setSidebarOpen] = useState(true);
+  useEffect(() => {
+    let pending = false;
+    return useStore.subscribe((state, previous) => {
+      if (state.snapshots === previous.snapshots || pending) return;
+      pending = true;
+      queueMicrotask(() => {
+        pending = false;
+        pruneThreadViews(useStore.getState().snapshots);
+      });
+    });
+  }, []);
   useEffect(initRuntimeConnection, []);
   useEffect(() => {
     void refresh().catch(showError);
@@ -73,16 +119,13 @@ export function App() {
   useEffect(initSessionLinks, []);
   useEffect(initSessionReadTracking, []);
   useEffect(() => {
-    document.documentElement.lang = state.settings.language;
-  }, [state.settings.language]);
-  const active = state.active ? state.snapshots[state.active] : undefined;
-  const openingSnapshot = state.openingTarget?.id
-    ? state.snapshots[state.openingTarget.id]
-    : undefined;
-  const openingView =
-    state.opening && state.openingViewRevision === navigationRevision;
+    document.documentElement.lang = state.language;
+  }, [state.language]);
+  const active = state.activeSnapshot;
+  const openingSnapshot = state.openingSnapshot;
+  const openingView = state.openingView;
   const displayedChat = openingView ? openingSnapshot : active;
-  const connected = state.bootstrap.models.length > 0;
+  const connected = state.connected;
   return (
     // biome-ignore lint/a11y/noStaticElementInteractions: Native drag handles; maximize is also available as a keyboard-accessible button.
     <div
@@ -165,45 +208,47 @@ export function App() {
         </div>
       </aside>
       <main>
-        {state.page === "providers" ? (
-          <Providers />
-        ) : state.page === "extensions" ? (
-          <Extensions />
-        ) : state.page === "settings" ? (
-          <Settings />
-        ) : openingView ? (
-          openingSnapshot ? (
-            <Chat
-              key={addressKey(openingSnapshot.address)}
-              snapshot={openingSnapshot}
-            />
+        <Suspense fallback={<p role="status">{t["Loading…"]}</p>}>
+          {state.page === "providers" ? (
+            <Providers />
+          ) : state.page === "extensions" ? (
+            <Extensions />
+          ) : state.page === "settings" ? (
+            <Settings />
+          ) : openingView ? (
+            openingSnapshot ? (
+              <Chat
+                key={addressKey(openingSnapshot.address)}
+                snapshot={openingSnapshot}
+              />
+            ) : (
+              <ChatOpening />
+            )
+          ) : active ? (
+            <Chat key={addressKey(active.address)} snapshot={active} />
           ) : (
-            <ChatOpening />
-          )
-        ) : active ? (
-          <Chat key={addressKey(active.address)} snapshot={active} />
-        ) : (
-          <div className="welcome">
-            <h1>{t["What shall we build?"]}</h1>
-            <p className="muted">
-              {connected
-                ? t["Start a chat, or add a project folder."]
-                : t["Connect a provider to start building with pi."]}
-            </p>
-            <button
-              className="primary"
-              type="button"
-              onClick={() =>
-                connected
-                  ? void openChat(state.bootstrap.generalCwd)
-                  : navigate("providers")
-              }
-            >
-              {connected ? <Plus size={16} /> : <Settings2 size={16} />}{" "}
-              {connected ? t["New chat"] : t["Connect a provider"]}
-            </button>
-          </div>
-        )}
+            <div className="welcome">
+              <h1>{t["What shall we build?"]}</h1>
+              <p className="muted">
+                {connected
+                  ? t["Start a chat, or add a project folder."]
+                  : t["Connect a provider to start building with pi."]}
+              </p>
+              <button
+                className="primary"
+                type="button"
+                onClick={() =>
+                  connected
+                    ? void openChat(state.generalCwd)
+                    : navigate("providers")
+                }
+              >
+                {connected ? <Plus size={16} /> : <Settings2 size={16} />}{" "}
+                {connected ? t["New chat"] : t["Connect a provider"]}
+              </button>
+            </div>
+          )}
+        </Suspense>
       </main>
       <DraftRecovery />
       <UIRequestBroker />
@@ -216,8 +261,8 @@ export function App() {
             cwd={displayedChat?.info.cwd ?? state.openingTarget?.cwd}
             title={
               displayedChat
-                ? (state.extensionStatuses[addressKey(displayedChat.address)]
-                    ?.title ?? displayedChat.info.title)
+                ? ((openingView ? state.openingTitle : state.activeTitle) ??
+                  displayedChat.info.title)
                 : state.openingTarget?.id
                   ? t["Opening chat…"]
                   : t["New chat"]
@@ -443,9 +488,13 @@ function OAuthLoginDialog({ login }: { login: LoginState }) {
   );
 }
 
-function Chat({ snapshot }: { snapshot: ChatSnapshot }) {
+export function Chat({ snapshot }: { snapshot: ChatSnapshot }) {
   const t = useT();
   const { info, transcript } = snapshot;
+  const [observedRun, setObservedRun] = useState(transcript.running);
+  useEffect(() => {
+    if (transcript.running) setObservedRun(true);
+  }, [transcript.running]);
   const readOnly = snapshot.ready === false;
   const opening = useStore(
     (s) =>
@@ -454,16 +503,26 @@ function Chat({ snapshot }: { snapshot: ChatSnapshot }) {
       sameAddress(s.openingAddress, snapshot.address),
   );
   const openMessage = useStore((s) => s.openMessage);
+  const ja = useStore((s) => s.settings.language === "ja");
   const thread = useRef<HTMLDivElement>(null);
-  const followThread = useRef(true);
-  const prependScroll = useRef<{ top: number; height: number } | undefined>(
-    undefined,
-  );
+  const [view] = useState(() => threadView(snapshot.address.hostId, info.id));
+  const [first, setFirst] = useState(view.start);
+  const window = recordWindow(transcript.records, first);
+  const [jump, setJump] = useState<
+    TranscriptSearchTarget & { id: string; serial: number; runIndex?: number }
+  >();
+  const pendingJump = useRef<
+    (TranscriptSearchTarget & { id: string }) | undefined
+  >(undefined);
+  const scrollInput = useRef(false);
+  const pagingFocus = useRef(false);
   const [loadingHistory, setLoadingHistory] = useState(false);
+  const [historyError, setHistoryError] = useState<string>();
   async function loadEarlier() {
     const cursor = transcript.history;
     if (!cursor?.before || loadingHistory) return;
     setLoadingHistory(true);
+    setHistoryError(undefined);
     try {
       const page = await rpc.request.getSessionHistory({
         ...snapshot.address,
@@ -477,16 +536,15 @@ function Chat({ snapshot }: { snapshot: ChatSnapshot }) {
         const next = prependHistory(current, page, cursor.before as string);
         if (next === current) return {};
         if (thread.current) {
-          prependScroll.current = {
-            top: thread.current.scrollTop,
-            height: thread.current.scrollHeight,
-          };
-          followThread.current = false;
+          view.anchor = captureThreadAnchor(thread.current);
+          view.follow = false;
+          view.start = page.records[0]?.id ?? first;
+          setFirst(view.start);
         }
         return { snapshots: { ...state.snapshots, [info.id]: next } };
       });
     } catch (error) {
-      showError(error);
+      setHistoryError(String(error));
     } finally {
       setLoadingHistory(false);
     }
@@ -494,31 +552,162 @@ function Chat({ snapshot }: { snapshot: ChatSnapshot }) {
   const status = useStore(
     (s) => s.extensionStatuses[addressKey(snapshot.address)],
   );
-  const [openWork, setOpenWork] = useState<Record<string, boolean>>({});
-  const work = finishedWork(
-    transcript.records,
-    transcript.running,
-    (record) => !customPresentation(record).hidden,
+  const [openWork, setOpenWork] = useState(view.work);
+  const renderedWork = new Set<string>();
+  const work = useMemo(
+    () =>
+      finishedWork(
+        transcript.records,
+        transcript.running,
+        (record) => !customPresentation(record).hidden,
+      ),
+    [transcript.records, transcript.running],
   );
-  const turns = transcript.records.filter(
-    (record) => record.kind === "message",
+  function showRange(start?: string) {
+    view.follow = start === undefined;
+    view.start = start;
+    view.anchor = undefined;
+    pagingFocus.current = true;
+    scrollInput.current = false;
+    setFirst(start);
+    layout.schedule();
+  }
+  function revealRecord(id: string, target?: TranscriptSearchTarget) {
+    const index = transcript.records.findIndex((record) => record.id === id);
+    if (index < 0) return;
+    view.follow = false;
+    scrollInput.current = false;
+    view.anchor = undefined;
+    view.start = transcript.records[Math.floor(index / 100) * 100].id;
+    setFirst(view.start);
+    const range = work.get(index);
+    if (range) {
+      view.work = { ...view.work, [range.key]: true };
+      setOpenWork(view.work);
+    }
+    const record = transcript.records[index];
+    const runs =
+      record.kind === "message" && record.message.role === "assistant"
+        ? groupBlocks(record.message.content)
+        : [];
+    const runIndex = runs.findIndex(({ start, blocks }) =>
+      target?.toolCallId
+        ? blocks.some(
+            (block) =>
+              block.type === "toolCall" && block.id === target.toolCallId,
+          )
+        : target?.blockIndex !== undefined &&
+          start <= target.blockIndex &&
+          target.blockIndex < start + blocks.length,
+    );
+    const selected = {
+      ...target,
+      id,
+      toolCallId: runIndex < 0 ? undefined : target?.toolCallId,
+      details: !target?.toolCallId && target?.details,
+    };
+    pendingJump.current = selected;
+    setJump((previous) => ({
+      ...selected,
+      runIndex: runIndex < 0 ? undefined : runIndex,
+      serial: (previous?.serial ?? 0) + 1,
+    }));
+  }
+  const layout = useMemo(
+    () =>
+      frameTask(() => {
+        const element = thread.current;
+        if (!element) return;
+        const pending = pendingJump.current;
+        if (pending) {
+          const record = [
+            ...element.querySelectorAll<HTMLElement>("[data-record-id]"),
+          ].find((record) => record.dataset.recordId === pending.id);
+          const target = pending.toolCallId
+            ? [
+                ...(record?.querySelectorAll<HTMLElement>(
+                  "[data-tool-call-id]",
+                ) ?? []),
+              ].find((tool) => tool.dataset.toolCallId === pending.toolCallId)
+            : pending.blockIndex !== undefined
+              ? [
+                  ...(record?.querySelectorAll<HTMLElement>(
+                    "[data-content-index]",
+                  ) ?? []),
+                ].find(
+                  (block) =>
+                    block.dataset.contentIndex === String(pending.blockIndex),
+                )
+              : pending.details
+                ? (record?.querySelector<HTMLElement>(
+                    '[data-disclosure="details"]',
+                  ) ?? record)
+                : record;
+          if (target) {
+            element.scrollTop +=
+              target.getBoundingClientRect().top -
+              element.getBoundingClientRect().top -
+              24;
+            const focus =
+              target === record
+                ? target
+                : (target.querySelector<HTMLElement>("summary") ?? target);
+            focus.focus({ preventScroll: true });
+            pendingJump.current = undefined;
+            scrollInput.current = false;
+            view.anchor = captureThreadAnchor(element);
+          } else pendingJump.current = undefined;
+        } else if (scrollInput.current) {
+          // Scroll events caused by our own compensation never change reading mode.
+          view.follow = view.start === undefined && isThreadAtBottom(element);
+          view.anchor = captureThreadAnchor(element);
+          scrollInput.current = false;
+          if (!view.follow && view.start === undefined && view.anchor) {
+            view.start =
+              element.querySelector<HTMLElement>(
+                "[data-record-id]",
+              )?.dataset.recordId;
+            setFirst(view.start);
+          }
+        } else if (view.follow) {
+          element.scrollTop = element.scrollHeight;
+        } else if (view.anchor) {
+          restoreThreadAnchor(element, view.anchor);
+        } else {
+          element.scrollTop = 0;
+          view.anchor = captureThreadAnchor(element);
+        }
+        if (pagingFocus.current) {
+          const records =
+            element.querySelectorAll<HTMLElement>("[data-record-id]");
+          (view.follow ? records[records.length - 1] : records[0])?.focus({
+            preventScroll: true,
+          });
+          pagingFocus.current = false;
+        }
+      }),
+    [view],
   );
-  // A response ends where the next turn is not another assistant step.
+  const [indexFooters] = useState(createResponseFooterIndex);
+  const footers = useMemo(
+    () =>
+      indexFooters(
+        transcript.records,
+        transcript.running,
+        transcript.history?.revision,
+      ),
+    [
+      indexFooters,
+      transcript.records,
+      transcript.running,
+      transcript.history?.revision,
+    ],
+  );
   const footer = (index: number) => {
     const record = transcript.records[index];
-    const messageIndex = turns.findIndex((turn) => turn.id === record.id);
-    if (messageIndex < 0) return null;
-    const next = turns
-      .slice(messageIndex + 1)
-      .find(
-        (turn) =>
-          turn.message.role === "assistant" || turn.message.role === "user",
-      )?.message.role;
-    if (next ? next === "assistant" : transcript.running) return null;
-    const stats = responseStats(turns, messageIndex);
-    if (!stats) return null;
-    const userRecord =
-      stats.userIndex === undefined ? undefined : turns[stats.userIndex];
+    const response = footers.get(record.id);
+    if (!response) return null;
+    const { stats, user: userRecord } = response;
     const user = userRecord?.message;
     return (
       <ResponseFooter
@@ -531,21 +720,71 @@ function Chat({ snapshot }: { snapshot: ChatSnapshot }) {
       />
     );
   };
-  // biome-ignore lint/correctness/useExhaustiveDependencies: Transcript changes require scrolling its updated DOM before paint.
+  // Restore before first paint; subsequent content and size changes share a frame.
   useLayoutEffect(() => {
-    if (!thread.current) return;
-    if (prependScroll.current) {
-      const { top, height } = prependScroll.current;
-      thread.current.scrollTop = top + thread.current.scrollHeight - height;
-      prependScroll.current = undefined;
-    } else if (followThread.current)
-      thread.current.scrollTop = thread.current.scrollHeight;
-  }, [transcript]);
+    const element = thread.current;
+    if (!element) return;
+    if (view.follow) element.scrollTop = element.scrollHeight;
+    else if (view.anchor) restoreThreadAnchor(element, view.anchor);
+    const readerInput = (event: Event) => {
+      scrollInput.current = true;
+      if (
+        (event.type === "pointerdown" || event.type === "keydown") &&
+        event.target instanceof Element &&
+        event.target.closest("[data-record-id]")
+      ) {
+        view.follow = false;
+        view.anchor = captureThreadAnchor(element);
+        if (view.start === undefined) {
+          view.start =
+            element.querySelector<HTMLElement>(
+              "[data-record-id]",
+            )?.dataset.recordId;
+          setFirst(view.start);
+        }
+      }
+      if (event instanceof WheelEvent && event.deltaY < 0) view.follow = false;
+      if (
+        event instanceof KeyboardEvent &&
+        ["ArrowUp", "PageUp", "Home"].includes(event.key)
+      )
+        view.follow = false;
+    };
+    for (const type of ["wheel", "pointerdown", "touchstart", "keydown"])
+      element.addEventListener(type, readerInput, { passive: true });
+    const observer = new ResizeObserver(() => layout.schedule());
+    observer.observe(element);
+    if (element.firstElementChild) observer.observe(element.firstElementChild);
+    return () => {
+      view.anchor = captureThreadAnchor(element) ?? view.anchor;
+      observer.disconnect();
+      for (const type of ["wheel", "pointerdown", "touchstart", "keydown"])
+        element.removeEventListener(type, readerInput);
+      layout.dispose();
+    };
+  }, [view, layout]);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: Schedule after committed content, range or disclosure changes.
+  useEffect(() => {
+    layout.schedule();
+  }, [layout, transcript, first, openWork, jump]);
+  useEffect(() => {
+    if (view.anchor && transcript.liveToEntry[view.anchor.id])
+      view.anchor = {
+        ...view.anchor,
+        id: transcript.liveToEntry[view.anchor.id],
+      };
+    if (first && !transcript.records.some((record) => record.id === first)) {
+      view.start =
+        transcript.liveToEntry[first] ??
+        transcript.records[recordWindow(transcript.records).start]?.id;
+      setFirst(view.start);
+    }
+  }, [first, transcript.records, transcript.liveToEntry, view]);
   return (
     <ChatLayout
       threadRef={thread}
-      onScroll={(event) => {
-        followThread.current = isThreadAtBottom(event.currentTarget);
+      onScroll={() => {
+        if (scrollInput.current) layout.schedule();
       }}
       composer={
         readOnly ? (
@@ -579,14 +818,47 @@ function Chat({ snapshot }: { snapshot: ChatSnapshot }) {
         )
       }
     >
+      <TranscriptSearch records={transcript.records} onSelect={revealRecord} />
+      {transcript.records.length > 100 && (
+        <div className="text-range">
+          <span role="status">
+            {ja ? "読込済み項目" : "Loaded records"} {window.start + 1}–
+            {window.end} / {transcript.records.length}
+          </span>{" "}
+          <button
+            type="button"
+            disabled={!window.start}
+            onClick={() =>
+              showRange(transcript.records[Math.max(0, window.start - 100)].id)
+            }
+          >
+            {ja ? "前へ" : "Previous"}
+          </button>{" "}
+          <button
+            type="button"
+            disabled={window.end >= transcript.records.length}
+            onClick={() => showRange(transcript.records[window.end].id)}
+          >
+            {ja ? "次へ" : "Next"}
+          </button>{" "}
+          <button type="button" onClick={() => showRange()}>
+            {ja ? "最新へ" : "Latest"}
+          </button>
+        </div>
+      )}
       {transcript.history?.before && (
         <button
           type="button"
-          disabled={loadingHistory || (readOnly && !opening)}
+          disabled={loadingHistory}
           onClick={() => void loadEarlier()}
         >
           {loadingHistory ? t["Loading…"] : t["Load earlier messages"]}
         </button>
+      )}
+      {historyError && (
+        <p className="error" role="alert">
+          {historyError}
+        </p>
       )}
       {readOnly && opening && openMessage && (
         <p className="muted" role="status">
@@ -594,123 +866,224 @@ function Chat({ snapshot }: { snapshot: ChatSnapshot }) {
         </p>
       )}
       {!transcript.records.length && <ChatEmpty cwd={info.cwd} />}
-      {transcript.records.map((record, index) => {
-        // Session metadata (model/thinking-level changes, hidden entries) is not conversation.
-        if (customPresentation(record).hidden) return null;
-        const range = work.get(index);
-        const folded = range !== undefined && !openWork[range.key];
-        const toggle = range?.first === index && (
-          <WorkToggle
-            open={!folded}
-            tools={range.tools}
-            onToggle={() =>
-              setOpenWork((open) => ({
-                ...open,
-                [range.key]: !open[range.key],
-              }))
-            }
-          />
-        );
-        if (folded && index !== range.final)
-          return toggle ? <Fragment key={record.id}>{toggle}</Fragment> : null;
-        if (record.kind !== "message" || record.message.role === "custom")
-          return (
-            <Fragment key={record.id}>
-              {toggle}
-              <CustomRecord record={record} />
-            </Fragment>
+      {transcript.records
+        .slice(window.start, window.end)
+        .map((record, offset) => {
+          const index = window.start + offset;
+          // Session metadata (model/thinking-level changes, hidden entries) is not conversation.
+          if (customPresentation(record).hidden) return null;
+          if (record.kind === "message" && record.message.role === "toolResult")
+            return null;
+          const range = work.get(index);
+          const folded = range !== undefined && !openWork[range.key];
+          const toggle = range && !renderedWork.has(range.key) && (
+            <WorkToggle
+              open={!folded}
+              tools={range.tools}
+              onToggle={() =>
+                setOpenWork(
+                  (open) =>
+                    (view.work = {
+                      ...open,
+                      [range.key]: !open[range.key],
+                    }),
+                )
+              }
+            />
           );
-        const { id, message } = record;
-        // Tool results render inside their tool call block.
-        if (message.role === "toolResult") return null;
-        const live =
-          transcript.running && index === transcript.records.length - 1;
-        return (
-          <div key={id} className="response-turn">
-            {toggle}
-            <article className={`message ${message.role}`}>
-              {message.role === "user" ? (
-                <UserMessage
-                  message={message}
-                  sessionId={info.id}
-                  entryId={record.entryId}
-                  disabled={readOnly || transcript.running || !snapshot.model}
-                />
-              ) : message.role === "assistant" ? (
-                <>
-                  {groupBlocks(
-                    folded
-                      ? message.content.filter((block) => block.type === "text")
-                      : message.content,
-                  ).map(({ start, blocks }) => {
-                    const content = blocks[0];
-                    return (
-                      <div key={`${content.type}-${start}`}>
-                        {blocks.length > 1 ? (
-                          <ToolGroup
-                            calls={blocks.filter(
-                              (block): block is ToolCall =>
-                                block.type === "toolCall",
-                            )}
-                            tools={transcript.tools}
-                            live={transcript.running}
-                            cards={snapshot.sessionUI?.toolCards}
-                          />
-                        ) : content.type === "text" ? (
-                          <div className="prose">
-                            <Markdown text={content.text} />
-                          </div>
-                        ) : content.type === "thinking" ? (
-                          <ThinkingBlock
-                            text={content.thinking}
-                            label={status?.hiddenThinkingLabel ?? t.Thinking}
-                            active={
-                              live && start === message.content.length - 1
-                            }
-                          />
-                        ) : content.type === "toolCall" ? (
-                          <ToolBlock
-                            call={content}
-                            state={transcript.tools[content.id]}
-                            live={transcript.running}
-                            card={snapshot.sessionUI?.toolCards?.[content.id]}
-                          />
-                        ) : null}
-                      </div>
-                    );
-                  })}
-                  {message.errorMessage && (
-                    <p
-                      className={
-                        message.stopReason === "aborted" ? "muted" : "error"
-                      }
-                    >
-                      {t.responseError(
-                        message.stopReason,
-                        message.errorMessage,
-                      )}
-                    </p>
-                  )}
-                </>
-              ) : (
+          if (range) renderedWork.add(range.key);
+          if (folded && index !== range.final)
+            return toggle ? (
+              <Fragment key={record.id}>{toggle}</Fragment>
+            ) : null;
+          if (record.kind !== "message" || record.message.role === "custom")
+            return (
+              <div
+                key={record.id}
+                data-record-id={record.id}
+                data-record-order={record.order}
+                tabIndex={-1}
+              >
+                {toggle}
                 <CustomRecord record={record} />
-              )}
-              {record.details !== undefined && (
-                <details>
-                  <summary>Details</summary>
-                  <pre>{dataText(record.details)}</pre>
-                </details>
-              )}
-            </article>
-            {footer(index)}
-          </div>
-        );
-      })}
+              </div>
+            );
+          const { id, message } = record;
+          const live =
+            transcript.running && index === transcript.records.length - 1;
+          return (
+            <div
+              key={id}
+              className="response-turn"
+              data-record-id={id}
+              data-record-order={record.order}
+              tabIndex={-1}
+            >
+              <DisclosureScope
+                id={id}
+                values={view.details}
+                pages={view.pages}
+                textRanges={view.textRanges}
+              >
+                {toggle}
+                <article className={`message ${message.role}`}>
+                  {message.role === "user" ? (
+                    <UserMessage
+                      message={message}
+                      sessionId={info.id}
+                      entryId={record.entryId}
+                      disabled={
+                        readOnly || transcript.running || !snapshot.model
+                      }
+                    />
+                  ) : message.role === "assistant" ? (
+                    <>
+                      <TranscriptRange
+                        target={
+                          jump?.id === id && jump.runIndex !== undefined
+                            ? { index: jump.runIndex, serial: jump.serial }
+                            : undefined
+                        }
+                        items={groupBlocks(
+                          folded
+                            ? message.content.filter(
+                                (block) => block.type === "text",
+                              )
+                            : message.content,
+                        )}
+                      >
+                        {({ start, blocks }, runIndex) => {
+                          const content = blocks[0];
+                          return (
+                            <DisclosureScope
+                              key={`${content.type}-${start}`}
+                              id={`block:${start}`}
+                              reveal={
+                                jump?.id === id && jump.runIndex === runIndex
+                                  ? jump.serial
+                                  : 0
+                              }
+                            >
+                              <div
+                                data-content-index={start}
+                                data-tool-call-id={
+                                  blocks.length === 1 &&
+                                  content.type === "toolCall"
+                                    ? content.id
+                                    : undefined
+                                }
+                                tabIndex={-1}
+                              >
+                                {blocks.length > 1 ? (
+                                  <ToolGroup
+                                    calls={blocks.filter(
+                                      (block): block is ToolCall =>
+                                        block.type === "toolCall",
+                                    )}
+                                    tools={transcript.tools}
+                                    live={transcript.running}
+                                    cards={snapshot.sessionUI?.toolCards}
+                                    target={
+                                      jump?.id === id &&
+                                      jump.runIndex === runIndex &&
+                                      jump.toolCallId
+                                        ? {
+                                            toolCallId: jump.toolCallId,
+                                            serial: jump.serial,
+                                          }
+                                        : undefined
+                                    }
+                                  />
+                                ) : content.type === "text" ? (
+                                  <div className="prose">
+                                    <Markdown
+                                      text={content.text}
+                                      streaming={
+                                        live &&
+                                        transcript.current === id &&
+                                        !message.errorMessage
+                                      }
+                                    />
+                                  </div>
+                                ) : content.type === "thinking" ? (
+                                  <ThinkingBlock
+                                    text={content.thinking}
+                                    label={
+                                      status?.hiddenThinkingLabel ?? t.Thinking
+                                    }
+                                    active={
+                                      live &&
+                                      start === message.content.length - 1
+                                    }
+                                  />
+                                ) : content.type === "toolCall" ? (
+                                  <ToolBlock
+                                    call={content}
+                                    state={transcript.tools[content.id]}
+                                    live={transcript.running}
+                                    card={
+                                      snapshot.sessionUI?.toolCards?.[
+                                        content.id
+                                      ]
+                                    }
+                                  />
+                                ) : null}
+                              </div>
+                            </DisclosureScope>
+                          );
+                        }}
+                      </TranscriptRange>
+                      {message.errorMessage && (
+                        <p
+                          className={
+                            message.stopReason === "aborted" ? "muted" : "error"
+                          }
+                        >
+                          {t.responseError(
+                            message.stopReason,
+                            message.errorMessage,
+                          )}
+                        </p>
+                      )}
+                    </>
+                  ) : (
+                    <CustomRecord record={record} />
+                  )}
+                  {record.details !== undefined && (
+                    <DisclosureScope
+                      id="record-details"
+                      reveal={jump?.id === id && jump.details ? jump.serial : 0}
+                    >
+                      <LazyDetails name="details" summary="Details">
+                        {() => <LargeText text={dataText(record.details)} />}
+                      </LazyDetails>
+                    </DisclosureScope>
+                  )}
+                </article>
+                {footer(index)}
+              </DisclosureScope>
+            </div>
+          );
+        })}
       {snapshot.failure && (
         <p className="error" role="alert">
           {snapshot.failure}
         </p>
       )}
+      {readOnly && !opening && snapshot.failure && (
+        <button
+          type="button"
+          onClick={() => void openChat(info.cwd, info.id).catch(showError)}
+        >
+          {ja ? "実行環境の準備を再試行" : "Retry runtime initialization"}
+        </button>
+      )}
+      <span role="status" className="sr-status">
+        {observedRun &&
+          !transcript.running &&
+          !snapshot.failure &&
+          (snapshot.aborted ? t.Stopped : t.responseComplete)}
+      </span>
       {transcript.running && (
         <p className="muted running" role="status">
           {workingLabel(status, t["Working…"])}

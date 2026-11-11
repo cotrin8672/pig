@@ -30,6 +30,8 @@ export function createAdapterSource(
   const changes = new Set<() => void>();
   const events = new Set<(event: SourceEvent) => void>();
   const live = new Map<string, ToolObservation>();
+  let savedLeaf: string | null | undefined;
+  const saved = new Map<string, ToolObservation>();
   const refresh = () => {
     for (const listener of changes) listener();
   };
@@ -76,37 +78,42 @@ export function createAdapterSource(
         ? session.sessionManager.getBranch()
         : session.sessionManager.getEntries(),
     tools() {
-      const saved = new Map<string, ToolObservation>();
-      for (const entry of session.sessionManager.getBranch()) {
-        if (entry.type !== "message") continue;
-        const message = entry.message;
-        if (message.role === "assistant") {
-          for (const block of message.content)
-            if (block.type === "toolCall")
-              saved.set(block.id, {
-                toolCallId: block.id,
-                toolName: block.name,
-                args: block.arguments,
-                phase: "finished",
-                origin: "history",
-              });
-        } else if (message.role === "toolResult") {
-          saved.set(message.toolCallId, {
-            ...saved.get(message.toolCallId),
-            toolCallId: message.toolCallId,
-            toolName: message.toolName,
-            result: { content: message.content, details: message.details },
-            isError: message.isError,
-            phase: "finished",
-            origin: "history",
-          });
+      const leaf = session.sessionManager.getLeafId();
+      if (leaf !== savedLeaf) {
+        saved.clear();
+        for (const entry of session.sessionManager.getBranch()) {
+          if (entry.type !== "message") continue;
+          const message = entry.message;
+          if (message.role === "assistant") {
+            for (const block of message.content)
+              if (block.type === "toolCall")
+                saved.set(block.id, {
+                  toolCallId: block.id,
+                  toolName: block.name,
+                  args: block.arguments,
+                  phase: "finished",
+                  origin: "history",
+                });
+          } else if (message.role === "toolResult") {
+            saved.set(message.toolCallId, {
+              ...saved.get(message.toolCallId),
+              toolCallId: message.toolCallId,
+              toolName: message.toolName,
+              result: { content: message.content, details: message.details },
+              isError: message.isError,
+              phase: "finished",
+              origin: "history",
+            });
+          }
         }
+        savedLeaf = leaf;
       }
+      const combined = new Map(saved);
       // Finished calls outside the current branch must not resurrect after rewind.
       for (const [id, observation] of live)
         if (observation.phase === "running" || saved.has(id))
-          saved.set(id, observation);
-      return [...saved.values()];
+          combined.set(id, observation);
+      return [...combined.values()];
     },
     subscribe(listener) {
       changes.add(listener);

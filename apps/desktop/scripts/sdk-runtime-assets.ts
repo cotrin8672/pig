@@ -98,7 +98,29 @@ function installedPackage(name: string, from: string): string | undefined {
   }
 }
 
-function copyPackage(source: string, destination: string) {
+// Check the complete stage, including unexpected files and links, before reusing it.
+function stageEntries(root: string) {
+  const entries = new Map<string, "file" | "directory">();
+  function visit(path: string) {
+    for (const entry of readdirSync(path, { withFileTypes: true })) {
+      const child = join(path, entry.name);
+      if (entry.isDirectory() && !entry.isSymbolicLink()) {
+        entries.set(child, "directory");
+        visit(child);
+      } else if (entry.isFile()) entries.set(child, "file");
+      else throw new Error("Invalid SDK stage entry");
+    }
+  }
+  if (!lstatSync(root).isDirectory()) throw new Error("Invalid SDK stage");
+  visit(root);
+  return entries;
+}
+
+function copyPackage(
+  source: string,
+  destination: string,
+  verify?: ReturnType<typeof stageEntries>,
+) {
   function copy(input: string, output: string, ancestors: Set<string>) {
     // Only package-internal symlinks may be materialized. Never follow a link
     // into user storage, another package, or a cycle; output contains no links.
@@ -110,13 +132,24 @@ function copyPackage(source: string, destination: string) {
       if (ancestors.has(actual))
         throw new Error(`Package symlink cycle: ${input}`);
       const next = new Set(ancestors).add(actual);
-      mkdirSync(output, { recursive: true });
+      if (verify) {
+        if (verify.get(output) !== "directory")
+          throw new Error("SDK directory mismatch");
+        verify.delete(output);
+      } else mkdirSync(output, { recursive: true });
       for (const entry of readdirSync(actual).sort()) {
         if (entry === "node_modules" || entry === ".git") continue;
         copy(join(actual, entry), join(output, entry), next);
       }
     } else if (info.isFile()) {
-      copyFileSync(actual, output);
+      if (verify) {
+        if (
+          verify.get(output) !== "file" ||
+          !readFileSync(actual).equals(readFileSync(output))
+        )
+          throw new Error("SDK file mismatch");
+        verify.delete(output);
+      } else copyFileSync(actual, output);
     } else throw new Error(`Unsupported package file: ${input}`);
   }
   copy(source, destination, new Set());
@@ -126,13 +159,32 @@ function copyPackage(source: string, destination: string) {
  * conflicting versions with ordinary nested node_modules (no pnpm/store links).
  * Destination must not exist; callers control replacement of their own stage.
  */
-export function copySdkRuntime(options: {
+type StageOptions = {
   projectDir: string;
   destination: string;
   roots?: readonly string[];
   // Explicit trust boundary for pnpm links. Defaults to the workspace install.
   installRoot?: string;
-}): RuntimeManifest {
+};
+export function copySdkRuntime(options: StageOptions): RuntimeManifest {
+  return assemble(options);
+}
+
+export function sdkStageMatches(options: StageOptions): boolean {
+  try {
+    const files = stageEntries(resolve(options.destination));
+    assemble(options, files);
+    return files.size === 0;
+  } catch {
+    // Missing, changed, or damaged stages are rebuilt via the same validated source graph.
+    return false;
+  }
+}
+
+function assemble(
+  options: StageOptions,
+  verify?: ReturnType<typeof stageEntries>,
+): RuntimeManifest {
   const project = realpathSync(options.projectDir);
   const destination = canonicalDestination(options.destination);
   const roots = options.roots ?? SDK_RUNTIME_ROOTS;
@@ -157,15 +209,16 @@ export function copySdkRuntime(options: {
   )
     throw new Error("SDK destination overlaps source/install tree");
   if (
-    existsSync(destination) ||
-    (() => {
-      try {
-        lstatSync(destination);
-        return true;
-      } catch {
-        return false;
-      }
-    })()
+    !verify &&
+    (existsSync(destination) ||
+      (() => {
+        try {
+          lstatSync(destination);
+          return true;
+        } catch {
+          return false;
+        }
+      })())
   )
     throw new Error(`SDK destination already exists: ${destination}`);
   const graph = new Map<string, PackageNode>();
@@ -241,7 +294,11 @@ export function copySdkRuntime(options: {
   };
   function place(placement: Placement, visible: Map<string, Placement>) {
     const { node, path } = placement;
-    copyPackage(node.source, path);
+    if (verify) {
+      for (let p = dirname(path); p !== destination; p = dirname(p))
+        verify.delete(p);
+    }
+    copyPackage(node.source, path, verify);
     const record: RuntimeManifest["packages"][number] = {
       name: node.manifest.name,
       version: node.manifest.version,
@@ -263,17 +320,26 @@ export function copySdkRuntime(options: {
     }
     for (const child of children) place(child, scope);
   }
+  if (!verify) {
+    mkdirSync(dirname(destination), { recursive: true });
+    mkdirSync(destination);
+  }
   try {
-    mkdirSync(destination, { recursive: true });
     for (const placement of top.values()) place(placement, top);
     result.packages.sort((a, b) => a.path.localeCompare(b.path));
-    writeFileSync(
-      join(destination, "sdk-runtime-manifest.json"),
-      `${JSON.stringify(result, null, 2)}\n`,
-    );
+    const manifest = join(destination, "sdk-runtime-manifest.json");
+    const json = `${JSON.stringify(result, null, 2)}\n`;
+    if (verify) {
+      if (
+        verify.get(manifest) !== "file" ||
+        readFileSync(manifest, "utf8") !== json
+      )
+        throw new Error("SDK manifest mismatch");
+      verify.delete(manifest);
+    } else writeFileSync(manifest, json);
     return result;
   } catch (error) {
-    rmSync(destination, { recursive: true, force: true });
+    if (!verify) rmSync(destination, { recursive: true, force: true });
     throw error;
   }
 }
@@ -289,6 +355,10 @@ if (import.meta.main) {
   // This fixed, generated directory is the only path the build hook replaces.
   if (existsSync(destination) && lstatSync(destination).isSymbolicLink())
     throw new Error("SDK stage must not be a symlink");
+  if (sdkStageMatches({ projectDir, destination })) {
+    console.log("[sdk-runtime] Reusing verified SDK runtime.");
+    process.exit(0);
+  }
   const temporary = `${destination}.next`;
   if (existsSync(temporary))
     throw new Error(`Remove interrupted SDK stage first: ${temporary}`);
