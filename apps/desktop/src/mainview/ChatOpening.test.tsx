@@ -206,6 +206,45 @@ if (process.env.PIG_CHAT_OPENING_CHILD !== "1") {
     }
   });
 
+  test("startup metadata and rewind markers leave the conversation empty", async () => {
+    const { Chat } = await import("./App");
+    const html = renderToStaticMarkup(
+      <Chat
+        snapshot={{
+          ...snapshot,
+          transcript: {
+            ...emptyTranscript(),
+            records: [
+              {
+                id: "model",
+                order: 0,
+                branchId: "main",
+                parentId: null,
+                kind: "session-entry",
+                entryType: "model_change",
+                data: {},
+              },
+              ...["piris.rewind", "pig.rewind"].map((customType, i) => ({
+                id: customType,
+                order: i + 1,
+                branchId: "main",
+                parentId: "model",
+                kind: "custom-entry" as const,
+                customType,
+                data: { entryId: "a2ccf4cd" },
+              })),
+            ],
+          },
+        }}
+      />,
+    );
+    expect(html).toContain("What shall we build?");
+    expect(html).toContain("Working in project");
+    expect(html).not.toContain("Raw record");
+    expect(html).not.toContain("a2ccf4cd");
+    expect(html).not.toContain('class="transcript-search"');
+  });
+
   test("connection and recovery messages remain visible outside the composer", () => {
     const html = render(true, "Connection unavailable — checking state.");
     expect(html).toContain(
@@ -318,6 +357,7 @@ if (process.env.PIG_CHAT_OPENING_CHILD !== "1") {
     try {
       const html = renderToStaticMarkup(<App />);
       expect(html).toContain("History is readable before the model is ready");
+      expect(html).not.toContain("What shall we build?");
       expect(html).toContain("Load earlier messages");
       const newChatButtons = [
         ...html.matchAll(/<button[^>]*title="New chat"[^>]*>/g),

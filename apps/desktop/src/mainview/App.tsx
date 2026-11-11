@@ -25,6 +25,7 @@ import {
 import { useShallow } from "zustand/react/shallow";
 import appIcon from "../../assets/icon.svg";
 import { finishedWork, groupBlocks } from "../shared/tool-view";
+import type { TranscriptRecord } from "../shared/transcript";
 import { ChatHeader } from "./ChatHeader";
 import { ChatEmpty, ChatLayout } from "./ChatLayout";
 import { ChatOpening, OpeningComposer } from "./ChatOpening";
@@ -482,9 +483,18 @@ function OAuthLoginDialog({ login }: { login: LoginState }) {
   );
 }
 
+function isVisibleRecord(record: TranscriptRecord) {
+  return (
+    !customPresentation(record).hidden &&
+    !(record.kind === "message" && record.message.role === "toolResult")
+  );
+}
+
 export function Chat({ snapshot }: { snapshot: ChatSnapshot }) {
   const t = useT();
   const { info, transcript } = snapshot;
+  const hasConversation =
+    !!transcript.history?.before || transcript.records.some(isVisibleRecord);
   const [observedRun, setObservedRun] = useState(transcript.running);
   useEffect(() => {
     if (transcript.running) setObservedRun(true);
@@ -546,12 +556,7 @@ export function Chat({ snapshot }: { snapshot: ChatSnapshot }) {
   const [openWork, setOpenWork] = useState(view.work);
   const renderedWork = new Set<string>();
   const work = useMemo(
-    () =>
-      finishedWork(
-        transcript.records,
-        transcript.running,
-        (record) => !customPresentation(record).hidden,
-      ),
+    () => finishedWork(transcript.records, transcript.running, isVisibleRecord),
     [transcript.records, transcript.running],
   );
   function revealRecord(id: string, target?: TranscriptSearchTarget) {
@@ -707,7 +712,12 @@ export function Chat({ snapshot }: { snapshot: ChatSnapshot }) {
         )
       }
     >
-      <TranscriptSearch records={transcript.records} onSelect={revealRecord} />
+      {hasConversation && (
+        <TranscriptSearch
+          records={transcript.records}
+          onSelect={revealRecord}
+        />
+      )}
       {transcript.history?.before && (
         <button
           type="button"
@@ -727,12 +737,9 @@ export function Chat({ snapshot }: { snapshot: ChatSnapshot }) {
           {openMessage}
         </p>
       )}
-      {!transcript.records.length && <ChatEmpty cwd={info.cwd} />}
+      {!hasConversation && <ChatEmpty cwd={info.cwd} />}
       {transcript.records.map((record, index) => {
-        // Session metadata (model/thinking-level changes, hidden entries) is not conversation.
-        if (customPresentation(record).hidden) return null;
-        if (record.kind === "message" && record.message.role === "toolResult")
-          return null;
+        if (!isVisibleRecord(record)) return null;
         const range = work.get(index);
         const folded = range !== undefined && !openWork[range.key];
         const toggle = range && !renderedWork.has(range.key) && (

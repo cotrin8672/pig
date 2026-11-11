@@ -31,7 +31,9 @@ export function customPresentation(record: TranscriptRecord) {
       label: record.customType,
       content: record.data,
       details: undefined,
-      hidden: false,
+      hidden:
+        record.customType === "pig.rewind" ||
+        record.customType === "piris.rewind",
     };
   if (record.kind === "session-entry")
     return {
