@@ -1,6 +1,7 @@
 import { Settings2 } from "lucide-react";
 import type { ReactNode, Ref, UIEventHandler } from "react";
 import { filterModels } from "../shared/models";
+import { projectLabel } from "../shared/projects";
 import { ChatWidthHandles, useChatWidth } from "./ChatWidth";
 import { useT } from "./i18n";
 import { navigate } from "./navigation";
@@ -46,7 +47,9 @@ export function ChatLayout({
 
 export function ChatEmpty({ cwd }: { cwd?: string }) {
   const t = useT();
-  const { generalCwd, models, disabledModels } = useStore((s) => s.bootstrap);
+  const { generalCwd, models, disabledModels, desktop } = useStore(
+    (s) => s.bootstrap,
+  );
   const enabled = filterModels(models, disabledModels);
   return (
     <div className="chat-empty">
@@ -55,7 +58,7 @@ export function ChatEmpty({ cwd }: { cwd?: string }) {
         {generalCwd === cwd
           ? t["Chat without a project"]
           : cwd
-            ? t.workingIn(cwd)
+            ? t.workingIn(projectLabel(cwd, desktop.projects?.[cwd]))
             : t["Opening chat…"]}
       </p>
       {!enabled.length && (

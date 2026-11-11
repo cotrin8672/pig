@@ -6,6 +6,7 @@ import type {
   DraftState,
   DraftSyncParams,
   DraftSyncResult,
+  PromptDelivery,
   SessionAddress,
 } from "../shared/runtime-contract";
 import { addressKey } from "./chat-snapshot";
@@ -37,12 +38,16 @@ const contentOf = ({
   pastes,
   images,
   files,
+  annotations,
 }: DraftContent): DraftContent => ({
   text,
   pastes,
   images,
   ...(files?.length ? { files } : {}),
+  ...(annotations?.length ? { annotations } : {}),
 });
+const ids = (items: { id: string }[] = []) =>
+  items.map((item) => item.id).join("\0");
 const equal = (a: DraftContent, b: DraftContent) =>
   a.text === b.text &&
   (a.pastes === b.pastes ||
@@ -54,8 +59,8 @@ const equal = (a: DraftContent, b: DraftContent) =>
           p.text === b.pastes[i].text,
       ))) &&
   sameImages(a.images, b.images) &&
-  (a.files ?? []).map((f) => f.id).join("\0") ===
-    (b.files ?? []).map((f) => f.id).join("\0");
+  ids(a.files) === ids(b.files) &&
+  ids(a.annotations) === ids(b.annotations);
 /** Address-owned drafts outlive React mounts, tab navigation and asynchronous file reads. */
 export class DraftStore {
   private entries = new Map<string, EditorDraft>();
@@ -69,7 +74,8 @@ export class DraftStore {
         !draft.transferred &&
         (draft.content.text ||
           draft.content.images.length ||
-          draft.content.files?.length)
+          draft.content.files?.length ||
+          draft.content.annotations?.length)
         ? [{ address, draft }]
         : [];
     });
@@ -210,6 +216,8 @@ export class DraftStore {
   }
   restoreSent(address: SessionAddress, sent: DraftContent) {
     const draft = this.read(address);
+    // The replacement owner receives forwarded results; never strand a copy here.
+    if (draft.transferred) return;
     const current = draft.content;
     const text = [
       unfoldPastes(sent.text, sent.pastes),
@@ -236,6 +244,13 @@ export class DraftStore {
               file.id,
               file,
             ]),
+          ).values(),
+        ],
+        annotations: [
+          ...new Map(
+            [...(sent.annotations ?? []), ...(current.annotations ?? [])].map(
+              (annotation) => [annotation.id, annotation],
+            ),
           ).values(),
         ],
       },
@@ -270,6 +285,7 @@ export class DraftStore {
     sync: (params: DraftSyncParams) => Promise<DraftSyncResult>,
     target = this.read(address),
     requestId?: string,
+    delivery?: PromptDelivery,
   ): Promise<EditorDraft> {
     target = { ...target, content: structuredClone(target.content) };
     const key = addressKey(address);
@@ -298,7 +314,7 @@ export class DraftStore {
           ...address,
           expectedRevision: flight.expectedRevision,
           content: flight.content,
-          ...(requestId ? { requestId } : {}),
+          ...(requestId ? { requestId, delivery } : {}),
         });
         this.receive(address, result.draft);
         if (!result.applied) {
@@ -332,5 +348,6 @@ export function expandedDraft(content: DraftContent): string {
   return withDraftFiles(
     unfoldPastes(content.text, content.pastes).trim(),
     content.files,
+    content.annotations,
   );
 }

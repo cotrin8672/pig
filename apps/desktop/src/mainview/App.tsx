@@ -20,11 +20,11 @@ import {
   useMemo,
   useRef,
   useState,
+  useSyncExternalStore,
 } from "react";
 import { useShallow } from "zustand/react/shallow";
 import appIcon from "../../assets/icon.svg";
 import { finishedWork, groupBlocks } from "../shared/tool-view";
-import type { TranscriptRecord } from "../shared/transcript";
 import { ChatHeader } from "./ChatHeader";
 import { ChatEmpty, ChatLayout } from "./ChatLayout";
 import { ChatOpening, OpeningComposer, OpeningMessages } from "./ChatOpening";
@@ -32,9 +32,13 @@ import { Composer } from "./Composer";
 import { CustomRecord } from "./CustomRecord";
 import type { ChatSnapshot } from "./chat-snapshot";
 import { addressKey, prependHistory, sameAddress } from "./chat-snapshot";
-import { customPresentation, dataText } from "./custom-data";
+import { dataText, isVisibleRecord } from "./custom-data";
 import { DraftRecovery } from "./DraftRecovery";
 import { Extensions } from "./Extensions";
+import {
+  ExtensionNoticeLine,
+  interleaveExtensionNotices,
+} from "./extension-notices";
 import { workingLabel } from "./extension-status";
 import { getT, useT } from "./i18n";
 import { DisclosureScope, LazyDetails } from "./LazyDetails";
@@ -57,6 +61,7 @@ import {
   openChat,
   refresh,
   rpc,
+  sends,
 } from "./rpc";
 import { SessionPanel } from "./SessionPanel";
 import { Settings } from "./Settings";
@@ -151,7 +156,7 @@ export function App() {
         title={t["Toggle sidebar"]}
         aria-expanded={sidebarOpen}
         aria-controls="app-sidebar"
-        hidden={!state.initialized}
+        hidden={!state.sidebarReady}
         onClick={() => setSidebarOpen((open) => !open)}
       >
         <PanelLeft size={16} aria-hidden="true" />
@@ -163,7 +168,7 @@ export function App() {
             pig
           </strong>
         </header>
-        {state.initialized && (
+        {state.sidebarReady && (
           <>
             <SidebarSessions />
             <div className="sidebar-footer">
@@ -275,7 +280,7 @@ export function App() {
                   ? ((openingView ? state.openingTitle : state.activeTitle) ??
                     displayedChat.info.title)
                   : state.openingTarget?.id
-                    ? t["Opening chat…"]
+                    ? (state.openingListedTitle ?? t["Opening chat…"])
                     : t["New chat"]
               }
             />
@@ -507,13 +512,6 @@ function OAuthLoginDialog({ login }: { login: LoginState }) {
   );
 }
 
-function isVisibleRecord(record: TranscriptRecord) {
-  return (
-    !customPresentation(record).hidden &&
-    !(record.kind === "message" && record.message.role === "toolResult")
-  );
-}
-
 export function Chat({ snapshot }: { snapshot: ChatSnapshot }) {
   const t = useT();
   const { info, transcript } = snapshot;
@@ -535,6 +533,14 @@ export function Chat({ snapshot }: { snapshot: ChatSnapshot }) {
       sameAddress(s.openingAddress, snapshot.address),
   );
   const openMessage = useStore((s) => s.openMessage);
+  const rewind = useStore((s) => s.rewinds[info.id]);
+  const rewound = rewind
+    ? transcript.records.findIndex(
+        (record) => record.entryId === rewind.entryId,
+      )
+    : -1;
+  // A resend replaces its message onward; a branch keeps the chosen entry.
+  const cut = rewound >= 0 && rewind?.kind === "fork" ? rewound + 1 : rewound;
   const ja = useStore((s) => s.settings.language === "ja");
   const thread = useRef<HTMLDivElement>(null);
   const [view] = useState(() => threadView(snapshot.address.hostId, info.id));
@@ -585,11 +591,30 @@ export function Chat({ snapshot }: { snapshot: ChatSnapshot }) {
   const status = useStore(
     (s) => s.extensionStatuses[addressKey(snapshot.address)],
   );
+  const notices = useStore(
+    (s) => s.extensionNotices[addressKey(snapshot.address)],
+  );
   const [openWork, setOpenWork] = useState(view.work);
   const renderedWork = new Set<string>();
+  useSyncExternalStore(sends.subscribe, sends.getTick, sends.getTick);
+  // agent_start (running) arrives before the new user message. Until it lands,
+  // a send made while idle means the trailing response is finished, not live.
+  const idleSends = useRef(new Set<string>()).current;
+  const echoed = new Set(transcript.records.map((record) => record.requestId));
+  const pending = sends
+    .optimistic(snapshot.address)
+    .filter((send) => !echoed.has(send.key.requestId));
+  if (!transcript.running)
+    for (const send of pending) idleSends.add(send.key.requestId);
+  const starting = pending.some((send) => idleSends.has(send.key.requestId));
   const work = useMemo(
-    () => finishedWork(transcript.records, transcript.running, isVisibleRecord),
-    [transcript.records, transcript.running],
+    () =>
+      finishedWork(
+        transcript.records,
+        transcript.running && !starting,
+        isVisibleRecord,
+      ),
+    [transcript.records, transcript.running, starting],
   );
   function revealRecord(id: string, target?: TranscriptSearchTarget) {
     const index = transcript.records.findIndex((record) => record.id === id);
@@ -673,7 +698,7 @@ export function Chat({ snapshot }: { snapshot: ChatSnapshot }) {
     } else if (view.follow) {
       element.scrollTop = element.scrollHeight;
     }
-  }, [transcript, view]);
+  }, [transcript, notices, view]);
   useLayoutEffect(() => {
     if (!jump) return;
     const frame = requestAnimationFrame(() => {
@@ -770,7 +795,17 @@ export function Chat({ snapshot }: { snapshot: ChatSnapshot }) {
         </p>
       )}
       {!hasConversation && <ChatEmpty cwd={info.cwd} />}
-      {transcript.records.map((record, index) => {
+      {interleaveExtensionNotices(
+        cut >= 0
+          ? { ...transcript, records: transcript.records.slice(0, cut) }
+          : transcript,
+        notices ?? [],
+      ).map((item) => {
+        if ("notice" in item)
+          return (
+            <ExtensionNoticeLine key={item.notice.id} notice={item.notice} />
+          );
+        const { record, index } = item;
         const divider = dividers.get(record.id);
         if (divider)
           return (
@@ -946,6 +981,13 @@ export function Chat({ snapshot }: { snapshot: ChatSnapshot }) {
           </div>
         );
       })}
+      {rewind?.kind === "resend" && cut >= 0 && (
+        <div className="response-turn">
+          <article className="message user">
+            <UserMessage message={rewind.user} sessionId={info.id} disabled />
+          </article>
+        </div>
+      )}
       {readOnly && <OpeningMessages />}
       <OptimisticMessages snapshot={snapshot} onChange={followOptimistic} />
       {snapshot.failure && (

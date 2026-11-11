@@ -246,8 +246,8 @@ export const en = {
   "Notification filter": "Notification filter",
   "No notifications": "No notifications",
   "No unread notifications": "No unread notifications",
-  "Chat activity and extension notifications appear here.":
-    "Chat activity and extension notifications appear here.",
+  "Chat activity and app notifications appear here.":
+    "Chat activity and app notifications appear here.",
   "Agent finished": "Agent finished",
   "Agent failed": "Agent failed",
   "Dismiss error": "Dismiss error",
@@ -321,6 +321,13 @@ export const en = {
     "Ask anything, or describe what to build…",
   Stop: "Stop",
   "Queue follow-up": "Queue follow-up",
+  "Steer response": "Steer response",
+  "Insert newline": "Insert newline",
+  "Send after response": "Send after response",
+  "Edit queued message": "Edit queued message in composer",
+  "Delete queued message": "Delete queued message",
+  "Steering pending": "Steering · waiting for the next step",
+  "Already sending": "This message is already being sent.",
   Send: "Send",
   "Choose an enabled model to send a message.":
     "Choose an enabled model to send a message.",
@@ -712,8 +719,8 @@ export const ja: Dictionary = {
   "Notification filter": "通知の絞り込み",
   "No notifications": "通知はありません",
   "No unread notifications": "未読の通知はありません",
-  "Chat activity and extension notifications appear here.":
-    "チャットの完了や拡張機能の通知がここに表示されます。",
+  "Chat activity and app notifications appear here.":
+    "チャットの完了やアプリの通知がここに表示されます。",
   "Agent finished": "エージェントの処理が完了しました",
   "Agent failed": "エージェントの処理に失敗しました",
   "Dismiss error": "エラーを閉じる",
@@ -786,6 +793,13 @@ export const ja: Dictionary = {
   "Ask anything, or describe what to build…": "質問や作りたいものを入力…",
   Stop: "停止",
   "Queue follow-up": "追加メッセージを予約",
+  "Steer response": "応答に割り込む（Steering）",
+  "Insert newline": "改行",
+  "Send after response": "応答後に送信",
+  "Edit queued message": "キューのメッセージを入力欄で編集",
+  "Delete queued message": "キューのメッセージを削除",
+  "Steering pending": "割り込み待ち · 次のステップで反映",
+  "Already sending": "このメッセージはすでに送信を開始しています。",
   Send: "送信",
   "Choose an enabled model to send a message.":
     "有効なモデルを選択してメッセージを送信してください。",

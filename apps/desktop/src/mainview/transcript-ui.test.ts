@@ -21,11 +21,16 @@ test.skipIf(!existsSync(edge))(
       await Bun.write(
         entry,
         `
+      import {useState} from ${JSON.stringify(fileURLToPath(import.meta.resolve("react")))};
       import {createRoot} from ${JSON.stringify(fileURLToPath(import.meta.resolve("react-dom/client")))};
       import {flushSync} from ${JSON.stringify(fileURLToPath(import.meta.resolve("react-dom")))};
       import {App,Chat} from ${source("./App.tsx")};
       import {Extensions} from ${source("./Extensions.tsx")};
       import {Composer} from ${source("./Composer.tsx")};
+      import {MessageQueue} from ${source("./MessageQueue.tsx")};
+      import {AnnotationPopover} from ${source("./AnnotationPopover.tsx")};
+      import {AnnotationDrafts} from ${source("./AnnotationCards.tsx")};
+      import {rememberAnnotationRange} from ${source("./annotation-highlights.ts")};
       import {SessionPanel} from ${source("./SessionPanel.tsx")};
       import {UIRequestBroker} from ${source("./UIRequestBroker.tsx")};
       import {drafts} from ${source("./draft-store.ts")};
@@ -33,6 +38,7 @@ test.skipIf(!existsSync(edge))(
       import {ToolBlock,ToolGroup,ThinkingBlock} from ${source("./ToolBlock.tsx")};
       import {DisclosureScope} from ${source("./LazyDetails.tsx")};
       import {Markdown,BuiltinMarkdown} from ${source("./MessageContent.tsx")};
+      import {CodeText} from ${source("./HighlightedCode.tsx")};
       import {installChatRenderers} from ${source("./chat-renderer-registry.ts")};
       import {useStore} from ${source("./store.ts")};
       const root=createRoot(document.getElementById("root"));
@@ -137,27 +143,45 @@ test.skipIf(!existsSync(edge))(
       const diff=Array.from({length:10000},(_,i)=>"+"+i+" changed").join("\\n");
       const edit=<DisclosureScope id="edit" values={values}><ToolBlock call={{id:"edit",name:"edit",arguments:{path:"file.ts"}}} state={{status:"done",result:{details:{diff}}}} live={false}/></DisclosureScope>;
       await render(edit);
-      check(!visible(document.querySelector(".tool-diff")),"closed diff must stay visually collapsed");
-      await click(document.querySelector("summary"));
-      metrics.diffSpans=document.querySelectorAll(".tool-diff span").length;
+      metrics.diffSpans=document.querySelectorAll(".tool-diff > span").length;
       check(metrics.diffSpans===10000 && visible(document.querySelector(".tool-diff")) && !document.querySelector(".text-range"),"expanded diff must show every line in the original scrollable preview");
       check(getComputedStyle(document.querySelector(".tool-diff")).maxHeight==="240px","diff preview must keep its original height limit");
       await wheel(document.querySelector(".tool-diff"),320);
       await click(document.querySelector("summary"));check(!visible(document.querySelector(".tool-diff")),"closing must hide the diff");
-      await click(document.querySelector("summary"));await render(<div/>);await render(edit);
-      check(visible(document.querySelector(".tool-diff")),"tool expansion must survive navigation");
+      await render(<div/>);await render(edit);
+      check(!visible(document.querySelector(".tool-diff")),"closing a diff must survive navigation");
       await render(<ThinkingBlock text="# actual thinking" label="Thinking" active={false}/>);
-      check(!visible(document.querySelector("h1")),"closed thinking must stay visually collapsed");
-      await click(document.querySelector("summary"));check(visible(document.querySelector("h1")),"thinking must open with formatted content");
+      check(visible(document.querySelector("h1")),"thinking must start open with formatted content");
       const output=Array.from({length:600},(_,i)=>"line "+i+" "+"original output ".repeat(4)+"end").join("\\n");
       await render(<ToolBlock call={{id:"shell",name:"bash",arguments:{command:"echo fixture"}}} state={{status:"done",result:{content:[{type:"text",text:output}]}}} live={false}/>);
       const peek=document.querySelector(".tool-peek");
       check(peek?.tagName==="PRE" && peek.parentElement.matches("details.tool-term") && peek.textContent===output.split("\\n").slice(-2).join("\\n"),"shell preview must keep the original separate two-line preformatted block");
-      check(document.querySelector(".tool-badge").textContent==="exit 0","completed shell must retain its exit badge");
-      await click(document.querySelector("summary"));
+      check(document.querySelector(".tool-state").textContent==="exit 0","completed shell must retain its exit status");
       const shell=document.querySelector(".tool-term-output");
       check(shell.textContent===output && visible(shell) && !visible(peek) && getComputedStyle(shell).maxHeight==="280px" && !document.querySelector(".text-range"),"expanded shell must retain the complete output in its original preview");
       await wheel(shell,240);
+      const syntaxCode='const message = "<script>literal</script>";\\nconst count = 42;';
+      await render(<ToolBlock call={{id:"syntax-write",name:"write",arguments:{path:"file.ts",content:syntaxCode}}} state={{status:"done"}} live={false}/>);
+      await until(()=>document.querySelector(".tool-code .syntax-token"),"file writes must eventually highlight");
+      check(document.querySelector(".tool-code").textContent===syntaxCode && !document.querySelector(".tool-code script"),"syntax tokens must preserve literal copied code, never HTML");
+      const syntaxDiff='-1 /*\\n-2 old comment\\n-3 */\\n+1 const count = 42;\\n 4 const same = true;';
+      await render(<ToolBlock call={{id:"syntax-edit",name:"edit",arguments:{path:"file.ts"}}} state={{status:"done",result:{details:{diff:syntaxDiff}}}} live={false}/>);
+      await until(()=>document.querySelector(".tool-diff .add .syntax-token") && document.querySelector(".tool-diff .del .syntax-token"),"both sides of edits must highlight");
+      const syntaxLines=[...document.querySelectorAll(".tool-diff > span")];
+      check(document.querySelector(".tool-diff").textContent===syntaxDiff && syntaxLines.length===5,"diff prefixes, line breaks and code must remain copyable");
+      check(Math.abs(syntaxLines[1].getBoundingClientRect().top-syntaxLines[0].getBoundingClientRect().top-parseFloat(getComputedStyle(syntaxLines[0]).lineHeight))<2,"diff token spans must not add blank display lines");
+      check(getComputedStyle(document.querySelector(".tool-diff .add")).backgroundColor!=="rgba(0, 0, 0, 0)","syntax colors must retain the addition background");
+      const ansiOutput='\\u001b[1;32mPASS\\ncontinued\\u001b[0m plain\\n\\u001b]8;;https://example.com\\u0007link\\u001b]8;;\\u0007';
+      await render(<ToolBlock call={{id:"syntax-ansi",name:"bash",arguments:{command:"echo fixture"}}} state={{status:"done",result:{content:[{type:"text",text:ansiOutput}]}}} live={false}/>);
+      await until(()=>document.querySelector(".tool-term-output .syntax-token"),"shell ANSI output must eventually use colored tokens");
+      check(document.querySelector(".tool-term-output").textContent==='PASS\\ncontinued plain\\nlink' && document.querySelector(".tool-peek").textContent==='continued plain\\nlink' && !document.querySelector(".tool-term-output a"),"ANSI controls must not leak into shell text or create links");
+      await render(<CodeText text="old source" language="python"/>);
+      await render(<CodeText text="print(42)" language="python"/>);
+      await until(()=>document.querySelector(".syntax-token"),"a changed source must eventually highlight");
+      check(document.getElementById("root").textContent==="print(42)","an older asynchronous highlight must not overwrite new source");
+      await render(<CodeText text="plain replacement" language="unknown"/>);
+      check(document.getElementById("root").textContent==="plain replacement" && !document.querySelector(".syntax-token"),"changing to an unsupported language must immediately discard old tokens");
+      metrics.syntaxHighlighting=true;
       const calls=Array.from({length:500},(_,i)=>({id:"call"+i,name:"read",arguments:{path:"file"+i}}));
       await render(<ToolGroup calls={calls} tools={{}} live={false}/>);
       check(!visible(document.querySelector(".tool-group-body")),"exploration group must start collapsed");
@@ -176,6 +200,7 @@ test.skipIf(!existsSync(edge))(
       check(parses===before+1 && document.querySelector("h1")?.textContent==="token 99","streaming must publish the latest sample once per interval");
       const final=["| A | B |","| - | - |","| 1 | 2 |","","[go][ref]","","[ref]: https://example.com","","\u0060\u0060\u0060ts","const x=1","\u0060\u0060\u0060","","$x^2$"].join("\\n");
       await render(<Markdown text={final}/>);
+      await until(()=>document.querySelector("pre code.language-ts .syntax-token"),"Markdown code fences must eventually highlight");
       const complete=document.getElementById("root").innerHTML;
       const comparison=document.createElement("div");document.body.append(comparison);
       const other=createRoot(comparison);flushSync(()=>other.render(<BuiltinMarkdown data={{text:final}} DefaultRenderer={()=>null}/>));
@@ -283,6 +308,76 @@ test.skipIf(!existsSync(edge))(
       await click(popup.querySelector('[role="option"]'));check(editor.value==="/hello abcd","confirmed current suggestion must still work: "+JSON.stringify({value:editor.value,start:editor.selectionStart,end:editor.selectionEnd,queries:completions.map(read=>read.argumentPrefix),popup:popup.textContent,busy:popup.getAttribute("aria-busy")}));
       await type(editor,"/other a");await wait();check(!document.querySelector(".slash-options"),"another command must not inherit the previous command's suggestions");
       await render(<div/>);
+      metrics.stage="composer-keys";
+      window.__sendModes=[];
+      drafts.edit(composerSnapshot.address,content=>({...content,text:"message"}));
+      await render(<div className="chat-shell" style={{height:350}}><Composer snapshot={{...composerSnapshot,modelCatalog:[{provider:"fixture",id:"fixture",name:"Fixture",input:["text"]}]}}/></div>);
+      const keyEditor=document.querySelector("textarea");keyEditor.focus();
+      const press=async(key,modifiers={})=>{const event=new KeyboardEvent("keydown",{key,bubbles:true,cancelable:true,...modifiers});keyEditor.dispatchEvent(event);await wait();return event;};
+      await press("Enter");await press("Enter",{shiftKey:true});await press("Enter",{ctrlKey:true});
+      check(JSON.stringify(window.__sendModes)==='["steer","followUp","steer"]',"Enter / Shift+Enter / Ctrl+Enter must distinguish send, queue and steering");
+      await press("Enter",{isComposing:true});await press("Enter",{keyCode:229});await press("Enter",{repeat:true});
+      check(window.__sendModes.length===3,"IME confirmation and key-repeat must never send messages");
+      keyEditor.setSelectionRange(3,3);await press("Enter",{altKey:true});
+      check(keyEditor.value==="mes\\nsage" && keyEditor.selectionStart===4,"configured newline must insert at the caret without sending");
+      flushSync(()=>useStore.setState(state=>({settings:{...state.settings,keybindings:{"composer.send":"Ctrl+S","composer.newline":"Enter"}}})));await wait();
+      await press("Enter");check(window.__sendModes.length===3,"rebinding Enter to newline must remove its hardcoded send behavior");
+      await press("s",{ctrlKey:true});check(window.__sendModes.length===4 && window.__sendModes[3]==="steer","custom send binding must work in the real composer");
+      check(document.querySelector(".composer-key-hints").textContent.includes("Ctrl+S"),"hints must show configured keys");
+      flushSync(()=>useStore.setState(state=>({settings:{...state.settings,keybindings:{}}})));
+      const queueActions=[];
+      const queueContent={text:"A quiet follow-up",pastes:[],images:[]};
+      await render(<div style={{width:340}}><MessageQueue items={[{id:"one",content:queueContent},{id:"two",content:{...queueContent,text:"Another message"}}]} onEdit={id=>queueActions.push("edit:"+id)} onDelete={id=>queueActions.push("delete:"+id)}/></div>);
+      check(document.querySelectorAll(".message-queue li").length===2 && document.querySelector(".message-queue").scrollWidth<=340,"queue rows must fit a narrow composer without horizontal overflow");
+      await click(document.querySelector('.message-queue button[aria-label="Edit queued message in composer"]'));
+      await click(document.querySelector('.message-queue button[aria-label="Delete queued message"]'));
+      check(JSON.stringify(queueActions)==='["edit:one","delete:one"]',"queue edit/delete controls must target the correct message");
+      await click(document.querySelector(".message-queue summary"));check(!document.querySelector(".message-queue").open,"queue must collapse to its compact summary");
+      metrics.composerKeys=true;await render(<div/>);
+      metrics.stage="annotations";
+      flushSync(()=>useStore.setState(state=>({settings:{...state.settings,language:"ja"}})));
+      function AnnotationFixture(){
+        const [items,setItems]=useState([]);
+        return <><article className="message assistant"><p>Repeated passage</p><p>Repeated passage</p></article>
+          <AnnotationPopover onAdd={(annotation,range)=>{const id=crypto.randomUUID();rememberAnnotationRange(id,range);setItems(items=>[...items,{id,...annotation}]);}}/>
+          <AnnotationDrafts annotations={items} onRemove={id=>setItems(items=>items.filter(item=>item.id!==id))}/></>;
+      }
+      await render(<AnnotationFixture/>);
+      const paragraphs=document.querySelectorAll("article.message.assistant p");
+      const selectPassage=async index=>{
+        const range=document.createRange();range.selectNodeContents(paragraphs[index]);
+        getSelection().removeAllRanges();getSelection().addRange(range);
+        await until(()=>document.querySelector(".annotation-popover > button"),"selection must show annotation trigger");
+      };
+      await selectPassage(1);
+      check(document.querySelector(".annotation-popover > button").textContent==="注釈をつける","annotation trigger must have the requested label");
+      await click(document.querySelector(".annotation-popover > button"));
+      check(!CSS.highlights.has("pig-annotation-saved"),"editing alone must not leave a saved annotation mark");
+      await type(document.querySelector(".annotation-popover textarea"),"Second occurrence only");
+      await click(document.querySelector('.annotation-popover button[type="submit"]'));
+      await until(()=>CSS.highlights.has("pig-annotation-saved"),"adding a comment must leave a source highlight");
+      const savedRange=[...CSS.highlights.get("pig-annotation-saved")][0];
+      check(savedRange.toString()==="Repeated passage" && paragraphs[1].contains(savedRange.startContainer),"the mark must use the exact selected occurrence, not the first matching text");
+      check(getComputedStyle(paragraphs[1],"::highlight(pig-annotation-saved)").backgroundColor!==getComputedStyle(paragraphs[1],"::selection").backgroundColor,"annotation markers must differ from selection blue");
+      const firstCard=document.querySelector(".composer-annotations li");
+      firstCard.dispatchEvent(new MouseEvent("mouseenter"));
+      check(CSS.highlights.get("pig-annotation-active")?.has(savedRange),"hovering a card must emphasize its source");
+      firstCard.dispatchEvent(new MouseEvent("mouseleave"));
+      check(!CSS.highlights.has("pig-annotation-active"),"leaving a card must soften its source");
+      getSelection().removeAllRanges();
+      const sourceRect=savedRange.getClientRects()[0];
+      paragraphs[1].dispatchEvent(new MouseEvent("click",{bubbles:true,clientX:sourceRect.left+2,clientY:sourceRect.top+2}));
+      check(document.activeElement===firstCard && CSS.highlights.has("pig-annotation-active"),"clicking marked text must focus the corresponding card and emphasize its source");
+      await selectPassage(0);
+      await click(document.querySelector(".annotation-popover > button"));
+      await click(document.querySelector('.annotation-popover button[type="submit"]'));
+      check(CSS.highlights.get("pig-annotation-saved")?.size===2,"multiple annotations must retain independent source marks");
+      await click(document.querySelector(".annotation-remove"));
+      check(CSS.highlights.get("pig-annotation-saved")?.size===1 && !CSS.highlights.has("pig-annotation-active"),"removing a card must clear only its mark and active state");
+      await render(<div/>);
+      check(!CSS.highlights.has("pig-annotation-saved") && !CSS.highlights.has("pig-annotation-active"),"leaving the draft must clean up all source marks");
+      flushSync(()=>useStore.setState(state=>({settings:{...state.settings,language:"en"}})));
+      metrics.annotations=true;
       metrics.stage="terminal";
       const owner={hostId:"terminal-stability",sessionId:"terminal-stability",epoch:1};const terminalCommands=[];window.__requests={terminalCommand:command=>{terminalCommands.push(command);return {};}};
       const terminalRequest={...owner,uiId:"pending",kind:"terminal",title:"Fixture terminal"};
@@ -334,8 +429,8 @@ test.skipIf(!existsSync(edge))(
             if(method==="syncDraft")return {applied:true,draft:{...params.content,revision:params.expectedRevision+1}};
             return {};
           }}),send:new Proxy({},{get:()=>noop})};
-          export const sends={subscribe:()=>noop,getTick:()=>0,read:()=>undefined,optimistic:()=>[],retained:()=>[],send:async()=>{window.__sendCount=(window.__sendCount??0)+1;}};
-          export const updateAppearance=noop,updateSettings=noop,updateUiPreferences=noop,refreshSessions=noop,refresh=()=>window.__refresh?.()??Promise.resolve(),requestSelection=(_address,request)=>request(),connectRuntime=noop,initRuntimeConnection=noop,cancelOpening=noop,openChat=noop,openChatLink=noop,forkChat=noop,regenerate=noop,initSessionLinks=noop,initSessionReadTracking=noop,reconnectRuntime=noop;
+          export const sends={subscribe:()=>noop,getTick:()=>0,read:()=>undefined,optimistic:()=>[],queued:()=>[],retained:()=>[],send:async(_address,_content,_attachments,delivery)=>{window.__sendCount=(window.__sendCount??0)+1;window.__sendModes?.push(delivery);}};
+          export const updateAppearance=noop,updateSettings=noop,updateUiPreferences=noop,refreshSessions=noop,refresh=()=>window.__refresh?.()??Promise.resolve(),requestSelection=(_address,request)=>request(),connectRuntime=noop,initRuntimeConnection=noop,cancelOpening=noop,openChat=noop,showPendingOpen=noop,openChatLink=noop,forkChat=noop,regenerate=noop,initSessionLinks=noop,initSessionReadTracking=noop,reconnectRuntime=noop;
         `,
               }));
             },
@@ -539,12 +634,9 @@ test.skipIf(!existsSync(edge))(
           });
         } catch (error) {
           // Edge's Windows profile writers can outlive the browser process; don't mask UI results.
-          if (
-            !["EBUSY", "ENOTEMPTY"].includes(
-              (error as NodeJS.ErrnoException).code ?? "",
-            )
-          )
-            throw error;
+          expect(["EBUSY", "ENOTEMPTY"], String(error)).toContain(
+            (error as NodeJS.ErrnoException).code ?? "",
+          );
           console.warn("Windows still holds the temporary Edge profile:", dir);
         }
       } else console.error("Failed Edge fixture retained at", dir);

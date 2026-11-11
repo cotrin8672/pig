@@ -41,6 +41,7 @@ if (process.env.PIG_CHAT_OPENING_CHILD !== "1") {
       optimistic: () => [],
     },
     openChat: async () => {},
+    showPendingOpen: () => {},
     openChatLink: async () => {},
     forkChat: async () => {},
     regenerate: async () => {},
@@ -216,6 +217,50 @@ if (process.env.PIG_CHAT_OPENING_CHILD !== "1") {
       );
     } finally {
       Object.assign(state, previous);
+    }
+  });
+
+  test("extension notices render between chat records, outside persisted transcript messages", async () => {
+    const { Chat } = await import("./App");
+    const { addressKey } = await import("./chat-snapshot");
+    const { appendExtensionNotice } = await import("./extension-notices");
+    const state = useStore.getInitialState();
+    const previous = state.extensionNotices;
+    const records = ["before notice", "after notice"].map((content, order) => ({
+      id: `notice-test-${order}`,
+      order,
+      parentId: null,
+      branchId: "main",
+      kind: "message" as const,
+      message: { role: "user" as const, content, timestamp: order },
+    }));
+    const transcript = { ...emptyTranscript(), records };
+    state.extensionNotices = {
+      [addressKey(snapshot.address)]: appendExtensionNotice(
+        [],
+        {
+          type: "notify",
+          address: snapshot.address,
+          level: "warning",
+          message: "inline warning",
+        },
+        { ...transcript, records: records.slice(0, 1) },
+      ),
+    };
+    try {
+      const html = renderToStaticMarkup(
+        <Chat snapshot={{ ...snapshot, transcript }} />,
+      );
+      expect(html).toContain('class="extension-notice warning"');
+      expect(html.indexOf("before notice")).toBeLessThan(
+        html.indexOf("inline warning"),
+      );
+      expect(html.indexOf("inline warning")).toBeLessThan(
+        html.indexOf("after notice"),
+      );
+      expect(html.match(/class="message user"/g)).toHaveLength(2);
+    } finally {
+      state.extensionNotices = previous;
     }
   });
 

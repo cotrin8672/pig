@@ -13,10 +13,16 @@ import type {
   PackageOpStatus,
   SessionInfo,
 } from "../shared/rpc-schema";
-import type { DraftContent, SessionAddress } from "../shared/runtime-contract";
+import type {
+  DraftContent,
+  PromptDelivery,
+  SessionAddress,
+} from "../shared/runtime-contract";
 import { defaultSettings, type Settings } from "../shared/settings";
 import type { TerminalOpenEvent } from "../shared/terminal-ui";
+import type { Message } from "../shared/transcript";
 import type { ChatSnapshot } from "./chat-snapshot";
+import type { ExtensionNotice } from "./extension-notices";
 import {
   loadNoticeHistory,
   NOTICE_HISTORY_KEY,
@@ -24,7 +30,10 @@ import {
   type NoticeRecord,
 } from "./notification-history";
 import { isViewedNotice } from "./session-read";
+import { loadSidebarCache, saveSidebarCache } from "./sidebar-cache";
 
+const launchCache = loadSidebarCache();
+let cacheTimer: ReturnType<typeof setTimeout> | undefined;
 export interface LoginState {
   loginId: string;
   provider: string;
@@ -39,9 +48,19 @@ export interface OpeningTarget {
   cwd: string;
   id?: string;
   selection?: ModelSelection;
-  selectionChanged?: boolean;
-  queuedSends?: { id: string; content: DraftContent; timestamp: number }[];
+  /** Sends and selection changes made before startup, replayed in click order. */
+  queued?: OpeningOp[];
 }
+export type OpeningOp = { id: string } & (
+  | {
+      kind: "send";
+      content: DraftContent;
+      timestamp: number;
+      delivery?: PromptDelivery;
+    }
+  | { kind: "select"; selection: ModelSelection }
+);
+type UserMessage = Extract<Message, { role: "user" }>;
 export interface PendingOpen extends OpeningTarget {
   address?: SessionAddress;
   message?: string;
@@ -59,6 +78,7 @@ export const useStore = create<{
   pendingUI: UIRequest[];
   terminals: Record<string, TerminalOpenEvent>;
   extensionStatuses: Record<string, ExtensionStatus>;
+  extensionNotices: Record<string, ExtensionNotice[]>;
   capabilities: Record<string, string[]>;
   openingAddress?: SessionAddress;
   openId?: string;
@@ -67,6 +87,17 @@ export const useStore = create<{
   openingTarget?: OpeningTarget;
   pendingOpens: Record<string, PendingOpen>;
   newChatDrafts: Record<string, string>;
+  /** Chats whose deletion is in flight: hidden now, restored if it fails. */
+  deletingSessions: Record<string, true>;
+  /**
+   * Resends in flight by chat: the transcript is shown cut at the rewound
+   * entry, with the new message pending, until the host's rewind lands.
+   */
+  rewinds: Record<
+    string,
+    | { kind: "resend"; entryId: string; user: UserMessage }
+    | { kind: "fork"; entryId: string }
+  >;
   installed: InstalledPackage[];
   packageOps: Record<string, PackageOpStatus>;
   notices: (Notice & { id: string })[];
@@ -77,10 +108,12 @@ export const useStore = create<{
   appearance: Appearance;
   settings: Settings;
   maximized: boolean;
+  /** The sidebar shows the previous launch's list until bootstrap answers. */
+  cachedSidebar: boolean;
 }>(() => ({
   bootstrap: {
-    generalCwd: "",
-    projects: [],
+    generalCwd: launchCache?.generalCwd ?? "",
+    projects: launchCache?.projects ?? [],
     providers: [],
     models: [],
     imageModels: [],
@@ -88,22 +121,26 @@ export const useStore = create<{
     classificationProviders: [],
     disabledModels: [],
     modelOverrides: {},
-    desktop: { sessions: {} },
+    desktop: launchCache?.desktop ?? { sessions: {} },
   },
   initialized: false,
+  cachedSidebar: !!launchCache,
   installedLoaded: false,
-  sessions: {},
+  sessions: launchCache?.sessions ?? {},
   snapshots: {},
   addresses: {},
   pendingUI: [],
   terminals: {},
   extensionStatuses: {},
+  extensionNotices: {},
   capabilities: {},
   page: "chat",
   installed: [],
   packageOps: {},
   notices: [],
   newChatDrafts: {},
+  deletingSessions: {},
+  rewinds: {},
   noticeHistory: loadNoticeHistory(),
   opening: false,
   pendingOpens: {},
@@ -111,6 +148,28 @@ export const useStore = create<{
   appearance: defaultAppearance,
   settings: defaultSettings,
 }));
+useStore.subscribe((state, previous) => {
+  if (
+    !state.initialized ||
+    (state.sessions === previous.sessions &&
+      state.bootstrap.projects === previous.bootstrap.projects &&
+      state.bootstrap.desktop === previous.bootstrap.desktop)
+  )
+    return;
+  clearTimeout(cacheTimer);
+  cacheTimer = setTimeout(() => {
+    const { bootstrap, sessions } = useStore.getState();
+    saveSidebarCache({
+      generalCwd: bootstrap.generalCwd,
+      projects: bootstrap.projects,
+      desktop: {
+        sessions: bootstrap.desktop.sessions,
+        projects: bootstrap.desktop.projects,
+      },
+      sessions,
+    });
+  }, 500);
+});
 useStore.subscribe((state, previous) => {
   if (state.noticeHistory === previous.noticeHistory) return;
   try {

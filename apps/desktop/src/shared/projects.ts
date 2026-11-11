@@ -4,6 +4,11 @@ export interface ProjectFlags {
   archived?: boolean;
 }
 
+/** Custom project name, else the folder name. */
+export function projectLabel(cwd: string, flags?: ProjectFlags) {
+  return flags?.name || cwd.split(/[\\/]/).filter(Boolean).pop() || cwd;
+}
+
 export function validateProjectFlags(value: unknown): ProjectFlags {
   if (!value || typeof value !== "object" || Array.isArray(value))
     throw new Error("Invalid project state.");

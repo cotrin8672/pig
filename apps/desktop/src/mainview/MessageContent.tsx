@@ -1,19 +1,30 @@
 import type { ImageContent, TextContent } from "@earendil-works/pi-ai";
 import type { ChatRendererProps } from "@pig/chat-renderers";
 import { Check, Copy, Pencil } from "lucide-react";
-import { memo, useCallback, useEffect, useMemo, useState } from "react";
+import {
+  memo,
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+  useSyncExternalStore,
+} from "react";
 import ReactMarkdown, { defaultUrlTransform } from "react-markdown";
 import rehypeKatex from "rehype-katex";
 import remarkGfm from "remark-gfm";
 import remarkMath from "remark-math";
+import { parseAnnotations, withAnnotations } from "../shared/annotations";
 import { normalizeMath } from "../shared/math";
 import { sessionIdFromLink } from "../shared/session-links";
 import type { Message } from "../shared/transcript";
 import { editUserMessage } from "../shared/user-message";
+import { AnnotationCard } from "./AnnotationCards";
 import { ChatContent } from "./ChatContent";
 import { dataText } from "./custom-data";
+import { CodeText } from "./HighlightedCode";
 import { ImageGallery } from "./ImageGallery";
 import { useT } from "./i18n";
+import { editKey, messageEdits } from "./message-edits";
 import { openChatLink, regenerate, rpc } from "./rpc";
 import { showError } from "./store";
 import { createTextSampler } from "./streaming-text";
@@ -56,6 +67,18 @@ export function BuiltinMarkdown({
         sessionIdFromLink(url) ? url : defaultUrlTransform(url)
       }
       components={{
+        code: ({ className, children }) => (
+          <code className={className}>
+            {typeof children === "string" ? (
+              <CodeText
+                text={children}
+                language={/(?:^|\s)language-(\S+)/.exec(className ?? "")?.[1]}
+              />
+            ) : (
+              children
+            )}
+          </code>
+        ),
         a: ({ href, children }) => (
           <a
             href={href}
@@ -113,42 +136,59 @@ export const UserMessage = memo(function UserMessage({
 }) {
   const { content } = message;
   const t = useT();
-  const [editing, setEditing] = useState(false);
-  const [draft, setDraft] = useState("");
-  const [busy, setBusy] = useState(false);
+  const key = entryId ? editKey(sessionId, entryId) : "";
+  const readEdit = () => (key ? messageEdits.read(key) : undefined);
+  const edit = useSyncExternalStore(messageEdits.subscribe, readEdit, readEdit);
+  const editing = edit?.state === "editing";
+  const draft = edit?.text ?? "";
+  const setDraft = (text: string) =>
+    messageEdits.set(key, { text, state: "editing" });
   const [copied, setCopied] = useState(false);
   const focusEditor = useCallback((element: HTMLTextAreaElement | null) => {
     element?.focus();
   }, []);
   const sources = imageSources(content);
-  const text =
+  const original =
     typeof content === "string"
       ? content
       : content
           .filter((block) => block.type === "text")
           .map((block) => block.text)
           .join("\n");
+  // A resend in progress shows its edited text in place until the rewind lands.
+  const text = edit?.state === "sending" ? edit.text : original;
+  // Editing touches only the body; annotation blocks ride along unchanged.
+  const parsed = parseAnnotations(original);
+  const shown = parseAnnotations(text);
   return (
     <div className="user-turn">
       {sources.length > 0 && <ImageGallery sources={sources} />}
+      {shown.annotations.length > 0 && (
+        <ul className="user-annotations">
+          {shown.annotations.map((annotation, index) => (
+            // biome-ignore lint/suspicious/noArrayIndexKey: annotations are fixed once sent.
+            <AnnotationCard key={index} {...annotation} />
+          ))}
+        </ul>
+      )}
       {editing ? (
         <form
           className="user-edit user-bubble"
-          aria-busy={busy || undefined}
           onSubmit={(event) => {
             event.preventDefault();
-            if (
-              !entryId ||
-              disabled ||
-              busy ||
-              (!draft.trim() && !sources.length)
-            )
+            if (!entryId || disabled || (!draft.trim() && !sources.length))
               return;
-            setBusy(true);
-            void regenerate(sessionId, editUserMessage(message, draft), entryId)
-              .then(() => setEditing(false))
-              .catch(showError)
-              .finally(() => setBusy(false));
+            const text = withAnnotations(draft, parsed.annotations);
+            messageEdits.set(key, { text, state: "sending" });
+            void regenerate(sessionId, editUserMessage(message, text), entryId)
+              .then(() => {
+                if (messageEdits.read(key)?.state === "sending")
+                  messageEdits.set(key, undefined);
+              })
+              .catch((error) => {
+                messageEdits.set(key, { text: draft, state: "editing" });
+                showError(error);
+              });
           }}
         >
           <textarea
@@ -156,24 +196,26 @@ export const UserMessage = memo(function UserMessage({
             value={draft}
             ref={focusEditor}
             onChange={(event) => setDraft(event.target.value)}
-            disabled={busy}
             rows={Math.min(12, Math.max(3, draft.split("\n").length))}
           />
           <div className="user-edit-actions">
-            <button type="button" onClick={() => setEditing(false)}>
+            <button
+              type="button"
+              onClick={() => messageEdits.set(key, undefined)}
+            >
               {t.Cancel}
             </button>
             <button
               type="submit"
               className="primary"
-              disabled={disabled || busy || (!draft.trim() && !sources.length)}
+              disabled={disabled || (!draft.trim() && !sources.length)}
             >
               {t["Save and resend"]}
             </button>
           </div>
         </form>
       ) : (
-        text && <div className="user-bubble">{text}</div>
+        shown.body && <div className="user-bubble">{shown.body}</div>
       )}
       <div className="response-actions user-actions">
         <time dateTime={new Date(message.timestamp).toISOString()}>
@@ -199,11 +241,8 @@ export const UserMessage = memo(function UserMessage({
           type="button"
           title={t["Edit message"]}
           aria-label={t["Edit message"]}
-          disabled={!entryId || disabled || busy || editing}
-          onClick={() => {
-            setDraft(text);
-            setEditing(true);
-          }}
+          disabled={!entryId || disabled || !!edit}
+          onClick={() => setDraft(parsed.body)}
         >
           <Pencil size={14} />
         </button>

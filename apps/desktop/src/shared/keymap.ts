@@ -3,6 +3,10 @@ export const defaultBindings = {
   "navigation.back": "Alt+ArrowLeft",
   "navigation.forward": "Alt+ArrowRight",
   "settings.open": "Ctrl+,",
+  "composer.send": "Enter",
+  "composer.queue": "Shift+Enter",
+  "composer.steer": "Ctrl+Enter",
+  "composer.newline": "Alt+Enter",
 } as const;
 export type ActionId = keyof typeof defaultBindings;
 export const actionIds = Object.keys(defaultBindings) as ActionId[];
@@ -75,6 +79,19 @@ export function matchesCombo(event: KeyEvent, combo: string | null): boolean {
     comboFromEvent(event) === normalizeCombo(combo)
   );
 }
+export const composerActions = [
+  "composer.send",
+  "composer.queue",
+  "composer.steer",
+  "composer.newline",
+] as const;
+export function composerAction(event: KeyEvent, overrides: KeyOverrides) {
+  const bindings = resolveBindings(overrides);
+  return composerActions.find((action) =>
+    matchesCombo(event, bindings[action]),
+  );
+}
+
 export function resolveBindings(overrides: KeyOverrides) {
   // Future bun-side TS config (Neovim-like): defaults → TS config → UI overrides.
   return { ...defaultBindings, ...overrides } as Record<

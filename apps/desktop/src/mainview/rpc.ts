@@ -31,8 +31,8 @@ import { OpenController } from "./open-controller";
 import { mergeOpeningText } from "./opening-draft";
 import {
   openingDraftKey,
-  removeOpeningSend,
   restoreOpeningSends,
+  takeOpeningOps,
 } from "./opening-sends";
 import {
   liveAddress,
@@ -47,6 +47,7 @@ import {
 } from "./runtime-events";
 import { changeSelection, selections } from "./selections";
 import { SendController } from "./send-controller";
+import { lane } from "./session-lane";
 import { visibleCompletion } from "./session-read";
 import {
   readViewedNotices,
@@ -56,9 +57,15 @@ import {
   useStore,
 } from "./store";
 import {
+  markRead,
+  overlayDefaultEffort,
   overlayDesktop,
+  overlayModelOverrides,
   overlayModelVisibility,
+  overlayProjects,
   overlaySessionInfo,
+  publishProvider,
+  settleRead,
 } from "./ui-mutations";
 
 // Root event handlers below are installed before any session-opening RPC.
@@ -201,8 +208,11 @@ export const rpc = Electroview.defineRPC<RPCSchema>({
       windowState: ({ maximized }) => useStore.setState({ maximized }),
       appearanceError: ({ message }) => showError(message),
       projects: (projects) => {
-        useStore.setState((s) => ({ bootstrap: { ...s.bootstrap, projects } }));
-        void refresh().catch(showError);
+        useStore.setState((s) => ({
+          bootstrap: { ...s.bootstrap, projects: overlayProjects(projects) },
+        }));
+        // Only the project list changed; its chats are all that needs loading.
+        void refreshSessions().catch(showError);
       },
       error: ({ message }) => showError(message),
       notification: showNotice,
@@ -261,6 +271,9 @@ export const rpc = Electroview.defineRPC<RPCSchema>({
             login: { ...login, error: frame.message, prompt: undefined },
           });
         if (frame.kind === "success" || frame.kind === "cancelled") {
+          // Connected now; models arrive with the refresh below.
+          if (frame.kind === "success")
+            publishProvider(frame.provider, { configured: true, stored: true });
           useStore.setState({ login: undefined });
           void refresh().catch(showError);
         }
@@ -363,6 +376,9 @@ export async function refresh() {
       .then(receiveSnapshot)
       .catch(showError);
   bootstrap.disabledModels = overlayModelVisibility(bootstrap.disabledModels);
+  bootstrap.projects = overlayProjects(bootstrap.projects);
+  bootstrap.modelOverrides = overlayModelOverrides(bootstrap.modelOverrides);
+  bootstrap.models = bootstrap.models.map(overlayDefaultEffort);
   bootstrap.desktop = overlayDesktop(bootstrap.desktop);
   useStore.setState((s) => ({
     initialized: true,
@@ -391,21 +407,22 @@ export const sends = new SendController(
   drafts,
   {
     syncDraft: (params) => rpc.request.syncDraft(params),
-    prompt: async (params) => {
-      await selections.flush(params);
-      return rpc.request.prompt(params);
-    },
+    // Issued synchronously: the host orders it against earlier selection changes.
+    prompt: (params) => rpc.request.prompt(params),
     getPromptReceipt: (params) => rpc.request.getPromptReceipt(params),
+    cancelPrompt: (params) => rpc.request.cancelPrompt(params),
   },
   undefined,
   undefined,
   showError,
+  (address, step) => lane.enqueue(address, step),
 );
 const selectionTransfers = new Map<
   string,
   { address: SessionAddress; desired: ModelSelection }
 >();
 subscribeOwnership((previous, next) => {
+  lane.move(previous, next);
   sends.transfer(previous, next);
   const desired =
     selections.take(previous) ??
@@ -607,6 +624,10 @@ function showOpening(openId: string, push: boolean) {
     openingViewRevision: navigationRevision,
   });
 }
+/** Selects a chat that is still starting, e.g. from its placeholder row. */
+export function showPendingOpen(openId: string) {
+  if (!opens.isCancelled(openId)) showOpening(openId, true);
+}
 function ownsOpeningView(openId: string, revision: number) {
   const state = useStore.getState();
   return (
@@ -735,18 +756,46 @@ function currentAddress(sessionId: string): SessionAddress {
     throw new Error("Session is no longer open");
   return address;
 }
+type Rewind = ReturnType<typeof useStore.getState>["rewinds"][string];
+/** Shows the transcript as it will be after a rewind or branch, until it lands. */
+function beginRewind(sessionId: string, rewind: Rewind) {
+  if (useStore.getState().rewinds[sessionId])
+    throw new Error("This chat is already changing");
+  useStore.setState((s) => ({
+    rewinds: { ...s.rewinds, [sessionId]: rewind },
+  }));
+  return () =>
+    useStore.setState((s) => {
+      const rewinds = { ...s.rewinds };
+      delete rewinds[sessionId];
+      return { rewinds };
+    });
+}
 export async function forkChat(sessionId: string, entryId: string) {
   const previous = currentAddress(sessionId);
   const revision = navigationRevision;
-  await sends.wait(previous);
-  await selections.flush(previous);
-  await rpc.request.abort(previous);
-  const load = async () => {
+  // The branch keeps this chat's view; it never blanks into a loading screen.
+  const settle = beginRewind(sessionId, { kind: "fork", entryId });
+  try {
+    await sends.wait(previous);
+    await selections.flush(previous);
+    await rpc.request.abort(previous);
     const snapshot = await rpc.request.forkSession({ ...previous, entryId });
+    if (!liveAddress(snapshot.address))
+      throw new Error("The branch response belongs to a replaced session");
     receiveRuntime({ type: "replaced", previous, snapshot });
-    return snapshot;
-  };
-  return revision === navigationRevision ? openSnapshot(load) : load();
+    const state = useStore.getState();
+    if (
+      revision === navigationRevision &&
+      state.page === "chat" &&
+      state.active === snapshot.info.id
+    )
+      navigate("chat", snapshot.info.id);
+    void refreshSessions(snapshot.info.cwd).catch(showError);
+    return useStore.getState().snapshots[snapshot.info.id];
+  } finally {
+    settle();
+  }
 }
 /** Rewind by exact persisted entry identity; timestamps are never identities. */
 export async function regenerate(
@@ -755,34 +804,43 @@ export async function regenerate(
   entryId: string,
 ) {
   const previous = currentAddress(sessionId);
-  await sends.wait(previous);
-  await selections.flush(previous);
-  await rpc.request.abort(previous);
-  const snapshot = await rpc.request.rewindSession({
-    ...previous,
-    entryId,
-  });
-  if (!liveAddress(snapshot.address))
-    throw new Error("The rewind response belongs to a replaced session");
-  sends.discard(previous);
-  receiveRuntime({ type: "replaced", previous, snapshot });
-  const state = useStore.getState();
-  if (state.page === "chat" && state.active === sessionId)
-    navigate("chat", snapshot.info.id);
-  const blocks =
-    typeof user.content === "string"
-      ? [{ type: "text" as const, text: user.content }]
-      : user.content;
-  await sends.send(snapshot.address, {
-    text: blocks
-      .filter((b) => b.type === "text")
-      .map((b) => b.text)
-      .join("\n"),
-    pastes: [],
-    images: blocks
-      .filter((b) => b.type === "image")
-      .map((image) => ({ id: crypto.randomUUID(), image })),
-  });
+  // Display only: the persisted transcript changes when the rewind lands.
+  const settle = beginRewind(sessionId, { kind: "resend", entryId, user });
+  let sending: Promise<void> | undefined;
+  try {
+    await sends.wait(previous);
+    await selections.flush(previous);
+    await rpc.request.abort(previous);
+    const snapshot = await rpc.request.rewindSession({
+      ...previous,
+      entryId,
+    });
+    if (!liveAddress(snapshot.address))
+      throw new Error("The rewind response belongs to a replaced session");
+    sends.discard(previous);
+    receiveRuntime({ type: "replaced", previous, snapshot });
+    const state = useStore.getState();
+    if (state.page === "chat" && state.active === sessionId)
+      navigate("chat", snapshot.info.id);
+    const blocks =
+      typeof user.content === "string"
+        ? [{ type: "text" as const, text: user.content }]
+        : user.content;
+    // The optimistic send takes over from the placeholder without a gap.
+    sending = sends.send(snapshot.address, {
+      text: blocks
+        .filter((b) => b.type === "text")
+        .map((b) => b.text)
+        .join("\n"),
+      pastes: [],
+      images: blocks
+        .filter((b) => b.type === "image")
+        .map((image) => ({ id: crypto.randomUUID(), image })),
+    });
+  } finally {
+    settle();
+  }
+  await sending;
 }
 async function openSnapshot(
   load: () => Promise<Snapshot | undefined>,
@@ -851,33 +909,23 @@ async function openSnapshot(
       transferred = { cwd: draftKey, text };
     }
     receiveSnapshot(snapshot);
-    while (useStore.getState().pendingOpens[openId]?.selectionChanged) {
-      const selected = useStore.getState().pendingOpens[openId];
-      const desired = selected.selection;
-      useStore.setState((state) => ({
-        pendingOpens: {
-          ...state.pendingOpens,
-          [openId]: { ...state.pendingOpens[openId], selectionChanged: false },
-        },
-      }));
-      const model = desired?.model;
-      if (model && desired)
-        await changeSelection(snapshot.address, desired, () =>
-          requestSelection(snapshot.address, () =>
-            applySelection(snapshot.address, desired),
-          ),
-        );
-    }
-    while (useStore.getState().pendingOpens[openId]?.queuedSends?.length) {
-      const queued = useStore.getState().pendingOpens[openId].queuedSends?.[0];
-      if (!queued) break;
-      removeOpeningSend(openId, queued.id);
-      try {
-        await sends.send(snapshot.address, queued.content);
-      } catch (error) {
-        drafts.restoreSent(snapshot.address, queued.content);
-        throw error;
-      }
+    // Each call enqueues synchronously, so the session lane keeps click order.
+    for (const op of takeOpeningOps(openId)) {
+      if (op.kind === "select") {
+        const desired = op.selection;
+        if (desired.model)
+          void changeSelection(snapshot.address, desired, () =>
+            requestSelection(snapshot.address, () =>
+              applySelection(snapshot.address, desired),
+            ),
+          );
+      } else
+        void sends
+          .send(snapshot.address, op.content, undefined, op.delivery)
+          .catch((error) => {
+            drafts.restoreSent(snapshot.address, op.content);
+            showError(error);
+          });
     }
     // Recovery bytes are available only after this project's Trust/startup completed.
     void Promise.resolve()
@@ -963,8 +1011,14 @@ export function initSessionReadTracking() {
     );
     if (!target || attempted.get(target.id) === target.completionId) return;
     attempted.set(target.id, target.completionId);
-    // The pushed desktopState is authoritative; an older RPC reply must not overwrite it.
-    void rpc.request.markSessionRead(target).catch(showError);
+    // Clear the dot now. The pushed desktopState is authoritative; an older RPC
+    // reply must not overwrite it, and a refused mark reloads the real state.
+    markRead(target.id, target.completionId);
+    void rpc.request.markSessionRead(target).catch((error) => {
+      settleRead(target.id, target.completionId);
+      showError(error);
+      void refresh().catch(showError);
+    });
   };
   const schedule = () => {
     if (!frame) frame = requestAnimationFrame(check);

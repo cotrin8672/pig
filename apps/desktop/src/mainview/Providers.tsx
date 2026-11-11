@@ -12,6 +12,7 @@ import {
   ClassificationSettings,
   ImageModelSettings,
 } from "./UtilityModelSettings";
+import { publishProvider } from "./ui-mutations";
 
 const filters = ["all", "connected", "oauth", "api_key", "extension"] as const;
 type Filter = (typeof filters)[number];
@@ -254,8 +255,17 @@ export function ProviderDetail({
                   useStore.setState({ login: undefined });
                 }
                 setLoggingOut(true);
+                // Show signed out now; an env or file credential may still
+                // connect it, which the refresh reports.
+                const ambient =
+                  !!p.source && p.source !== "stored" && p.source !== "runtime";
+                publishProvider(p.id, {
+                  stored: false,
+                  configured: ambient && p.configured,
+                });
                 void rpc.request
                   .logout({ provider: p.id })
+                  .catch(showError)
                   .then(refresh)
                   .catch(showError)
                   .finally(() => setLoggingOut(false));

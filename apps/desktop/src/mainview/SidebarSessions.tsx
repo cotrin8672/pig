@@ -1,9 +1,10 @@
 import { Archive, ChevronRight, Folder, Pin, Plus } from "lucide-react";
-import { memo, useId, useState } from "react";
+import { memo, useEffect, useId, useState } from "react";
 import { useShallow } from "zustand/react/shallow";
 import { visibleProjects } from "../shared/projects";
+import { InlineRename } from "./InlineRename";
 import { useT } from "./i18n";
-import { ProjectMenu } from "./ProjectMenu";
+import { ProjectMenu, renameProject } from "./ProjectMenu";
 import { openChat, rpc } from "./rpc";
 import { SessionList } from "./SessionList";
 import { type SessionStatus, sessionStatusLabels } from "./session-status";
@@ -91,7 +92,13 @@ function ProjectSessions({ cwd, needle }: { cwd: string; needle: string }) {
   const projectFlags = useStore((s) => s.bootstrap.desktop.projects?.[cwd]);
   const displayName = projectFlags?.name || basename(cwd);
   const [opened, setExpanded] = useState(true);
-  const expanded = opened || !!needle;
+  // Search opens every match; collapsing during search is separate and resets with it.
+  const [searchCollapsed, setSearchCollapsed] = useState(false);
+  useEffect(() => {
+    if (!needle) setSearchCollapsed(false);
+  }, [needle]);
+  const expanded = needle ? !searchCollapsed : opened;
+  const [renaming, setRenaming] = useState(false);
   const sessions = useStore((s) => (needle ? s.sessions[cwd] : undefined));
   const listId = useId();
   const activity = useStore(useShallow((s) => selectProjectActivity(s, cwd)));
@@ -110,26 +117,38 @@ function ProjectSessions({ cwd, needle }: { cwd: string; needle: string }) {
   return (
     <section className="project">
       <div className="project-heading">
-        <button
-          className="project-toggle"
-          type="button"
-          aria-expanded={expanded}
-          disabled={!!needle}
-          aria-controls={listId}
-          title={cwd}
-          onClick={() => setExpanded(!expanded)}
-        >
-          <ChevronRight
-            className="project-chevron"
-            size={12}
-            aria-hidden="true"
+        {renaming ? (
+          <InlineRename
+            value={projectFlags?.name ?? ""}
+            label={t["Project name"]}
+            placeholder={basename(cwd)}
+            allowEmpty
+            onCommit={(name) => renameProject(cwd, name)}
+            onDone={() => setRenaming(false)}
           />
-          <Folder size={13} aria-hidden="true" />
-          <span className="project-name">{displayName}</span>
-          {projectFlags?.pinned && (
-            <Pin size={11} aria-label={t["Pin project"]} />
-          )}
-        </button>
+        ) : (
+          <button
+            className="project-toggle"
+            type="button"
+            aria-expanded={expanded}
+            aria-controls={listId}
+            title={cwd}
+            onClick={() =>
+              needle ? setSearchCollapsed(expanded) : setExpanded(!expanded)
+            }
+          >
+            <ChevronRight
+              className="project-chevron"
+              size={12}
+              aria-hidden="true"
+            />
+            <Folder size={13} aria-hidden="true" />
+            <span className="project-name">{displayName}</span>
+            {projectFlags?.pinned && (
+              <Pin size={11} aria-label={t["Pin project"]} />
+            )}
+          </button>
+        )}
         {leading && (
           <span
             className="project-activity"
@@ -156,12 +175,17 @@ function ProjectSessions({ cwd, needle }: { cwd: string; needle: string }) {
             aria-label={t.newChatIn(displayName)}
             onClick={() => {
               setExpanded(true);
+              setSearchCollapsed(false);
               void openChat(cwd);
             }}
           >
             <Plus size={13} aria-hidden="true" />
           </button>
-          <ProjectMenu cwd={cwd} displayName={displayName} />
+          <ProjectMenu
+            cwd={cwd}
+            displayName={displayName}
+            onRename={() => setRenaming(true)}
+          />
         </div>
       </div>
       <div id={listId} className="project-threads" hidden={!expanded}>

@@ -1,6 +1,7 @@
 import { expect, test } from "bun:test";
 import {
   comboFromEvent,
+  composerAction,
   defaultBindings,
   matchesCombo,
   normalizeCombo,
@@ -42,6 +43,37 @@ test("overrides preserve defaults, null disables and deletion resets", () => {
   expect(resolveBindings(overrides)["settings.open"]).toBeNull();
   expect(resolveBindings(overrides)["navigation.back"]).toBe("Alt+ArrowLeft");
   expect(resolveBindings({})["settings.open"]).toBe("Ctrl+,");
+});
+
+test("composer defaults distinguish send, queue, steering and newline with exact modifiers", () => {
+  expect(composerAction(event("Enter"), {})).toBe("composer.send");
+  expect(composerAction(event("Enter", { shiftKey: true }), {})).toBe(
+    "composer.queue",
+  );
+  expect(composerAction(event("Enter", { ctrlKey: true }), {})).toBe(
+    "composer.steer",
+  );
+  expect(composerAction(event("Enter", { altKey: true }), {})).toBe(
+    "composer.newline",
+  );
+  expect(composerAction(event("Enter", { metaKey: true }), {})).toBeUndefined();
+  expect(
+    composerAction(event("Enter", { ctrlKey: true, shiftKey: true }), {}),
+  ).toBeUndefined();
+  expect(
+    composerAction(event("Enter"), { "composer.send": null }),
+  ).toBeUndefined();
+  expect(
+    composerAction(event("Enter"), {
+      "composer.send": "Ctrl+S",
+      "composer.newline": "Enter",
+    }),
+  ).toBe("composer.newline");
+  expect(
+    composerAction(event("s", { ctrlKey: true }), {
+      "composer.send": "Ctrl+S",
+    }),
+  ).toBe("composer.send");
 });
 
 test("captured punctuation and whitespace round trip through normalization", () => {

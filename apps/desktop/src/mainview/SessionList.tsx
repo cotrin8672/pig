@@ -7,17 +7,18 @@ import {
   PinOff,
   RotateCcw,
   Trash2,
-  X,
 } from "lucide-react";
-import { memo, useEffect, useId, useRef, useState } from "react";
+import { memo, useState } from "react";
+import { useShallow } from "zustand/react/shallow";
 import type { SessionFlags } from "../shared/desktop-state";
 import type { SessionInfo } from "../shared/rpc-schema";
 import { sessionLink } from "../shared/session-links";
 import { ActionsMenu } from "./ActionsMenu";
 import { ConfirmButton } from "./ConfirmButton";
+import { InlineRename } from "./InlineRename";
 import { useT } from "./i18n";
 import { navigate } from "./navigation";
-import { openChat, refreshSessions, rpc } from "./rpc";
+import { openChat, refreshSessions, rpc, showPendingOpen } from "./rpc";
 import { sessionStatusLabels } from "./session-status";
 import { showError, useStore } from "./store";
 import {
@@ -26,7 +27,12 @@ import {
   updateFlag,
   waitPreferenceWrites,
 } from "./ui-mutations";
-import { selectSessionStatus } from "./ui-selectors";
+import {
+  mergeLiveSessions,
+  selectLiveSessions,
+  selectSessionStatus,
+  selectStartingChats,
+} from "./ui-selectors";
 
 export const SessionList = memo(function SessionList({
   cwd,
@@ -38,10 +44,26 @@ export const SessionList = memo(function SessionList({
   needle?: string;
 }) {
   const t = useT();
-  const sessions = useStore((s) => s.sessions[cwd]);
+  const listed = useStore((s) => s.sessions[cwd]);
+  const live = useStore(useShallow((s) => selectLiveSessions(s, cwd)));
+  const deleting = useStore((s) => s.deletingSessions);
+  const starting = useStore(
+    useShallow((s) => selectStartingChats(s, cwd, t["New chat"])),
+  );
   const desktop = useStore((s) => s.bootstrap.desktop);
   const [archived, setArchived] = useState(false);
   if (!expanded) return null;
+  const sessions = mergeLiveSessions(cwd, listed, live, deleting);
+  const startingRows: { openId: string; title: string }[] = [];
+  for (let index = 0; index < starting.length; index += 3) {
+    const sessionId = starting[index + 2];
+    // Once the host lists the session, its real row replaces the placeholder.
+    if (sessionId && sessions.some((session) => session.id === sessionId))
+      continue;
+    const title = starting[index + 1];
+    if (!archived && title.toLowerCase().includes(needle))
+      startingRows.push({ openId: starting[index], title });
+  }
   const archivedCount = (sessions ?? []).filter(
     (session) => desktop.sessions[session.id]?.archived,
   ).length;
@@ -58,7 +80,12 @@ export const SessionList = memo(function SessionList({
     );
   return (
     <>
-      {needle && !visible.length && <span role="status">{t.noMatches}</span>}
+      {needle && !visible.length && !startingRows.length && (
+        <span role="status">{t.noMatches}</span>
+      )}
+      {startingRows.map((row) => (
+        <StartingRow key={row.openId} {...row} />
+      ))}
       {visible.map((session) => (
         <SessionRow key={session.id} session={session} cwd={cwd} />
       ))}
@@ -79,26 +106,39 @@ export const SessionList = memo(function SessionList({
   );
 });
 
+/** A new chat still starting: selectable at once, actions wait for its ID. */
+function StartingRow({ openId, title }: { openId: string; title: string }) {
+  const t = useT();
+  const active = useStore(
+    (s) => s.page === "chat" && s.opening && s.openId === openId,
+  );
+  return (
+    <div className={`thread-row ${active ? "active" : ""}`}>
+      <button
+        type="button"
+        className="thread"
+        title={title}
+        aria-current={active ? "page" : undefined}
+        onClick={() => showPendingOpen(openId)}
+      >
+        <span className="session-status-slot" />
+        <span className="thread-title">{title}</span>
+      </button>
+      <ActionsMenu label={`${t["Chat actions"]}: ${title}`} disabled>
+        {() => null}
+      </ActionsMenu>
+    </div>
+  );
+}
+
 function SessionRow({ session, cwd }: { session: SessionInfo; cwd: string }) {
   const t = useT();
   const active = useStore((s) => s.active === session.id && s.page === "chat");
   const flags = useStore((s) => s.bootstrap.desktop.sessions[session.id]);
   const status = useStore((s) => selectSessionStatus(s, session.id));
-  const dialog = useRef<HTMLDialogElement>(null);
-  const input = useRef<HTMLInputElement>(null);
-  const titleId = useId();
   const [copied, setCopied] = useState(false);
   const [renaming, setRenaming] = useState(false);
-  const [name, setName] = useState(session.title);
-  const [error, setError] = useState<string>();
-  const [busy, setBusy] = useState(false);
   const target = { cwd, id: session.id };
-  useEffect(() => {
-    if (!renaming) return;
-    dialog.current?.showModal();
-    input.current?.focus();
-    input.current?.select();
-  }, [renaming]);
   function setFlags(patch: SessionFlags) {
     for (const field of ["pinned", "archived"] as const) {
       const value = patch[field];
@@ -108,10 +148,7 @@ function SessionRow({ session, cwd }: { session: SessionInfo; cwd: string }) {
         );
     }
   }
-  function rename() {
-    const title = name.trim();
-    if (!title) return;
-    dialog.current?.close();
+  function rename(title: string) {
     void sessionNames.change(
       session.id,
       session.title,
@@ -122,60 +159,76 @@ function SessionRow({ session, cwd }: { session: SessionInfo; cwd: string }) {
     );
   }
   async function remove() {
-    if (busy) return;
-    setBusy(true);
+    const id = session.id;
+    if (useStore.getState().deletingSessions[id]) return;
+    // Hide at once; the row comes back only if the host refuses the deletion.
+    const setDeleting = (deleting: boolean) =>
+      useStore.setState((s) => {
+        const deletingSessions = { ...s.deletingSessions };
+        if (deleting) deletingSessions[id] = true;
+        else delete deletingSessions[id];
+        return { deletingSessions };
+      });
+    setDeleting(true);
+    const state = useStore.getState();
+    if (state.page === "chat" && state.active === id && !state.opening)
+      navigate("chat", null);
     try {
-      await waitPreferenceWrites("sessions", session.id);
+      await waitPreferenceWrites("sessions", id);
       await rpc.request.deleteSession(target);
-      const wasActive = useStore.getState().active === session.id;
       useStore.setState((s) => {
         const snapshots = { ...s.snapshots };
-        delete snapshots[session.id];
+        delete snapshots[id];
         return {
           snapshots,
           sessions: {
             ...s.sessions,
-            [cwd]: (s.sessions[cwd] ?? []).filter(
-              (item) => item.id !== session.id,
-            ),
+            [cwd]: (s.sessions[cwd] ?? []).filter((item) => item.id !== id),
           },
-          ...(s.active === session.id ? { active: undefined } : {}),
+          ...(s.active === id ? { active: undefined } : {}),
         };
       });
-      if (wasActive && useStore.getState().page === "chat")
-        navigate("chat", null);
       void refreshSessions(cwd).catch(showError);
     } catch (error) {
       showError(error);
     } finally {
-      setBusy(false);
+      setDeleting(false);
     }
   }
   return (
     <div className={`thread-row ${active ? "active" : ""}`}>
-      <button
-        type="button"
-        className="thread"
-        title={
-          status
-            ? `${session.title} · ${t[sessionStatusLabels[status]]}`
-            : session.title
-        }
-        aria-current={active ? "page" : undefined}
-        onClick={() => void openChat(cwd, session.id)}
-      >
-        <span className="session-status-slot">
-          {status && (
-            <span
-              className={`session-dot ${status}`}
-              role="img"
-              aria-label={t[sessionStatusLabels[status]]}
-            />
-          )}
-        </span>
-        <span className="thread-title">{session.title}</span>
-        {flags?.pinned && <Pin size={11} aria-label={t.Pin} />}
-      </button>
+      {renaming ? (
+        <InlineRename
+          value={session.title}
+          label={t["Chat name"]}
+          onCommit={rename}
+          onDone={() => setRenaming(false)}
+        />
+      ) : (
+        <button
+          type="button"
+          className="thread"
+          title={
+            status
+              ? `${session.title} · ${t[sessionStatusLabels[status]]}`
+              : session.title
+          }
+          aria-current={active ? "page" : undefined}
+          onClick={() => void openChat(cwd, session.id)}
+        >
+          <span className="session-status-slot">
+            {status && (
+              <span
+                className={`session-dot ${status}`}
+                role="img"
+                aria-label={t[sessionStatusLabels[status]]}
+              />
+            )}
+          </span>
+          <span className="thread-title">{session.title}</span>
+          {flags?.pinned && <Pin size={11} aria-label={t.Pin} />}
+        </button>
+      )}
       <ActionsMenu
         label={`${t["Chat actions"]}: ${session.title}`}
         onOpen={() => setCopied(false)}
@@ -187,8 +240,6 @@ function SessionRow({ session, cwd }: { session: SessionInfo; cwd: string }) {
               role="menuitem"
               onClick={() => {
                 closeMenu();
-                setName(session.title);
-                setError(undefined);
                 setRenaming(true);
               }}
             >
@@ -244,7 +295,6 @@ function SessionRow({ session, cwd }: { session: SessionInfo; cwd: string }) {
             <ConfirmButton
               role="menuitem"
               className="session-menu-delete"
-              disabled={busy}
               title={t["This permanently deletes this chat’s local history."]}
               aria-description={
                 t["This permanently deletes this chat’s local history."]
@@ -260,53 +310,6 @@ function SessionRow({ session, cwd }: { session: SessionInfo; cwd: string }) {
           </>
         )}
       </ActionsMenu>
-      <dialog
-        ref={dialog}
-        className="session-dialog"
-        aria-labelledby={titleId}
-        onClose={() => {
-          setRenaming(false);
-          setError(undefined);
-        }}
-      >
-        <form
-          onSubmit={(event) => {
-            event.preventDefault();
-            void rename();
-          }}
-        >
-          <div className="dialog-heading">
-            <h2 id={titleId}>{t["Rename chat"]}</h2>
-            <button
-              type="button"
-              aria-label={t.Close}
-              onClick={() => dialog.current?.close()}
-            >
-              <X size={14} />
-            </button>
-          </div>
-          <input
-            ref={input}
-            aria-label={t["Chat name"]}
-            value={name}
-            maxLength={512}
-            onChange={(event) => setName(event.target.value)}
-          />
-          {error && (
-            <p className="error" role="alert">
-              {error}
-            </p>
-          )}
-          <div className="dialog-actions">
-            <button type="button" onClick={() => dialog.current?.close()}>
-              {t.Cancel}
-            </button>
-            <button type="submit" className="primary" disabled={!name.trim()}>
-              {t.Rename}
-            </button>
-          </div>
-        </form>
-      </dialog>
     </div>
   );
 }

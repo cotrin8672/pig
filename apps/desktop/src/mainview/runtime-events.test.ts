@@ -72,6 +72,122 @@ test("startup Trust and native/custom UI appear at root before any chat snapshot
   receiveRuntime({ type: "closed", address, reason: "cancelled" });
   expect(useStore.getState().pendingUI).toHaveLength(0);
 });
+test("extension notify stays session-local and never enters toast or persisted history", () => {
+  const { address, snapshot } = fixture();
+  receiveSnapshot(snapshot);
+  useStore.setState({
+    active: "another-chat",
+    page: "settings",
+    notices: [],
+    noticeHistory: [],
+  });
+  const history = useStore.getState().noticeHistory;
+  for (const level of ["info", "warning", "error"] as const)
+    receiveExtension({ type: "notify", address, level, message: level });
+  expect(
+    useStore
+      .getState()
+      .extensionNotices[addressKey(address)].map((n) => n.message),
+  ).toEqual(["info", "warning", "error"]);
+  expect(useStore.getState().notices).toEqual([]);
+  expect(useStore.getState().noticeHistory).toBe(history);
+  expect(useStore.getState().snapshots[address.sessionId].transcript).toEqual(
+    emptyTranscript(),
+  );
+  expect(useStore.getState().active).toBe("another-chat");
+});
+
+test("startup notices bind to the first snapshot and stale owners cannot recreate them", () => {
+  const { address, snapshot } = fixture();
+  receiveRuntime({ type: "opening", address, cwd: "/fixture" });
+  receiveExtension({
+    type: "notify",
+    address,
+    level: "info",
+    message: "starting",
+  });
+  receiveSnapshot(snapshot);
+  receiveExtension({
+    type: "notify",
+    address,
+    level: "info",
+    message: "ready",
+  });
+  expect(
+    useStore.getState().extensionNotices[addressKey(address)],
+  ).toMatchObject([{ message: "ready", after: null }]);
+  const next = { ...address, epoch: 2 };
+  receiveRuntime({
+    type: "replaced",
+    previous: address,
+    snapshot: { ...snapshot, address: next },
+  });
+  receiveExtension({
+    type: "notify",
+    address,
+    level: "error",
+    message: "stale",
+  });
+  expect(
+    useStore.getState().extensionNotices[addressKey(address)],
+  ).toBeUndefined();
+  receiveExtension({
+    type: "notify",
+    address: next,
+    level: "warning",
+    message: "current",
+  });
+  receiveRuntime({ type: "closed", address: next, reason: "close" });
+  expect(
+    useStore.getState().extensionNotices[addressKey(next)],
+  ).toBeUndefined();
+});
+
+test("wire snapshots discard notices on branch changes", () => {
+  const { address, snapshot } = fixture();
+  receiveSnapshot({
+    ...snapshot,
+    transcript: { ...emptyTranscript(), history: { revision: "old" } },
+  });
+  receiveExtension({
+    type: "notify",
+    address,
+    level: "error",
+    message: "old branch",
+  });
+  receiveWire({
+    type: "snapshot",
+    address,
+    snapshotSeq: 2,
+    transcript: { ...emptyTranscript(), history: { revision: "new" } },
+  });
+  expect(useStore.getState().extensionNotices[addressKey(address)]).toEqual([]);
+});
+
+test("reconnect retains notices only for the same live owner, without replay or persistence", () => {
+  const { address, snapshot } = fixture();
+  receiveSnapshot(snapshot);
+  receiveExtension({
+    type: "notify",
+    address,
+    level: "warning",
+    message: "retained",
+  });
+  const state = {
+    hostId: address.hostId,
+    sessions: [{ address, snapshot, cwd: "/fixture", phase: "ready" as const }],
+    drafts: [],
+    statuses: [],
+    pendingUI: [],
+  };
+  receiveRuntimeState(state, runtimeRevision);
+  expect(
+    useStore.getState().extensionNotices[addressKey(address)],
+  ).toHaveLength(1);
+  receiveRuntimeState({ ...state, sessions: [] }, runtimeRevision);
+  expect(useStore.getState().extensionNotices).toEqual({});
+});
+
 test("one waiting list prioritizes same-owner child without unrelated focus theft", () => {
   const { address } = fixture();
   const parent: UIRequest = {

@@ -7,6 +7,7 @@ import {
   FileText,
   FileVideo,
   File as GenericFile,
+  LoaderCircle,
   Puzzle,
   X,
 } from "lucide-react";
@@ -18,6 +19,7 @@ import {
   useState,
   useSyncExternalStore,
 } from "react";
+import { composerAction } from "../shared/keymap";
 import { filterModels } from "../shared/models";
 import {
   editFoldedText,
@@ -26,9 +28,14 @@ import {
   unfoldPastes,
 } from "../shared/paste";
 import type { SlashCommand, Snapshot } from "../shared/rpc-schema";
+import type { PromptDelivery } from "../shared/runtime-contract";
+import { AnnotationDrafts } from "./AnnotationCards";
+import { AnnotationPopover } from "./AnnotationPopover";
+import { rememberAnnotationRange } from "./annotation-highlights";
 import { AttachmentReads, maxImageBase64 } from "./attachment-reads";
-import { ComposerEditor } from "./ComposerEditor";
+import { ComposerEditor, insertEditorNewline } from "./ComposerEditor";
 import { ComposerFrame } from "./ComposerFrame";
+import { ComposerKeyHints } from "./ComposerKeyHints";
 import { ComposerSubmit } from "./ComposerSubmit";
 import { ContextIndicator } from "./ContextIndicator";
 import { addressKey } from "./chat-snapshot";
@@ -36,6 +43,7 @@ import { createDraftMirror } from "./draft-mirror";
 import { drafts, expandedDraft } from "./draft-store";
 import { ExtensionWidgets } from "./extension-status";
 import { useT } from "./i18n";
+import { MessageQueue } from "./MessageQueue";
 import { ModelPicker } from "./ModelPicker";
 import { navigate } from "./navigation";
 import { rpc, sends } from "./rpc";
@@ -80,6 +88,7 @@ export function Composer({ snapshot }: { snapshot: Snapshot }) {
   const t = useT();
   const { address, transcript } = snapshot;
   const key = addressKey(address);
+  const keybindings = useStore((s) => s.settings.keybindings);
   const { models: available, disabledModels } = useStore((s) => s.bootstrap);
   const models = filterModels(
     snapshot.modelCatalog ?? available,
@@ -102,15 +111,15 @@ export function Composer({ snapshot }: { snapshot: Snapshot }) {
   );
   useSyncExternalStore(attachmentReads.subscribe, attachmentReads.getTick);
   const loads = attachmentReads.read(address);
-  const reading = loads.length;
-  const { text, images, pastes, files = [] } = draft.content;
+  const loading = loads.some((load) => load.state === "pending");
+  const { text, images, pastes, files = [], annotations = [] } = draft.content;
   const [mirrorError, setMirrorError] = useState<string>();
   const [stopping, setStopping] = useState<string>();
   function stop() {
     if (stopping === key) return;
     setStopping(key);
-    void rpc.request
-      .abort(address)
+    void sends
+      .stop(address, () => rpc.request.abort(address))
       .catch(showError)
       .finally(() => {
         setStopping((current) => (current === key ? undefined : current));
@@ -118,8 +127,17 @@ export function Composer({ snapshot }: { snapshot: Snapshot }) {
   }
   const nextPaste = useRef(1);
   const expanded = expandedDraft(draft.content);
-  const submitting =
-    sendState?.state === "sending" || sendState?.state === "checking";
+  useSyncExternalStore(sends.subscribe, sends.getTick);
+  // Sent but not started yet: the host has the message, the response has not begun.
+  const echoed = new Set(transcript.records.map((record) => record.requestId));
+  const waiting =
+    sendState?.state === "sending" ||
+    sendState?.state === "checking" ||
+    sends
+      .optimistic(address)
+      .some(
+        (send) => send.state !== "unknown" && !echoed.has(send.key.requestId),
+      );
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const listId = useId();
   const [commandState, setCommandState] = useState<{
@@ -224,7 +242,10 @@ export function Composer({ snapshot }: { snapshot: Snapshot }) {
         ?.scrollIntoView({ block: "nearest" });
   }, [active, listId]);
   const extensionSend =
-    !images.length && !files.length && extensionCommand(expanded, commands);
+    !images.length &&
+    !files.length &&
+    !annotations.length &&
+    extensionCommand(expanded, commands);
   function updateSelection(target: HTMLTextAreaElement) {
     setSelection({
       key,
@@ -273,53 +294,34 @@ export function Composer({ snapshot }: { snapshot: Snapshot }) {
     }, 120);
     return () => clearTimeout(timer);
   }, [slashAddress, draft, mirror]);
-  function send() {
+  function send(delivery: PromptDelivery = "steer") {
+    const loading = attachmentReads.pending(address) > 0;
     if (
-      (!expanded && !images.length) ||
+      (!expanded && !images.length && !loading) ||
       (!canSend && !extensionSend) ||
-      reading ||
-      stopping === key ||
       draft.conflict
     )
       return;
-    void sends.send(address).catch(showError);
+    // In-flight attachments move with this message; it is sent once they load.
+    void sends
+      .send(address, undefined, attachmentReads.claim(address), delivery)
+      .catch(showError);
   }
   function attach(files: File[]) {
     // Capture the address, not whichever session happens to be active at FileReader completion.
     for (const file of files) {
       if (!imageTypes.has(file.type)) {
-        // Non-image files go to the agent as a stored path, like pi's TUI paste.
-        void new Promise<string>((resolve, reject) => {
-          const reader = new FileReader();
-          reader.onload = () => resolve(String(reader.result));
-          reader.onerror = () =>
-            reject(new Error(`Could not read ${file.name}`));
-          reader.readAsDataURL(file);
-        })
-          .then((url) =>
-            rpc.request.storeAttachment({
-              name: file.name,
-              data: url.slice(url.indexOf(",") + 1),
-            }),
-          )
-          .then((path) => {
-            if (drafts.read(address).retired) return;
-            drafts.edit(address, (content) => ({
-              ...content,
-              files: [
-                ...(content.files ?? []),
-                { id: crypto.randomUUID(), path, name: file.name },
-              ],
-            }));
-          })
-          .catch(showError);
+        attachmentReads.startFile(address, file, (name, data) =>
+          rpc.request.storeAttachment({ name, data }),
+        );
         continue;
       }
       if (
         drafts.read(address).content.images.length +
           attachmentReads
             .read(address)
-            .filter((load) => load.state === "pending").length >=
+            .filter((load) => load.kind === "image" && load.state === "pending")
+            .length >=
         8
       ) {
         showError(t["You can attach up to 8 images."]);
@@ -334,7 +336,42 @@ export function Composer({ snapshot }: { snapshot: Snapshot }) {
   }
   return (
     <ComposerFrame>
+      <AnnotationPopover
+        onAdd={(annotation, range) => {
+          const id = crypto.randomUUID();
+          rememberAnnotationRange(id, range);
+          drafts.edit(address, (content) => ({
+            ...content,
+            annotations: [
+              ...(content.annotations ?? []),
+              { id, ...annotation },
+            ],
+          }));
+          textareaRef.current?.focus();
+        }}
+      />
       <ExtensionWidgets address={address} placement="aboveEditor" />
+      <MessageQueue
+        items={sends
+          .queued(address)
+          .flatMap((item) =>
+            item.content
+              ? [{ id: item.key.requestId, content: item.content }]
+              : [],
+          )}
+        onEdit={async (requestId) => {
+          if (
+            await sends.withdrawQueued(address, { ...address, requestId }, true)
+          )
+            textareaRef.current?.focus();
+          else showError(t["Already sending"]);
+        }}
+        onDelete={async (requestId) => {
+          if (!(await sends.withdrawQueued(address, { ...address, requestId })))
+            showError(t["Already sending"]);
+          else if (!sends.queued(address).length) textareaRef.current?.focus();
+        }}
+      />
       {draft.conflict && (
         <section className="draft-conflict" role="alert">
           <p>
@@ -389,7 +426,18 @@ export function Composer({ snapshot }: { snapshot: Snapshot }) {
             {t.editPastes}
           </button>
         )}
-        {images.length + files.length > 0 && (
+        <AnnotationDrafts
+          annotations={annotations}
+          onRemove={(id) =>
+            drafts.edit(address, (content) => ({
+              ...content,
+              annotations: content.annotations?.filter(
+                (item) => item.id !== id,
+              ),
+            }))
+          }
+        />
+        {images.length + files.length + Number(loading) > 0 && (
           <div className="composer-attachments">
             {images.map(({ id, image }, index) => (
               <div className="composer-attachment" key={id}>
@@ -434,6 +482,27 @@ export function Composer({ snapshot }: { snapshot: Snapshot }) {
                 </div>
               );
             })}
+            {loads
+              .filter((load) => load.state === "pending")
+              .map((load) => (
+                <div
+                  className="composer-attachment file loading"
+                  key={load.id}
+                  title={load.name}
+                  aria-busy="true"
+                >
+                  <LoaderCircle size={22} className="spinner" aria-hidden />
+                  <span>{load.name}</span>
+                  <button
+                    type="button"
+                    aria-label={`${t["Remove attachment"]}: ${load.name}`}
+                    title={t["Remove attachment"]}
+                    onClick={() => attachmentReads.cancel(load.id)}
+                  >
+                    <X size={14} />
+                  </button>
+                </div>
+              ))}
           </div>
         )}
         {loads
@@ -636,21 +705,24 @@ export function Composer({ snapshot }: { snapshot: Snapshot }) {
               !event.ctrlKey &&
               !event.metaKey &&
               !event.altKey &&
-              (transcript.running || submitting)
+              (transcript.running || waiting)
             ) {
               event.preventDefault();
               stop();
               return;
             }
-            if (
-              event.key === "Enter" &&
-              !event.shiftKey &&
-              !event.nativeEvent.isComposing &&
-              event.keyCode !== 229
-            ) {
-              event.preventDefault();
-              send();
-            }
+            const action = composerAction(event, keybindings);
+            if (!action) return;
+            event.preventDefault();
+            if (action === "composer.newline") {
+              insertEditorNewline(event.currentTarget, (value) =>
+                drafts.edit(address, (content) => ({
+                  ...content,
+                  ...editFoldedText(content.text, value, content.pastes),
+                })),
+              );
+            } else if (!event.repeat)
+              send(action === "composer.queue" ? "followUp" : "steer");
           }}
         />
         <div className="composer-toolbar">
@@ -661,14 +733,13 @@ export function Composer({ snapshot }: { snapshot: Snapshot }) {
           <div className="send-controls">
             <ComposerSubmit
               busy={transcript.running}
-              submitting={submitting}
+              waiting={waiting}
               stopping={stopping === key}
-              hasContent={!!expanded || images.length > 0}
+              hasContent={!!expanded || images.length > 0 || loading}
               onStop={stop}
               disabled={
-                (!expanded && !images.length) ||
+                (!expanded && !images.length && !loading) ||
                 (!canSend && !extensionSend) ||
-                reading > 0 ||
                 !!draft.conflict
               }
             />
@@ -676,6 +747,7 @@ export function Composer({ snapshot }: { snapshot: Snapshot }) {
         </div>
       </form>
       <ExtensionWidgets address={address} placement="belowEditor" />
+      <ComposerKeyHints />
       {sendState?.message && (
         <p className="composer-hint" role="status">
           {sendState.message}

@@ -16,6 +16,10 @@ import {
   sameAddress,
 } from "./chat-snapshot";
 import { drafts } from "./draft-store";
+import {
+  alignExtensionNotices,
+  appendExtensionNotice,
+} from "./extension-notices";
 import { selections } from "./selections";
 import { showNotice, useStore } from "./store";
 import { overlaySessionInfo } from "./ui-mutations";
@@ -55,8 +59,16 @@ export function liveAddress(address: SessionAddress) {
 function register(address: SessionAddress) {
   if (!liveAddress(address)) return false;
   const previous = useStore.getState().addresses[address.sessionId];
-  if (previous && !sameAddress(previous, address))
+  if (previous && !sameAddress(previous, address)) {
     latest.delete(addressKey(previous));
+    useStore.setState((s) => ({
+      extensionNotices: Object.fromEntries(
+        Object.entries(s.extensionNotices).filter(
+          ([key]) => key !== addressKey(previous),
+        ),
+      ),
+    }));
+  }
   useStore.setState((s) => ({
     hostId: address.hostId,
     addresses: { ...s.addresses, [address.sessionId]: address },
@@ -74,6 +86,11 @@ function removeSurfaces(address: SessionAddress) {
     ),
     extensionStatuses: Object.fromEntries(
       Object.entries(s.extensionStatuses).filter(
+        ([key]) => key !== addressKey(address),
+      ),
+    ),
+    extensionNotices: Object.fromEntries(
+      Object.entries(s.extensionNotices).filter(
         ([key]) => key !== addressKey(address),
       ),
     ),
@@ -116,7 +133,15 @@ export function receiveSnapshot(incoming: Snapshot) {
     const current = s.snapshots[incoming.info.id];
     const next = newerSnapshot(current, snapshot);
     if (next === current) return {};
+    const key = addressKey(next.address);
+    const notices = s.extensionNotices[key];
     return {
+      extensionNotices: notices
+        ? {
+            ...s.extensionNotices,
+            [key]: alignExtensionNotices(notices, next.transcript),
+          }
+        : s.extensionNotices,
       snapshots: {
         ...s.snapshots,
         [incoming.info.id]: selections.overlay(next),
@@ -135,10 +160,18 @@ export function receiveWire(event: WireEvent) {
       return {};
     }
     latest.delete(key);
+    const next = applyChatEvent(snapshot, event);
+    const notices = s.extensionNotices[key];
     return {
+      extensionNotices: notices
+        ? {
+            ...s.extensionNotices,
+            [key]: alignExtensionNotices(notices, next.transcript),
+          }
+        : s.extensionNotices,
       snapshots: {
         ...s.snapshots,
-        [event.address.sessionId]: applyChatEvent(snapshot, event),
+        [event.address.sessionId]: next,
       },
     };
   });
@@ -227,7 +260,24 @@ export function receiveExtension(event: ExtensionUIEvent) {
       },
     }));
   if (event.type === "notify")
-    showNotice({ level: event.level, message: event.message });
+    useStore.setState((s) => {
+      const key = addressKey(event.address);
+      const snapshot = s.snapshots[event.address.sessionId];
+      const transcript =
+        snapshot && sameAddress(snapshot.address, event.address)
+          ? snapshot.transcript
+          : latest.get(key)?.transcript;
+      return {
+        extensionNotices: {
+          ...s.extensionNotices,
+          [key]: appendExtensionNotice(
+            s.extensionNotices[key] ?? [],
+            event,
+            transcript,
+          ),
+        },
+      };
+    });
   if (event.type === "capability" && !event.supported)
     useStore.setState((s) => ({
       capabilities: {
@@ -255,6 +305,7 @@ export function receiveRuntimeState(state: RuntimeViewState, since: number) {
       pendingUI: [],
       terminals: {},
       extensionStatuses: {},
+      extensionNotices: {},
       capabilities: {},
     });
     showNotice({
@@ -296,6 +347,9 @@ export function receiveRuntimeState(state: RuntimeViewState, since: number) {
       ),
     ),
     extensionStatuses: {},
+    extensionNotices: Object.fromEntries(
+      Object.entries(s.extensionNotices).filter(([key]) => present.has(key)),
+    ),
     capabilities: Object.fromEntries(
       Object.entries(s.capabilities).filter(([key]) => present.has(key)),
     ),

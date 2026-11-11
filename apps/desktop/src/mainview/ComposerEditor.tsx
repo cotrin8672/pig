@@ -41,6 +41,15 @@ export function transferEditorView(from: string, to: string, prefix = "") {
   views.delete(from);
 }
 
+export function insertEditorNewline(
+  input: HTMLTextAreaElement,
+  change: (value: string) => void,
+) {
+  const { value, selectionStart: start, selectionEnd: end } = input;
+  change(`${value.slice(0, start)}\n${value.slice(end)}`);
+  requestAnimationFrame(() => input.setSelectionRange(start + 1, start + 1));
+}
+
 export function sizeEditor(input: HTMLTextAreaElement) {
   const scrollTop = input.scrollTop;
   input.style.height = "32px";

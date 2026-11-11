@@ -57,6 +57,12 @@ export function customPresentation(record: TranscriptRecord) {
     hidden: record.display === false,
   };
 }
+export function isVisibleRecord(record: TranscriptRecord) {
+  return (
+    !customPresentation(record).hidden &&
+    !(record.kind === "message" && record.message.role === "toolResult")
+  );
+}
 export function rendererOrFallback<T>(
   render: (() => T) | undefined,
   fallback: () => T,

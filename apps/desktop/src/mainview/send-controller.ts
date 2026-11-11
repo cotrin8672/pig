@@ -4,6 +4,7 @@ import type {
   DraftSyncParams,
   DraftSyncResult,
   PromptAccepted,
+  PromptDelivery,
   PromptParams,
   PromptReceipt,
   SendIntent,
@@ -25,6 +26,8 @@ export type SendState = {
   recoveredQueue?: boolean;
   optimistic?: boolean;
   timestamp?: number;
+  delivery?: PromptDelivery;
+  stage?: Extract<PromptReceipt, { state: "pending" }>["stage"];
 };
 export function isSendUnconfirmed(state: SendState | undefined) {
   return !!state && ["sending", "checking", "unknown"].includes(state.state);
@@ -33,7 +36,18 @@ type Transport = {
   syncDraft(params: DraftSyncParams): Promise<DraftSyncResult>;
   prompt(params: PromptParams): Promise<PromptAccepted>;
   getPromptReceipt(params: SendKey): Promise<PromptReceipt>;
+  /** Rejects a reserved send that was never dispatched. */
+  cancelPrompt?(params: SendKey): Promise<unknown>;
 };
+export type PendingAttachments = Promise<
+  Pick<DraftContent, "images" | "files">
+>;
+/** Issues a step in per-session click order; resolves once its RPC is sent. */
+export type Sequence = (
+  address: SessionAddress,
+  step: () => unknown,
+) => unknown;
+const cancelledError = "Send cancelled";
 /** A transport failure is not a rejection. Only read-only lookup is ever retried. */
 export class SendController {
   private states = new Map<string, SendState>();
@@ -47,6 +61,9 @@ export class SendController {
   private lookups = new Map<string, Promise<void>>();
   private failures = new Map<string, number>();
   private dispatched = new Set<string>();
+  private cancelled = new Set<string>();
+  private withdrawn = new Set<string>();
+  private barriers = new Map<string, Promise<unknown>>();
   private tick = 0;
   getTick = () => this.tick;
   constructor(
@@ -60,6 +77,7 @@ export class SendController {
     },
     private lookupBudgetMs = 5_000,
     private rejected: (message: string) => void = () => {},
+    private sequence: Sequence = (_, step) => step(),
   ) {}
   subscribe = (listener: () => void) => {
     this.listeners.add(listener);
@@ -93,10 +111,57 @@ export class SendController {
       (state) =>
         sameAddress(state.key, address) &&
         state.optimistic &&
+        (state.delivery !== "followUp" || state.disposition !== undefined) &&
         state.content &&
         state.state !== "rejected" &&
         state.disposition !== "handled",
     );
+  }
+  queued(address: SessionAddress) {
+    return [...this.operations.values()].filter(
+      (state) =>
+        sameAddress(state.key, address) &&
+        state.delivery === "followUp" &&
+        state.content &&
+        isSendUnconfirmed(state) &&
+        state.state !== "unknown",
+    );
+  }
+  /** Editing withdraws to the composer; newer draft text is preserved. */
+  async withdrawQueued(address: SessionAddress, key: SendKey, edit = false) {
+    const id = this.operationKey(key);
+    const state = this.queued(address).find(
+      (item) => this.operationKey(item.key) === id,
+    );
+    if (!state?.content) return false;
+    this.withdrawn.add(id);
+    try {
+      if (this.dispatched.has(id) || state.stage) {
+        const receipt = (await this.transport.cancelPrompt?.(key)) as
+          | PromptReceipt
+          | undefined;
+        if (receipt?.state !== "rejected" || receipt.code !== "CANCELLED") {
+          this.withdrawn.delete(id);
+          // A rejection racing this withdrawal was suppressed, so restore it here.
+          if (this.operations.get(id)?.state === "rejected")
+            this.drafts.restoreSent(address, state.content);
+          await this.lookup(address, key);
+          if (receipt?.state === "rejected") throw new Error(receipt.message);
+          return false;
+        }
+      }
+      this.cancelled.add(id);
+      this.settle(address, state, { state: "rejected", cancelled: true });
+      if (edit) this.drafts.restoreSent(address, state.content);
+      return true;
+    } catch (error) {
+      if (
+        this.withdrawn.delete(id) &&
+        this.operations.get(id)?.state === "rejected"
+      )
+        this.drafts.restoreSent(address, state.content);
+      throw error;
+    }
   }
   async wait(address: SessionAddress) {
     const pending = () =>
@@ -139,7 +204,8 @@ export class SendController {
     return [...this.operations.values()].filter(
       (state) =>
         state.state === "unknown" ||
-        state.state === "checking" ||
+        (state.state === "checking" &&
+          !(state.delivery === "followUp" && state.stage === "queued")) ||
         state.recoveredQueue,
     );
   }
@@ -181,6 +247,9 @@ export class SendController {
   restore(intents: SendIntent[]) {
     for (const intent of intents) {
       const receipt = intent.receipt;
+      // A restored reservation may already be running on the host, even after a renderer reload.
+      if (receipt.state === "pending" && receipt.stage !== "prepared")
+        this.dispatched.add(this.operationKey(receipt));
       const existing = this.operations.get(this.operationKey(receipt));
       const draft = this.drafts.read(receipt);
       const recoveredQueue = !!(
@@ -214,6 +283,10 @@ export class SendController {
         content: intent.content,
         owner: intent.owner,
         recoveredQueue,
+        delivery: intent.delivery,
+        stage: receipt.state === "pending" ? receipt.stage : undefined,
+        timestamp: intent.timestamp,
+        optimistic: !!intent.delivery && !draft.retired,
         ...(receipt.state === "rejected" ? { message: receipt.message } : {}),
         ...(receipt.state === "accepted"
           ? { disposition: receipt.accepted.disposition }
@@ -228,10 +301,40 @@ export class SendController {
       if (state.state === "checking") this.poll(receipt, state);
     }
   }
-  async send(address: SessionAddress, content?: DraftContent) {
+  /**
+   * Stop cancels every send not yet dispatched, then holds later sends until
+   * the host finishes stopping. Accepted sends are handled by the host.
+   */
+  stop(address: SessionAddress, abort: () => Promise<void>) {
+    for (const [id, state] of this.operations)
+      if (
+        sameAddress(state.key, address) &&
+        state.state === "sending" &&
+        !this.dispatched.has(id)
+      )
+        this.cancelled.add(id);
+    const key = addressKey(address);
+    const stopping = abort();
+    const barrier = stopping.catch(() => {});
+    this.barriers.set(key, barrier);
+    void barrier.then(() => {
+      if (this.barriers.get(key) === barrier) this.barriers.delete(key);
+    });
+    return stopping;
+  }
+  async send(
+    address: SessionAddress,
+    content?: DraftContent,
+    attachments?: PendingAttachments,
+    delivery: PromptDelivery = "steer",
+  ) {
     const editor = this.drafts.read(address);
     const captured = content ? { ...editor, content } : editor;
-    if (!expandedDraft(captured.content) && !captured.content.images.length)
+    if (
+      !attachments &&
+      !expandedDraft(captured.content) &&
+      !captured.content.images.length
+    )
       return;
     // Capture and clear synchronously; a second click cannot send the same draft.
     if (captured.retired || captured.conflict) {
@@ -249,28 +352,33 @@ export class SendController {
       state: "sending",
       optimistic: true,
       timestamp: Date.now(),
+      delivery,
     };
     this.put(address, state);
-    let payload: PromptParams;
+    const id = this.operationKey(state.key);
+    // Enqueue synchronously so a later click cannot overtake this send.
+    // Boxed: resolving with a Promise would wait for the prompt response.
+    const issued = Promise.withResolvers<{
+      response: Promise<PromptAccepted>;
+    }>();
+    this.sequence(address, () =>
+      this.issue(address, state, captured, attachments).then(
+        issued.resolve,
+        issued.reject,
+      ),
+    );
+    let response: Promise<PromptAccepted> | undefined;
     try {
-      const draft = await this.drafts.flush(
-        address,
-        this.transport.syncDraft,
-        captured,
-        state.key.requestId,
-      );
-      const text = expandedDraft(draft.content);
-      const images = draft.content.images.map((item) => item.image);
-      if (!text && !images.length) throw new Error("Message is empty");
-      state.version = draft.version;
-      payload = {
-        ...state.key,
-        text,
-        images: images.length ? images : undefined,
-        draftRevision: draft.revision,
-      };
+      ({ response } = await issued.promise);
     } catch (error) {
-      if (this.drafts.read(address).conflict) {
+      if (this.cancelled.has(id) || String(error).includes(cancelledError)) {
+        // A lost CAS ACK may still have reserved the ID; it was never dispatched.
+        if (this.reserved.has(id) && !String(error).includes(cancelledError))
+          await this.transport.cancelPrompt?.(state.key)?.catch(() => {});
+        this.settle(address, state, { state: "rejected", cancelled: true });
+        return;
+      }
+      if (this.drafts.read(address).conflict || !this.reserved.has(id)) {
         this.settle(address, state, {
           state: "rejected",
           message: String(error),
@@ -289,18 +397,19 @@ export class SendController {
       );
       await this.lookup(address, state.key);
       return;
+    } finally {
+      this.reserved.delete(id);
     }
+    if (!response) return;
     this.poll(address, state);
-    this.dispatched.add(this.operationKey(state.key));
     try {
-      const result = await this.transport.prompt(payload);
+      const result = await response;
       this.settle(address, state, {
         state: "accepted",
         disposition: result.disposition,
       });
     } catch {
-      if (!isSendUnconfirmed(this.operations.get(this.operationKey(state.key))))
-        return;
+      if (!isSendUnconfirmed(this.operations.get(id))) return;
       this.put(
         address,
         {
@@ -312,6 +421,72 @@ export class SendController {
       await this.lookup(address, state.key);
     }
   }
+  private reserved = new Set<string>();
+  /** Resolves with the prompt response once the RPC has been sent. */
+  private async issue(
+    address: SessionAddress,
+    state: SendState,
+    captured: ReturnType<DraftStore["read"]>,
+    attachments?: PendingAttachments,
+  ): Promise<{ response: Promise<PromptAccepted> }> {
+    const id = this.operationKey(state.key);
+    const check = () => {
+      if (this.cancelled.has(id) || this.withdrawn.has(id))
+        throw new Error(cancelledError);
+    };
+    await this.barriers.get(addressKey(address));
+    check();
+    if (attachments) {
+      const loaded = await attachments;
+      check();
+      const content = {
+        ...captured.content,
+        images: [...captured.content.images, ...loaded.images],
+        files: [...(captured.content.files ?? []), ...(loaded.files ?? [])],
+      };
+      captured = { ...captured, content };
+      state.content = structuredClone(content);
+      this.put(
+        address,
+        { ...state },
+        this.read(address)?.key.requestId === state.key.requestId,
+      );
+      if (!expandedDraft(content) && !content.images.length)
+        throw new Error("Message is empty");
+    }
+    this.reserved.add(id);
+    let payload: PromptParams;
+    {
+      const draft = await this.drafts.flush(
+        address,
+        this.transport.syncDraft,
+        captured,
+        state.key.requestId,
+        state.delivery,
+      );
+      const text = expandedDraft(draft.content);
+      const images = draft.content.images.map((item) => item.image);
+      if (!text && !images.length) throw new Error("Message is empty");
+      state.version = draft.version;
+      payload = {
+        ...state.key,
+        text,
+        images: images.length ? images : undefined,
+        draftRevision: draft.revision,
+        delivery: state.delivery,
+      };
+    }
+    await this.barriers.get(addressKey(address));
+    if (this.cancelled.has(id) || this.withdrawn.has(id)) {
+      // The host reserved this ID during CAS; never let it look pending.
+      await this.transport.cancelPrompt?.(state.key);
+      throw new Error(cancelledError);
+    }
+    this.dispatched.add(id);
+    const response = this.transport.prompt(payload);
+    void response.catch(() => {});
+    return { response };
+  }
   private settle(
     address: SessionAddress,
     state: SendState,
@@ -319,9 +494,11 @@ export class SendController {
       state: "accepted" | "rejected";
       message?: string;
       disposition?: PromptAccepted["disposition"];
+      cancelled?: true;
     },
     forwarded = false,
   ) {
+    this.cancelled.delete(this.operationKey(state.key));
     const id = this.operationKey(state.key);
     const previous = this.operations.get(id);
     if (
@@ -332,14 +509,24 @@ export class SendController {
       return;
     if (previous?.state === "accepted" && result.state !== "accepted") return;
     const current = this.read(address)?.key.requestId === state.key.requestId;
-    if (result.state === "rejected" && !forwarded)
+    if (
+      result.state === "rejected" &&
+      !forwarded &&
+      !result.cancelled &&
+      !this.withdrawn.has(id)
+    )
       this.rejected(result.message ?? "Send failed");
     const cleared =
       current &&
       result.state === "accepted" &&
       !state.optimistic &&
       this.drafts.clearAccepted(address, state.version);
-    if (state.optimistic && result.state === "rejected" && state.content)
+    if (
+      state.optimistic &&
+      result.state === "rejected" &&
+      state.content &&
+      !this.withdrawn.has(id)
+    )
       this.drafts.restoreSent(address, state.content);
     this.put(
       address,
@@ -351,7 +538,9 @@ export class SendController {
             ? state.content
             : undefined,
         message: undefined,
-        ...result,
+        state: result.state,
+        ...(result.message ? { message: result.message } : {}),
+        ...(result.disposition ? { disposition: result.disposition } : {}),
       },
       current,
     );
@@ -426,6 +615,7 @@ export class SendController {
         update({
           ...state,
           state: "checking",
+          stage: receipt.stage,
         });
       })
       .catch(() => {

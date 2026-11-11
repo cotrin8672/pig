@@ -29,6 +29,10 @@ export class SelectionController {
       selection: ModelSelection,
     ) => void,
     private report: (error: unknown) => void,
+    private sequence: (
+      address: SessionAddress,
+      issue: () => unknown,
+    ) => unknown = (_, issue) => issue(),
   ) {}
   overlay(snapshot: Snapshot): Snapshot {
     const pending = this.pending.get(addressKey(snapshot.address));
@@ -63,10 +67,24 @@ export class SelectionController {
     const revision = ++pending.revision;
     this.pending.set(key, pending);
     this.publish(address, pending.desired);
-    const task = pending.task.then(async () => {
+    // Issue in click order with sends; never wait for an earlier response first.
+    const response = new Promise<ModelSelection>((resolve, reject) => {
+      this.sequence(address, () => {
+        try {
+          request().then(resolve, reject);
+        } catch (error) {
+          reject(error);
+        }
+      });
+    });
+    const previous = pending.task;
+    const task = (async () => {
       try {
-        pending.confirmed = selectionOf(await request());
+        const selection = await response;
+        await previous;
+        pending.confirmed = selectionOf(selection);
       } catch (error) {
+        await previous;
         if (this.pending.get(key) === pending) this.report(error);
       } finally {
         if (
@@ -77,7 +95,7 @@ export class SelectionController {
           this.publish(address, pending.confirmed);
         }
       }
-    });
+    })();
     pending.task = task;
     return task;
   }

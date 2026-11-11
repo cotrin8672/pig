@@ -1,6 +1,7 @@
 import { useLayoutEffect, useSyncExternalStore } from "react";
 import type { Snapshot } from "../shared/rpc-schema";
 import { expandedDraft } from "./draft-store";
+import { useT } from "./i18n";
 import { UserMessage } from "./MessageContent";
 import { sends } from "./rpc";
 
@@ -12,6 +13,7 @@ export function OptimisticMessages({
   snapshot: Snapshot;
   onChange?: () => void;
 }) {
+  const t = useT();
   const tick = useSyncExternalStore(
     sends.subscribe,
     sends.getTick,
@@ -46,6 +48,11 @@ export function OptimisticMessages({
               }}
             />
           </article>
+          {snapshot.transcript.running && send.delivery === "steer" && (
+            <p className="composer-hint" role="status">
+              {t["Steering pending"]}
+            </p>
+          )}
         </div>
       ) : (
         []

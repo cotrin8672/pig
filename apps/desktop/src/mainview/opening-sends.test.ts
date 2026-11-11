@@ -3,9 +3,12 @@ import { emptyTranscript } from "../shared/transcript";
 import { drafts, emptyContent } from "./draft-store";
 import {
   openingDraftKey,
+  openingSends,
+  queueOpeningSelection,
   queueOpeningSend,
-  removeOpeningSend,
   restoreOpeningSends,
+  takeOpeningOps,
+  withdrawOpeningSend,
 } from "./opening-sends";
 import { useStore } from "./store";
 
@@ -31,6 +34,47 @@ test("startup sends retain captured content after navigation, and cancelling res
     "sent before ready\n\nnewer typing",
   );
   expect(useStore.getState().openingTarget?.cwd).toBe("other");
+});
+
+test("startup sends and model choices replay in click order; Stop returns only messages", () => {
+  useStore.setState({
+    openId: "a",
+    pendingOpens: { a: { cwd: "project" } },
+    newChatDrafts: {},
+  });
+  const model = (id: string) => ({
+    model: { provider: "p", id, name: id },
+    effort: "off" as const,
+    effortLevels: [],
+  });
+  queueOpeningSend("a", { ...emptyContent(), text: "first" });
+  queueOpeningSelection("a", model("B"));
+  queueOpeningSend("a", { ...emptyContent(), text: "second" });
+  expect(useStore.getState().pendingOpens.a.selection?.model?.id).toBe("B");
+  expect(
+    useStore
+      .getState()
+      .pendingOpens.a.queued?.map((op) =>
+        op.kind === "send" ? op.content.text : op.selection.model?.id,
+      ),
+  ).toEqual(["first", "B", "second"]);
+  restoreOpeningSends("a");
+  expect(useStore.getState().newChatDrafts.project).toBe("first\n\nsecond");
+  expect(takeOpeningOps("a").map((op) => op.kind)).toEqual(["select"]);
+  expect(useStore.getState().pendingOpens.a.queued).toEqual([]);
+});
+
+test("startup retains delivery and deleting one queue entry preserves other sends and selections", () => {
+  useStore.setState({ openId: "a", pendingOpens: { a: { cwd: "project" } } });
+  queueOpeningSend("a", { ...emptyContent(), text: "normal" });
+  queueOpeningSend("a", { ...emptyContent(), text: "later" }, "followUp");
+  const [normal, queued] = openingSends(useStore.getState().pendingOpens.a);
+  expect(normal.delivery).toBe("steer");
+  expect(queued.delivery).toBe("followUp");
+  expect(withdrawOpeningSend("a", queued.id)?.content.text).toBe("later");
+  expect(
+    openingSends(useStore.getState().pendingOpens.a).map((send) => send.id),
+  ).toEqual([normal.id]);
 });
 
 test("existing startup send restoration preserves attachments and cannot overwrite another chat", () => {
@@ -66,10 +110,7 @@ test("existing startup send restoration preserves attachments and cannot overwri
   restoreOpeningSends("a");
   expect(drafts.read(address).content.text).toBe("sent\n\nnewer");
   expect(drafts.read(address).content.images).toHaveLength(1);
-  const queued = useStore.getState().pendingOpens.a.queuedSends?.[0];
-  if (!queued) throw new Error("Missing queued message");
-  removeOpeningSend("a", queued.id);
-  expect(useStore.getState().pendingOpens.a.queuedSends).toEqual([]);
+  expect(openingSends(useStore.getState().pendingOpens.a)).toEqual([]);
   expect(openingDraftKey({ cwd: "project", id: "one" })).not.toBe(
     openingDraftKey({ cwd: "project", id: "two" }),
   );

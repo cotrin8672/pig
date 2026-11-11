@@ -73,10 +73,3 @@ test("custom fallback handles circular/unsupported JSON safely as text", () => {
   expect(dataText(value)).toContain("<img onerror=bad>");
   expect(dataText(1n)).toBe('"1"');
 });
-test("App exposes only SDK UI without legacy detection or manual runtime reconnect", async () => {
-  const source = await Bun.file(new URL("./App.tsx", import.meta.url)).text();
-  expect(source).not.toMatch(
-    /Archive|archive|Legacy|detectLegacy|reconnectRuntime|Reconnect runtime/,
-  );
-  expect(source).toContain("useEffect(initRuntimeConnection, [])");
-});

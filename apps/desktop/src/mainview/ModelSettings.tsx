@@ -2,11 +2,12 @@ import { RotateCcw } from "lucide-react";
 import { displayedEffort, effortLabels } from "../shared/effort";
 import type { ModelOverride } from "../shared/model-overrides";
 import { modelKey } from "../shared/models";
-import type { ModelInfo } from "../shared/rpc-schema";
+import type { Effort, ModelInfo } from "../shared/rpc-schema";
 import { EffortSlider } from "./EffortSlider";
 import { useT } from "./i18n";
 import { refresh, rpc } from "./rpc";
 import { showError, useStore } from "./store";
+import { defaultEfforts, modelOverrides } from "./ui-mutations";
 
 const contextPresets = [128_000, 200_000, 256_000, 500_000, 1_000_000];
 const outputPresets = [8_000, 16_000, 32_000, 64_000, 128_000];
@@ -89,19 +90,80 @@ export function ModelSettings({ model }: { model: ModelInfo }) {
   const t = useT();
   const override =
     useStore((s) => s.bootstrap.modelOverrides[modelKey(model)]) ?? {};
-  function save(patch: Partial<ModelOverride>) {
-    const next = { ...override, ...patch } as Record<string, unknown>;
+  function save(patch: Partial<ModelOverride>, replace = false) {
+    const next = (replace ? patch : { ...override, ...patch }) as Record<
+      string,
+      unknown
+    >;
     for (const key of Object.keys(next))
       if (next[key] === undefined) delete next[key];
-    void rpc.request
-      .setModelOverride({
+    const key = modelKey(model);
+    const confirmed = useStore.getState().bootstrap.modelOverrides[key] ?? {};
+    // Shown at once; the derived model fields catch up after the write.
+    void modelOverrides.change(
+      key,
+      confirmed,
+      next as ModelOverride,
+      (value) =>
+        useStore.setState((state) => ({
+          bootstrap: {
+            ...state.bootstrap,
+            modelOverrides: { ...state.bootstrap.modelOverrides, [key]: value },
+          },
+        })),
+      async () => {
+        await rpc.request.setModelOverride({
+          provider: model.provider,
+          id: model.id,
+          override: next as ModelOverride,
+        });
+        void refresh().catch(showError);
+        return next as ModelOverride;
+      },
+    );
+  }
+  function setDefaultEffort(effort: Effort | null) {
+    const key = modelKey(model);
+    const confirmed = model.defaultEffort ?? null;
+    const original = {
+      defaultEffort: model.defaultEffort,
+      effectiveDefaultEffort: model.effectiveDefaultEffort,
+    };
+    const publish = (value: Effort | null) =>
+      useStore.setState((state) => ({
+        bootstrap: {
+          ...state.bootstrap,
+          models: state.bootstrap.models.map((item) =>
+            modelKey(item) !== key
+              ? item
+              : value === confirmed
+                ? { ...item, ...original }
+                : value === null
+                  ? { ...item, defaultEffort: undefined }
+                  : {
+                      ...item,
+                      defaultEffort: value,
+                      effectiveDefaultEffort: value,
+                    },
+          ),
+        },
+      }));
+    return defaultEfforts.change(key, confirmed, effort, publish, async () => {
+      await rpc.request.setDefaultEffort({
         provider: model.provider,
         id: model.id,
-        override: next as ModelOverride,
-      })
-      .then(refresh)
-      .catch(showError);
+        effort,
+      });
+      // The inherited level after a reset is recomputed by the host.
+      void refresh().catch(showError);
+      return effort;
+    });
   }
+  const contextWindow = override.contextWindow ?? model.contextWindow;
+  const maxTokens = override.maxTokens ?? model.maxTokens;
+  const vision = override.input
+    ? override.input.includes("image")
+    : !!model.vision;
   const effortLevels = model.effortLevels ?? [];
   const adaptive =
     override.compat?.forceAdaptiveThinking ?? model.adaptiveThinking;
@@ -130,14 +192,14 @@ export function ModelSettings({ model }: { model: ModelInfo }) {
       <div className="model-setting-pair">
         <TokenField
           label={t["Context window"]}
-          value={model.contextWindow}
+          value={contextWindow}
           presets={contextPresets}
           overridden={override.contextWindow !== undefined}
           onChange={(contextWindow) => save({ contextWindow })}
         />
         <TokenField
           label={t["Max output"]}
-          value={model.maxTokens}
+          value={maxTokens}
           presets={outputPresets}
           overridden={override.maxTokens !== undefined}
           onChange={(maxTokens) => save({ maxTokens })}
@@ -165,18 +227,7 @@ export function ModelSettings({ model }: { model: ModelInfo }) {
           <span className="model-setting-label">
             {t["Default reasoning effort"]}
             {model.defaultEffort ? (
-              <Reset
-                onClick={() =>
-                  void rpc.request
-                    .setDefaultEffort({
-                      provider: model.provider,
-                      id: model.id,
-                      effort: null,
-                    })
-                    .then(refresh)
-                    .catch(showError)
-                }
-              />
+              <Reset onClick={() => void setDefaultEffort(null)} />
             ) : (
               <small className="muted">{t.Inherited}</small>
             )}
@@ -187,19 +238,7 @@ export function ModelSettings({ model }: { model: ModelInfo }) {
               model.effectiveDefaultEffort ?? effortLevels[0],
               effortLevels,
             )}
-            onCommit={(effort) =>
-              rpc.request
-                .setDefaultEffort({
-                  provider: model.provider,
-                  id: model.id,
-                  effort,
-                })
-                .then(refresh)
-                .catch((error) => {
-                  showError(error);
-                  throw error;
-                })
-            }
+            onCommit={(effort) => setDefaultEffort(effort)}
           />
         </div>
       )}
@@ -236,8 +275,8 @@ export function ModelSettings({ model }: { model: ModelInfo }) {
         <input
           type="checkbox"
           role="switch"
-          checked={!!model.vision}
-          aria-checked={!!model.vision}
+          checked={vision}
+          aria-checked={vision}
           onChange={(event) =>
             save({ input: event.target.checked ? ["text", "image"] : ["text"] })
           }
@@ -248,16 +287,7 @@ export function ModelSettings({ model }: { model: ModelInfo }) {
         <button
           type="button"
           className="model-settings-reset-all"
-          onClick={() =>
-            void rpc.request
-              .setModelOverride({
-                provider: model.provider,
-                id: model.id,
-                override: {},
-              })
-              .then(refresh)
-              .catch(showError)
-          }
+          onClick={() => save({}, true)}
         >
           <RotateCcw size={12} /> {t["Reset all settings"]}
         </button>

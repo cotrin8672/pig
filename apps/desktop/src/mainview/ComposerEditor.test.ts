@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { sizeEditor } from "./ComposerEditor";
+import { insertEditorNewline, sizeEditor } from "./ComposerEditor";
 
 function editor(contentHeight: number, scrollTop = 0) {
   const input = {
@@ -28,6 +28,32 @@ test("long drafts stay bounded and retain their internal scroll position", () =>
   sizeEditor(input);
   expect(input.style.height).toBe("220px");
   expect(input.scrollTop).toBe(200);
+});
+
+test("the configured newline key inserts at the selection and retains the caret", () => {
+  const previous = globalThis.requestAnimationFrame;
+  globalThis.requestAnimationFrame = (callback) => {
+    callback(0);
+    return 1;
+  };
+  try {
+    let caret: number[] = [];
+    const input = {
+      value: "before selected after",
+      selectionStart: 7,
+      selectionEnd: 15,
+      setSelectionRange: (start: number, end: number) => {
+        caret = [start, end];
+      },
+    } as unknown as HTMLTextAreaElement;
+    insertEditorNewline(input, (text) => {
+      input.value = text;
+    });
+    expect(input.value).toBe("before \n after");
+    expect(caret).toEqual([8, 8]);
+  } finally {
+    globalThis.requestAnimationFrame = previous;
+  }
 });
 
 test("clearing a draft returns the editor to its minimum height", () => {

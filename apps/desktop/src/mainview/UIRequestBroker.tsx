@@ -32,6 +32,10 @@ export const UIRequestBroker = memo(function UIRequestBroker() {
   const [dismissed, setDismissed] = useState<Set<string>>(() => new Set());
   const dismiss = (key: string) =>
     setDismissed((previous) => new Set([...previous, key]));
+  const restore = (key: string) =>
+    setDismissed(
+      (previous) => new Set([...previous].filter((item) => item !== key)),
+    );
   const selectedKey =
     selected?.revision === navigationRevision ? selected.key : undefined;
   const focus = focusedRequest(
@@ -83,6 +87,7 @@ export const UIRequestBroker = memo(function UIRequestBroker() {
               active={key === focusKey}
               modal={false}
               onDismiss={() => dismiss(key)}
+              onRestore={() => restore(key)}
             />
           );
         const terminal = terminals[key];
@@ -118,11 +123,14 @@ function NativeRequest({
   active,
   modal,
   onDismiss,
+  onRestore,
 }: {
   request: Exclude<UIRequest, { kind: "terminal" }>;
   active: boolean;
   modal: boolean;
   onDismiss: () => void;
+  /** Shows the dialog again after its answer was refused. */
+  onRestore: () => void;
 }) {
   const dialog = useRef<HTMLDialogElement>(null);
   const [value, setValue] = useState(
@@ -137,6 +145,8 @@ function NativeRequest({
     if (submitted.current || !validReply(request, answer)) return;
     submitted.current = true;
     setSubmitting(true);
+    // The answer is final once given; close now instead of waiting for requestEnd.
+    onDismiss();
     try {
       await rpc.request.resolveExtensionUI(answer);
       if (
@@ -170,6 +180,7 @@ function NativeRequest({
       setSubmitting(false);
       setError(String(failure));
       showError(failure);
+      onRestore();
     }
   }
   const cancel = () => {

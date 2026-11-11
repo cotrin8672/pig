@@ -7,6 +7,7 @@ import { useStore } from "./store";
 mock.module("./rpc", () => ({
   rpc: { send: {}, request: {} },
   openChat: async () => {},
+  showPendingOpen: () => {},
   refreshSessions: async () => {},
   refresh: async () => {},
   openChatLink: async () => {},
@@ -32,7 +33,13 @@ function render(opening = false, running = false, otherOpening = false) {
     active: session.id,
     opening,
     snapshots: running
-      ? { [session.id]: { transcript: { running: true } } }
+      ? {
+          [session.id]: {
+            info: session,
+            ready: false,
+            transcript: { running: true },
+          },
+        }
       : {},
     pendingOpens: otherOpening
       ? { other: { cwd: "test-project", id: "other-chat" } }
@@ -64,8 +71,8 @@ test("session deletion uses the shared two-press button, not a delete dialog", (
     'class="confirm-armed" aria-hidden="true">確定</span>',
   );
   expect(html).not.toContain("✓");
-  expect(html).toMatch(/<h2[^>]*>チャット名を変更<\/h2>/);
-  expect(html).not.toContain("チャットを削除</h2>");
+  // Rename and delete are both inline; no dialog blocks the sidebar.
+  expect(html).not.toContain("<dialog");
 });
 
 test("deletion remains available while a session is running or opening", () => {

@@ -149,7 +149,7 @@ export function NotificationCenter() {
                   : t["No notifications"]}
               </strong>
               <span>
-                {t["Chat activity and extension notifications appear here."]}
+                {t["Chat activity and app notifications appear here."]}
               </span>
             </div>
           )}

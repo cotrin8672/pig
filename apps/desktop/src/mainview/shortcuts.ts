@@ -18,7 +18,9 @@ export function initShortcuts() {
     )
       return;
     const bindings = resolveBindings(state.settings.keybindings);
-    const action = actionIds.find((id) => matchesCombo(event, bindings[id]));
+    const action = actionIds.find(
+      (id) => !id.startsWith("composer.") && matchesCombo(event, bindings[id]),
+    );
     const explicit =
       action && Object.hasOwn(state.settings.keybindings, action);
     const snapshot = state.active ? state.snapshots[state.active] : undefined;
