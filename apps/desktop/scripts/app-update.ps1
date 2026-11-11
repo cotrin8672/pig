@@ -58,7 +58,10 @@ try {
             if ($LASTEXITCODE -ne 0) { throw "Scoop refresh failed. See $log" }
             Assert-ScoopManifest
         } elseif ($c.method -eq 'portable') {
-            if ((Get-FileHash -LiteralPath $c.zip -Algorithm SHA256).Hash.ToLowerInvariant() -ne $c.hash) {
+            # .NET directly: Get-FileHash vanishes when PowerShell 7's PSModulePath leaks into 5.1.
+            $stream = [IO.File]::OpenRead($c.zip)
+            try { $sha = [Security.Cryptography.SHA256]::Create(); $digest = $sha.ComputeHash($stream) } finally { $stream.Dispose() }
+            if ((-join ($digest | ForEach-Object { $_.ToString('x2') })) -ne $c.hash) {
                 throw 'ZIP checksum mismatch'
             }
             # A sibling staging directory guarantees same-volume renames and checks parent write access.
