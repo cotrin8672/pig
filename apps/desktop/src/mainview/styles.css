@@ -520,8 +520,6 @@ main > * {
   font-size: var(--text-md);
 }
 .thread-scroll {
-  /* Thread anchors also compensate delayed image/font/Markdown height changes. */
-  overflow-anchor: none;
   flex: 1;
   min-height: 0;
   overflow: auto;

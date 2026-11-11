@@ -10,23 +10,17 @@ export const DisclosureContext = createContext<{
   values?: Record<string, boolean>;
   scope: string;
   reveal: number;
-  pages?: Record<string, number>;
-  textRanges?: Record<string, number[]>;
 }>({ scope: "", reveal: 0 });
 
-/** Only small view state survives paging and navigation, never the body DOM. */
+/** Only small view state survives navigation, never the body DOM. */
 export function DisclosureScope({
   id,
   values,
-  pages,
-  textRanges,
   reveal,
   children,
 }: {
   id: string;
   values?: Record<string, boolean>;
-  pages?: Record<string, number>;
-  textRanges?: Record<string, number[]>;
   reveal?: number;
   children: ReactNode;
 }) {
@@ -35,8 +29,6 @@ export function DisclosureScope({
     <DisclosureContext.Provider
       value={{
         values: values ?? parent.values,
-        pages: pages ?? parent.pages,
-        textRanges: textRanges ?? parent.textRanges,
         scope: `${parent.scope}/${id}`,
         reveal: reveal ?? parent.reveal,
       }}

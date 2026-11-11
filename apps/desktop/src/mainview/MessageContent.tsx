@@ -14,10 +14,8 @@ import { ChatContent } from "./ChatContent";
 import { dataText } from "./custom-data";
 import { ImageGallery } from "./ImageGallery";
 import { useT } from "./i18n";
-import { LargeText } from "./LargeText";
-import { DisclosureScope } from "./LazyDetails";
 import { openChatLink, regenerate, rpc } from "./rpc";
-import { showError, useStore } from "./store";
+import { showError } from "./store";
 import { createTextSampler } from "./streaming-text";
 
 export const Markdown = memo(function Markdown({
@@ -49,23 +47,6 @@ const RenderedMarkdown = memo(function RenderedMarkdown({
 export function BuiltinMarkdown({
   data: { text },
 }: ChatRendererProps<"markdown">) {
-  const ja = useStore((s) => s.settings.language === "ja");
-  const [full, setFull] = useState(false);
-  // shortcut: oversized Markdown uses explicit source ranges; full parsing is opt-in until incremental parsing preserves references/tables/math.
-  if (text.length > 131_072 && !full)
-    return (
-      <>
-        <p>
-          {ja
-            ? "大きな本文をソースの範囲で表示しています。"
-            : "Large message shown in source ranges."}
-        </p>
-        <button type="button" onClick={() => setFull(true)}>
-          {ja ? "全文を Markdown で表示" : "Render full Markdown"}
-        </button>
-        <LargeText text={text} />
-      </>
-    );
   return (
     <ReactMarkdown
       remarkPlugins={[remarkGfm, remarkMath]}
@@ -255,15 +236,12 @@ export const MessageContent = memo(function MessageContent({
           "text" in block &&
           typeof block.text === "string"
         )
-          return (
+          return markdown ? (
             // biome-ignore lint/suspicious/noArrayIndexKey: SDK content blocks retain their indexes.
-            <DisclosureScope key={index} id={`text:${index}`}>
-              {markdown ? (
-                <Markdown text={block.text} />
-              ) : (
-                <LargeText text={block.text} />
-              )}
-            </DisclosureScope>
+            <Markdown key={index} text={block.text} />
+          ) : (
+            // biome-ignore lint/suspicious/noArrayIndexKey: SDK content blocks retain their indexes.
+            <pre key={index}>{block.text}</pre>
           );
         // All images of a message share one gallery, placed at the first image.
         if (index === firstImage)
@@ -280,7 +258,7 @@ export const ToolResultContent = memo(function ToolResultContent({
   result: unknown;
 }) {
   if (!result || typeof result !== "object")
-    return result === undefined ? null : <LargeText text={dataText(result)} />;
+    return result === undefined ? null : <pre>{dataText(result)}</pre>;
   return (
     <>
       {"content" in result && Array.isArray(result.content) && (
@@ -290,7 +268,7 @@ export const ToolResultContent = memo(function ToolResultContent({
         <p className="error">Tool failed</p>
       )}
       {!("content" in result) && !("details" in result) && (
-        <LargeText text={dataText(result)} />
+        <pre>{dataText(result)}</pre>
       )}
     </>
   );

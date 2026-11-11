@@ -34,7 +34,6 @@ if (process.env.PIG_LENS_RENDERER_TEST_CHILD !== "1") {
   }));
   const { piLensRenderer, piLensSummary } = await import("./PiLensRenderer");
   const { ToolBlock, WorkToggle } = await import("./ToolBlock");
-  const { DisclosureScope } = await import("./LazyDetails");
   const { Markdown, UserMessage, ToolResultContent } = await import(
     "./MessageContent"
   );
@@ -54,11 +53,7 @@ if (process.env.PIG_LENS_RENDERER_TEST_CHILD !== "1") {
   });
   const render = (data: ToolData) => {
     registerBuiltinChatRenderers([piLensRenderer]);
-    return renderToStaticMarkup(
-      <DisclosureScope id="test" reveal={1}>
-        <ToolBlock {...data} />
-      </DisclosureScope>,
-    );
+    return renderToStaticMarkup(<ToolBlock {...data} />);
   };
   afterEach(() => {
     installChatRenderers([]);
@@ -165,7 +160,10 @@ if (process.env.PIG_LENS_RENDERER_TEST_CHILD !== "1") {
       (cases.references.state?.result as { details: { supported: boolean } })
         .details.supported,
     ).toBe(true);
-    expect(html).not.toContain("fixture-lsp_navigation");
+    expect(html).toContain('data-tool-call-id="fixture-lsp_navigation"');
+    expect(html.replace(/<[^>]*>/g, "")).not.toContain(
+      "fixture-lsp_navigation",
+    );
   });
   test("read ranges and preview/applied state come from actual result metadata", () => {
     expect(render(cases.read)).toContain("L12–19");
@@ -201,6 +199,10 @@ if (process.env.PIG_LENS_RENDERER_TEST_CHILD !== "1") {
     ).toBe("src");
   });
   test("native running, failure and interruption states are retained", () => {
+    expect(render(cases.read)).toMatch(
+      /^<details [^>]*data-tool-call-id="fixture-read_symbol"[^>]*><summary>/,
+    );
+    expect(render(cases.read)).toContain('</summary><div class="tool-body">');
     expect(
       render({
         ...cases.read,

@@ -27,9 +27,11 @@ if (process.env.PIG_RENDERER_BUILTINS_CHILD !== "1") {
     openChatLink: async () => {},
     regenerate: async () => {},
   }));
-  const { Markdown } = await import("./MessageContent");
+  const { Markdown, MessageContent, ToolResultContent } = await import(
+    "./MessageContent"
+  );
   const { ImageGallery } = await import("./ImageGallery");
-  const { ToolBlock, ThinkingBlock } = await import("./ToolBlock");
+  const { ToolBlock, ToolGroup, ThinkingBlock } = await import("./ToolBlock");
   const { CustomRecord } = await import("./CustomRecord");
   const { DisclosureScope } = await import("./LazyDetails");
   afterEach(() => installChatRenderers([]));
@@ -118,7 +120,10 @@ if (process.env.PIG_RENDERER_BUILTINS_CHILD !== "1") {
     expect(bash).toContain('data-test="bash"');
     expect(bash).toContain("bash-call");
     expect(bash).toContain("echo hello");
-    expect(bash).not.toContain("tool-term-output");
+    expect(bash).toContain(
+      '</summary><pre class="tool-peek">hello</pre><pre class="tool-term-output">hello</pre>',
+    );
+    expect(bash).not.toContain('<span class="tool-peek">');
     const opened = renderToStaticMarkup(
       <DisclosureScope id="shell" reveal={1}>
         <ToolBlock
@@ -172,19 +177,75 @@ if (process.env.PIG_RENDERER_BUILTINS_CHILD !== "1") {
       },
     ] satisfies ChatRenderer[]);
     const html = renderToStaticMarkup(
-      <DisclosureScope id="card" reveal={1}>
-        <ToolBlock
-          call={{ id: "t", name: "unknown", arguments: {} }}
-          state={{ status: "done" }}
-          live={false}
-          card={{
-            title: "Existing card",
-            body: [{ type: "text", text: "Existing content" }],
-          }}
-        />
-      </DisclosureScope>,
+      <ToolBlock
+        call={{ id: "t", name: "unknown", arguments: {} }}
+        state={{ status: "done" }}
+        live={false}
+        card={{
+          title: "Existing card",
+          body: [{ type: "text", text: "Existing content" }],
+        }}
+      />,
     );
     expect(html).toContain("Existing card");
     expect(html).toContain("Existing content");
+  });
+
+  test("large content renders completely with the original Markdown and pre structure", () => {
+    const text = "x".repeat(132_000);
+    const markdown = renderToStaticMarkup(
+      <Markdown text={`# Large\n\n${text}`} />,
+    );
+    expect(markdown).toBe(`<h1>Large</h1>\n<p>${text}</p>`);
+    expect(
+      renderToStaticMarkup(<MessageContent content={text} markdown={false} />),
+    ).toBe(`<div class="message-content literal"><pre>${text}</pre></div>`);
+    expect(renderToStaticMarkup(<ToolResultContent result={text} />)).toBe(
+      `<pre>${text}</pre>`,
+    );
+  });
+
+  test("grouped calls keep direct details children, complete content and search identity", () => {
+    const calls = Array.from({ length: 105 }, (_, index) => ({
+      type: "toolCall" as const,
+      id: `call-${index}`,
+      name: "read",
+      arguments: { path: `file-${index}` },
+    }));
+    const html = renderToStaticMarkup(
+      <DisclosureScope id="group" reveal={1}>
+        <ToolGroup
+          calls={calls}
+          tools={{}}
+          live={false}
+          target={{ toolCallId: "call-104", serial: 1 }}
+        />
+      </DisclosureScope>,
+    );
+    expect(html).toContain('<div class="tool-group-body"><details ');
+    expect(html.match(/data-tool-call-id="call-/g)).toHaveLength(105);
+    expect(html).toMatch(
+      /<details [^>]*data-tool-call-id="call-104"[^>]*open=""><summary>/,
+    );
+    expect(html).not.toMatch(
+      /<details [^>]*data-tool-call-id="call-0"[^>]*open=/,
+    );
+    expect(html).not.toContain("text-range");
+  });
+
+  test("native details retain saved expansion without adding markup wrappers", () => {
+    const html = renderToStaticMarkup(
+      <DisclosureScope id="saved" values={{ "/saved/tool:read/body": true }}>
+        <ToolBlock
+          call={{ id: "read", name: "read", arguments: { path: "file.ts" } }}
+          state={{ status: "done" }}
+          live={false}
+        />
+      </DisclosureScope>,
+    );
+    expect(html).toMatch(
+      /^<details [^>]*data-tool-call-id="read"[^>]*open=""><summary>/,
+    );
+    expect(html).toContain('</summary><div class="tool-body">');
   });
 }
