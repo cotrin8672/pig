@@ -289,6 +289,7 @@ export const en = {
   Copied: "Copied",
   Finished: "Finished",
   Stopped: "Stopped",
+  Running: "Running",
   Failed: "Failed",
   toolCount: (n: number) => `${n} ${n === 1 ? "tool" : "tools"}`,
   tokensPerSecond: (n: number) => `${n} tokens/s`,
@@ -459,6 +460,11 @@ export const en = {
   "Press again to confirm": "Press again to confirm",
   "Hide work": "Hide work",
   toolCalls: (n: number) => `${n} tool ${n === 1 ? "call" : "calls"}`,
+  Annotate: "Annotate",
+  Comment: "Comment",
+  "Comment on this passage…": "Comment on this passage…",
+  "Add comment": "Add comment",
+  "Remove comment": "Remove comment",
 };
 type Dictionary = { [K in keyof typeof en]: (typeof en)[K] };
 export const ja: Dictionary = {
@@ -749,6 +755,7 @@ export const ja: Dictionary = {
   Copied: "コピーしました",
   Finished: "完了",
   Stopped: "停止",
+  Running: "実行中",
   Failed: "失敗",
   toolCount: (n) => `ツール${n}回`,
   tokensPerSecond: (n) => `${n} tokens/s`,
@@ -916,6 +923,11 @@ export const ja: Dictionary = {
   "Press again to confirm": "もう一度押すと実行します",
   "Hide work": "作業内容を隠す",
   toolCalls: (n) => `ツール ${n}回`,
+  Annotate: "注釈をつける",
+  Comment: "コメント",
+  "Comment on this passage…": "この部分へのコメント…",
+  "Add comment": "追加",
+  "Remove comment": "コメントを削除",
 };
 export function dictionary(language: Settings["language"]): Dictionary {
   return language === "ja" ? ja : en;

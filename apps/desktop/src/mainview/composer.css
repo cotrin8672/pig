@@ -3,6 +3,36 @@
   cursor: wait;
 }
 
+.composer-annotations {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+  padding: 8px 12px 0;
+  list-style: none;
+}
+.composer-annotations .annotation-card {
+  position: relative;
+  padding-right: 30px;
+}
+.annotation-remove {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border-radius: var(--radius-full);
+  background: transparent;
+  color: var(--ds-text-muted);
+}
+.annotation-remove:hover {
+  background: var(--ds-bg-hover);
+  color: var(--ds-text-primary);
+}
+
 .composer-attachments {
   display: flex;
   flex-wrap: wrap;

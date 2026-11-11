@@ -1,3 +1,5 @@
+import { type DraftAnnotation, withAnnotations } from "./annotations";
+
 /** A non-image file already stored by the host; the agent receives only its path. */
 export type DraftFile = { id: string; path: string; name: string };
 
@@ -5,8 +7,12 @@ export type DraftFile = { id: string; path: string; name: string };
 export const withAttachmentPaths = (text: string, paths: string[]) =>
   [text, paths.join("\n")].filter(Boolean).join("\n\n");
 
-export const withDraftFiles = (text: string, files: DraftFile[] = []) =>
+export const withDraftFiles = (
+  text: string,
+  files: DraftFile[] = [],
+  annotations: DraftAnnotation[] = [],
+) =>
   withAttachmentPaths(
-    text,
+    withAnnotations(text, annotations),
     files.map((file) => file.path),
   );

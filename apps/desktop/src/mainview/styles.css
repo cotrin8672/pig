@@ -788,7 +788,23 @@ details[open] > summary .tool-chevron,
   margin-top: 6px;
 }
 .tool-diff > span {
-  display: block;
+  display: inline-block;
+  min-width: 100%;
+}
+.syntax-italic {
+  font-style: italic;
+}
+.syntax-bold {
+  font-weight: var(--font-weight-semibold);
+}
+.syntax-underline {
+  text-decoration: underline;
+}
+.syntax-strike {
+  text-decoration: line-through;
+}
+.syntax-underline.syntax-strike {
+  text-decoration: underline line-through;
 }
 .tool-facts,
 .tool-list {
@@ -834,30 +850,21 @@ details[open] > summary .tool-chevron,
   color: var(--ds-error);
 }
 
-/* Shell: a small terminal whose ring shows the state at a glance */
+/* Shell: a quiet terminal — one glass slab, the status word, the output. */
 .tool-term {
-  --tool-ring: #ffffff1c;
+  --tool-phase: var(--ds-success);
   margin: 4px 0;
   overflow: hidden;
   border-radius: var(--radius-sm);
-  background: #0000003d;
-  box-shadow: inset 0 0 0 1.5px var(--tool-ring);
+  background: color-mix(in srgb, #ffffff 3%, transparent);
+  box-shadow: inset 0 0 0 1px #ffffff14;
+  backdrop-filter: blur(12px);
 }
 .tool-term.running {
-  --tool-ring: color-mix(in srgb, var(--ds-accent) 45%, transparent);
-  animation: tool-pulse 1.6s ease-in-out infinite;
-}
-.tool-term.done {
-  --tool-ring: color-mix(in srgb, var(--ds-success) 32%, transparent);
+  --tool-phase: var(--ds-accent);
 }
 .tool-term.error {
-  --tool-ring: color-mix(in srgb, var(--ds-error) 36%, transparent);
-}
-@keyframes tool-pulse {
-  50% {
-    box-shadow: inset 0 0 0 1.5px
-      color-mix(in srgb, var(--ds-accent) 18%, transparent);
-  }
+  --tool-phase: var(--ds-error);
 }
 .tool-term > summary {
   display: flex;
@@ -870,7 +877,7 @@ details[open] > summary .tool-chevron,
   font-size: var(--text-sm);
 }
 .tool-term > summary:hover {
-  background: #ffffff12;
+  background: #ffffff0a;
 }
 .tool-prompt {
   flex: none;
@@ -883,19 +890,17 @@ details[open] > summary .tool-chevron,
   text-overflow: ellipsis;
   font-size: var(--text-sm);
 }
-.tool-badge {
-  padding: 1px 6px;
-  border-radius: var(--radius-2xs);
-  font-family: var(--font-mono);
+.tool-term .tool-meta {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 6px;
+  margin-left: auto;
+  color: var(--tool-phase);
   font-size: var(--text-xs);
 }
-.tool-badge.done {
-  background: color-mix(in srgb, var(--ds-success) 13%, transparent);
-  color: var(--ds-success);
-}
-.tool-badge.error {
-  background: color-mix(in srgb, var(--ds-error) 14%, transparent);
-  color: var(--ds-error);
+.tool-state {
+  white-space: nowrap;
 }
 .tool-term pre {
   margin: 0;
@@ -916,11 +921,34 @@ details[open] > summary .tool-chevron,
 }
 .tool-term-output {
   max-height: 280px;
-  border-bottom: 6px solid transparent;
-  color: var(--ds-text-muted);
+  color: var(--ds-text-secondary);
+}
+.tool-term-output .ok {
+  color: color-mix(in srgb, var(--ds-success) 78%, var(--ds-text-secondary));
+}
+.tool-term-output .bad {
+  color: var(--ds-error);
+}
+/* A breathing cursor, not a hard on/off blink. */
+.tool-cursor {
+  display: inline-block;
+  width: 7px;
+  height: 12px;
+  vertical-align: text-bottom;
+  background: var(--tool-phase);
+  animation: tool-cursor-breathe 1.3s ease-in-out infinite;
+}
+@keyframes tool-cursor-breathe {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.12;
+  }
 }
 @media (prefers-reduced-motion: reduce) {
-  .tool-term.running,
+  .tool-cursor,
   .thinking-shimmer {
     animation: none;
   }
@@ -2460,6 +2488,162 @@ input:not([type="range"]) {
 }
 .user-turn .user-bubble {
   max-width: 100%;
+}
+
+/* Annotations: a quoted passage of an agent response plus the user's comment. */
+.annotation-card {
+  display: block;
+  min-width: 0;
+  padding: 6px 10px;
+  border-radius: var(--radius-sm);
+  background: var(--ds-tile);
+  box-shadow: var(--ds-elevation-stroke);
+  font-size: var(--text-sm-plus);
+  line-height: var(--leading-body);
+  text-align: left;
+}
+.annotation-card blockquote,
+.annotation-card p {
+  display: -webkit-box;
+  margin: 0;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+.annotation-card blockquote {
+  -webkit-line-clamp: 2;
+  padding-left: 8px;
+  border-left: 2px solid var(--ds-accent-soft);
+  color: var(--ds-text-muted);
+}
+.annotation-card p {
+  -webkit-line-clamp: 3;
+  margin-top: 4px;
+  color: var(--ds-text-primary);
+}
+.user-annotations {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6px;
+  max-width: 100%;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.user-annotations .annotation-card {
+  max-width: min(100%, 480px);
+  padding: 0;
+}
+.user-annotations .annotation-card button {
+  display: block;
+  width: 100%;
+  padding: 6px 10px;
+  border-radius: inherit;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: inherit;
+  cursor: pointer;
+}
+.user-annotations .annotation-card button[data-open] :is(blockquote, p) {
+  -webkit-line-clamp: unset;
+}
+
+/* Speech bubble over the selection, in the same frosted panel as the other popups. */
+.annotation-popover {
+  position: fixed;
+  z-index: 50;
+  border: 1px solid var(--ds-border-strong);
+  border-radius: var(--radius-lg);
+  background: var(--ds-bg-popover);
+  backdrop-filter: blur(20px);
+  box-shadow: var(--ds-shadow-dialog);
+  color: var(--ds-text-primary);
+}
+/* The tail points at the selection; clipped so it never overlaps the body's tint. */
+.annotation-popover::after {
+  content: "";
+  position: absolute;
+  left: calc(var(--tail-x) - 10px);
+  width: 20px;
+  height: 10px;
+  background: var(--ds-bg-popover);
+  backdrop-filter: blur(20px);
+}
+.annotation-popover[data-side="above"]::after {
+  top: 100%;
+  clip-path: polygon(0 0, 100% 0, 50% 100%);
+}
+.annotation-popover[data-side="below"]::after {
+  bottom: 100%;
+  clip-path: polygon(50% 0, 100% 100%, 0 100%);
+}
+.annotation-popover > button {
+  gap: 8px;
+  padding: 11px 18px;
+  border-radius: inherit;
+  font-size: var(--text-base);
+  font-weight: var(--font-weight-medium);
+}
+.annotation-popover form {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: min(380px, calc(100vw - 16px));
+  margin: 0;
+  padding: 12px;
+}
+.annotation-popover textarea {
+  width: 100%;
+  min-height: 3lh;
+  resize: none;
+  border: 0;
+  background: transparent;
+  padding: 2px 4px;
+  color: inherit;
+  font: inherit;
+  font-size: var(--text-base);
+  line-height: var(--leading-body);
+}
+.annotation-popover textarea::placeholder {
+  color: var(--ds-placeholder-ink);
+}
+.annotation-popover-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
+}
+.annotation-popover-actions button {
+  min-height: 28px;
+  padding: 4px 12px;
+  font-size: var(--text-sm);
+}
+
+/* Selection in the palette's accent instead of the OS highlight blue. */
+::selection {
+  background: color-mix(in srgb, var(--ds-accent) 30%, transparent);
+  color: inherit;
+}
+::highlight(pig-annotation) {
+  background: color-mix(in srgb, var(--ds-accent) 30%, transparent);
+}
+/* Warm annotation marks stay distinct from the blue native selection. */
+::highlight(pig-annotation-saved) {
+  background: color-mix(in srgb, var(--ds-warning) 20%, transparent);
+  text-decoration: underline;
+  text-decoration-color: var(--ds-warning);
+  text-decoration-style: dotted;
+}
+::highlight(pig-annotation-active) {
+  background: color-mix(in srgb, var(--ds-warning) 40%, transparent);
+  text-decoration: underline;
+  text-decoration-color: var(--ds-warning);
+}
+.composer-annotations .annotation-card:focus {
+  outline: 1px solid var(--ds-warning);
+  outline-offset: 2px;
 }
 .user-actions {
   color: var(--ds-text-muted);

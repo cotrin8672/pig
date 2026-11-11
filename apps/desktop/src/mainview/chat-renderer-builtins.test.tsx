@@ -121,7 +121,7 @@ if (process.env.PIG_RENDERER_BUILTINS_CHILD !== "1") {
     expect(bash).toContain("bash-call");
     expect(bash).toContain("echo hello");
     expect(bash).toContain(
-      '</summary><pre class="tool-peek">hello</pre><pre class="tool-term-output">hello</pre>',
+      '</summary><pre class="tool-peek">hello</pre><pre class="tool-term-output"><span>hello</span></pre>',
     );
     expect(bash).not.toContain('<span class="tool-peek">');
     const opened = renderToStaticMarkup(
@@ -140,7 +140,7 @@ if (process.env.PIG_RENDERER_BUILTINS_CHILD !== "1") {
         />
       </DisclosureScope>,
     );
-    expect(opened).toContain('class="tool-term-output">hello');
+    expect(opened).toContain('class="tool-term-output"><span>hello</span>');
     expect(
       renderToStaticMarkup(
         <ThinkingBlock text="Reason" label="Thinking" active={false} />,
@@ -189,6 +189,81 @@ if (process.env.PIG_RENDERER_BUILTINS_CHILD !== "1") {
     );
     expect(html).toContain("Existing card");
     expect(html).toContain("Existing content");
+  });
+
+  test("Markdown code fences and file writes use syntax tokens without changing inline code", async () => {
+    const { highlightCode } = await import("./syntax-highlighting");
+    const code = 'const greeting = "hello";';
+    await highlightCode(`${code}\n`, "ts");
+    await highlightCode(code, "ts");
+    const html = renderToStaticMarkup(
+      <Markdown text={`Inline \`literal\`\n\n\`\`\`ts\n${code}\n\`\`\``} />,
+    );
+    expect(html).toContain("<code>literal</code>");
+    expect(html).toContain(
+      '<pre><code class="language-ts"><span class="syntax-token"',
+    );
+    const write = renderToStaticMarkup(
+      <ToolBlock
+        call={{
+          id: "write",
+          name: "write",
+          arguments: { path: "greeting.ts", content: code },
+        }}
+        state={{ status: "done" }}
+        live={false}
+      />,
+    );
+    expect(write).toContain(
+      '<pre class="tool-code"><span class="syntax-token"',
+    );
+    const unknown = renderToStaticMarkup(
+      <Markdown text={"```unknown\nliteral\n```"} />,
+    );
+    expect(unknown).toContain(
+      '<code class="language-unknown">literal\n</code>',
+    );
+  });
+
+  test("Bash ANSI output and EDIT code retain their built-in shell and diff structure", async () => {
+    const { highlightCode } = await import("./syntax-highlighting");
+    const output = "\u001b[32mPASS\u001b[0m";
+    await highlightCode(output, "ansi");
+    const shell = renderToStaticMarkup(
+      <ToolBlock
+        call={{
+          id: "ansi",
+          name: "bash",
+          arguments: { command: "echo result" },
+        }}
+        state={{
+          status: "done",
+          result: { content: [{ type: "text", text: output }] },
+        }}
+        live={false}
+      />,
+    );
+    expect(shell).toContain('<pre class="tool-peek">PASS</pre>');
+    expect(shell).toContain(
+      '<pre class="tool-term-output"><span><span class="syntax-token"',
+    );
+    expect(shell).not.toContain("\u001b");
+    await highlightCode("const x = 1;", "ts");
+    await highlightCode("const x = 2;", "ts");
+    const edit = renderToStaticMarkup(
+      <ToolBlock
+        call={{ id: "edit", name: "edit", arguments: { path: "file.ts" } }}
+        state={{
+          status: "done",
+          result: { details: { diff: "-1 const x = 1;\n+1 const x = 2;" } },
+        }}
+        live={false}
+      />,
+    );
+    expect(edit).toContain(
+      '<pre class="tool-diff"><span class="del">-1 <span class="syntax-token"',
+    );
+    expect(edit).toContain('<span class="add">+1 <span class="syntax-token"');
   });
 
   test("large content renders completely with the original Markdown and pre structure", () => {

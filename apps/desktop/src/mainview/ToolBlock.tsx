@@ -29,9 +29,15 @@ import {
 } from "../shared/tool-view";
 import type { Transcript } from "../shared/transcript";
 import { ChatContent } from "./ChatContent";
+import {
+  CodeText,
+  HighlightedDiff as Diff,
+  TerminalOutput,
+} from "./HighlightedCode";
 import { useT } from "./i18n";
 import { DisclosureContext, DisclosureScope } from "./LazyDetails";
 import { Markdown, MessageContent, ToolResultContent } from "./MessageContent";
+import { languageFromPath, terminalText } from "./syntax-highlighting";
 
 type ToolState = Transcript["tools"][string] | undefined;
 type Tone = "running" | "done" | "error";
@@ -60,16 +66,20 @@ const ToolCallContext = createContext<string | undefined>(undefined);
 function Details({
   className,
   name = "body",
+  defaultOpen = false,
   children,
 }: {
   className: string;
   name?: string;
+  defaultOpen?: boolean;
   children: ReactNode;
 }) {
   const toolCallId = useContext(ToolCallContext);
   const { values, scope, reveal } = useContext(DisclosureContext);
   const key = `${scope}/${name}`;
-  const [open, setOpen] = useState(() => !!reveal || !!values?.[key]);
+  const [open, setOpen] = useState(
+    () => !!reveal || (values?.[key] ?? defaultOpen),
+  );
   useLayoutEffect(() => {
     if (reveal) {
       setOpen(true);
@@ -110,6 +120,7 @@ function Row({
   meta,
   state,
   status,
+  defaultOpen,
   children,
 }: {
   icon: ReactNode;
@@ -118,11 +129,12 @@ function Row({
   meta?: ReactNode;
   state: ToolState;
   status: Tone;
+  defaultOpen?: boolean;
   children?: ReactNode;
 }) {
   const t = useT();
   return (
-    <Details className={`tool-row ${status}`}>
+    <Details className={`tool-row ${status}`} defaultOpen={defaultOpen}>
       <summary>
         {icon}
         <span className="tool-verb">{verb}</span>
@@ -149,57 +161,50 @@ function Shell({
   command,
   state,
   status,
+  language,
 }: {
   command: string;
   state: ToolState;
   status: Tone;
+  language: string;
 }) {
   const t = useT();
   const { output, exitCode } = shellOutcome(resultText(state?.result));
-  const text = output.trimEnd();
+  const text = terminalText(output).trimEnd();
+  const lines = text ? text.split("\n") : [];
   return (
-    <Details className={`tool-term ${status}`}>
+    <Details className={`tool-term ${status}`} defaultOpen>
       <summary>
-        <span className="tool-prompt">$</span>
+        <span className="tool-prompt">❯</span>
         <code className="tool-cmd" title={command}>
-          {command}
+          <CodeText text={command} language={language} />
         </code>
         <span className="tool-meta">
-          {status === "running" ? (
-            <LoaderCircle size={12} className="spinner" />
-          ) : (
-            <span className={`tool-badge ${status}`}>
-              {status === "done"
+          {status === "running" && (
+            <LoaderCircle size={11} className="spinner" />
+          )}
+          <span className="tool-state">
+            {status === "running"
+              ? t.Running
+              : status === "done"
                 ? "exit 0"
                 : exitCode === undefined
                   ? t.Failed
                   : `exit ${exitCode}`}
-            </span>
-          )}
+          </span>
           <Chevron />
         </span>
       </summary>
-      {text && (
-        <pre className="tool-peek">{text.split("\n").slice(-2).join("\n")}</pre>
-      )}
-      <pre className="tool-term-output">{text || t["No output"]}</pre>
+      {text && <pre className="tool-peek">{lines.slice(-2).join("\n")}</pre>}
+      <pre className="tool-term-output">
+        {lines.length === 0 ? (
+          t["No output"]
+        ) : (
+          <TerminalOutput text={output.trimEnd()} />
+        )}
+        {status === "running" && <span className="tool-cursor" />}
+      </pre>
     </Details>
-  );
-}
-
-function Diff({ text }: { text: string }) {
-  return (
-    <pre className="tool-diff">
-      {text.split("\n").map((line, index) => (
-        <span
-          // biome-ignore lint/suspicious/noArrayIndexKey: Diff lines are static and ordered.
-          key={index}
-          className={line[0] === "+" ? "add" : line[0] === "-" ? "del" : ""}
-        >
-          {line}
-        </span>
-      ))}
-    </pre>
   );
 }
 
@@ -215,8 +220,13 @@ function CardBlock({ block }: { block: ToolCardBlock }) {
         <pre className="tool-code">{block.text}</pre>
       );
     case "code":
-    case "terminal":
       return <pre className="tool-code">{block.text}</pre>;
+    case "terminal":
+      return (
+        <pre className="tool-code">
+          <TerminalOutput text={block.text} />
+        </pre>
+      );
     case "diff":
       return <Diff text={block.text} />;
     case "facts":
@@ -291,7 +301,14 @@ export function BuiltinTool({
   const args = (call.arguments ?? {}) as Record<string, unknown>;
   const path = str(args.path);
   if (SHELL_TOOLS.has(call.name))
-    return <Shell command={str(args.command)} state={state} status={status} />;
+    return (
+      <Shell
+        command={str(args.command)}
+        state={state}
+        status={status}
+        language={call.name}
+      />
+    );
   switch (call.name) {
     case "read": {
       const offset = Number(args.offset) || 0;
@@ -361,9 +378,10 @@ export function BuiltinTool({
           }
           state={state}
           status={status}
+          defaultOpen
         >
           {diff && state?.status === "done" ? (
-            <Diff text={diff} />
+            <Diff text={diff} path={path} numbered />
           ) : (
             <Output state={state} />
           )}
@@ -384,7 +402,9 @@ export function BuiltinTool({
           {state?.status === "error" ? (
             <Output state={state} />
           ) : (
-            <pre className="tool-code">{content}</pre>
+            <pre className="tool-code">
+              <CodeText text={content} language={languageFromPath(path)} />
+            </pre>
           )}
         </Row>
       );
@@ -482,7 +502,7 @@ export function BuiltinThinking({
       </div>
     );
   return (
-    <Details className="thinking">
+    <Details className="thinking" defaultOpen>
       <summary>
         <Brain size={ICON} />
         {label}

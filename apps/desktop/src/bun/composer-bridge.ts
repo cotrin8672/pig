@@ -102,7 +102,11 @@ export class ComposerBridge {
   /** Expanded editor text, single pass (paste payloads are never recursively expanded). */
   expandedText(address: SessionAddress): string {
     const draft = this.current(address);
-    return withDraftFiles(unfoldPastes(draft.text, draft.pastes), draft.files);
+    return withDraftFiles(
+      unfoldPastes(draft.text, draft.pastes),
+      draft.files,
+      draft.annotations,
+    );
   }
   transfer(previous: SessionAddress, next: SessionAddress): void {
     const from = sessionKey(previous);
@@ -218,7 +222,9 @@ export function validateDraftContent(
     content.pastes.length > 10_000 ||
     content.images.length > 256 ||
     (content.files !== undefined &&
-      (!Array.isArray(content.files) || content.files.length > 256))
+      (!Array.isArray(content.files) || content.files.length > 256)) ||
+    (content.annotations !== undefined &&
+      (!Array.isArray(content.annotations) || content.annotations.length > 256))
   )
     throw new TypeError("Invalid draft content");
   for (const file of content.files ?? []) {
@@ -226,6 +232,13 @@ export function validateDraftContent(
     checkText(file.path, 4096);
     checkText(file.name, 1024);
     if (!file.id || !file.path) throw new TypeError("Invalid draft file");
+  }
+  for (const annotation of content.annotations ?? []) {
+    checkText(annotation.id, 256);
+    checkText(annotation.quote, CONTENT_LIMIT);
+    checkText(annotation.comment, CONTENT_LIMIT);
+    if (!annotation.id || !annotation.quote)
+      throw new TypeError("Invalid draft annotation");
   }
   checkText(content.text, CONTENT_LIMIT);
   const ids = new Set<string>();
@@ -262,6 +275,7 @@ export function validateDraftContent(
             pastes: content.pastes,
             images: [],
             files: content.files,
+            annotations: content.annotations,
           }),
         ) + imageBytes;
   if (size > CONTENT_LIMIT) throw new RangeError("Draft size exceeded");

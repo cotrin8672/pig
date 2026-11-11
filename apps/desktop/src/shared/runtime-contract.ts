@@ -1,4 +1,5 @@
 import type { ImageContent } from "@earendil-works/pi-ai";
+import type { DraftAnnotation } from "./annotations";
 import type { DraftFile } from "./attachments";
 import type { ExtensionStatus, UIRequest } from "./extension-ui";
 import type { Snapshot } from "./rpc-schema";
@@ -50,6 +51,7 @@ export type DraftContent = {
   pastes: { id: string; marker: string; text: string }[];
   images: { id: string; image: ImageContent }[];
   files?: DraftFile[];
+  annotations?: DraftAnnotation[];
 };
 export type DraftState = DraftContent & {
   revision: number;
