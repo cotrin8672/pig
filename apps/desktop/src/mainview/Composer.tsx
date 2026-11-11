@@ -92,7 +92,6 @@ export function Composer({ snapshot }: { snapshot: Snapshot }) {
       });
   }
   const nextPaste = useRef(1);
-  const imageBlocked = images.length > 0 && model?.vision !== true;
   const expanded = expandedDraft(draft.content);
   const submitting =
     sendState?.state === "sending" || sendState?.state === "checking";
@@ -248,7 +247,6 @@ export function Composer({ snapshot }: { snapshot: Snapshot }) {
       (!expanded && !images.length) ||
       (!canSend && !extensionSend) ||
       (useStore.getState().modelPending && !extensionSend) ||
-      imageBlocked ||
       reading ||
       submitting ||
       stopping === key ||
@@ -261,7 +259,28 @@ export function Composer({ snapshot }: { snapshot: Snapshot }) {
     // Capture the address, not whichever session happens to be active at FileReader completion.
     for (const file of files) {
       if (!imageTypes.has(file.type)) {
-        showError(t["Only PNG, JPEG, GIF, and WebP images are supported."]);
+        // Non-image files go to the agent as a stored path, like pi's TUI paste.
+        void new Promise<string>((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => resolve(String(reader.result));
+          reader.onerror = () =>
+            reject(new Error(`Could not read ${file.name}`));
+          reader.readAsDataURL(file);
+        })
+          .then((url) =>
+            rpc.request.storeAttachment({
+              name: file.name,
+              data: url.slice(url.indexOf(",") + 1),
+            }),
+          )
+          .then((path) => {
+            if (drafts.read(address).retired) return;
+            drafts.edit(address, (content) => ({
+              ...content,
+              text: [content.text, path].filter(Boolean).join("\n"),
+            }));
+          })
+          .catch(showError);
         continue;
       }
       if (
@@ -595,7 +614,6 @@ export function Composer({ snapshot }: { snapshot: Snapshot }) {
                 (!expanded && !images.length) ||
                 (!canSend && !extensionSend) ||
                 (modelPending && !extensionSend) ||
-                imageBlocked ||
                 reading > 0 ||
                 submitting ||
                 !!draft.conflict
@@ -613,15 +631,6 @@ export function Composer({ snapshot }: { snapshot: Snapshot }) {
       {mirrorError && (
         <p className="composer-hint" role="alert">
           {mirrorError}
-        </p>
-      )}
-      {imageBlocked && (
-        <p className="composer-hint">
-          {
-            t[
-              "The current model can't read images. Switch to a vision model or remove the images."
-            ]
-          }
         </p>
       )}
       {!canSend && !extensionSend && (

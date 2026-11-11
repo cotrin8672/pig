@@ -53,14 +53,11 @@ import type {
   TerminalClientCommand,
   TerminalHostEvent,
 } from "../shared/terminal-ui";
+import { storeImage, withAttachmentPaths } from "./attachments";
 import { ComposerBridge } from "./composer-bridge";
 import { desktopConfigDir } from "./desktop-config";
 import { createExtensionUIHost, type ExtensionUIHost } from "./extension-ui";
-import {
-  createQueuedImagePolicy,
-  preparePromptImages,
-  scrubImages,
-} from "./image-policy";
+import { createQueuedImagePolicy, scrubImages } from "./image-policy";
 import {
   createModelRuntime,
   releaseModelRuntime,
@@ -1313,7 +1310,6 @@ export class SessionHost {
           this.current(params);
           m.admissionSignal = signal;
           m.admissionRequestId = params.requestId;
-          m.preparingImages = !!params.images?.length;
           // SDK defers prompt() while extension agent_settled hooks execute and can
           // resolve its Promise before preflight. Wait on the public settled event
           // instead, so this call retains a real failure/acceptance Promise.
@@ -1344,36 +1340,15 @@ export class SessionHost {
             throw new Error("DRAFT_REVISION_CONFLICT");
           if (!params.text.trim() && !params.images?.length)
             throw new Error("Message is empty");
-          const model = session.model;
-          if (
-            params.images?.length &&
-            model &&
-            !this.settings.blockImages &&
-            !model.input.includes("image")
-          )
-            throw new Error("The current model does not accept images");
-          if (!model && !params.text.startsWith("/"))
+          if (!session.model && !params.text.startsWith("/"))
             throw new Error("Choose an available model first");
-          const queued = session.isStreaming;
-          const result = await preparePromptImages(
-            params.images ?? [],
-            {
-              queued,
-              blockImages: this.settings.blockImages,
-              provider: model?.provider ?? "",
-              modelId: model?.id ?? "",
-            },
-            model?.inputLimits?.images?.resize && {
-              ...model.inputLimits.images.resize,
-            },
+          // Images go to the agent as file paths (like pi's TUI paste); its read
+          // tool loads them on demand. Extensions may swap them back via `input`.
+          const paths = await Promise.all(
+            (params.images ?? []).map((image) => storeImage(image)),
           );
-          if (queued) m.images.remember(result.images, model);
-          if (queued && result.images.length) m.queuedImages = true;
           signal.throwIfAborted();
-          return {
-            text: [params.text, ...result.hints].filter(Boolean).join("\n\n"),
-            images: result.images,
-          };
+          return { text: withAttachmentPaths(params.text, paths) };
         },
         (error) => {
           if (addressKey(params) === addressKey(m.address))
@@ -1392,7 +1367,6 @@ export class SessionHost {
       .finally(() => {
         if (m.admissionRequestId === params.requestId)
           m.admissionRequestId = undefined;
-        if (!this.receipts.pending(params)) m.preparingImages = false;
         this.maybeReload(m);
       });
   }

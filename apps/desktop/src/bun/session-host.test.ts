@@ -132,16 +132,17 @@ test("SDK fork/rewind/reload/shutdown, root startup UI and stale epochs", async 
       settings = {...settings,blockImages:false};
       faux.setResponses([fauxAssistantMessage(fauxToolCall("read", {path:"image.bmp"}), {stopReason:"toolUse"}), fauxAssistantMessage("unblocked")]);
       await toolSend("unblocked"); expect(JSON.stringify(host.getSessionSnapshot(chat.address).transcript)).toContain('"type":"image"');
-      // Queued images bind their model limits until consumed, including direct
-      // extension-driven setModel; there is no silent constraint change.
+      // Prompt images reach the agent as stored file paths, never as image blocks.
       const modelGate = Promise.withResolvers(); let modelStarted = false;
       faux.setResponses([async () => {modelStarted = true; await modelGate.promise; return fauxAssistantMessage("first queued");}, fauxAssistantMessage("queued image")]);
       const queueInput = text => ({...chat.address,requestId:text,text,draftRevision:host.drafts.read(chat.address).revision});
       await host.prompt(queueInput("queue-start")); while(!modelStarted) await Bun.sleep(1);
       expect(await host.prompt({...queueInput("queue-image"),images:[image]})).toEqual({disposition:"queued"});
-      await expect(host.setModel({...chat.address,provider:faux.getModel().provider,id:faux.getModel().id})).rejects.toThrow("queued images");
-      await expect(host.session(chat.info.id).setModel(faux.getModel())).rejects.toThrow("queued images");
       modelGate.resolve(); await host.receipts.settled();
+      const sentImage = host.session(chat.info.id).messages.filter(m => m.role === "user").at(-1);
+      expect(JSON.stringify(sentImage.content)).not.toContain('"type":"image"');
+      const imagePath = sentImage.content.find(c => c.type === "text").text.split("\\n").at(-1);
+      expect(imagePath).toEndWith(".bmp"); expect(await readFile(imagePath)).toEqual(bitmap);
       // Stop during SDK input/preparation: rejected receipt must never launch a
       // late model, nor leave SDK _isAgentRunActive wedged outside its finally.
       let dispatches = 0;

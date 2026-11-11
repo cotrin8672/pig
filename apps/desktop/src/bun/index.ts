@@ -21,6 +21,7 @@ import {
   setNativeEnvironment,
   validateAppearance,
 } from "./appearance";
+import { storeFile } from "./attachments";
 import { ChatRendererLoader } from "./chat-renderer-loader";
 import {
   desktopConfigDir,
@@ -229,6 +230,7 @@ const rpc = BrowserView.defineRPC<RPCSchema>({
       reloadAdapterConfig: () => sessionHost.reloadAdapterConfig(),
       copyImage: ({ src }) => copyImage(src),
       saveImage: ({ src }) => saveImage(src),
+      storeAttachment: ({ name, data }) => storeFile(name, data),
       appearance: () => appearance,
       settings: () => settings,
       bootstrap: async () => {
