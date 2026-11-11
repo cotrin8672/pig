@@ -2822,7 +2822,8 @@ input:not([type="range"]) {
 .confirm-button::before {
   content: "";
   position: absolute;
-  inset: 0;
+  /* Straddle the fill edge so its antialiased corners cannot peek past the ring. */
+  inset: -1px;
   box-sizing: border-box;
   border: 2px solid var(--confirm-ring, currentColor);
   border-radius: inherit;
