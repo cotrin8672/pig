@@ -1,3 +1,4 @@
+import { withDraftFiles } from "../shared/attachments";
 import { unfoldPastes } from "../shared/paste";
 import type {
   DraftContent,
@@ -30,10 +31,16 @@ type Flight = {
   expectedRevision: number;
   version: number;
 };
-const contentOf = ({ text, pastes, images }: DraftContent): DraftContent => ({
+const contentOf = ({
   text,
   pastes,
   images,
+  files,
+}: DraftContent): DraftContent => ({
+  text,
+  pastes,
+  images,
+  ...(files?.length ? { files } : {}),
 });
 const equal = (a: DraftContent, b: DraftContent) =>
   a.text === b.text &&
@@ -45,7 +52,9 @@ const equal = (a: DraftContent, b: DraftContent) =>
           p.marker === b.pastes[i].marker &&
           p.text === b.pastes[i].text,
       ))) &&
-  sameImages(a.images, b.images);
+  sameImages(a.images, b.images) &&
+  (a.files ?? []).map((f) => f.id).join("\0") ===
+    (b.files ?? []).map((f) => f.id).join("\0");
 /** Address-owned drafts outlive React mounts, tab navigation and asynchronous file reads. */
 export class DraftStore {
   private entries = new Map<string, EditorDraft>();
@@ -57,7 +66,9 @@ export class DraftStore {
       const draft = this.entries.get(key);
       return draft?.retired &&
         !draft.transferred &&
-        (draft.content.text || draft.content.images.length)
+        (draft.content.text ||
+          draft.content.images.length ||
+          draft.content.files?.length)
         ? [{ address, draft }]
         : [];
     });
@@ -275,5 +286,8 @@ export class DraftStore {
 export const drafts = new DraftStore();
 
 export function expandedDraft(content: DraftContent): string {
-  return unfoldPastes(content.text, content.pastes).trim();
+  return withDraftFiles(
+    unfoldPastes(content.text, content.pastes).trim(),
+    content.files,
+  );
 }

@@ -1,3 +1,4 @@
+import { withDraftFiles } from "../shared/attachments";
 import type { ExtensionUIEvent } from "../shared/extension-ui";
 import { makeMarker, shouldCollapse, unfoldPastes } from "../shared/paste";
 import type {
@@ -101,7 +102,7 @@ export class ComposerBridge {
   /** Expanded editor text, single pass (paste payloads are never recursively expanded). */
   expandedText(address: SessionAddress): string {
     const draft = this.current(address);
-    return unfoldPastes(draft.text, draft.pastes);
+    return withDraftFiles(unfoldPastes(draft.text, draft.pastes), draft.files);
   }
   transfer(previous: SessionAddress, next: SessionAddress): void {
     const from = sessionKey(previous);
@@ -215,9 +216,17 @@ export function validateDraftContent(
     !Array.isArray(content.pastes) ||
     !Array.isArray(content.images) ||
     content.pastes.length > 10_000 ||
-    content.images.length > 256
+    content.images.length > 256 ||
+    (content.files !== undefined &&
+      (!Array.isArray(content.files) || content.files.length > 256))
   )
     throw new TypeError("Invalid draft content");
+  for (const file of content.files ?? []) {
+    checkText(file.id, 256);
+    checkText(file.path, 4096);
+    checkText(file.name, 1024);
+    if (!file.id || !file.path) throw new TypeError("Invalid draft file");
+  }
   checkText(content.text, CONTENT_LIMIT);
   const ids = new Set<string>();
   const markers = new Set<string>();
@@ -252,6 +261,7 @@ export function validateDraftContent(
             text: content.text,
             pastes: content.pastes,
             images: [],
+            files: content.files,
           }),
         ) + imageBytes;
   if (size > CONTENT_LIMIT) throw new RangeError("Draft size exceeded");

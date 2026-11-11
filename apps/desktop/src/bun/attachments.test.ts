@@ -3,6 +3,7 @@ import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { storeFile, storeImage, withAttachmentPaths } from "./attachments";
+import { ComposerBridge, validateDraftContent } from "./composer-bridge";
 
 test("attachments are content-addressed paths appended after a blank line", async () => {
   const dir = await mkdtemp(join(tmpdir(), "pig-attachments-"));
@@ -25,4 +26,24 @@ test("attachments are content-addressed paths appended after a blank line", asyn
   } finally {
     await rm(dir, { recursive: true, force: true });
   }
+});
+
+test("draft files are sent as trailing paths and validated", () => {
+  const address = { hostId: "h", sessionId: "s", epoch: 1 };
+  const bridge = new ComposerBridge(() => {});
+  const files = [{ id: "1", path: "/a/b.pdf", name: "b.pdf" }];
+  bridge.sync({
+    ...address,
+    expectedRevision: 0,
+    content: { text: "read this", pastes: [], images: [], files },
+  });
+  expect(bridge.expandedText(address)).toBe("read this\n\n/a/b.pdf");
+  expect(() =>
+    validateDraftContent({
+      text: "",
+      pastes: [],
+      images: [],
+      files: [{ id: "", path: "", name: "" }],
+    }),
+  ).toThrow("Invalid draft file");
 });

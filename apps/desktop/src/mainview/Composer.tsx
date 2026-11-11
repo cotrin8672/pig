@@ -1,4 +1,15 @@
-import { BookOpen, FileText, Puzzle, X } from "lucide-react";
+import {
+  BookOpen,
+  FileArchive,
+  FileAudio,
+  FileCode,
+  FileSpreadsheet,
+  FileText,
+  FileVideo,
+  File as GenericFile,
+  Puzzle,
+  X,
+} from "lucide-react";
 import {
   useEffect,
   useId,
@@ -41,6 +52,20 @@ import "./composer.css";
 
 const categoryIcons = { extension: Puzzle, skill: BookOpen, prompt: FileText };
 
+const fileIcons: [RegExp, typeof GenericFile][] = [
+  [/\.(zip|7z|rar|tar|gz|tgz|bz2|xz)$/i, FileArchive],
+  [/\.(mp3|wav|flac|ogg|m4a|aac)$/i, FileAudio],
+  [/\.(mp4|mov|mkv|webm|avi)$/i, FileVideo],
+  [/\.(csv|tsv|xlsx?|ods)$/i, FileSpreadsheet],
+  [/\.(md|txt|pdf|docx?|rtf|log)$/i, FileText],
+  [
+    /\.(ts|tsx|js|jsx|json|ya?ml|toml|py|rs|go|java|kt|c|cc|cpp|h|hpp|cs|rb|php|sh|ps1|html|css|sql|xml)$/i,
+    FileCode,
+  ],
+];
+const fileIcon = (name: string) =>
+  fileIcons.find(([pattern]) => pattern.test(name))?.[1] ?? GenericFile;
+
 const imageTypes = new Set([
   "image/png",
   "image/jpeg",
@@ -78,7 +103,7 @@ export function Composer({ snapshot }: { snapshot: Snapshot }) {
   useSyncExternalStore(attachmentReads.subscribe, attachmentReads.getTick);
   const loads = attachmentReads.read(address);
   const reading = loads.length;
-  const { text, images, pastes } = draft.content;
+  const { text, images, pastes, files = [] } = draft.content;
   const [mirrorError, setMirrorError] = useState<string>();
   const [stopping, setStopping] = useState<string>();
   function stop() {
@@ -193,7 +218,8 @@ export function Composer({ snapshot }: { snapshot: Snapshot }) {
         .getElementById(`${listId}-${active}`)
         ?.scrollIntoView({ block: "nearest" });
   }, [active, listId]);
-  const extensionSend = !images.length && extensionCommand(expanded, commands);
+  const extensionSend =
+    !images.length && !files.length && extensionCommand(expanded, commands);
   function updateSelection(target: HTMLTextAreaElement) {
     setSelection({
       key,
@@ -277,7 +303,10 @@ export function Composer({ snapshot }: { snapshot: Snapshot }) {
             if (drafts.read(address).retired) return;
             drafts.edit(address, (content) => ({
               ...content,
-              text: [content.text, path].filter(Boolean).join("\n"),
+              files: [
+                ...(content.files ?? []),
+                { id: crypto.randomUUID(), path, name: file.name },
+              ],
             }));
           })
           .catch(showError);
@@ -357,7 +386,7 @@ export function Composer({ snapshot }: { snapshot: Snapshot }) {
             {t.editPastes}
           </button>
         )}
-        {images.length > 0 && (
+        {images.length + files.length > 0 && (
           <div className="composer-attachments">
             {images.map(({ id, image }, index) => (
               <div className="composer-attachment" key={id}>
@@ -380,6 +409,28 @@ export function Composer({ snapshot }: { snapshot: Snapshot }) {
                 </button>
               </div>
             ))}
+            {files.map(({ id, name, path }) => {
+              const Icon = fileIcon(name);
+              return (
+                <div className="composer-attachment file" key={id} title={path}>
+                  <Icon size={28} aria-hidden />
+                  <span>{name}</span>
+                  <button
+                    type="button"
+                    aria-label={`${t["Remove attachment"]}: ${name}`}
+                    title={t["Remove attachment"]}
+                    onClick={() =>
+                      drafts.edit(address, (content) => ({
+                        ...content,
+                        files: content.files?.filter((item) => item.id !== id),
+                      }))
+                    }
+                  >
+                    <X size={14} />
+                  </button>
+                </div>
+              );
+            })}
           </div>
         )}
         {loads.map((load) => (

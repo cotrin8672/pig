@@ -108,6 +108,7 @@ export class SendRecoveryStore {
       text: content.text,
       pastes: content.pastes,
       images,
+      files: content.files,
     });
   }
   private unpack(data: string): DraftContent {

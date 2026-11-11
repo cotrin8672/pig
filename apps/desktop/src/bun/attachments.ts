@@ -37,6 +37,4 @@ export const storeImage = (image: ImageContent, dir?: string) =>
     dir,
   );
 
-/** Attachment paths follow the text after a blank line, one per line, so extensions can find them. */
-export const withAttachmentPaths = (text: string, paths: string[]) =>
-  [text, paths.join("\n")].filter(Boolean).join("\n\n");
+export { withAttachmentPaths } from "../shared/attachments";
