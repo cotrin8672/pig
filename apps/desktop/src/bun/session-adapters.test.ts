@@ -173,7 +173,8 @@ test("official Pi todo and plan-mode project through user adapters with a real S
     const chat=await host.openSession({cwd,openId:"official"});
     let address=chat.address;
     const snapshot=()=>host.getSessionSnapshot(address);
-    const wait=(fn)=>fn()?Promise.resolve():new Promise(resolve=>{const update=()=>{if(fn()){updates.delete(update);resolve();}};updates.add(update);});
+    // Poll as well as listen: a condition met without a later emit() must not hang until the test timeout.
+    const wait=async(fn)=>{const deadline=Date.now()+40_000;while(!fn()){if(Date.now()>deadline)throw new Error("Timed out: "+JSON.stringify(snapshot().sessionUI));await new Promise(resolve=>{const t=setTimeout(done,20);function done(){clearTimeout(t);updates.delete(done);resolve();}updates.add(done);});}};
     await wait(()=>snapshot().sessionUI?.views.some(v=>v.view.kind==="mode"));
     expect(snapshot().sessionUI.diagnostics).toEqual([]);
     // Exercise the official tool and saved-state projection, not an unrelated model turn.
@@ -196,6 +197,7 @@ test("official Pi todo and plan-mode project through user adapters with a real S
   `;
   try {
     const scriptFile = join(home, "official-check.ts");
+    // Cold SDK + extension compilation is slow on CI runners; the script has its own 40s wait deadline.
     await writeFile(scriptFile, script);
     const child = Bun.spawn([process.execPath, scriptFile], {
       cwd: join(import.meta.dir, "../.."),
@@ -212,4 +214,4 @@ test("official Pi todo and plan-mode project through user adapters with a real S
   } finally {
     await rm(home, { recursive: true, force: true });
   }
-}, 30_000);
+}, 90_000);
