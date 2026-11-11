@@ -195,6 +195,8 @@ export const sessionHost = new SessionHost({
 export const openSession = (input: OpenSessionParams) =>
   sessionHost.openSession(input);
 export const listSessions = (cwd: string) => sessionHost.listSessions(cwd);
+export const findSession = (cwd: string, id: string) =>
+  sessionHost.findSession(cwd, id);
 export const promptSession = (input: PromptParams) => sessionHost.prompt(input);
 export const abortSession = (address: SessionAddress) =>
   sessionHost.abort(address);

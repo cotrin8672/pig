@@ -23,6 +23,7 @@ type RecordState = {
   reject(error: Error): void;
   cancel: AbortController;
   dispatched: boolean;
+  scheduled: boolean;
   intent?: SendIntent;
 };
 
@@ -30,6 +31,7 @@ type RecordState = {
 export class SendReceipts {
   private records = new Map<string, RecordState>();
   private queues = new Map<string, Promise<void>>();
+  private followUps = new Map<string, Promise<void>>();
   private active = new Map<Promise<void>, string>();
   constructor(
     readonly hostId: string,
@@ -95,6 +97,14 @@ export class SendReceipts {
       this.reject(record, record.cancel.signal.reason, "CANCELLED");
     }
   }
+  /** Withdrawal is safe until SDK input starts; after that the send belongs to Stop. */
+  withdraw(key: SendKey) {
+    const record = this.records.get(sendKey(key));
+    if (!record || record.dispatched) return this.lookup(key);
+    record.cancel.abort(new Error("Prompt cancelled before dispatch"));
+    this.reject(record, record.cancel.signal.reason, "CANCELLED");
+    return this.lookup(key);
+  }
   private reject(
     record: RecordState,
     error: unknown,
@@ -131,7 +141,10 @@ export class SendReceipts {
     if (
       typeof params.text !== "string" ||
       !Number.isSafeInteger(params.draftRevision) ||
-      params.draftRevision < 0
+      params.draftRevision < 0 ||
+      (params.delivery !== undefined &&
+        params.delivery !== "steer" &&
+        params.delivery !== "followUp")
     )
       throw new Error("Invalid prompt payload");
     if (metadata?.content) validateDraftContent(metadata.content);
@@ -143,6 +156,7 @@ export class SendReceipts {
           params.epoch,
           params.draftRevision,
           params.text,
+          params.delivery ?? "steer",
           (params.images ?? []).map((i) => [
             i.mimeType,
             createHash("sha256")
@@ -175,6 +189,7 @@ export class SendReceipts {
         ...deferred,
         cancel: new AbortController(),
         dispatched: true,
+        scheduled: true,
       };
       this.records.set(key, previous);
     }
@@ -196,6 +211,7 @@ export class SendReceipts {
       ...deferred,
       cancel: new AbortController(),
       dispatched: false,
+      scheduled: false,
     };
     if (metadata) {
       record.intent = {
@@ -203,6 +219,8 @@ export class SendReceipts {
         hash,
         receipt: record.receipt,
         draftRevision: params.draftRevision,
+        delivery: params.delivery ?? "steer",
+        timestamp: Date.now(),
       };
       this.recovery?.intent(record.intent);
     }
@@ -214,7 +232,8 @@ export class SendReceipts {
   /** Only the first dispatch executes SDK input. Restored unknown records are never dispatched. */
   send(
     params: PromptParams,
-    session: Pick<AgentSession, "prompt">,
+    session: Pick<AgentSession, "prompt"> &
+      Partial<Pick<AgentSession, "waitForIdle" | "isStreaming">>,
     prepare: (
       signal: AbortSignal,
     ) => Promise<{ text: string; images?: PromptParams["images"] }>,
@@ -227,11 +246,14 @@ export class SendReceipts {
     } catch (error) {
       return Promise.reject(error);
     }
-    if (record.dispatched) return record.promise;
+    if (record.scheduled || record.receipt.state !== "pending")
+      return record.promise;
+    record.scheduled = true;
+    const queued = params.delivery === "followUp";
     record.receipt = {
       ...record.receipt,
       state: "pending",
-      stage: "dispatched",
+      stage: queued ? "queued" : "dispatched",
     };
     try {
       this.persist(record);
@@ -239,25 +261,67 @@ export class SendReceipts {
       this.reject(record, error);
       return record.promise;
     }
-    record.dispatched = true;
     const address = addressKey(params);
-    const prior = this.queues.get(address) ?? Promise.resolve();
-    const admission = Promise.withResolvers<void>();
-    this.queues.set(address, admission.promise);
-    const task = prior.then(async () => {
+    const signal = record.cancel.signal;
+    const wait = <T>(promise: Promise<T>) =>
+      new Promise<T>((resolve, reject) => {
+        const abort = () => reject(signal.reason);
+        signal.addEventListener("abort", abort, { once: true });
+        if (signal.aborted) abort();
+        void promise
+          .then(resolve, reject)
+          .finally(() => signal.removeEventListener("abort", abort));
+      });
+    const acquire = () => {
+      const prior = this.queues.get(address) ?? Promise.resolve();
+      const admission = Promise.withResolvers<void>();
+      // Cancellation must not let later sends bypass this slot's predecessor.
+      this.queues.set(
+        address,
+        prior.then(() => admission.promise),
+      );
+      return { prior, admission };
+    };
+    // Queued follow-ups wait outside the admission lane so they cannot block steering.
+    let slot = queued ? undefined : acquire();
+    const previousFollowUp = this.followUps.get(address) ?? Promise.resolve();
+    const task = (async () => {
       try {
-        record.cancel.signal.throwIfAborted();
-        const input = await prepare(record.cancel.signal);
-        record.cancel.signal.throwIfAborted();
+        if (queued) await wait(previousFollowUp);
+        let input: Awaited<ReturnType<typeof prepare>> | undefined;
+        for (;;) {
+          signal.throwIfAborted();
+          if (queued) {
+            await wait(session.waitForIdle?.() ?? Promise.resolve());
+            slot = acquire();
+          }
+          if (!slot) throw new Error("Missing prompt admission");
+          await wait(slot.prior);
+          signal.throwIfAborted();
+          if (!queued || !session.isStreaming) {
+            input = await prepare(signal);
+            signal.throwIfAborted();
+            if (!queued || !session.isStreaming) break;
+          }
+          slot.admission.resolve();
+          slot = undefined;
+        }
+        record.dispatched = true;
+        record.receipt = {
+          ...record.receipt,
+          state: "pending",
+          stage: "dispatched",
+        };
+        this.persist(record);
         // This is the ONLY adapter to SDK 1.5.0's real typed acceptance hook.
         await session.prompt(input.text, {
           images: input.images,
-          streamingBehavior: "followUp",
+          streamingBehavior: params.delivery ?? "steer",
           preflightResult: (disposition) => {
             // Never throw here: SDK 1.5.0 calls onStarted outside its finally.
             // SessionHost's public Agent.prompt boundary cancels a late start safely.
             if (record.receipt.state !== "pending") {
-              admission.resolve();
+              slot?.admission.resolve();
               return;
             }
             const accepted = { disposition };
@@ -278,7 +342,7 @@ export class SendReceipts {
               onError(error);
             }
             record.resolve(accepted);
-            admission.resolve();
+            slot?.admission.resolve();
           },
         });
         // A prompt issued inside an SDK settled hook can resolve before its
@@ -289,12 +353,17 @@ export class SendReceipts {
         if (record.receipt.state === "accepted") onError(error);
         else this.reject(record, error);
       } finally {
-        admission.resolve();
+        slot?.admission.resolve();
       }
-    });
+    })();
+    if (queued) this.followUps.set(address, task);
     this.active.set(task, address);
     void task.finally(() => this.active.delete(task));
     return record.promise;
+  }
+  /** Resolves when every prompt already dispatched for this owner is accepted or rejected. */
+  admitted(address: SessionAddress) {
+    return this.queues.get(addressKey(address)) ?? Promise.resolve();
   }
   async settled(address?: SessionAddress) {
     await Promise.all(

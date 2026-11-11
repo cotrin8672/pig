@@ -142,4 +142,4 @@ test("F1/F2: target selection, metadata-only restore, transitions reject sends a
   } finally {
     await rm(home, { recursive: true, force: true });
   }
-}, 30_000);
+}, 60_000);

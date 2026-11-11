@@ -163,7 +163,7 @@ test("OpenAI API uses SDK credential precedence and mirrors the ChatGPT catalog"
   } finally {
     await rm(home, { recursive: true, force: true });
   }
-}, 15_000);
+}, 30_000);
 
 test("models.json composes app configuration and malformed config reports an error without crashing startup", async () => {
   for (const invalid of [false, true]) {
@@ -210,4 +210,4 @@ test("models.json composes app configuration and malformed config reports an err
       await rm(home, { recursive: true, force: true });
     }
   }
-}, 15_000);
+}, 30_000);

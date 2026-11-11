@@ -22,6 +22,7 @@ import type {
   ModelRuntime,
   SessionManager as SDKSessionManager,
 } from "@earendil-works/pi-coding-agent";
+import { withDraftFiles } from "../shared/attachments";
 import { displayedEffort } from "../shared/effort";
 import type { ExtensionUIEvent, UIReply } from "../shared/extension-ui";
 import { isModelEnabled } from "../shared/models";
@@ -1313,6 +1314,28 @@ export class SessionHost {
       description,
     }));
   }
+  cancelPrompt(key: SendKey) {
+    const intent = this.receipts.queuedIntent(key);
+    const receipt = this.receipts.withdraw(key);
+    const m = this.sessions.get(key.sessionId);
+    if (
+      intent &&
+      receipt.state === "rejected" &&
+      receipt.code === "CANCELLED" &&
+      m?.phase === "ready" &&
+      addressKey(m.address) === addressKey(key)
+    ) {
+      this.drafts.consume(key, intent.draftRevision, (consumed) => {
+        if (consumed)
+          this.recovery.draft(
+            consumed.address,
+            consumed.draft,
+            this.draftOwner(key),
+          );
+      });
+    }
+    return receipt;
+  }
   getPromptReceipt(key: SendKey) {
     return this.receipts.lookup(key);
   }
@@ -1328,7 +1351,15 @@ export class SessionHost {
     // Ledger lookup remains usable across closed/old epochs; mutation never does.
     const m = this.current(params),
       session = required(m.runtime).session;
+    // Selection changes requested before this prompt apply to it; later ones do not.
+    const ordered = m.operation;
     const reserved = this.receipts.has(params);
+    if (
+      !reserved &&
+      params.delivery === "followUp" &&
+      this.drafts.read(params).revision !== params.draftRevision
+    )
+      throw new Error("DRAFT_REVISION_CONFLICT");
     if (!reserved)
       this.receipts.register(params, {
         owner: this.draftOwner(params),
@@ -1346,6 +1377,8 @@ export class SessionHost {
         params,
         session,
         async (signal) => {
+          signal.throwIfAborted();
+          await ordered;
           signal.throwIfAborted();
           this.current(params);
           m.admissionSignal = signal;
@@ -1375,6 +1408,7 @@ export class SessionHost {
           if (m.stopping) throw new Error("Session is stopping");
           if (
             !reserved &&
+            params.delivery !== "followUp" &&
             this.drafts.read(params).revision !== params.draftRevision
           )
             throw new Error("DRAFT_REVISION_CONFLICT");
@@ -1390,11 +1424,11 @@ export class SessionHost {
                   isModelEnabled(model, this.options.disabled?.() ?? []),
               )
             ) {
-              await this.setModel({
-                ...params,
-                provider: session.model?.provider ?? "",
-                id: session.model?.id ?? "",
-              });
+              await this.applyModel(
+                m,
+                session.model?.provider ?? "",
+                session.model?.id ?? "",
+              );
               signal.throwIfAborted();
               this.current(params);
             }
@@ -1439,6 +1473,7 @@ export class SessionHost {
           sessionId: params.sessionId,
           epoch: params.epoch,
           requestId: params.requestId,
+          delivery: params.delivery,
           draftRevision: result.draft.revision,
           text: this.drafts.expandedText(params).trim(),
           images: result.draft.images.length
@@ -1492,7 +1527,11 @@ export class SessionHost {
                 content: [
                   {
                     type: "text" as const,
-                    text: unfoldPastes(content.text, content.pastes).trim(),
+                    text: withDraftFiles(
+                      unfoldPastes(content.text, content.pastes).trim(),
+                      content.files,
+                      content.annotations,
+                    ),
                   },
                   ...content.images.map(({ image }) => image),
                 ],
@@ -1502,10 +1541,41 @@ export class SessionHost {
         },
       ];
     });
-    m.projector?.recoverQueue(queued);
+    // Host-held follow-ups have not entered SDK queues; save their text before rejection releases it.
+    const waiting = this.receipts.intents().flatMap((intent) =>
+      addressKey(intent.receipt) === addressKey(m.address) &&
+      intent.delivery === "followUp" &&
+      intent.content &&
+      intent.receipt.state === "pending" &&
+      intent.receipt.stage === "queued"
+        ? [
+            {
+              message: {
+                role: "user" as const,
+                timestamp: intent.timestamp ?? 0,
+                content: [
+                  {
+                    type: "text" as const,
+                    text: withDraftFiles(
+                      unfoldPastes(
+                        intent.content.text,
+                        intent.content.pastes,
+                      ).trim(),
+                      intent.content.files,
+                      intent.content.annotations,
+                    ),
+                  },
+                  ...intent.content.images.map(({ image }) => image),
+                ],
+              },
+            },
+          ]
+        : [],
+    );
+    m.projector?.recoverQueue([...queued, ...waiting]);
     m.runtime?.session.clearQueue();
     m.queued.clear();
-    if (queued.length) this.publish(m);
+    if (queued.length || waiting.length) this.publish(m);
   }
   private quarantine(m: Managed, error: unknown) {
     if (m.quarantined) return;
@@ -1533,10 +1603,10 @@ export class SessionHost {
     if (m.publishTimer) this.publish(m);
     m.stopping = true;
     m.transition?.abort(new Error("Session transition cancelled by Stop"));
+    this.recoverQueue(m);
     this.receipts.cancel(address);
     this.broker.cancelSession(address);
     m.ui.cancelAll("stop");
-    this.recoverQueue(m);
     m.stopPromise = stopBudget(
       (async () => {
         await m.runtime?.session.abort();
@@ -1578,6 +1648,7 @@ export class SessionHost {
     m.phase = "closing";
     m.controller.abort(new Error("Chat closed"));
     m.transition?.abort(new Error("Session transition cancelled by Close"));
+    this.recoverQueue(m);
     this.receipts.cancel(address);
     this.broker.cancelSession(address);
     m.ui.cancelAll("close");
@@ -1724,49 +1795,54 @@ export class SessionHost {
       }),
     );
   }
-  async setModel(params: SessionAddress & { provider: string; id: string }) {
+  /** Prompts admitted before a selection change finish with the old selection. */
+  private orderedSelection<T>(
+    params: SessionAddress,
+    change: (m: Managed) => Promise<T>,
+  ) {
     const m = this.current(params);
+    const admitted = this.receipts.admitted(params);
     return this.serialize(m, async () => {
+      await admitted;
       const session = required(m.runtime).session;
       if (session.isStreaming || m.projector?.running)
         await session.waitForIdle();
       m.controller.signal.throwIfAborted();
-      const available = required(m.models).getAvailableSnapshot();
-      m.modelCatalog = available.map(this.options.modelInfo);
-      const enabled = available.filter((model) =>
-        isModelEnabled(model, this.options.disabled?.() ?? []),
-      );
-      const model =
-        enabled.find(
-          (model) =>
-            model.provider === params.provider && model.id === params.id,
-        ) ??
-        enabled.find(
-          (candidate) =>
-            candidate.provider ===
-              required(
-                m.runtime,
-              ).session.settingsManager.getDefaultProvider() &&
-            candidate.id ===
-              required(m.runtime).session.settingsManager.getDefaultModel(),
-        ) ??
-        enabled[0];
-      if (!model) throw new Error("No enabled models available");
-      await required(m.runtime).session.setModel(model);
-      required(m.runtime).session.setThinkingLevel(
-        defaultEffort(model.provider, model.id) ?? "medium",
-      );
+      this.current(params);
+      return change(m);
+    });
+  }
+  async setModel(params: SessionAddress & { provider: string; id: string }) {
+    return this.orderedSelection(params, async (m) => {
+      await this.applyModel(m, params.provider, params.id);
       this.publish(m);
       return this.selection(m);
     });
   }
+  private async applyModel(m: Managed, provider: string, id: string) {
+    const session = required(m.runtime).session;
+    const available = required(m.models).getAvailableSnapshot();
+    m.modelCatalog = available.map(this.options.modelInfo);
+    const enabled = available.filter((model) =>
+      isModelEnabled(model, this.options.disabled?.() ?? []),
+    );
+    const settings = session.settingsManager;
+    const model =
+      enabled.find((model) => model.provider === provider && model.id === id) ??
+      enabled.find(
+        (model) =>
+          model.provider === settings.getDefaultProvider() &&
+          model.id === settings.getDefaultModel(),
+      ) ??
+      enabled[0];
+    if (!model) throw new Error("No enabled models available");
+    await session.setModel(model);
+    session.setThinkingLevel(
+      defaultEffort(model.provider, model.id) ?? "medium",
+    );
+  }
   async setEffort(params: SessionAddress & { effort: Effort }) {
-    const m = this.current(params);
-    return this.serialize(m, async () => {
-      const session = required(m.runtime).session;
-      if (session.isStreaming || m.projector?.running)
-        await session.waitForIdle();
-      m.controller.signal.throwIfAborted();
+    return this.orderedSelection(params, async (m) => {
       if (!this.selection(m).effortLevels.includes(params.effort))
         throw new Error("Unsupported reasoning effort");
       required(m.runtime).session.setThinkingLevel(params.effort);
@@ -1823,6 +1899,16 @@ export class SessionHost {
         return this.snapshot(m);
       }),
     );
+  }
+  /**
+   * Membership of one chat without scanning the project: an open chat, or a
+   * file whose header belongs to `cwd`. Title and time come only from open chats.
+   */
+  async findSession(cwd: string, id: string): Promise<SessionInfo> {
+    const m = this.sessions.get(id);
+    if (m && m.cwd === cwd) return this.info(m);
+    await resolveSessionFile(cwd, id);
+    return { id, cwd, title: "", modified: 0 };
   }
   async listSessions(cwd: string) {
     const records = new Map(

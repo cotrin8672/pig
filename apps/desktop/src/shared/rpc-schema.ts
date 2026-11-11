@@ -276,6 +276,7 @@ export type RPCSchema = {
         response: { value: string; label: string; description?: string }[];
       };
       getPromptReceipt: { params: SendKey; response: PromptReceipt };
+      cancelPrompt: { params: SendKey; response: PromptReceipt };
       getRecovery: { params: SessionAddress; response: RuntimeRecoveryState };
       syncDraft: { params: DraftSyncParams; response: DraftSyncResult };
       discardRecovery: {

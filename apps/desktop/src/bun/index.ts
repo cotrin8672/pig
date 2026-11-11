@@ -59,6 +59,7 @@ import {
   configureSessionHost,
   deleteSession,
   disposeSessions,
+  findSession,
   forkSession,
   listProviders,
   listSessions,
@@ -142,11 +143,12 @@ async function resolveSession(input: SessionTarget) {
   )
     throw new Error("Invalid chat reference.");
   await validateScope(input.cwd);
-  const info = (await listSessions(input.cwd)).find(
-    (session) => session.id === input.id,
-  );
-  if (!info) throw new Error("Chat not found. Refresh the session list.");
-  return info;
+  // One header check instead of scanning every chat in the project.
+  try {
+    return await findSession(input.cwd, input.id);
+  } catch {
+    throw new Error("Chat not found. Refresh the session list.");
+  }
 }
 let windowFocused = true;
 function openManagedSession(input: OpenSessionParams) {
@@ -216,6 +218,7 @@ const rpc = BrowserView.defineRPC<RPCSchema>({
       completeSlashArguments: (input) =>
         sessionHost.completeSlashArguments(input),
       getPromptReceipt: (input) => sessionHost.getPromptReceipt(input),
+      cancelPrompt: (input) => sessionHost.cancelPrompt(input),
       getRecovery: (input) => sessionHost.getRecovery(input),
       syncDraft: (input) => sessionHost.syncDraft(input),
       discardRecovery: (input) => sessionHost.discardRecovery(input),

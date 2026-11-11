@@ -109,6 +109,7 @@ export class SendRecoveryStore {
       pastes: content.pastes,
       images,
       files: content.files,
+      annotations: content.annotations,
     });
   }
   private unpack(data: string): DraftContent {
@@ -156,6 +157,8 @@ export class SendRecoveryStore {
             text: draft.text,
             pastes: draft.pastes,
             images: JSON.parse(previous.content).images,
+            files: draft.files,
+            annotations: draft.annotations,
           })
         : this.pack(db, `draft:${sessionKey(address)}`, draft);
     const result = db

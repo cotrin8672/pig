@@ -38,10 +38,11 @@ export type RuntimeEvent =
     }
   | { type: "snapshot"; snapshot: Snapshot };
 export type SendKey = SessionAddress & { requestId: string };
+export type PromptDelivery = "steer" | "followUp";
 export type PromptAccepted = { disposition: "started" | "queued" | "handled" };
 export type PromptReceipt = SendKey &
   (
-    | { state: "pending"; stage?: "prepared" | "dispatched" }
+    | { state: "pending"; stage?: "prepared" | "queued" | "dispatched" }
     | { state: "accepted"; accepted: PromptAccepted; acceptedAt: number }
     | { state: "rejected"; code: string; message: string }
     | { state: "unknown"; reason: "host-restarted" | "not-found" }
@@ -62,9 +63,11 @@ export type DraftSyncParams = SessionAddress & {
   content: DraftContent;
   keepImages?: true;
   requestId?: string;
+  delivery?: PromptDelivery;
 };
 export type DraftSyncResult = { applied: boolean; draft: DraftState };
 export type PromptParams = SendKey & {
+  delivery?: PromptDelivery;
   text: string;
   images?: ImageContent[];
   draftRevision: number;
@@ -81,6 +84,8 @@ export type RecoveredDraft = {
 };
 export type SendIntent = {
   receipt: PromptReceipt;
+  delivery?: PromptDelivery;
+  timestamp?: number;
   draftRevision: number;
   content?: DraftContent;
   hash: string;
