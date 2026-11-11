@@ -13,6 +13,7 @@ import {
   X,
 } from "lucide-react";
 import { Fragment, useEffect, useLayoutEffect, useRef, useState } from "react";
+import appIcon from "../../assets/icon.svg";
 import { finishedWork, groupBlocks } from "../shared/tool-view";
 import { responseStats } from "../shared/transcript";
 import { ChatHeader } from "./ChatHeader";
@@ -116,7 +117,10 @@ export function App() {
       </button>
       <aside id="app-sidebar" className="sidebar" inert={!sidebarOpen}>
         <header className="electrobun-webkit-app-region-drag">
-          <strong>pig</strong>
+          <strong className="sidebar-brand">
+            <img src={appIcon} alt="" width={20} height={20} />
+            pig
+          </strong>
         </header>
         <SidebarSessions />
         <div className="sidebar-footer">

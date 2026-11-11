@@ -167,6 +167,11 @@ p {
   padding-right: 44px;
   margin-bottom: 6px;
 }
+.sidebar-brand {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
 .sidebar-toggle {
   position: absolute;
   top: 12px;

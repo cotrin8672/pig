@@ -18,11 +18,11 @@ export default {
     },
     watchIgnore: ["dist/**"],
     mac: { bundleCEF: false },
-    linux: { bundleCEF: false },
-    win: { bundleCEF: false },
+    linux: { bundleCEF: false, icon: "assets/icon.png" },
+    win: { bundleCEF: false, icon: "assets/icon.ico" },
   },
   scripts: {
     preBuild: "scripts/sdk-runtime-assets.ts",
-    postBuild: "scripts/windows-native.ts",
+    postBuild: "scripts/post-build.ts",
   },
 } satisfies ElectrobunConfig;

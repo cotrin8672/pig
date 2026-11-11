@@ -66,7 +66,7 @@ describe("SDK runtime production packaging", () => {
       "node_modules",
     );
     expect(config.scripts.preBuild).toBe("scripts/sdk-runtime-assets.ts");
-    expect(config.scripts.postBuild).toBe("scripts/windows-native.ts");
+    expect(config.scripts.postBuild).toBe("scripts/post-build.ts");
     expect(config.build.win.bundleCEF).toBe(false);
   });
   test("pnpm links, exports-hidden manifests, cycles, assets, versions and manifest edges survive without links", () => {

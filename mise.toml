@@ -1,3 +1,11 @@
 [tasks.dev]
 description = "Start the desktop app in the background, or focus the running dev window (Windows)"
 run = "powershell.exe -NoProfile -ExecutionPolicy Bypass -File apps/desktop/scripts/start-dev.ps1"
+
+[tasks.icons]
+description = "Regenerate app icons (icon.png for Linux, icon.ico for Windows) from apps/desktop/assets/icon.svg; requires ImageMagick 7"
+dir = "apps/desktop/assets"
+run = [
+  "magick -background none -density 400 icon.svg -resize 512x512 icon.png",
+  "magick -background none -density 400 icon.svg -define icon:auto-resize=256,64,48,32,16 icon.ico",
+]
