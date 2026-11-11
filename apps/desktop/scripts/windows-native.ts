@@ -168,7 +168,8 @@ async function main() {
           throw new Error(
             `Native SDK download failed: ${response.status} ${url}`,
           );
-        await Bun.write(`${path}.download`, response);
+        // Consume via fetch so its abort signal also covers the response body.
+        await Bun.write(`${path}.download`, await response.arrayBuffer());
         if ((await digest(`${path}.download`)) !== hash)
           throw new Error(`Native SDK hash mismatch: ${file}`);
         rmSync(path, { force: true });

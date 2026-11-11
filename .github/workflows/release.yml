@@ -1,3 +1,5 @@
+# Shell snippets and GitHub expressions are intentionally kept on long lines.
+# yamllint disable rule:line-length
 name: Release
 
 on:
@@ -67,6 +69,7 @@ jobs:
       - run: pnpm lint
       - run: pnpm test
       - name: Build portable app (shared stable profile)
+        timeout-minutes: 20
         run: |
           set -euo pipefail
           pnpm --filter @pig/desktop exec vite build
