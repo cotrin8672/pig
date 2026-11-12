@@ -6,7 +6,7 @@ import {
 import type { AuthMethod, LoginFrame } from "../shared/rpc-schema";
 import { authOperations } from "./auth-operations";
 import { deviceId } from "./desktop-config";
-import { refreshModels, runtime } from "./pi-service";
+import { providerName, refreshModels, runtime } from "./pi-service";
 import { providerAccounts } from "./provider-accounts";
 
 function authKey(provider: string, accountId?: string) {
@@ -61,6 +61,7 @@ export async function startLogin(
   /** false/throw when the OS refused the URL; true only means it was handed off. */
   open: (url: string) => boolean,
   accountId?: string,
+  addAccount = false,
 ) {
   const push = (frame: LoginFrame) =>
     emit({ ...frame, ...(accountId !== undefined ? { accountId } : {}) });
@@ -86,8 +87,10 @@ export async function startLogin(
     !auth ||
     (method !== "oauth" && method !== "api_key") ||
     (method === "oauth" ? !auth.oauth : !auth.apiKey?.login) ||
-    (accountId !== undefined &&
-      (method !== "oauth" || !auth.oauth?.isSubscription))
+    ((accountId !== undefined || addAccount) &&
+      (method !== "oauth" || !auth.oauth?.isSubscription)) ||
+    typeof addAccount !== "boolean" ||
+    (addAccount && accountId !== undefined)
   ) {
     push({
       loginId,
@@ -135,7 +138,9 @@ export async function startLogin(
   };
   try {
     await authOperations.login(
-      authKey(provider, accountId),
+      addAccount
+        ? JSON.stringify([provider, "new"])
+        : authKey(provider, accountId),
       login.abort,
       async () => {
         if (accountId !== undefined)
@@ -144,7 +149,7 @@ export async function startLogin(
           });
         const id = await deviceId();
         const options = { getDeviceId: () => id, agentName: "pig" };
-        if (accountId === undefined) {
+        if (accountId === undefined && !addAccount) {
           await runtime.login(provider, method, interaction, options);
         } else {
           if (!auth.oauth)
@@ -154,18 +159,28 @@ export async function startLogin(
             options,
           );
           login.abort.signal.throwIfAborted();
-          await providerAccounts.modify(
-            accountId,
-            provider,
-            async () => credential,
-            { signal: login.abort.signal },
-          );
+          if (addAccount) {
+            const account = await providerAccounts.add(
+              provider,
+              providerName(provider),
+              credential,
+              { signal: login.abort.signal },
+            );
+            accountId = account.id;
+          } else if (accountId !== undefined) {
+            await providerAccounts.modify(
+              accountId,
+              provider,
+              async () => credential,
+              { signal: login.abort.signal },
+            );
+          }
         }
-        await refreshModels({
-          providers: [provider],
-          signal: login.abort.signal,
-        });
-        login.abort.signal.throwIfAborted();
+        // The credential is committed now. Cancellation or a catalog failure must
+        // not misreport a successful sign-in or leave a seemingly failed new account.
+        await refreshModels({ providers: [provider] }).catch((error) =>
+          console.error("Model refresh after sign-in:", error),
+        );
       },
       provider,
     );

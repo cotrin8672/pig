@@ -6,6 +6,7 @@ import Electrobun, {
   Updater,
   Utils,
 } from "electrobun/bun";
+import { accountSourceKey } from "../shared/account-models";
 import { dictionary } from "../shared/i18n";
 import { sanitizeOverride } from "../shared/model-overrides";
 import { isModelEnabled } from "../shared/models";
@@ -91,6 +92,7 @@ import {
   setSessionModel,
   utilityModels,
 } from "./pi-service";
+import { providerAccounts } from "./provider-accounts";
 import { agentDir, agentDirSource } from "./runtime-profile";
 import { validateSessionScope } from "./session-scope";
 import { loadSettings, saveSettings } from "./settings";
@@ -296,6 +298,42 @@ const rpc = BrowserView.defineRPC<RPCSchema>({
               return {};
             }),
           ]);
+        const accountCatalogs = Object.fromEntries([
+          ...providers.map(
+            (provider) =>
+              [
+                accountSourceKey(provider.id),
+                models
+                  .filter((model) => model.provider === provider.id)
+                  .map(modelInfo),
+              ] as const,
+          ),
+          ...(await Promise.all(
+            providers.flatMap((provider) =>
+              (provider.accounts ?? []).map(
+                async (account) =>
+                  [
+                    accountSourceKey(provider.id, account.id),
+                    account.configured
+                      ? await accountModels(provider.id, account.id).catch(
+                          (error) => {
+                            report(error);
+                            return [];
+                          },
+                        )
+                      : [],
+                  ] as const,
+              ),
+            ),
+          )),
+        ]);
+        const allModels = [
+          ...new Map(
+            Object.values(accountCatalogs)
+              .flat()
+              .map((model) => [`${model.provider}/${model.id}`, model]),
+          ).values(),
+        ];
         await desktopState.settled();
         return {
           generalCwd,
@@ -305,7 +343,8 @@ const rpc = BrowserView.defineRPC<RPCSchema>({
           desktop: desktopState.value,
           providers,
           ...utilities,
-          models: models.map(modelInfo),
+          models: allModels,
+          accountCatalogs,
           defaultModel: (() => {
             try {
               return readDefaultModel();
@@ -379,6 +418,11 @@ const rpc = BrowserView.defineRPC<RPCSchema>({
         Utils.openPath(knownProject(input?.cwd, projects)),
       createProviderAccount: ({ provider, label }) =>
         createProviderAccount(provider, label),
+      renameDefaultProviderAccount: ({ provider, label }) => {
+        if (!runtime.getProvider(provider)?.auth.oauth?.isSubscription)
+          throw new Error("Only subscription accounts are supported.");
+        return providerAccounts.renameDefault(provider, label);
+      },
       renameProviderAccount: ({ provider, accountId, label }) =>
         renameProviderAccount(provider, accountId, label),
       removeProviderAccount: ({ provider, accountId }) =>
@@ -402,9 +446,9 @@ const rpc = BrowserView.defineRPC<RPCSchema>({
       setModelEnabled: async ({ provider, id, enabled }) => {
         if (
           typeof enabled !== "boolean" ||
-          !(await availableModels()).some(
-            (m) => m.provider === provider && m.id === id,
-          )
+          typeof provider !== "string" ||
+          typeof id !== "string" ||
+          !runtime.getModel(provider, id)
         )
           throw new Error("Invalid model preference.");
         const next = await modelPreferences.setEnabled(provider, id, enabled);
@@ -419,14 +463,10 @@ const rpc = BrowserView.defineRPC<RPCSchema>({
           ids.length > 1000
         )
           throw new Error("Invalid model preferences.");
-        const models = await availableModels();
         if (
+          typeof provider !== "string" ||
           !ids.every(
-            (id) =>
-              typeof id === "string" &&
-              models.some(
-                (model) => model.provider === provider && model.id === id,
-              ),
+            (id) => typeof id === "string" && runtime.getModel(provider, id),
           )
         )
           throw new Error("Invalid model preferences.");
@@ -525,7 +565,7 @@ const rpc = BrowserView.defineRPC<RPCSchema>({
           rpc.send.projects(projects);
         })().catch(report);
       },
-      startLogin: ({ provider, method, loginId, accountId }) => {
+      startLogin: ({ provider, method, loginId, accountId, addAccount }) => {
         void startLogin(
           provider,
           method,
@@ -533,6 +573,7 @@ const rpc = BrowserView.defineRPC<RPCSchema>({
           (frame) => rpc.send.loginFrame(frame),
           (url) => Utils.openExternal(url),
           accountId,
+          addAccount,
         ).catch(report);
       },
       resolveLogin: ({ loginId, value }) => resolveLogin(loginId, value),

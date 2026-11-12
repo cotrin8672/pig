@@ -107,7 +107,16 @@ function info(id: string, account: StoredAccount): ProviderAccount {
 /** Metadata and tokens commit together; no orphan tokens or stale refresh resurrection. */
 export class ProviderAccountStore {
   private readonly file: AuthFile<Record<string, StoredAccount>>;
+  private readonly names: AuthFile<Record<string, string>>;
   constructor(path: string) {
+    this.names = new AuthFile(`${path}.names.json`, (value) => {
+      record(value);
+      for (const [provider, name] of Object.entries(value)) {
+        validateProviderId(provider);
+        label(name);
+      }
+      return value as Record<string, string>;
+    });
     this.file = new AuthFile(path, (value) => {
       record(value);
       for (const [id, entry] of Object.entries(value)) {
@@ -145,6 +154,44 @@ export class ProviderAccountStore {
       data[id] = account;
       return { result: info(id, account), save: true };
     });
+  }
+  defaultNames() {
+    return this.names.read();
+  }
+  async renameDefault(provider: string, name: string) {
+    validateProviderId(provider);
+    const next = label(name);
+    await this.names.use(async (data) => {
+      data[provider] = next;
+      return { result: undefined, save: true };
+    });
+  }
+  /** Publish a new account only after OAuth succeeded. Reserve 1 for standard pi auth. */
+  add(
+    provider: string,
+    providerName: string,
+    value: OAuthCredential,
+    options?: AuthOperationOptions,
+  ) {
+    validateProviderId(provider);
+    credential(value);
+    const base = label(providerName);
+    return this.file.use(async (data) => {
+      options?.signal?.throwIfAborted();
+      let n = 2;
+      const used = Object.values(data).filter(
+        (entry) => entry.provider === provider,
+      );
+      while (used.some((entry) => entry.label === `${base} ${n}`)) n++;
+      const id = crypto.randomUUID();
+      const account = {
+        provider,
+        label: label(`${base} ${n}`),
+        credential: value,
+      };
+      data[id] = account;
+      return { result: info(id, account), save: true };
+    }, options);
   }
   rename(id: string, provider: string, name: string) {
     const next = label(name);

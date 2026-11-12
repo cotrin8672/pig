@@ -117,6 +117,8 @@ type Managed = {
   runtime?: AgentSessionRuntime;
   models?: ModelRuntime;
   accounts: SessionAccounts;
+  accountHistory?: boolean;
+  accountSelectionFailed?: boolean;
   modelCatalog?: ModelInfo[];
   catalogSource?: readonly Model<Api>[];
   projector?: SDKProjector;
@@ -1173,6 +1175,10 @@ export class SessionHost {
       configError: snapshot.configError,
     });
   }
+  publishModelCatalogs() {
+    for (const m of this.sessions.values())
+      if (m.phase === "ready" && !m.quarantined) this.publish(m);
+  }
   private cancelPublish(m: Managed) {
     clearTimeout(m.publishTimer);
     m.publishTimer = undefined;
@@ -1265,6 +1271,18 @@ export class SessionHost {
     m.infoCache = { leaf, count, running, value };
     return value;
   }
+  private hasAccountHistory(m: Managed) {
+    if (!m.accountHistory)
+      m.accountHistory = m.manager
+        .getEntries()
+        .some(
+          (entry) =>
+            entry.type === "message" &&
+            (entry.message.role === "user" ||
+              entry.message.role === "assistant"),
+        );
+    return m.accountHistory;
+  }
   private snapshot(m: Managed, includeCatalog = true): Snapshot {
     const projector = required(m.projector);
     m.adapterSnapshot ??= m.adapters?.snapshot();
@@ -1278,6 +1296,8 @@ export class SessionHost {
       ...(m.phase === "ready" ? {} : { ready: false }),
       address: { ...m.address },
       snapshotSeq: ++m.seq,
+      sessionAccounts: { ...m.accounts },
+      accountSwitchAllowed: !this.hasAccountHistory(m),
       modelCatalog:
         includeCatalog || catalogChanged ? m.modelCatalog : undefined,
       info: this.info(m),
@@ -1474,6 +1494,10 @@ export class SessionHost {
           if (!params.text.trim() && !params.images?.length)
             throw new Error("Message is empty");
           if (!params.text.startsWith("/")) {
+            if (m.accountSelectionFailed)
+              throw new Error(
+                "Account selection failed. Choose an account again before sending.",
+              );
             const available = required(m.models).getAvailableSnapshot();
             if (
               !available.some(
@@ -1896,17 +1920,10 @@ export class SessionHost {
       const oldModel = session.model;
       const oldEffort = session.thinkingLevel;
       if (changed) {
+        // Do not let sends queued behind a failed account change use the old identity.
+        m.accountSelectionFailed = true;
         // shortcut: prohibit account changes with history until cross-account reasoning replay is verified.
-        if (
-          m.manager
-            .getEntries()
-            .some(
-              (entry) =>
-                entry.type === "message" &&
-                (entry.message.role === "user" ||
-                  entry.message.role === "assistant"),
-            )
-        )
+        if (this.hasAccountHistory(m))
           throw new Error("Account changes currently require a new chat.");
         if (next) {
           if (!models.getProvider(params.provider)?.auth.oauth?.isSubscription)
@@ -1944,6 +1961,7 @@ export class SessionHost {
         }
         throw error;
       }
+      m.accountSelectionFailed = false;
       this.publish(m);
       return this.selection(m);
     });

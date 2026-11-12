@@ -41,6 +41,7 @@ import {
 import { reloadUserCatalog } from "./user-catalog";
 
 registerBunOAuthFlows();
+let publishCatalogs = () => {};
 export const runtime = await createModelRuntime();
 export const modelErrors = modelRuntimeErrors;
 export async function refreshUserCatalog() {
@@ -68,6 +69,7 @@ export async function refreshModels(
     modelErrors.push(message);
     console.error(message);
   }
+  publishCatalogs();
   return result;
 }
 await loadEfforts();
@@ -76,12 +78,17 @@ export function refreshProviderModels(provider: string) {
   return manualModelRefresh(provider, {
     hasProvider: (id) => !!runtime.getProvider(id),
     online: modelNetworkEnabled,
-    refresh: refreshAllModelRuntimes,
+    refresh: async (options) => {
+      const results = await refreshAllModelRuntimes(options);
+      publishCatalogs();
+      return results;
+    },
   });
 }
 export async function applyModelSettings(selected?: readonly string[]) {
   await applyRuntimeModelSettings(runtime, selected);
   await refreshAllModelRuntimes({ providers: selected, allowNetwork: false });
+  publishCatalogs();
 }
 function refreshInBackground() {
   if (modelNetworkEnabled)
@@ -123,8 +130,14 @@ const providerNames: Record<string, string> = {
   openai: "OpenAI ChatGPT",
   "openai-api": "OpenAI API",
 };
+export function providerName(id: string) {
+  return providerNames[id] ?? runtime.getProvider(id)?.name ?? id;
+}
 export async function listProviders(): Promise<ProviderInfo[]> {
-  const accounts = await providerAccounts.list();
+  const [accounts, names] = await Promise.all([
+    providerAccounts.list(),
+    providerAccounts.defaultNames(),
+  ]);
   const stored = new Set(
     (await runtime.listCredentials()).map((item) => item.providerId),
   );
@@ -133,7 +146,8 @@ export async function listProviders(): Promise<ProviderInfo[]> {
       const auth = await runtime.checkAuth(p.id);
       return {
         id: p.id,
-        name: providerNames[p.id] ?? p.name,
+        name: providerName(p.id),
+        accountLabel: names[p.id],
         oauth: p.auth.oauth && {
           label: p.auth.oauth.loginLabel,
           subscription: !!p.auth.oauth.isSubscription,
@@ -238,6 +252,7 @@ export const sessionHost = new SessionHost({
   emitTerminal: (event) => transport().terminal(event),
   disabled: () => disabled,
 });
+publishCatalogs = () => sessionHost.publishModelCatalogs();
 export const openSession = (input: OpenSessionParams) =>
   sessionHost.openSession(input);
 export const listSessions = (cwd: string) => sessionHost.listSessions(cwd);

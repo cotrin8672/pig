@@ -56,6 +56,8 @@ export interface ProviderInfo {
   stored: boolean;
   extension: boolean;
   accounts?: ProviderAccount[];
+  /** Display name of standard pi auth, not a synthetic Provider ID. */
+  accountLabel?: string;
 }
 export type AuthMethod = "oauth" | "api_key";
 export interface UtilityModelInfo {
@@ -118,6 +120,8 @@ export interface ModelSelection {
   contextUsage?: ContextUsage | null;
 }
 export interface Snapshot extends ModelSelection {
+  sessionAccounts?: Record<string, string>;
+  accountSwitchAllowed?: boolean;
   modelCatalog?: ModelInfo[];
   /** A history preview is readable but must never grant runtime capabilities. */
   ready?: false;
@@ -144,6 +148,8 @@ export interface Bootstrap {
   generalCwd: string;
   providers: ProviderInfo[];
   models: ModelInfo[];
+  /** Available catalogs keyed by the UI-only accountSourceKey, never SDK IDs. */
+  accountCatalogs?: Record<string, ModelInfo[]>;
   /** Global pi default; existing chats retain their saved model. */
   defaultModel?: DefaultModel;
   imageModels: UtilityModelInfo[];
@@ -341,6 +347,11 @@ export type RPCSchema = {
         params: { provider: string; label: string };
         response: ProviderAccount;
       };
+      renameDefaultProviderAccount: {
+        params: { provider: string; label: string };
+        // biome-ignore lint/suspicious/noConfusingVoidType: Electrobun convention.
+        response: void;
+      };
       renameProviderAccount: {
         params: { provider: string; accountId: string; label: string };
         response: ProviderAccount;
@@ -417,7 +428,11 @@ export type RPCSchema = {
       setAppearance: Appearance;
       setSettings: SettingsPatch;
       windowControl: { action: "minimize" | "toggleMaximize" | "close" };
-      startLogin: AccountTarget & { method: AuthMethod; loginId: string };
+      startLogin: AccountTarget & {
+        method: AuthMethod;
+        loginId: string;
+        addAccount?: boolean;
+      };
       resolveLogin: { loginId: string; value: string };
       cancelLogin: { loginId: string };
       openExternal: { url: string };

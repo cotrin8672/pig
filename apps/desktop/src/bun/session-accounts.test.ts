@@ -68,6 +68,8 @@ test("account login, session selection, sends, persistence and forks retain cano
       failSave = true;
       await expect(select(a,personal.id)).rejects.toThrow("fixture save failed");
       failSave = false;
+      await expect(host.prompt({...a.address,requestId:"blocked-account-selection",text:"must not send with the old account",draftRevision:0})).rejects.toThrow("Account selection failed");
+      expect(faux.state.callCount).toBe(0);
       expect((await currentAuth(a)).auth.apiKey).toBe("work");
       expect(host.getSessionSnapshot(a.address).accountId).toBe(work.id);
       // Legacy model-only requests keep the chat's chosen account; null explicitly chooses pi's default.
@@ -86,6 +88,8 @@ test("account login, session selection, sends, persistence and forks retain cano
       await expect(select(a,personal.id)).rejects.toThrow("new chat");
       expect((await host.setModel({...a.address,provider,id:"two"})).accountId).toBe(work.id);
       a = host.getSessionSnapshot(a.address);
+      expect(a.accountSwitchAllowed).toBe(false);
+      expect(a.sessionAccounts[provider]).toBe(work.id);
       const assistant = a.transcript.records.find(r => r.kind === "message" && r.message.role === "assistant");
       expect(assistant.message.provider).toBe(provider);
       const fork = await host.forkSession({...a.address,entryId:assistant.entryId});

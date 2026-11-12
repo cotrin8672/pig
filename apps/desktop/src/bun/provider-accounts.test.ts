@@ -34,6 +34,33 @@ const token = (
   expires,
 });
 
+test("completed sign-ins atomically add numbered accounts; default renames never move credentials", async () => {
+  const { file, store } = await fixture();
+  const added = await Promise.all([
+    store.add("openai-codex", "OpenAI Codex", token("a")),
+    store.add("openai-codex", "OpenAI Codex", token("b")),
+  ]);
+  expect(added.map((account) => account.label).sort()).toEqual([
+    "OpenAI Codex 2",
+    "OpenAI Codex 3",
+  ]);
+  expect(added.every((account) => account.configured)).toBe(true);
+  await store.renameDefault("openai-codex", "Codex Private");
+  expect(await new ProviderAccountStore(file).defaultNames()).toEqual({
+    "openai-codex": "Codex Private",
+  });
+  expect((await store.list()).length).toBe(2);
+  const abort = new AbortController();
+  abort.abort();
+  await expect(
+    store.add("openai-codex", "OpenAI Codex", token("never"), {
+      signal: abort.signal,
+    }),
+  ).rejects.toThrow();
+  expect((await store.list()).length).toBe(2);
+  expect(JSON.stringify(await store.list())).not.toContain("refresh-");
+});
+
 test("accounts have stable identities; metadata never contains tokens and logout keeps the label", async () => {
   const { file, store } = await fixture();
   const account = await store.create("anthropic", " Work ");
