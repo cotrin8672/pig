@@ -2134,3 +2134,68 @@
   color: var(--ds-accent);
   padding-right: 10px;
 }
+
+/* steering */
+.pp-steer-waiting .user-bubble {
+  opacity: 0.55;
+  border: 1px dashed var(--ds-border-strong);
+  background: transparent;
+}
+.pp-steer-slot {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+  color: var(--ds-accent);
+}
+.pp-steer-slot small {
+  color: var(--ds-accent);
+  white-space: nowrap;
+}
+.pp-steer-slot .pp-rule {
+  background: repeating-linear-gradient(
+    90deg,
+    var(--ds-accent-soft) 0 4px,
+    transparent 4px 8px
+  );
+  opacity: 0.6;
+}
+.pp-steer-unread .user-bubble {
+  border: 1px dashed var(--ds-border-strong);
+}
+.pp-steer-receipt {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 4px;
+  margin-top: 4px;
+  font-size: var(--text-xs);
+  color: var(--ds-text-faint);
+}
+.pp-steer-receipt code {
+  color: var(--ds-text-muted);
+}
+.pp-steer-status {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  border-radius: var(--radius-full);
+  background: var(--ds-tile);
+  font-size: var(--text-sm);
+  color: var(--ds-text-muted);
+  width: fit-content;
+}
+.pp-steer-status strong {
+  color: var(--ds-accent);
+  font-weight: var(--font-weight-medium);
+}
+.pp-steer-ack {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin: 0 0 4px;
+  font-size: var(--text-xs);
+  color: var(--ds-text-faint);
+}
