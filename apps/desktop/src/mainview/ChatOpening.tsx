@@ -128,7 +128,11 @@ export function OpeningComposer({ preview }: { preview?: Snapshot }) {
             if (action === "composer.newline")
               insertEditorNewline(event.currentTarget, changeText);
             else if (!event.repeat)
-              send(action === "composer.queue" ? "followUp" : "steer");
+              send(
+                action === "composer.queue" && snapshot?.transcript.running
+                  ? "followUp"
+                  : "steer",
+              );
           }}
         />
         <div className="composer-toolbar">

@@ -743,7 +743,11 @@ export function Composer({ snapshot }: { snapshot: Snapshot }) {
                 })),
               );
             } else if (!event.repeat)
-              send(action === "composer.queue" ? "followUp" : "steer");
+              send(
+                action === "composer.queue" && transcript.running
+                  ? "followUp"
+                  : "steer",
+              );
           }}
         />
         <div className="composer-toolbar">
