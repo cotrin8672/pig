@@ -404,6 +404,79 @@ test.each([
   );
 });
 
+test("wire result references hydrate before buffered events, replacements and reconnects reach the store", () => {
+  const { address, snapshot } = fixture();
+  snapshot.transcript = {
+    ...emptyTranscript(),
+    history: { revision: "branch" },
+    records: [
+      {
+        id: "result",
+        entryId: "result",
+        parentId: null,
+        branchId: "branch",
+        order: 0,
+        kind: "message",
+        message: {
+          role: "toolResult",
+          toolCallId: "tool",
+          toolName: "read",
+          content: [{ type: "text", text: "full output" }],
+          details: { diff: "full diff" },
+          isError: false,
+          timestamp: 1,
+        },
+      },
+    ],
+    tools: { tool: { status: "done", result: { extra: true } } },
+    toolResultRefs: { tool: "result" },
+  };
+  const check = () => {
+    const transcript =
+      useStore.getState().snapshots[address.sessionId].transcript;
+    const record = transcript.records[0];
+    if (record.kind !== "message" || record.message.role !== "toolResult")
+      throw new Error("Missing result");
+    const result = transcript.tools.tool.result as {
+      content: unknown;
+      details: unknown;
+      extra: boolean;
+    };
+    expect(result.content).toBe(record.message.content);
+    expect(result.details).toBe(record.message.details);
+    expect(result.extra).toBe(true);
+    expect(transcript.toolResultRefs).toBeUndefined();
+  };
+  receiveWire({
+    type: "snapshot",
+    address,
+    snapshotSeq: 2,
+    transcript: snapshot.transcript,
+  });
+  receiveSnapshot(snapshot);
+  check();
+  const next = { ...snapshot, address: { ...address, epoch: 2 } };
+  receiveRuntime({ type: "replaced", previous: address, snapshot: next });
+  check();
+  receiveRuntimeState(
+    {
+      hostId: address.hostId,
+      sessions: [
+        {
+          phase: "ready",
+          address: next.address,
+          snapshot: { ...next, snapshotSeq: 3 },
+        },
+      ],
+      drafts: [],
+      pendingUI: [],
+      statuses: [],
+    },
+    runtimeRevision,
+  );
+  check();
+});
+
 // Capture the actual buffer without exporting a production cache for tests.
 function bufferWire(wire: WireEvent) {
   let buffer: Map<string, WireEvent> | undefined;

@@ -1,6 +1,7 @@
 import type { Snapshot, WireEvent } from "../shared/rpc-schema";
 import type { SessionAddress } from "../shared/runtime-contract";
 import type { Transcript } from "../shared/transcript";
+import { unpackTranscript } from "../shared/transcript-wire";
 
 export type ChatSnapshot = Snapshot;
 export const addressKey = (address: SessionAddress) =>
@@ -9,7 +10,10 @@ export const sameAddress = (a: SessionAddress, b: SessionAddress) =>
   a.hostId === b.hostId && a.sessionId === b.sessionId && a.epoch === b.epoch;
 
 export function hydrateChatSnapshot(snapshot: Snapshot): ChatSnapshot {
-  return snapshot;
+  const transcript = unpackTranscript(snapshot.transcript);
+  return transcript === snapshot.transcript
+    ? snapshot
+    : { ...snapshot, transcript };
 }
 
 /** Keep explicitly loaded history when the host publishes only its recent tail. */
@@ -48,6 +52,7 @@ export function prependHistory(
     current.transcript.history.before !== before
   )
     return current;
+  page = unpackTranscript(page);
   return {
     ...current,
     transcript: {
@@ -72,7 +77,10 @@ export function applyChatEvent(
   return {
     ...snapshot,
     snapshotSeq: event.snapshotSeq,
-    transcript: retainHistory(snapshot.transcript, event.transcript),
+    transcript: retainHistory(
+      snapshot.transcript,
+      unpackTranscript(event.transcript),
+    ),
     failure: event.failure,
     aborted: event.aborted,
     sessionUI: event.sessionUI,
@@ -84,7 +92,7 @@ export function newerSnapshot(
   current: Snapshot | undefined,
   incoming: Snapshot,
 ): Snapshot {
-  if (!current) return incoming;
+  if (!current) return hydrateChatSnapshot(incoming);
   if (current.address.hostId !== incoming.address.hostId) return current;
   if (incoming.address.epoch < current.address.epoch) return current;
   if (
@@ -92,6 +100,7 @@ export function newerSnapshot(
     incoming.snapshotSeq <= current.snapshotSeq
   )
     return current;
+  incoming = hydrateChatSnapshot(incoming);
   return sameAddress(current.address, incoming.address)
     ? {
         ...incoming,

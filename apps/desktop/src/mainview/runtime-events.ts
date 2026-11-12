@@ -12,6 +12,7 @@ import type {
 import {
   addressKey,
   applyChatEvent,
+  hydrateChatSnapshot,
   newerSnapshot,
   sameAddress,
 } from "./chat-snapshot";
@@ -123,6 +124,7 @@ function replace(previous: SessionAddress, next: SessionAddress) {
 }
 export function receiveSnapshot(incoming: Snapshot) {
   if (!register(incoming.address)) return;
+  incoming = hydrateChatSnapshot(incoming);
   const wire = latest.get(addressKey(incoming.address));
   const snapshot = {
     ...(wire ? applyChatEvent(incoming, wire) : incoming),

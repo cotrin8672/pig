@@ -28,7 +28,7 @@ import type {
 } from "./runtime-contract";
 import type { Settings, SettingsPatch } from "./settings";
 import type { TerminalClientCommand, TerminalHostEvent } from "./terminal-ui";
-import type { Transcript } from "./transcript";
+import type { WireTranscript } from "./transcript-wire";
 
 export type { PromptAccepted } from "./runtime-contract";
 
@@ -36,7 +36,7 @@ export type WireEvent = {
   type: "snapshot";
   address: SessionAddress;
   snapshotSeq: number;
-  transcript: Transcript;
+  transcript: WireTranscript;
   failure?: string;
   aborted?: boolean;
   sessionUI?: SessionUIState;
@@ -124,7 +124,7 @@ export interface Snapshot extends ModelSelection {
   address: SessionAddress;
   snapshotSeq: number;
   info: SessionInfo;
-  transcript: Transcript;
+  transcript: WireTranscript;
   failure?: string;
   aborted?: boolean;
   sessionUI?: SessionUIState;
@@ -293,7 +293,7 @@ export type RPCSchema = {
       getSessionSnapshot: { params: SessionAddress; response: Snapshot };
       getSessionHistory: {
         params: SessionAddress & { revision: string; before: string };
-        response: Transcript;
+        response: WireTranscript;
       };
       listSlashCommands: { params: SessionAddress; response: SlashCommand[] };
       completeSlashArguments: {

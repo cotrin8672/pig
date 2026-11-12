@@ -92,6 +92,13 @@ import {
 import { agentDir, agentDirSource } from "./runtime-profile";
 import { validateSessionScope } from "./session-scope";
 import { loadSettings, saveSettings } from "./settings";
+import {
+  packOpenState,
+  packRuntimeEvent,
+  packRuntimeState,
+  packSnapshot,
+  packTranscript,
+} from "./transcript-wire";
 
 await prepareDesktopConfig(Utils.paths.userData);
 // Paths only (never values): GUI env can differ from the user's shell.
@@ -164,8 +171,8 @@ async function resolveSession(input: SessionTarget) {
   }
 }
 let windowFocused = true;
-function openManagedSession(input: OpenSessionParams) {
-  return openSession(input);
+async function openManagedSession(input: OpenSessionParams) {
+  return packSnapshot(await openSession(input));
 }
 const settingsFile = join(desktopConfigDir, "settings.json");
 const appearanceFile = join(desktopConfigDir, "appearance.json");
@@ -238,10 +245,12 @@ const rpc = BrowserView.defineRPC<RPCSchema>({
       packagePreviews: (input) => packagePreviews(input),
       listInstalled: () => listInstalled(),
       prompt: (input) => promptSession(input),
-      getOpenState: (input) => sessionHost.getOpenState(input),
+      getOpenState: (input) => packOpenState(sessionHost.getOpenState(input)),
       cancelOpen: (input) => sessionHost.cancelOpen(input),
-      getSessionSnapshot: (input) => sessionHost.getSessionSnapshot(input),
-      getSessionHistory: (input) => sessionHost.getSessionHistory(input),
+      getSessionSnapshot: (input) =>
+        packSnapshot(sessionHost.getSessionSnapshot(input)),
+      getSessionHistory: async (input) =>
+        packTranscript(await sessionHost.getSessionHistory(input)),
       listSlashCommands: (input) => sessionHost.listSlashCommands(input),
       completeSlashArguments: (input) =>
         sessionHost.completeSlashArguments(input),
@@ -252,7 +261,7 @@ const rpc = BrowserView.defineRPC<RPCSchema>({
       discardRecovery: (input) => sessionHost.discardRecovery(input),
       resolveExtensionUI: (input) => sessionHost.resolveExtensionUI(input),
       terminalCommand: (input) => sessionHost.terminalCommand(input),
-      runtimeState: () => sessionHost.runtimeState(),
+      runtimeState: () => packRuntimeState(sessionHost.runtimeState()),
       heartbeatUI: (input) => sessionHost.heartbeatUI(input),
       abort: (input) => abortSession(input),
       closeSession: (input) => closeSession(input),
@@ -350,8 +359,8 @@ const rpc = BrowserView.defineRPC<RPCSchema>({
         // SessionHost validates persisted membership while resolving the file.
         return openManagedSession(input);
       },
-      rewindSession: (input) => rewindSession(input),
-      forkSession: (input) => forkSession(input),
+      rewindSession: async (input) => packSnapshot(await rewindSession(input)),
+      forkSession: async (input) => packSnapshot(await forkSession(input)),
       removeProject: (input) =>
         saveProjects((current) => withoutProject(current, input?.cwd)),
       setProjectState: (input) =>
@@ -562,7 +571,7 @@ configureSessionHost(
     ui: (event) => rpc.send.extensionUIEvent(event),
     terminal: (event) => rpc.send.terminalEvent(event),
     runtime: (event) => {
-      rpc.send.runtimeEvent(event);
+      rpc.send.runtimeEvent(packRuntimeEvent(event));
       if (event.type === "closed") completions.delete(event.address.sessionId);
       if (event.type !== "snapshot") return;
       const snapshot = event.snapshot;

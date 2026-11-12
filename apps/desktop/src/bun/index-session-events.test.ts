@@ -5,6 +5,7 @@ import type { Snapshot } from "../shared/rpc-schema";
 import type { RuntimeEvent } from "../shared/runtime-contract";
 import { emptyTranscript } from "../shared/transcript";
 import { createCompletionTracker } from "./notifications";
+import { packRuntimeEvent } from "./transcript-wire";
 
 test("desktop runtime delivery sends one transcript and clears completion only when needed", async () => {
   // Exercise the actual entrypoint callback without starting Electrobun or touching user state.
@@ -68,6 +69,7 @@ test("desktop runtime delivery sends one transcript and clears completion only w
     },
     completions: trackers,
     createCompletionTracker,
+    packRuntimeEvent,
     report: (error: unknown) => {
       throw error;
     },
