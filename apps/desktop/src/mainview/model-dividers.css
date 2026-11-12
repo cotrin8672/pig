@@ -1,7 +1,9 @@
+/* Non-modal (so cancel/close stay instant), but centered like v0.2's modal. */
 .oauth-dialog[aria-modal="false"] {
   position: fixed;
-  inset: 64px 24px auto auto;
-  margin: 0;
+  inset: 0;
+  height: fit-content;
+  margin: auto;
   z-index: 20;
 }
 .model-divider {

@@ -132,6 +132,8 @@ function Link({ url, children }: { url: string; children: React.ReactNode }) {
 }
 function Preview({ url }: { url?: string | null }) {
   const [failed, setFailed] = useState(false);
+  if (url === undefined)
+    return <div className="package-preview skeleton" aria-hidden="true" />;
   return (
     <div className="package-preview">
       {url && !failed ? (
@@ -145,6 +147,37 @@ function Preview({ url }: { url?: string | null }) {
       ) : (
         <Package size={28} strokeWidth={1.25} aria-hidden="true" />
       )}
+    </div>
+  );
+}
+const SKELETON_KEYS = ["s0", "s1", "s2", "s3", "s4", "s5"];
+// Mirrors .market-card markup; transparent placeholder text gives each bar its real line box.
+function SkeletonCard() {
+  return (
+    <div className="market-card package-skeleton" aria-hidden="true">
+      <div className="package-card-heading">
+        <div className="package-preview skeleton" />
+        <div className="package-content">
+          <h2>
+            <span className="skeleton">pi-package-name</span>
+          </h2>
+          <p className="package-meta">
+            <span className="skeleton">publisher · 1.2k/mo · 3d ago</span>
+          </p>
+        </div>
+      </div>
+      <p className="package-description">
+        <span className="skeleton">
+          Package description placeholder text that spans two lines of the card
+        </span>
+      </p>
+      <div className="package-details">
+        <span className="package-badge skeleton">extension</span>
+      </div>
+      <div className="package-card-footer">
+        <span className="package-command skeleton">pi install npm:package</span>
+        <span className="package-skeleton-button skeleton">Install</span>
+      </div>
     </div>
   );
 }
@@ -212,16 +245,23 @@ export function Extensions() {
         setResultQuery(search);
         setLoading(false);
         for (let i = 0; i < result.items.length; i += 64) {
+          const names = result.items.slice(i, i + 64).map((p) => p.name);
+          // Names absent from the response are settled as "no preview" so they stop shimmering.
+          const settled = Object.fromEntries(names.map((n) => [n, null]));
           try {
             const images = await request(
-              rpc.request.packagePreviews({
-                names: result.items.slice(i, i + 64).map((p) => p.name),
-              }),
+              rpc.request.packagePreviews({ names }),
             );
             if (!cancelled)
-              setPreviews((previous) => ({ ...previous, ...images }));
+              setPreviews((previous) => ({
+                ...previous,
+                ...settled,
+                ...images,
+              }));
           } catch {
             /* Preview failure leaves a neutral placeholder. */
+            if (!cancelled)
+              setPreviews((previous) => ({ ...previous, ...settled }));
           }
         }
       })
@@ -464,6 +504,9 @@ export function Extensions() {
                   </article>
                 );
               })}
+              {loading &&
+                !items.length &&
+                SKELETON_KEYS.map((key) => <SkeletonCard key={key} />)}
             </div>
             {error && (
               <ErrorState

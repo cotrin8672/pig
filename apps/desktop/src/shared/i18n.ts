@@ -6,20 +6,15 @@ export const en = {
   appUpdateRestart: "Update and restart",
   appUpdateConfirm:
     "Update pig and restart? Running agents and terminals will be stopped. Drafts will be saved before closing.",
-  appUpdateStableOnly: "In-app updates target Stable releases only.",
   appUpdateChecking: "Checking for updates…",
   appUpdatePreparing: "Preparing update…",
   appUpdateRestarting: "Restarting…",
-  appUpdateCurrent: "No newer Stable release is available.",
-  appUpdateAvailable: (version: string) => `Stable ${version} is available.`,
-  appUpdateNightly:
-    "Nightly is managed manually. For Scoop, use: scoop update pig-nightly",
-  appUpdateDevelopment: "Updates are disabled in development builds.",
-  appUpdateUnsupported: "In-app updates currently support Windows x64 only.",
-  appUpdateUnknown:
-    "Installation could not be verified. Update manually or using the Scoop CLI.",
-  appUpdateVersion: "Version",
-  appUpdateMethod: "Installation",
+  appUpdateCurrent: "Up to date",
+  appUpdateAvailable: (version: string) => `${version} available`,
+  appUpdateNightly: "Update with scoop update pig-nightly",
+  appUpdateDevelopment: "Development build",
+  appUpdateUnsupported: "Not supported on this platform",
+  appUpdateUnknown: "Update manually",
   startupFailed: "Could not start the app. Please try again.",
   sendRecovery: (sends: number, drafts: number) =>
     `Send recovery (${sends}) / retained drafts (${drafts})`,
@@ -518,20 +513,15 @@ export const ja: Dictionary = {
   appUpdateRestart: "更新して再起動",
   appUpdateConfirm:
     "pig を更新して再起動しますか？実行中のエージェントとターミナルは終了します。下書きは終了前に保存します。",
-  appUpdateStableOnly: "アプリ内更新は Stable リリースのみが対象です。",
   appUpdateChecking: "更新を確認中…",
   appUpdatePreparing: "更新を準備中…",
   appUpdateRestarting: "再起動中…",
-  appUpdateCurrent: "新しい Stable リリースはありません。",
-  appUpdateAvailable: (version) => `Stable ${version} に更新できます。`,
-  appUpdateNightly:
-    "Nightly は手動で管理してください。Scoop の場合: scoop update pig-nightly",
-  appUpdateDevelopment: "開発版ではアプリ内更新は無効です。",
-  appUpdateUnsupported: "アプリ内更新は現在 Windows x64 のみ対応しています。",
-  appUpdateUnknown:
-    "インストール形式を確認できません。手動または Scoop CLI で更新してください。",
-  appUpdateVersion: "バージョン",
-  appUpdateMethod: "インストール形式",
+  appUpdateCurrent: "最新です",
+  appUpdateAvailable: (version) => `${version} を利用できます`,
+  appUpdateNightly: "scoop update pig-nightly で更新",
+  appUpdateDevelopment: "開発版",
+  appUpdateUnsupported: "この環境では非対応",
+  appUpdateUnknown: "手動で更新してください",
   startupFailed: "アプリを起動できませんでした。再試行してください。",
   sendRecovery: (sends, drafts) =>
     `送信の確認 (${sends}) / 保持された下書き (${drafts})`,

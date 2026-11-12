@@ -26,6 +26,8 @@ test.skipIf(!existsSync(edge))(
       import {flushSync} from ${JSON.stringify(fileURLToPath(import.meta.resolve("react-dom")))};
       import {App,Chat} from ${source("./App.tsx")};
       import {Extensions} from ${source("./Extensions.tsx")};
+      import {FontPicker} from ${source("./FontPicker.tsx")};
+      import {FontSettings} from ${source("./FontSettings.tsx")};
       import {Composer} from ${source("./Composer.tsx")};
       import {MessageQueue} from ${source("./MessageQueue.tsx")};
       import {AnnotationPopover} from ${source("./AnnotationPopover.tsx")};
@@ -143,6 +145,8 @@ test.skipIf(!existsSync(edge))(
       const diff=Array.from({length:10000},(_,i)=>"+"+i+" changed").join("\\n");
       const edit=<DisclosureScope id="edit" values={values}><ToolBlock call={{id:"edit",name:"edit",arguments:{path:"file.ts"}}} state={{status:"done",result:{details:{diff}}}} live={false}/></DisclosureScope>;
       await render(edit);
+      check(!visible(document.querySelector(".tool-diff")),"edits must start collapsed as in v0.2");
+      await click(document.querySelector("summary"));
       metrics.diffSpans=document.querySelectorAll(".tool-diff > span").length;
       check(metrics.diffSpans===10000 && visible(document.querySelector(".tool-diff")) && !document.querySelector(".text-range"),"expanded diff must show every line in the original scrollable preview");
       check(getComputedStyle(document.querySelector(".tool-diff")).maxHeight==="240px","diff preview must keep its original height limit");
@@ -151,12 +155,15 @@ test.skipIf(!existsSync(edge))(
       await render(<div/>);await render(edit);
       check(!visible(document.querySelector(".tool-diff")),"closing a diff must survive navigation");
       await render(<ThinkingBlock text="# actual thinking" label="Thinking" active={false}/>);
-      check(visible(document.querySelector("h1")),"thinking must start open with formatted content");
+      check(!visible(document.querySelector("h1")),"thinking must start collapsed as in v0.2");
+      await click(document.querySelector("summary"));
+      check(visible(document.querySelector("h1")),"opened thinking must show formatted content");
       const output=Array.from({length:600},(_,i)=>"line "+i+" "+"original output ".repeat(4)+"end").join("\\n");
       await render(<ToolBlock call={{id:"shell",name:"bash",arguments:{command:"echo fixture"}}} state={{status:"done",result:{content:[{type:"text",text:output}]}}} live={false}/>);
       const peek=document.querySelector(".tool-peek");
       check(peek?.tagName==="PRE" && peek.parentElement.matches("details.tool-term") && peek.textContent===output.split("\\n").slice(-2).join("\\n"),"shell preview must keep the original separate two-line preformatted block");
-      check(document.querySelector(".tool-state").textContent==="exit 0","completed shell must retain its exit status");
+      check(document.querySelector(".tool-badge.done").textContent==="exit 0","completed shell must retain its v0.2 exit badge");
+      await click(document.querySelector(".tool-term > summary"));
       const shell=document.querySelector(".tool-term-output");
       check(shell.textContent===output && visible(shell) && !visible(peek) && getComputedStyle(shell).maxHeight==="280px" && !document.querySelector(".text-range"),"expanded shell must retain the complete output in its original preview");
       await wheel(shell,240);
@@ -256,8 +263,10 @@ test.skipIf(!existsSync(edge))(
       const pkg=name=>({name,version:"1",description:"Package "+name,publisher:"fixture",monthlyDownloads:1,date:"2026-01-01",types:[]});
       flushSync(()=>useStore.setState({installedLoaded:true,installed:[{source:"npm:cached",name:"cached",scope:"user",types:[]}],packageOps:{}}));
       await render(<Extensions/>);await until(()=>searches.length===1,"missing initial package search");
-      check(!document.querySelector(".package-skeleton") && !document.body.textContent.includes("Finding packages"),"initial package search must not flash a skeleton or loading message");
-      searches[0].read.resolve({items:[pkg("original")],total:2});await until(()=>document.querySelector(".market-card"),"missing original package result");
+      check(document.querySelectorAll(".package-skeleton").length>0 && !document.body.textContent.includes("Finding packages"),"initial package search must show card-shaped skeletons instead of an empty grid or loading message");
+      searches[0].read.resolve({items:[pkg("original")],total:2});await until(()=>document.querySelector(".market-card:not(.package-skeleton)"),"missing original package result");
+      check(!document.querySelector(".package-skeleton"),"skeletons must be replaced by results");
+      await until(()=>!document.querySelector(".package-preview.skeleton"),"previews absent from the response must stop shimmering");
       const originalCard=document.querySelector(".market-card"),originalCount=document.querySelector(".package-results").textContent;
       const searchInput=document.querySelector(".package-search input");await type(searchInput,"first");await until(()=>searches.some(read=>read.query==="first"),"first search did not start");
       check(document.querySelector(".market-card")===originalCard && document.querySelector(".package-results").textContent===originalCount,"search must retain both the old cards and their matching count while pending");
@@ -398,6 +407,56 @@ test.skipIf(!existsSync(edge))(
       await click(readyTerminal.querySelector("header button"));flushSync(()=>useStore.setState({pendingUI:[],terminals:{}}));await render(<div/>);
       check(terminalCommands.filter(command=>command.uiId==="ready" && command.type==="cancel").length===1,"closing and unmounting must not cancel a terminal twice");
       metrics.stablePendingUI=true;
+      const fontFamilies=["Agency FB","Algerian","Arial","Arial Rounded MT","Bahnschrift","Baskerville Old Face","Cascadia Code","Consolas","游ゴシック",...Array.from({length:50},(_,i)=>"Example font "+i)];
+      function FontFixture(){
+        const [family,setFamily]=useState("");
+        return <div className="app-shell" style={{"--window-opacity":0.35}}><main className="content-page settings-page"><div className="content-page-shell"><header className="content-page-header"><h1>Settings</h1></header><div className="settings-layout"><nav className="settings-nav"><button aria-current="page">Appearance</button></nav><section className="settings-content"><h2>Appearance</h2><div className="settings-card font-settings">{[["Interface font",family,setFamily],["Code font","",()=>{}]].map(([label,value,onChange])=><div className="settings-row" key={label}><div className="settings-label">{label}</div><FontPicker label={label} value={value} fonts={fontFamilies} onChange={onChange}/></div>)}</div><div className="settings-card" style={{marginTop:20,padding:20}}><h2>Chat renderers</h2><p>Changes only affect chat display.</p><button>Reload chat renderers</button></div></section></div></div></main></div>;
+      }
+      await render(<FontFixture/>);
+      const fontPicker=document.querySelector(".font-picker");
+      await click(fontPicker.querySelector("summary"));
+      const fontPanel=fontPicker.querySelector(".font-picker-panel"),fontInput=fontPicker.querySelector("input"),fontList=fontPicker.querySelector('[role="listbox"]');
+      const panelStyle=getComputedStyle(fontPanel),panelRect=fontPanel.getBoundingClientRect();
+      check(panelRect.height>200,"font menu must have its own full-height background, independent of stylesheet import order");
+      const popupReference=document.createElement("div");popupReference.className="picker-panel model-panel";popupReference.hidden=true;fontPicker.append(popupReference);
+      const popupStyle=getComputedStyle(popupReference);
+      check(panelStyle.backgroundColor===popupStyle.backgroundColor && panelStyle.backdropFilter===popupStyle.backdropFilter && panelStyle.backdropFilter!=="none","font menu must use the same translucent background and blur as other popups");
+      popupReference.remove();
+      check(document.activeElement===fontInput,"opening a font menu must focus search");
+      check(parseFloat(getComputedStyle(fontPicker).width)>=240,"font trigger must not collapse to the selected label width");
+      const optionButtons=[...fontList.querySelectorAll("button")];
+      check(optionButtons.every(option=>getComputedStyle(option).fontFamily===getComputedStyle(optionButtons[0]).fontFamily),"font names must use a consistent readable typeface, including decorative fonts");
+      check(optionButtons.every(option=>option.getBoundingClientRect().height===optionButtons[0].getBoundingClientRect().height),"font rows must have consistent heights");
+      const secondTrigger=document.querySelectorAll(".font-picker > summary")[1].getBoundingClientRect();
+      check(fontPanel.contains(document.elementFromPoint(secondTrigger.left+20,secondTrigger.top+secondTrigger.height/2)),"the next font control must not paint through the open menu");
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,"value").set.call(fontInput,"cAsCaDiA");fontInput.dispatchEvent(new Event("input",{bubbles:true}));await wait();
+      check(fontList.children.length===1 && fontList.textContent==="Cascadia Code","font search must filter without case sensitivity");
+      fontInput.dispatchEvent(new KeyboardEvent("keydown",{key:"Enter",bubbles:true}));await wait();
+      check(!fontPicker.open && fontPicker.querySelector("summary").textContent==="Cascadia Code","keyboard selection must update the value and close the menu");
+      await click(fontPicker.querySelector("summary"));
+      fontInput.dispatchEvent(new KeyboardEvent("keydown",{key:"Escape",bubbles:true}));await wait();
+      check(!fontPicker.open && document.activeElement===fontPicker.querySelector("summary"),"Escape must close font search and restore trigger focus");
+      document.querySelector(".app-shell").style.width="420px";await wait();
+      await click(fontPicker.querySelector("summary"));
+      const narrowPanel=fontPanel.getBoundingClientRect();
+      check(narrowPanel.left>=0 && narrowPanel.right<=420 && narrowPanel.height>200,"font menu must fit the narrow settings page");
+      metrics.fontPicker={height:panelRect.height,background:panelStyle.backgroundColor,search:true,keyboard:true,narrowWidth:narrowPanel.width};
+      flushSync(()=>useStore.setState(state=>({settings:{...state.settings,fontFamily:"Arial",codeFontFamily:"Consolas"}})));
+      for(const outcome of ["ready","error"]){
+        let finish;
+        window.__requests={...window.__requests,listFontFamilies:()=>new Promise((resolve,reject)=>{finish=()=>outcome==="ready"?resolve(fontFamilies):reject(new Error("Font discovery fixture failure"));})};
+        await render(<div className="app-shell"><main className="content-page settings-page"><div className="content-page-shell"><FontSettings key={outcome}/><p id="after-font-settings">Next setting</p></div></main></div>);
+        const card=document.querySelector(".font-settings"),after=document.getElementById("after-font-settings");
+        const height=card.getBoundingClientRect().height,afterTop=after.getBoundingClientRect().top;
+        const labels=[...card.querySelectorAll("summary")].map(element=>element.textContent).join("|");
+        check(card.querySelectorAll(".settings-row").length===2 && !card.textContent.includes("Loading"),"pending font discovery must show only the two stable settings rows");
+        check(labels==="Arial|Consolas","font discovery must not replace the saved selection with a loading label");
+        finish();await wait();
+        check(card.getBoundingClientRect().height===height && after.getBoundingClientRect().top===afterTop,"font discovery "+outcome+" must not shift settings layout");
+        check([...card.querySelectorAll("summary")].map(element=>element.textContent).join("|")===labels,"font discovery "+outcome+" must retain saved font labels");
+      }
+      metrics.fontPicker.stableLoading=true;
+      await render(<FontFixture/>);await click(document.querySelector(".font-picker summary"));
       window.__transcriptReport={ok:true,metrics};
     `,
       );
@@ -428,6 +487,7 @@ test.skipIf(!existsSync(edge))(
           const noop=()=>{};export const rpc={request:new Proxy({},{get:(_,method)=>async params=>{
             if(window.__requests?.[method])return window.__requests[method](params);
             if(method==="getSessionHistory")return window.__getSessionHistory(params);
+            if(method==="listFontFamilies")return [];
             if(method==="syncDraft")return {applied:true,draft:{...params.content,revision:params.expectedRevision+1}};
             return {};
           }}),send:new Proxy({},{get:()=>noop})};
@@ -446,9 +506,13 @@ test.skipIf(!existsSync(edge))(
         `const fail=error=>{window.__transcriptReport={ok:false,error:String(error),stack:error?.stack,metrics:window.__transcriptMetrics};};window.addEventListener("error",event=>fail(event.error??event.message));window.addEventListener("unhandledrejection",event=>fail(event.reason));void (async()=>{try{${script}}catch(error){fail(error);}})()`,
       );
       const cssEntry = join(dir, "styles.css");
+      // Settings is imported by App before main.tsx imports the global stylesheet.
+      const settingsCss = fileURLToPath(
+        new URL("./settings.css", import.meta.url),
+      );
       await Bun.write(
         cssEntry,
-        [...cssFiles]
+        [settingsCss, ...[...cssFiles].filter((path) => path !== settingsCss)]
           .map(
             (path) => `@import ${JSON.stringify(path.replaceAll("\\", "/"))};`,
           )
@@ -605,6 +669,16 @@ test.skipIf(!existsSync(edge))(
           }
           report = state.report;
           if (!report) await Bun.sleep(25);
+        }
+        if (process.env.PIG_UI_SCREENSHOT) {
+          const screenshot = await command<{ data: string }>(
+            "Page.captureScreenshot",
+            { format: "png" },
+          );
+          await Bun.write(
+            process.env.PIG_UI_SCREENSHOT,
+            Buffer.from(screenshot.data, "base64"),
+          );
         }
         expect(report.ok, JSON.stringify(report)).toBe(true);
         expect(report.metrics.wheels.length).toBeGreaterThanOrEqual(10);

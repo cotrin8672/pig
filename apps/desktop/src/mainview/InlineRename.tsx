@@ -6,6 +6,7 @@ export function InlineRename({
   label,
   placeholder,
   allowEmpty = false,
+  selectAll = true,
   onCommit,
   onDone,
 }: {
@@ -13,6 +14,8 @@ export function InlineRename({
   label: string;
   placeholder?: string;
   allowEmpty?: boolean;
+  /** Select the whole value on focus; otherwise place the caret at the end. */
+  selectAll?: boolean;
   onCommit: (value: string) => void;
   onDone: () => void;
 }) {
@@ -36,7 +39,8 @@ export function InlineRename({
         if (input && !input.dataset.focused) {
           input.dataset.focused = "true";
           input.focus();
-          input.select();
+          if (selectAll) input.select();
+          else input.setSelectionRange(input.value.length, input.value.length);
         }
       }}
       onChange={(event) => setDraft(event.target.value)}

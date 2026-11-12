@@ -1,5 +1,5 @@
 import { Archive, ChevronRight, Folder, Pin, Plus } from "lucide-react";
-import { memo, useEffect, useId, useState } from "react";
+import { memo, useId, useState } from "react";
 import { useShallow } from "zustand/react/shallow";
 import { visibleProjects } from "../shared/projects";
 import { InlineRename } from "./InlineRename";
@@ -19,8 +19,6 @@ export const SidebarSessions = memo(function SidebarSessions() {
   const projects = useStore((s) => s.bootstrap.projects);
   const projectFlags = useStore((s) => s.bootstrap.desktop.projects);
   const [archived, setArchived] = useState(false);
-  const [query, setQuery] = useState("");
-  const needle = query.trim().toLowerCase();
   const archivedCount = projects.filter(
     (cwd) => projectFlags?.[cwd]?.archived,
   ).length;
@@ -29,13 +27,6 @@ export const SidebarSessions = memo(function SidebarSessions() {
   const projectsId = useId();
   return (
     <div className="project-list">
-      <input
-        type="search"
-        aria-label={t.searchChats}
-        placeholder={t.searchChats}
-        value={query}
-        onChange={(e) => setQuery(e.target.value)}
-      />
       <section className="sidebar-section" aria-labelledby={chatsId}>
         <div className="sidebar-section-heading">
           <h2 id={chatsId}>{t.Chats}</h2>
@@ -49,7 +40,7 @@ export const SidebarSessions = memo(function SidebarSessions() {
             <Plus size={14} aria-hidden="true" />
           </button>
         </div>
-        {generalCwd && <SessionList cwd={generalCwd} needle={needle} />}
+        {generalCwd && <SessionList cwd={generalCwd} />}
       </section>
       <section className="sidebar-section" aria-labelledby={projectsId}>
         <div className="sidebar-section-heading">
@@ -64,7 +55,7 @@ export const SidebarSessions = memo(function SidebarSessions() {
           </button>
         </div>
         {visibleProjects(projects, projectFlags, archived).map((cwd) => (
-          <ProjectSessions key={cwd} cwd={cwd} needle={needle} />
+          <ProjectSessions key={cwd} cwd={cwd} />
         ))}
         {(archivedCount > 0 || archived) && (
           <button
@@ -87,23 +78,14 @@ export const SidebarSessions = memo(function SidebarSessions() {
   );
 });
 
-function ProjectSessions({ cwd, needle }: { cwd: string; needle: string }) {
+function ProjectSessions({ cwd }: { cwd: string }) {
   const t = useT();
   const projectFlags = useStore((s) => s.bootstrap.desktop.projects?.[cwd]);
   const displayName = projectFlags?.name || basename(cwd);
-  const [opened, setExpanded] = useState(true);
-  // Search opens every match; collapsing during search is separate and resets with it.
-  const [searchCollapsed, setSearchCollapsed] = useState(false);
-  useEffect(() => {
-    if (!needle) setSearchCollapsed(false);
-  }, [needle]);
-  const expanded = needle ? !searchCollapsed : opened;
+  const [expanded, setExpanded] = useState(true);
   const [renaming, setRenaming] = useState(false);
-  const sessions = useStore((s) => (needle ? s.sessions[cwd] : undefined));
   const listId = useId();
   const activity = useStore(useShallow((s) => selectProjectActivity(s, cwd)));
-  if (needle && !sessions?.some((s) => s.title.toLowerCase().includes(needle)))
-    return null;
   const counts = { waiting: 0, running: 0, completed: 0, failed: 0 };
   let unread = 0;
   for (let index = 0; index < activity.length; index += 2) {
@@ -118,14 +100,26 @@ function ProjectSessions({ cwd, needle }: { cwd: string; needle: string }) {
     <section className="project">
       <div className="project-heading">
         {renaming ? (
-          <InlineRename
-            value={projectFlags?.name ?? ""}
-            label={t["Project name"]}
-            placeholder={basename(cwd)}
-            allowEmpty
-            onCommit={(name) => renameProject(cwd, name)}
-            onDone={() => setRenaming(false)}
-          />
+          <div
+            className="project-toggle project-renaming"
+            data-expanded={expanded || undefined}
+          >
+            <ChevronRight
+              className="project-chevron"
+              size={12}
+              aria-hidden="true"
+            />
+            <Folder size={13} aria-hidden="true" />
+            <InlineRename
+              value={displayName}
+              label={t["Project name"]}
+              placeholder={basename(cwd)}
+              allowEmpty
+              selectAll={false}
+              onCommit={(name) => renameProject(cwd, name)}
+              onDone={() => setRenaming(false)}
+            />
+          </div>
         ) : (
           <button
             className="project-toggle"
@@ -133,9 +127,7 @@ function ProjectSessions({ cwd, needle }: { cwd: string; needle: string }) {
             aria-expanded={expanded}
             aria-controls={listId}
             title={cwd}
-            onClick={() =>
-              needle ? setSearchCollapsed(expanded) : setExpanded(!expanded)
-            }
+            onClick={() => setExpanded(!expanded)}
           >
             <ChevronRight
               className="project-chevron"
@@ -175,7 +167,6 @@ function ProjectSessions({ cwd, needle }: { cwd: string; needle: string }) {
             aria-label={t.newChatIn(displayName)}
             onClick={() => {
               setExpanded(true);
-              setSearchCollapsed(false);
               void openChat(cwd);
             }}
           >
@@ -189,7 +180,7 @@ function ProjectSessions({ cwd, needle }: { cwd: string; needle: string }) {
         </div>
       </div>
       <div id={listId} className="project-threads" hidden={!expanded}>
-        <SessionList cwd={cwd} expanded={expanded} needle={needle} />
+        <SessionList cwd={cwd} expanded={expanded} />
       </div>
     </section>
   );

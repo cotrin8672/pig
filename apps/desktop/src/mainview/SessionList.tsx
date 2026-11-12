@@ -37,11 +37,9 @@ import {
 export const SessionList = memo(function SessionList({
   cwd,
   expanded = true,
-  needle = "",
 }: {
   cwd: string;
   expanded?: boolean;
-  needle?: string;
 }) {
   const t = useT();
   const listed = useStore((s) => s.sessions[cwd]);
@@ -61,17 +59,14 @@ export const SessionList = memo(function SessionList({
     if (sessionId && sessions.some((session) => session.id === sessionId))
       continue;
     const title = starting[index + 1];
-    if (!archived && title.toLowerCase().includes(needle))
-      startingRows.push({ openId: starting[index], title });
+    if (!archived) startingRows.push({ openId: starting[index], title });
   }
   const archivedCount = (sessions ?? []).filter(
     (session) => desktop.sessions[session.id]?.archived,
   ).length;
   const visible = (sessions ?? [])
     .filter(
-      (session) =>
-        Boolean(desktop.sessions[session.id]?.archived) === archived &&
-        session.title.toLowerCase().includes(needle),
+      (session) => Boolean(desktop.sessions[session.id]?.archived) === archived,
     )
     .sort(
       (a, b) =>
@@ -80,9 +75,6 @@ export const SessionList = memo(function SessionList({
     );
   return (
     <>
-      {needle && !visible.length && !startingRows.length && (
-        <span role="status">{t.noMatches}</span>
-      )}
       {startingRows.map((row) => (
         <StartingRow key={row.openId} {...row} />
       ))}

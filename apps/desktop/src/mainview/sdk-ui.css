@@ -17,10 +17,11 @@
 }
 .sdk-request[aria-modal="false"],
 .terminal-dialog[aria-modal="false"] {
+  /* Non-modal for instant dismiss/restore, but placed and sized like v0.2. */
   position: fixed;
-  inset: 64px 24px auto auto;
-  margin: 0;
-  max-width: min(calc(100vw - 48px), max(280px, calc(100vw - 296px)));
+  inset: 0;
+  height: fit-content;
+  margin: auto;
   z-index: 20;
 }
 .sdk-request p,

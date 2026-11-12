@@ -315,6 +315,41 @@
 .package-error button {
   color: var(--ds-text-primary);
 }
+.skeleton {
+  color: transparent;
+  border-color: transparent;
+  border-radius: var(--radius-3xs);
+  background:
+    linear-gradient(
+      90deg,
+      var(--ds-bg-chip) 30%,
+      color-mix(in srgb, var(--ds-bg-chip) 60%, var(--ds-text-primary) 8%) 50%,
+      var(--ds-bg-chip) 70%
+    )
+    0 0 / 200% 100%;
+  box-decoration-break: clone;
+  -webkit-box-decoration-break: clone;
+  animation: skeleton-shimmer 1.6s linear infinite;
+  user-select: none;
+}
+.package-preview.skeleton {
+  border-radius: var(--radius-xs);
+}
+.package-skeleton-button {
+  padding: 7px 10px;
+  font-size: var(--text-sm);
+  border-radius: var(--radius-xs);
+}
+@keyframes skeleton-shimmer {
+  to {
+    background-position: -200% 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .skeleton {
+    animation: none;
+  }
+}
 .extensions-page [role="tabpanel"]:focus:not(:focus-visible) {
   outline: none;
 }

@@ -17,69 +17,56 @@ export function AppUpdateSettings() {
   }, []);
   if (!state) return null;
   const busy = ["checking", "preparing", "restarting"].includes(state.status);
-  const reason =
-    state.reason &&
+  const available = Boolean(state.latest);
+  const status =
+    state.error ??
+    (state.reason &&
+      {
+        nightly: t.appUpdateNightly,
+        development: t.appUpdateDevelopment,
+        unsupported: t.appUpdateUnsupported,
+        unknown: t.appUpdateUnknown,
+      }[state.reason]) ??
     {
-      nightly: t.appUpdateNightly,
-      development: t.appUpdateDevelopment,
-      unsupported: t.appUpdateUnsupported,
-      unknown: t.appUpdateUnknown,
-    }[state.reason];
-  const status = {
-    idle: "",
-    checking: t.appUpdateChecking,
-    current: t.appUpdateCurrent,
-    available: state.latest ? t.appUpdateAvailable(state.latest) : "",
-    preparing: t.appUpdatePreparing,
-    restarting: t.appUpdateRestarting,
-    error: "",
-  }[state.status];
+      idle: "",
+      checking: t.appUpdateChecking,
+      current: t.appUpdateCurrent,
+      available: state.latest ? t.appUpdateAvailable(state.latest) : "",
+      preparing: t.appUpdatePreparing,
+      restarting: t.appUpdateRestarting,
+      error: "",
+    }[state.status];
   return (
     <section className="settings-card" aria-label={t.appUpdateTitle}>
-      <div className="settings-row">
-        <div className="settings-label">{t.appUpdateVersion}</div>
-        <code>{state.version}</code>
-      </div>
-      <div className="settings-row">
-        <div className="settings-label">{t.appUpdateMethod}</div>
-        <span>
-          {state.method === "scoop"
-            ? "Scoop"
-            : state.method === "portable"
-              ? "Portable"
-              : "—"}
-        </span>
-      </div>
-      <p className="muted">{t.appUpdateStableOnly}</p>
-      {reason && <p className="muted">{reason}</p>}
-      <p role="status" aria-live="polite">
-        {status}
-      </p>
-      {state.error && (
-        <p className="error" role="alert">
-          {state.error}
-        </p>
-      )}
-      {state.method !== "disabled" && (
-        <div className="settings-row">
+      <div className="settings-row app-update">
+        <div className="settings-label">
+          <div>
+            pig <span className="app-update-version">{state.version}</span>
+          </div>
+          <div
+            className="app-update-status"
+            data-error={state.error ? "" : undefined}
+            role={state.error ? "alert" : "status"}
+            aria-live="polite"
+          >
+            {status}
+          </div>
+        </div>
+        {state.method !== "disabled" && (
           <button
             type="button"
+            className={available ? "primary" : "secondary"}
             disabled={busy}
-            onClick={() => rpc.send.checkAppUpdate()}
+            onClick={() =>
+              available
+                ? rpc.send.installAppUpdate()
+                : rpc.send.checkAppUpdate()
+            }
           >
-            {t.appUpdateCheck}
+            {available ? t.appUpdateRestart : t.appUpdateCheck}
           </button>
-          {state.latest && (
-            <button
-              type="button"
-              disabled={busy}
-              onClick={() => rpc.send.installAppUpdate()}
-            >
-              {t.appUpdateRestart}
-            </button>
-          )}
-        </div>
-      )}
+        )}
+      </div>
     </section>
   );
 }

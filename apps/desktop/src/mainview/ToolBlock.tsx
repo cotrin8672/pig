@@ -173,25 +173,25 @@ function Shell({
   const text = terminalText(output).trimEnd();
   const lines = text ? text.split("\n") : [];
   return (
-    <Details className={`tool-term ${status}`} defaultOpen>
+    // v0.2 surface (collapsed, $ prompt, status badge); highlighting kept.
+    <Details className={`tool-term ${status}`}>
       <summary>
-        <span className="tool-prompt">❯</span>
+        <span className="tool-prompt">$</span>
         <code className="tool-cmd" title={command}>
           <CodeText text={command} language={language} />
         </code>
         <span className="tool-meta">
-          {status === "running" && (
-            <LoaderCircle size={11} className="spinner" />
-          )}
-          <span className="tool-state">
-            {status === "running"
-              ? t.Running
-              : status === "done"
+          {status === "running" ? (
+            <LoaderCircle size={12} className="spinner" />
+          ) : (
+            <span className={`tool-badge ${status}`}>
+              {status === "done"
                 ? "exit 0"
                 : exitCode === undefined
                   ? t.Failed
                   : `exit ${exitCode}`}
-          </span>
+            </span>
+          )}
           <Chevron />
         </span>
       </summary>
@@ -202,7 +202,6 @@ function Shell({
         ) : (
           <TerminalOutput text={output.trimEnd()} />
         )}
-        {status === "running" && <span className="tool-cursor" />}
       </pre>
     </Details>
   );
@@ -378,7 +377,6 @@ export function BuiltinTool({
           }
           state={state}
           status={status}
-          defaultOpen
         >
           {diff && state?.status === "done" ? (
             <Diff text={diff} path={path} numbered />
@@ -502,7 +500,7 @@ export function BuiltinThinking({
       </div>
     );
   return (
-    <Details className="thinking" defaultOpen>
+    <Details className="thinking">
       <summary>
         <Brain size={ICON} />
         {label}

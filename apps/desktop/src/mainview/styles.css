@@ -242,8 +242,25 @@ p {
 .project-toggle svg {
   flex: none;
 }
-.project-toggle[aria-expanded="true"] .project-chevron {
+.project-toggle[aria-expanded="true"] .project-chevron,
+.project-renaming[data-expanded] .project-chevron {
   transform: rotate(90deg);
+}
+.project-renaming {
+  display: flex;
+  align-items: center;
+  flex: 1;
+}
+.project-heading input.inline-rename {
+  flex: 1;
+  padding: 0;
+  border: 0;
+  border-bottom: 1px solid var(--ds-focus);
+  border-radius: 0;
+  background: transparent;
+  color: var(--ds-text-primary);
+  font-size: inherit;
+  line-height: inherit;
 }
 .project-name {
   overflow: hidden;
@@ -877,38 +894,47 @@ details[open] > summary .tool-chevron,
   color: var(--ds-error);
 }
 
-/* Shell: a quiet terminal — one glass slab, the status word, the output. */
+/* Shell: a small terminal whose ring shows the state at a glance */
 .tool-term {
-  --tool-phase: var(--ds-success);
+  --tool-ring: #ffffff1c;
   margin: 4px 0;
   overflow: hidden;
   border-radius: var(--radius-sm);
-  background: color-mix(in srgb, #ffffff 3%, transparent);
-  box-shadow: inset 0 0 0 1px #ffffff14;
-  backdrop-filter: blur(12px);
+  background: #0000003d;
+  box-shadow: inset 0 0 0 1.5px var(--tool-ring);
 }
 .tool-term.running {
-  --tool-phase: var(--ds-accent);
+  --tool-ring: color-mix(in srgb, var(--ds-accent) 45%, transparent);
+  animation: tool-pulse 1.6s ease-in-out infinite;
+}
+.tool-term.done {
+  --tool-ring: color-mix(in srgb, var(--ds-success) 32%, transparent);
 }
 .tool-term.error {
-  --tool-phase: var(--ds-error);
+  --tool-ring: color-mix(in srgb, var(--ds-error) 36%, transparent);
+}
+@keyframes tool-pulse {
+  50% {
+    box-shadow: inset 0 0 0 1.5px
+      color-mix(in srgb, var(--ds-accent) 18%, transparent);
+  }
 }
 .tool-term > summary {
   display: flex;
   align-items: center;
   gap: 8px;
   min-width: 0;
-  padding: 6px 10px 5px;
+  padding: 7px 10px;
   color: var(--ds-text-secondary);
   font-family: var(--font-mono);
   font-size: var(--text-sm);
 }
 .tool-term > summary:hover {
-  background: #ffffff0a;
+  background: #ffffff12;
 }
 .tool-prompt {
   flex: none;
-  color: var(--ds-text-faint);
+  color: var(--ds-accent);
 }
 .tool-cmd {
   min-width: 0;
@@ -917,23 +943,25 @@ details[open] > summary .tool-chevron,
   text-overflow: ellipsis;
   font-size: var(--text-sm);
 }
-.tool-term .tool-meta {
-  display: flex;
-  flex: none;
-  align-items: center;
-  gap: 6px;
-  margin-left: auto;
-  color: var(--tool-phase);
+.tool-badge {
+  padding: 1px 6px;
+  border-radius: var(--radius-2xs);
+  font-family: var(--font-mono);
   font-size: var(--text-xs);
 }
-.tool-state {
-  white-space: nowrap;
+.tool-badge.done {
+  background: color-mix(in srgb, var(--ds-success) 13%, transparent);
+  color: var(--ds-success);
+}
+.tool-badge.error {
+  background: color-mix(in srgb, var(--ds-error) 14%, transparent);
+  color: var(--ds-error);
 }
 .tool-term pre {
   margin: 0;
-  padding: 0 10px 8px;
+  padding: 6px 10px;
   overflow: auto;
-  border: 0;
+  border-top: 1px solid #ffffff1c;
   border-radius: 0;
   background: none;
   font-size: var(--text-sm);
@@ -948,34 +976,18 @@ details[open] > summary .tool-chevron,
 }
 .tool-term-output {
   max-height: 280px;
-  color: var(--ds-text-secondary);
+  border-bottom: 6px solid transparent;
+  color: var(--ds-text-muted);
 }
+/* Kept from v0.3 syntax highlighting: ANSI success/failure marks. */
 .tool-term-output .ok {
   color: color-mix(in srgb, var(--ds-success) 78%, var(--ds-text-secondary));
 }
 .tool-term-output .bad {
   color: var(--ds-error);
 }
-/* A breathing cursor, not a hard on/off blink. */
-.tool-cursor {
-  display: inline-block;
-  width: 7px;
-  height: 12px;
-  vertical-align: text-bottom;
-  background: var(--tool-phase);
-  animation: tool-cursor-breathe 1.3s ease-in-out infinite;
-}
-@keyframes tool-cursor-breathe {
-  0%,
-  100% {
-    opacity: 1;
-  }
-  50% {
-    opacity: 0.12;
-  }
-}
 @media (prefers-reduced-motion: reduce) {
-  .tool-cursor,
+  .tool-term.running,
   .thinking-shimmer {
     animation: none;
   }
