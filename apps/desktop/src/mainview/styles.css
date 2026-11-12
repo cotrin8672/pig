@@ -1149,6 +1149,7 @@ select {
   display: flex;
   flex-direction: column;
   gap: 8px;
+  min-width: 0;
   min-height: 0;
 }
 /* The two panes scroll independently; scrollbars stay hidden until hovered. */
@@ -1182,16 +1183,19 @@ select {
 }
 .provider-filters {
   display: flex;
-  flex-wrap: wrap;
+  flex-shrink: 0;
   gap: 4px;
   min-width: 0;
+  overflow-x: auto;
   margin: 0;
   padding: 0;
   border: 0;
 }
 .provider-filters button {
+  flex-shrink: 0;
+  white-space: nowrap;
   height: 24px;
-  padding: 0 8px;
+  padding: 0 6px;
   gap: 4px;
   border: 1px solid #ffffff14;
   border-radius: 999px;
