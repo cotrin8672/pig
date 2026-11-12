@@ -242,16 +242,8 @@ function NextUp({ items, sending, onEdit, onDelete }: QueueProps) {
 function Tabs({ items, sending, onEdit, onDelete }: QueueProps) {
   if (!items.length) return null;
   return (
-    <div
-      className="pp-q-tabs"
-      role="group"
-      aria-label="入力欄と待機中のメッセージ"
-    >
-      <span
-        className="pp-q-tab pp-q-tab-current"
-        role="tab"
-        aria-selected="true"
-      >
+    <div className="pp-q-tabs">
+      <span className="pp-q-tab pp-q-tab-current" aria-current="true">
         入力中
       </span>
       {items.map((item, i) => {
@@ -265,8 +257,6 @@ function Tabs({ items, sending, onEdit, onDelete }: QueueProps) {
           >
             <button
               type="button"
-              role="tab"
-              aria-selected="false"
               disabled={locked}
               onClick={() => onEdit(item.id)}
             >
