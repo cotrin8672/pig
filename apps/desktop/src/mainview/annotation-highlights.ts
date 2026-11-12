@@ -6,9 +6,42 @@ const bound = new Map<string, Range>();
 const saved = "pig-annotation-saved";
 const active = "pig-annotation-active";
 const supported = () => typeof CSS !== "undefined" && "highlights" in CSS;
+const listeners = new Set<() => void>();
+let revision = 0;
+export const annotationRevision = () => revision;
+export function subscribeAnnotationRanges(listener: () => void) {
+  listeners.add(listener);
+  return () => {
+    listeners.delete(listener);
+  };
+}
+function changed() {
+  revision++;
+  for (const listener of listeners) listener();
+}
+
+/** Protect exact selections from lazy unmounts until their draft cards are removed. */
+export function hasAnnotationRange(element: Element | null) {
+  if (!element || !ranges.size) return false;
+  const bodies = Array.from(element.children).filter(
+    (child) =>
+      child.tagName !== "SUMMARY" && !child.classList.contains("tool-peek"),
+  );
+  for (const range of ranges.values())
+    if (
+      !range.collapsed &&
+      range.startContainer.isConnected &&
+      bodies.some((body) => range.intersectsNode(body))
+    )
+      return true;
+  return false;
+}
 
 export function rememberAnnotationRange(id: string, range: Range) {
-  if (supported()) ranges.set(id, range.cloneRange());
+  if (supported()) {
+    ranges.set(id, range.cloneRange());
+    changed();
+  }
 }
 
 function paint() {
@@ -76,6 +109,7 @@ export function useAnnotationHighlight(id: string) {
       ranges.delete(id);
       bound.delete(id);
       paint();
+      changed();
     };
   }, [id, range]);
   return card;

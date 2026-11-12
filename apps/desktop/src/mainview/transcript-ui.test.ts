@@ -10,7 +10,7 @@ import { build as buildStyles } from "vite";
 const edge = "C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe";
 
 test.skipIf(!existsSync(edge))(
-  "transcript in Edge: native wheel scrolling, original appearance, history, search and streaming",
+  "transcript in Edge: native wheel scrolling, original appearance, history, attachments and streaming",
   async () => {
     const dir = await mkdtemp(join(tmpdir(), "piris-transcript-ui-"));
     let passed = false;
@@ -29,6 +29,7 @@ test.skipIf(!existsSync(edge))(
       import {FontPicker} from ${source("./FontPicker.tsx")};
       import {FontSettings} from ${source("./FontSettings.tsx")};
       import {Composer} from ${source("./Composer.tsx")};
+      import {OpeningComposer} from ${source("./ChatOpening.tsx")};
       import {MessageQueue} from ${source("./MessageQueue.tsx")};
       import {AnnotationPopover} from ${source("./AnnotationPopover.tsx")};
       import {AnnotationDrafts} from ${source("./AnnotationCards.tsx")};
@@ -36,6 +37,7 @@ test.skipIf(!existsSync(edge))(
       import {SessionPanel} from ${source("./SessionPanel.tsx")};
       import {UIRequestBroker} from ${source("./UIRequestBroker.tsx")};
       import {drafts} from ${source("./draft-store.ts")};
+      import {addressKey} from ${source("./chat-snapshot.ts")};
       import {receiveTerminal} from ${source("./runtime-events.ts")};
       import {ToolBlock,ToolGroup,ThinkingBlock} from ${source("./ToolBlock.tsx")};
       import {DisclosureScope} from ${source("./LazyDetails.tsx")};
@@ -84,6 +86,18 @@ test.skipIf(!existsSync(edge))(
       function StoredChat({id}){const snapshot=useStore(state=>state.snapshots[id]);return <Chat snapshot={snapshot}/>;}
       const show=async snapshot=>{flushSync(()=>useStore.setState(state=>({snapshots:{...state.snapshots,[snapshot.info.id]:snapshot},settings:{...state.settings,language:"en"}})));await render(<StoredChat key={snapshot.info.id+":"+snapshot.address.epoch} id={snapshot.info.id}/>);};
       let snapshot;
+      const providerError='429 {"type":"error","error":{"type":"rate_limit_error","message":"Please try again later."},"request_id":"req_ui_error"}';
+      const failedRecord=assistant("failed",1,[]);
+      failedRecord.message.stopReason="error";failedRecord.message.errorMessage=providerError;
+      await show({...base,failure:providerError,transcript:transcript([user(0),failedRecord])});
+      const errorCard=document.querySelector(".response-error");
+      check(document.querySelectorAll(".response-error").length===1,"model failure must not be duplicated as a session failure");
+      check(errorCard.getAttribute("role")==="alert" && errorCard.textContent.includes("rate limit reached"),"model failure must explain why the response stopped");
+      check(!errorCard.querySelector("pre") && !errorCard.textContent.includes("req_ui_error"),"raw provider JSON must be collapsed by default");
+      await click(errorCard.querySelector("summary"));
+      check(errorCard.querySelector("pre").textContent===providerError,"expanded error details must preserve the original error");
+      await show({...base,failure:"Unexpected runtime failure",transcript:transcript([])});
+      check(document.querySelectorAll(".response-error").length===1 && document.querySelector(".response-error").textContent.includes("an error occurred"),"standalone runtime failures must use the same renderer");
       for(const count of [50,1000]){
         snapshot={...base,transcript:transcript(Array.from({length:count},(_,i)=>user(i)))};
         const started=performance.now();await show(snapshot);
@@ -119,18 +133,40 @@ test.skipIf(!existsSync(edge))(
       await wheel(thread,-180);await wheel(thread,100);
       metrics.readerScrollWrites=writes.length;
       check(writes.length===0,"scrolling after layout changes must remain native");
-      async function search(query){
-        const details=document.querySelector(".transcript-search");if(!details.open) await click(details.querySelector("summary"));
-        const input=details.querySelector("input");Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,"value").set.call(input,query);input.dispatchEvent(new Event("input",{bubbles:true}));
-        await until(()=>details.querySelector("button"),"search must produce a result");await click(details.querySelector("button"));
+      check(!document.querySelector(".transcript-search") && !document.querySelector('input[type="search"]'),"loaded-message search must not appear in a conversation");
+      const imageCanvas=document.createElement("canvas");imageCanvas.width=1000;imageCanvas.height=80;
+      window.__requests={...window.__requests,attachmentPreview:async()=>imageCanvas.toDataURL("image/png")};
+      const imagePath="C:/Users/me/attachments/"+"a".repeat(64)+".png";
+      snapshot={...base,address:{...base.address,sessionId:"images"},info:{...base.info,id:"images"},transcript:transcript([record("image-user",0,{role:"user",content:"Attached image\\n\\n"+imagePath,timestamp:0})])};
+      await show(snapshot);
+      await until(()=>document.querySelector(".sent-attachments img")?.complete,"sent image must load");
+      const image=document.querySelector(".sent-attachments .image-set");
+      const imageBubble=document.querySelector(".user-bubble");
+      check(Math.abs(image.getBoundingClientRect().right-imageBubble.getBoundingClientRect().right)<=2,"sent image must align with the right edge of its user bubble");
+      check(image.getBoundingClientRect().bottom<=imageBubble.getBoundingClientRect().top,"sent image must remain above its user bubble");
+      const preview=image.querySelector(".image-preview");
+      await click(preview);
+      let viewer=document.querySelector(".image-viewer");
+      check(viewer?.open,"image preview must open a modal viewer");
+      check(getComputedStyle(viewer).backgroundColor==="rgba(0, 0, 0, 0)","viewer surface must not hide the translucent backdrop");
+      const backdropCanvas=document.createElement("canvas");backdropCanvas.width=backdropCanvas.height=1;
+      const backdropContext=backdropCanvas.getContext("2d");backdropContext.fillStyle=getComputedStyle(viewer,"::backdrop").backgroundColor;backdropContext.fillRect(0,0,1,1);
+      const backdropAlpha=backdropContext.getImageData(0,0,1,1).data[3];
+      check(backdropAlpha>0 && backdropAlpha<255,"viewer backdrop must be translucent, not invisible or opaque");
+      const zoom=viewer.querySelector(".image-viewer-zoom");
+      await click(zoom.querySelector("img"));
+      check(viewer.open && zoom.getAttribute("aria-pressed")==="true","clicking the image must zoom without closing");
+      await click(zoom);
+      check(viewer.open && zoom.getAttribute("aria-pressed")==="false","clicking the zoom control must fit the image without closing");
+      for(const selector of [".image-viewer-viewport",".image-viewer-body",".image-viewer-header strong",".image-viewer"]){
+        await click(document.querySelector(selector));
+        check(!document.querySelector(".image-viewer"),"clicking outside the image must close the viewer: "+selector);
+        check(document.activeElement===preview,"closing the viewer must restore focus to its preview");
+        await click(preview);
       }
-      await search("needle-search");
-      check(document.activeElement.dataset.recordId==="r5" && visible(document.activeElement),"search must focus an earlier loaded record");
-      const searchRect=document.activeElement.getBoundingClientRect(),threadRect=thread.getBoundingClientRect();
-      check(searchRect.bottom>threadRect.top && searchRect.top<threadRect.bottom,"search must scroll its result into view");
-      const searchTop=thread.scrollTop;
-      snapshot={...snapshot,transcript:{...snapshot.transcript,records:[...snapshot.transcript.records,user(1001)]}};await show(snapshot);
-      check(Math.abs(thread.scrollTop-searchTop)<=2,"a search result must not resume following background output");
+      viewer=document.querySelector(".image-viewer");
+      viewer.dispatchEvent(new Event("cancel",{cancelable:true}));await wait();
+      check(!document.querySelector(".image-viewer"),"Escape must still close the viewer");
       const historyRequests=[];
       window.__getSessionHistory=async request=>{historyRequests.push(request);return transcript(Array.from({length:100},(_,i)=>user(i)));};
       snapshot={...base,address:{...base.address,sessionId:"history"},info:{...base.info,id:"history"},transcript:{...transcript(Array.from({length:150},(_,i)=>user(i+100))),history:{revision:"branch",before:"r100"}}};
@@ -145,30 +181,53 @@ test.skipIf(!existsSync(edge))(
       const diff=Array.from({length:10000},(_,i)=>"+"+i+" changed").join("\\n");
       const edit=<DisclosureScope id="edit" values={values}><ToolBlock call={{id:"edit",name:"edit",arguments:{path:"file.ts"}}} state={{status:"done",result:{details:{diff}}}} live={false}/></DisclosureScope>;
       await render(edit);
-      check(!visible(document.querySelector(".tool-diff")),"edits must start collapsed as in v0.2");
-      await click(document.querySelector("summary"));
+      check(document.querySelector("details").open && visible(document.querySelector(".tool-diff")),"edits must start expanded");
       metrics.diffSpans=document.querySelectorAll(".tool-diff > span").length;
       check(metrics.diffSpans===10000 && visible(document.querySelector(".tool-diff")) && !document.querySelector(".text-range"),"expanded diff must show every line in the original scrollable preview");
       check(getComputedStyle(document.querySelector(".tool-diff")).maxHeight==="240px","diff preview must keep its original height limit");
       await wheel(document.querySelector(".tool-diff"),320);
-      await click(document.querySelector("summary"));check(!visible(document.querySelector(".tool-diff")),"closing must hide the diff");
+      const diffTop=document.querySelector(".tool-diff").scrollTop;
+      await click(document.querySelector("summary"));check(!document.querySelector(".tool-diff"),"closing an unannotated diff must release its body");
+      await click(document.querySelector("summary"));
+      check(document.querySelector(".tool-diff").scrollTop===diffTop,"reopening a diff must restore its internal scroll position");
+      await click(document.querySelector("summary"));
       await render(<div/>);await render(edit);
       check(!visible(document.querySelector(".tool-diff")),"closing a diff must survive navigation");
-      await render(<ThinkingBlock text="# actual thinking" label="Thinking" active={false}/>);
-      check(!visible(document.querySelector("h1")),"thinking must start collapsed as in v0.2");
       await click(document.querySelector("summary"));
-      check(visible(document.querySelector("h1")),"opened thinking must show formatted content");
+      check(document.querySelector(".tool-diff").scrollTop===diffTop,"diff scroll coordinates must survive navigation without retaining its DOM");
+      await render(<ThinkingBlock text="# actual thinking" label="Thinking" active={false}/>);
+      check(document.querySelector("details").open && visible(document.querySelector("h1")),"thinking must start expanded with formatted content");
+      await click(document.querySelector("summary"));
+      check(!visible(document.querySelector("h1")),"thinking must still close manually");
       const output=Array.from({length:600},(_,i)=>"line "+i+" "+"original output ".repeat(4)+"end").join("\\n");
       await render(<ToolBlock call={{id:"shell",name:"bash",arguments:{command:"echo fixture"}}} state={{status:"done",result:{content:[{type:"text",text:output}]}}} live={false}/>);
       const peek=document.querySelector(".tool-peek");
       check(peek?.tagName==="PRE" && peek.parentElement.matches("details.tool-term") && peek.textContent===output.split("\\n").slice(-2).join("\\n"),"shell preview must keep the original separate two-line preformatted block");
       check(document.querySelector(".tool-badge.done").textContent==="exit 0","completed shell must retain its v0.2 exit badge");
-      await click(document.querySelector(".tool-term > summary"));
+      check(document.querySelector(".tool-term").open,"bash must start expanded");
       const shell=document.querySelector(".tool-term-output");
       check(shell.textContent===output && visible(shell) && !visible(peek) && getComputedStyle(shell).maxHeight==="280px" && !document.querySelector(".text-range"),"expanded shell must retain the complete output in its original preview");
       await wheel(shell,240);
+      const shellTop=shell.scrollTop;
+      await click(document.querySelector(".tool-term > summary"));
+      check(!document.querySelector(".tool-term-output") && document.querySelector(".tool-peek"),"closing a shell must release its complete body, retaining the small preview");
+      await click(document.querySelector(".tool-term > summary"));
+      check(document.querySelector(".tool-term-output").textContent===output,"reopening a shell must restore its complete output");
+      check(document.querySelector(".tool-term-output").scrollTop===shellTop,"reopening a shell must restore its internal scroll position");
+      const wideOutput=Array.from({length:80},(_,i)=>i+" "+"wide output ".repeat(150)).join("\\n");
+      await render(<DisclosureScope id="multi-scroll" reveal={1}><ToolBlock call={{id:"multi-scroll",name:"extension",arguments:{}}} state={{status:"done"}} live={false} card={{title:"Scroll positions",body:[{type:"code",text:wideOutput},{type:"code",text:wideOutput}]}}/></DisclosureScope>);
+      let scrollPreviews=document.querySelectorAll(".tool-code");
+      scrollPreviews[0].scrollTop=90;scrollPreviews[0].scrollLeft=120;
+      scrollPreviews[1].scrollTop=180;scrollPreviews[1].scrollLeft=240;await wait();
+      const previewPositions=[...scrollPreviews].map(pre=>({top:pre.scrollTop,left:pre.scrollLeft}));
+      check(previewPositions.every(pos=>pos.top>0 && pos.left>0),"multi-output fixture must scroll both axes");
+      await click(document.querySelector("summary"));check(!document.querySelector(".tool-code"),"closed card bodies must still be released");
+      await click(document.querySelector("summary"));
+      scrollPreviews=document.querySelectorAll(".tool-code");
+      check(JSON.stringify([...scrollPreviews].map(pre=>({top:pre.scrollTop,left:pre.scrollLeft})))===JSON.stringify(previewPositions),"each output must restore its own vertical and horizontal coordinates");
       const syntaxCode='const message = "<script>literal</script>";\\nconst count = 42;';
       await render(<ToolBlock call={{id:"syntax-write",name:"write",arguments:{path:"file.ts",content:syntaxCode}}} state={{status:"done"}} live={false}/>);
+      check(document.querySelector("details").open && visible(document.querySelector(".tool-code")),"writes must start expanded");
       await until(()=>document.querySelector(".tool-code .syntax-token"),"file writes must eventually highlight");
       check(document.querySelector(".tool-code").textContent===syntaxCode && !document.querySelector(".tool-code script"),"syntax tokens must preserve literal copied code, never HTML");
       const syntaxDiff='-1 /*\\n-2 old comment\\n-3 */\\n+1 const count = 42;\\n 4 const same = true;';
@@ -191,12 +250,30 @@ test.skipIf(!existsSync(edge))(
       metrics.syntaxHighlighting=true;
       const calls=Array.from({length:500},(_,i)=>({id:"call"+i,name:"read",arguments:{path:"file"+i}}));
       await render(<ToolGroup calls={calls} tools={{}} live={false}/>);
-      check(!visible(document.querySelector(".tool-group-body")),"exploration group must start collapsed");
+      check(!document.querySelector(".tool-group-body"),"collapsed exploration groups must not mount child tools");
       await click(document.querySelector("summary"));
       metrics.groupCalls=document.querySelectorAll(".tool-group-body > details").length;
       check(metrics.groupCalls===500 && !document.querySelector(".text-range") && document.querySelector('.tool-target[title="file499"]'),"expanded exploration group must keep every original tool row without paging or wrappers");
+      await click(document.querySelector('.tool-group-body > details > summary'));
+      check(document.querySelector('.tool-group-body > details').open,"child tool must open");
+      await click(document.querySelector('.tool-group > summary'));
+      check(!document.querySelector('.tool-group-body'),"closing a group must unmount its child tools");
+      await click(document.querySelector('.tool-group > summary'));
+      check(document.querySelector('.tool-group-body > details').open,"reopening a group must preserve child expansion");
       await render(<ToolGroup calls={calls.slice(0,2)} tools={{}} live={false}/>);
       check(document.querySelectorAll(".tool-group-body > details").length===2,"a reconciled shorter group must show all remaining calls");
+      const nestedCall={id:"nested-scroll",name:"read",arguments:{path:"file.txt"}};
+      await render(<DisclosureScope id="nested-scroll"><ToolGroup calls={[nestedCall]} tools={{[nestedCall.id]:{status:"done",result:{content:[{type:"text",text:wideOutput}]}}}} live={false}/></DisclosureScope>);
+      await click(document.querySelector(".tool-group > summary"));
+      await click(document.querySelector(".tool-group-body > details > summary"));
+      const nestedPreview=document.querySelector(".tool-body pre");nestedPreview.scrollTop=180;nestedPreview.scrollLeft=240;await wait();
+      const nestedPosition={top:nestedPreview.scrollTop,left:nestedPreview.scrollLeft};
+      await click(document.querySelector(".tool-group > summary"));
+      check(!nestedPreview.isConnected && !document.querySelector(".tool-group-body"),"closed unannotated groups must release their child DOM");
+      await click(document.querySelector(".tool-group > summary"));
+      const restoredPreview=document.querySelector(".tool-body pre");
+      check(restoredPreview.scrollTop===nestedPosition.top && restoredPreview.scrollLeft===nestedPosition.left,"parent group collapse must not discard child output coordinates");
+      metrics.toolScrollRestored={shell:shellTop,diff:diffTop,multiple:previewPositions,nested:nestedPosition};
       let parses=0;
       installChatRenderers([{id:"counter",kind:"markdown",component:({DefaultRenderer})=>{parses++;return <DefaultRenderer/>;}}]);
       await render(<Markdown text={"start"} streaming/>);
@@ -221,8 +298,7 @@ test.skipIf(!existsSync(edge))(
       workRecords.push(assistant("final",301,[{type:"text",text:"Final answer"}]));
       snapshot={...base,address:{...base.address,sessionId:"work"},info:{...base.info,id:"work"},transcript:{...transcript(workRecords),tools}};await show(snapshot);
       check(document.querySelector(".work-toggle")?.getAttribute("aria-expanded")==="false" && document.querySelector('[data-record-id="final"]').textContent.includes("Final answer"),"finished work must stay folded above the final answer");
-      await search("Tool-marker-125-end");
-      check(document.activeElement.closest("[data-record-id]")?.dataset.recordId==="a125" && document.activeElement.closest("[data-tool-call-id]")?.dataset.toolCallId==="t125" && document.activeElement.tagName==="SUMMARY","tool-result search must open work and focus its owning tool beyond the old record page");
+      await click(document.querySelector(".work-toggle"));
       check(document.querySelectorAll(".tool-term").length===150 && !document.querySelector(".text-range"),"unfolded work must contain every tool record");
       for(const grouped of [true,false]){
         metrics.stage="nested-"+grouped;
@@ -230,12 +306,15 @@ test.skipIf(!existsSync(edge))(
         const nestedTools={};
         const nestedResults=nestedCalls.map((call,i)=>{const text=i===125?"Single-marker-125-end\\n"+output:"small result "+i;nestedTools[call.id]={status:"done",result:{content:[{type:"text",text}]}};return record("nested-result"+i,2+i,{role:"toolResult",toolCallId:call.id,toolName:call.name,content:[{type:"text",text}],isError:false,timestamp:i});});
         const id=grouped?"single-grouped":"single-ungrouped";
-        snapshot={...base,address:{...base.address,sessionId:id},info:{...base.info,id},transcript:{...transcript([user(0),assistant("single",1,nestedCalls.map(call=>({type:"toolCall",...call}))),...nestedResults,assistant("single-final",152,[{type:"text",text:"Nested final"}])]),tools:nestedTools}};await show(snapshot);await search("Single-marker-125-end");
-        const focused=document.activeElement.closest("[data-tool-call-id]");
-        check(focused?.dataset.toolCallId==="nested125" && document.activeElement.tagName==="SUMMARY","nested tool-result search must retain native summary focus");
+        snapshot={...base,address:{...base.address,sessionId:id},info:{...base.info,id},transcript:{...transcript([user(0),assistant("single",1,nestedCalls.map(call=>({type:"toolCall",...call}))),...nestedResults,assistant("single-final",152,[{type:"text",text:"Nested final"}])]),tools:nestedTools}};await show(snapshot);
+        await click(document.querySelector(".work-toggle"));
+        if(grouped) await click(document.querySelector(".tool-group > summary"));
+        const focused=document.querySelector('details[data-tool-call-id="nested125"]');
+        if(grouped) await click(focused.querySelector("summary"));
+        focused.scrollIntoView({block:"center"});await wait();
         check(document.querySelectorAll("details[data-tool-call-id]").length===150 && !document.querySelector(".text-range"),"nested tools must all be available without content paging");
-        check(focused.open && (grouped?focused.closest(".tool-group").open:!focused.closest(".tool-group")),"search must preserve exploration grouping and separate shell rows");
-        check(focused.querySelector("pre").textContent.includes("line 599"),"search must expose complete output beyond the old text range");
+        check(focused.open && (grouped?focused.closest(".tool-group").open:!focused.closest(".tool-group")),"manual expansion must preserve exploration grouping and separate shell rows");
+        check(focused.querySelector("pre").textContent.includes("line 599"),"manual expansion must expose complete output beyond the old text range");
         const readingThread=document.querySelector(".thread-scroll");const top=readingThread.scrollTop;
         metrics.stage="nested-wheel-"+grouped;
         await wheel(focused.querySelector(grouped?".tool-body pre":".tool-term-output"),120);
@@ -321,21 +400,62 @@ test.skipIf(!existsSync(edge))(
       window.__sendModes=[];
       drafts.edit(composerSnapshot.address,content=>({...content,text:"message"}));
       await render(<div className="chat-shell" style={{height:350}}><Composer snapshot={{...composerSnapshot,modelCatalog:[{provider:"fixture",id:"fixture",name:"Fixture",input:["text"]}]}}/></div>);
-      const keyEditor=document.querySelector("textarea");keyEditor.focus();
+      let keyEditor=document.querySelector("textarea");keyEditor.focus();
       const press=async(key,modifiers={})=>{const event=new KeyboardEvent("keydown",{key,bubbles:true,cancelable:true,...modifiers});keyEditor.dispatchEvent(event);await wait();return event;};
       await press("Enter");check(window.__sendModes.length===0 && keyEditor.value.includes("\\n"),"Enter must insert a newline, never send");
+      await press("Enter",{shiftKey:true});
+      check(JSON.stringify(window.__sendModes)==='["steer"]',"idle Shift+Enter must send immediately without entering the queue");
+      await render(<div className="chat-shell" style={{height:350}}><Composer snapshot={{...composerSnapshot,transcript:{...composerSnapshot.transcript,running:true},modelCatalog:[{provider:"fixture",id:"fixture",name:"Fixture",input:["text"]}]}}/></div>);
+      keyEditor=document.querySelector("textarea");keyEditor.focus();
       await press("Enter",{shiftKey:true});await press("Enter",{ctrlKey:true});
-      check(JSON.stringify(window.__sendModes)==='["followUp","steer"]',"Shift+Enter must queue and Ctrl+Enter must steer");
+      check(JSON.stringify(window.__sendModes)==='["steer","followUp","steer"]',"while responding Shift+Enter must queue and Ctrl+Enter must steer");
       await press("Enter",{isComposing:true});await press("Enter",{keyCode:229});await press("Enter",{ctrlKey:true,repeat:true});
-      check(window.__sendModes.length===2,"IME confirmation and key-repeat must never send messages");
-      const altEnter=await press("Enter",{altKey:true});check(!altEnter.defaultPrevented && window.__sendModes.length===2,"Alt+Enter must have no app shortcut binding");
+      check(window.__sendModes.length===3,"IME confirmation and key-repeat must never send messages");
+      const altEnter=await press("Enter",{altKey:true});check(!altEnter.defaultPrevented && window.__sendModes.length===3,"Alt+Enter must have no app shortcut binding");
       await type(keyEditor,"message");keyEditor.setSelectionRange(3,3);await press("Enter");
       check(keyEditor.value==="mes\\nsage" && keyEditor.selectionStart===4,"Enter must insert at the caret without sending");
       flushSync(()=>useStore.setState(state=>({settings:{...state.settings,keybindings:{"composer.steer":"Ctrl+S","composer.newline":"Ctrl+J"}}})));await wait();
-      await press("j",{ctrlKey:true});check(window.__sendModes.length===2,"custom newline must not send");
-      await press("s",{ctrlKey:true});check(window.__sendModes.length===3 && window.__sendModes[2]==="steer","custom steering binding must work in the real composer");
+      await press("j",{ctrlKey:true});check(window.__sendModes.length===3,"custom newline must not send");
+      await press("s",{ctrlKey:true});check(window.__sendModes.length===4 && window.__sendModes[3]==="steer","custom steering binding must work in the real composer");
       check(!document.querySelector(".composer-dock kbd"),"the composer must not display shortcut instructions");
       flushSync(()=>useStore.setState(state=>({settings:{...state.settings,keybindings:{}}})));
+      metrics.stage="opening-composer-keys";
+      const previousOpening=useStore.getState();
+      for(const running of [false,true]){
+        const target={cwd:"fixture",id:"completion"};
+        flushSync(()=>useStore.setState({openId:"key-test",openingTarget:target,pendingOpens:{"key-test":target}}));
+        drafts.edit(composerSnapshot.address,content=>({...content,text:"opening message"}));
+        await render(<OpeningComposer preview={{...composerSnapshot,transcript:{...composerSnapshot.transcript,running}}}/>);
+        keyEditor=document.querySelector("textarea");keyEditor.focus();await press("Enter",{shiftKey:true});
+        const send=useStore.getState().pendingOpens["key-test"].queued[0];
+        check(send.delivery===(running?"followUp":"steer"),"opening composer must queue only while responding");
+        check(!!document.querySelector(".message-queue")===running,"idle opening sends must not flash a queue row");
+      }
+      flushSync(()=>useStore.setState({openId:previousOpening.openId,openingTarget:previousOpening.openingTarget,pendingOpens:previousOpening.pendingOpens,newChatDrafts:previousOpening.newChatDrafts}));
+      metrics.stage="composer-no-footer";
+      const renderComposer=async modelCatalog=>render(<div className="chat-shell" style={{height:350}}><Composer snapshot={{...composerSnapshot,modelCatalog}}/></div>);
+      const catalog=[{provider:"fixture",id:"fixture",name:"Fixture",input:["text"]}];
+      await renderComposer(catalog);
+      await type(document.querySelector("textarea"),"initial draft");
+      const dock=document.querySelector(".composer-dock"),composer=document.querySelector("form.composer"),composerRect=composer.getBoundingClientRect(),dockHeight=dock.getBoundingClientRect().height;
+      const checkComposer=()=>{
+        check(dock.lastElementChild===composer && !dock.querySelector(".belowEditor"),"nothing may render below the composer form");
+        check(composer.getBoundingClientRect().top===composerRect.top && composer.getBoundingClientRect().height===composerRect.height && dock.getBoundingClientRect().height===dockHeight,"composer status changes must not shift or resize the dock");
+      };
+      for(const state of ["sending","checking","unknown","rejected","accepted"]){
+        window.__sendState={state,message:"Send status must not appear below the editor"};await renderComposer(catalog);checkComposer();
+        check(!dock.textContent.includes(window.__sendState.message),"send status must not render in the composer");
+      }
+      window.__sendState=undefined;
+      flushSync(()=>useStore.setState({extensionStatuses:{[addressKey(composerSnapshot.address)]:{statuses:[],widgets:[{key:"footer",placement:"belowEditor",lines:["Extension footer must not render"]}]}}}));
+      await renderComposer([]);checkComposer();
+      check(!dock.textContent.includes("Extension footer") && !dock.textContent.includes("Choose an enabled model") && composer.querySelector('[aria-label="Send"]').disabled,"no-model state and extension footers must not add a message row");
+      window.__requests.syncDraft=async()=>{throw new Error("Composer mirror fixture failure");};
+      await type(document.querySelector("textarea"),"unsaved draft");
+      await until(()=>useStore.getState().noticeHistory.some(notice=>notice.message.includes("Composer mirror fixture failure")),"mirror errors must reach the existing notification UI");
+      checkComposer();check(document.querySelector("textarea").value==="unsaved draft" && !dock.textContent.includes("Composer mirror fixture failure"),"mirror failure must preserve the draft without inserting a message");
+      delete window.__requests.syncDraft;
+      metrics.composerNoFooter=true;
       const queueActions=[];
       const queueContent={text:"A quiet follow-up",pastes:[],images:[]};
       await render(<div style={{width:340}}><MessageQueue items={[{id:"one",content:queueContent},{id:"two",content:{...queueContent,text:"Another message"}}]} onEdit={id=>queueActions.push("edit:"+id)} onDelete={id=>queueActions.push("delete:"+id)}/></div>);
@@ -355,14 +475,31 @@ test.skipIf(!existsSync(edge))(
       }
       await render(<AnnotationFixture/>);
       const paragraphs=document.querySelectorAll("article.message.assistant p");
+      const pointer=(element,event)=>element.dispatchEvent(new PointerEvent(event,{bubbles:true,button:0,pointerId:1}));
       const selectPassage=async index=>{
-        const range=document.createRange();range.selectNodeContents(paragraphs[index]);
-        getSelection().removeAllRanges();getSelection().addRange(range);
-        await until(()=>document.querySelector(".annotation-popover > button"),"selection must show annotation trigger");
+        pointer(paragraphs[index],"pointerdown");await wait();
+        check(!document.querySelector(".annotation-popover"),"starting a new drag must hide the previous bubble");
+        const range=document.createRange();range.selectNodeContents(paragraphs[1-index]);
+        getSelection().removeAllRanges();getSelection().addRange(range);await wait();
+        check(!document.querySelector(".annotation-popover"),"selection changes during dragging must not show the bubble");
+        range.selectNodeContents(paragraphs[index]);
+        getSelection().removeAllRanges();getSelection().addRange(range);await wait();
+        check(!document.querySelector(".annotation-popover"),"extending the drag must not show the bubble");
+        pointer(document.body,"pointerup");
+        await until(()=>document.querySelector(".annotation-popover > button"),"releasing the pointer must show annotation trigger");
       };
+      const keyboardRange=document.createRange();keyboardRange.selectNodeContents(paragraphs[0]);
+      getSelection().removeAllRanges();getSelection().addRange(keyboardRange);
+      await until(()=>document.querySelector(".annotation-popover > button"),"non-pointer selections must still show the bubble");
+      pointer(paragraphs[0],"pointerdown");pointer(paragraphs[0],"pointercancel");await wait();
+      check(!document.querySelector(".annotation-popover"),"canceling a drag must leave the bubble hidden");
+      await selectPassage(0);
       await selectPassage(1);
       check(document.querySelector(".annotation-popover > button").textContent==="注釈をつける","annotation trigger must have the requested label");
-      await click(document.querySelector(".annotation-popover > button"));
+      const annotationTrigger=document.querySelector(".annotation-popover > button");
+      pointer(annotationTrigger,"pointerdown");pointer(annotationTrigger,"pointerup");
+      await click(annotationTrigger);
+      check(!!document.querySelector(".annotation-popover textarea"),"pressing the bubble must keep it available for editing");
       check(!CSS.highlights.has("pig-annotation-saved"),"editing alone must not leave a saved annotation mark");
       await type(document.querySelector(".annotation-popover textarea"),"Second occurrence only");
       await click(document.querySelector('.annotation-popover button[type="submit"]'));
@@ -389,6 +526,56 @@ test.skipIf(!existsSync(edge))(
       check(!CSS.highlights.has("pig-annotation-saved") && !CSS.highlights.has("pig-annotation-active"),"leaving the draft must clean up all source marks");
       flushSync(()=>useStore.setState(state=>({settings:{...state.settings,language:"en"}})));
       metrics.annotations=true;
+      metrics.stage="tool-annotations";
+      function ToolAnnotationFixture({grouped}){
+        const [items,setItems]=useState([]);
+        const call={id:"annotated-tool",name:grouped?"read":"bash",arguments:grouped?{path:"file.txt"}:{command:"echo repeated"}};
+        const state={status:"done",result:{content:[{type:"text",text:"Repeated tool passage\\nRepeated tool passage"}]}};
+        return <><article className="message assistant">{grouped?<ToolGroup calls={[call]} tools={{[call.id]:state}} live={false}/>:<ToolBlock call={call} state={state} live={false}/>}</article>
+          <AnnotationPopover onAdd={(annotation,range)=>{const id=crypto.randomUUID();rememberAnnotationRange(id,range);setItems(items=>[...items,{id,...annotation}]);}}/>
+          <AnnotationDrafts annotations={items} onRemove={id=>setItems(items=>items.filter(item=>item.id!==id))}/></>;
+      }
+      for(const grouped of [false,true]){
+        await render(<ToolAnnotationFixture key={String(grouped)} grouped={grouped}/>);
+        if(grouped){await click(document.querySelector(".tool-group > summary"));await click(document.querySelector(".tool-group-body > details > summary"));}
+        const source=document.querySelector(grouped?".tool-body pre":".tool-term-output");
+        const walker=document.createTreeWalker(source,NodeFilter.SHOW_TEXT);let selectedText;
+        for(let node=walker.nextNode();node;node=walker.nextNode()) if(node.textContent.includes("Repeated tool passage"))selectedText=node;
+        const range=document.createRange(),quote="Repeated tool passage",offset=selectedText.textContent.lastIndexOf(quote);
+        range.setStart(selectedText,offset);range.setEnd(selectedText,offset+quote.length);
+        getSelection().removeAllRanges();getSelection().addRange(range);
+        await until(()=>document.querySelector(".annotation-popover > button"),"tool text selection must offer annotation");
+        await click(document.querySelector(".annotation-popover > button"));
+        await click(document.querySelector('.annotation-popover button[type="submit"]'));
+        const marked=[...CSS.highlights.get("pig-annotation-saved")][0];
+        check(marked.toString()===quote && marked.startContainer===selectedText,"annotation must mark the exact repeated occurrence in tool output");
+        const firstText=document.createTreeWalker(source,NodeFilter.SHOW_TEXT).nextNode();
+        const firstRange=document.createRange(),firstOffset=firstText.textContent.indexOf(quote);
+        firstRange.setStart(firstText,firstOffset);firstRange.setEnd(firstText,firstOffset+quote.length);
+        getSelection().removeAllRanges();getSelection().addRange(firstRange);
+        await until(()=>document.querySelector(".annotation-popover > button"),"another tool annotation must remain available");
+        await click(document.querySelector(".annotation-popover > button"));await click(document.querySelector('.annotation-popover button[type="submit"]'));
+        check(CSS.highlights.get("pig-annotation-saved")?.size===2,"tool annotations must keep independent exact source ranges");
+        const tool=document.querySelector('details[data-tool-call-id="annotated-tool"]');
+        await click(tool.querySelector("summary"));
+        check(!tool.open && source.isConnected && marked.toString()===quote,"an annotated body must keep its exact source range while closed");
+        if(grouped){await click(document.querySelector(".tool-group > summary"));check(source.isConnected && marked.toString()===quote,"closing an ancestor group must protect annotated child ranges");await click(document.querySelector(".tool-group > summary"));}
+        await click(tool.querySelector("summary"));
+        const card=document.querySelector(".annotation-card");card.dispatchEvent(new MouseEvent("mouseenter"));
+        check(visible(source) && CSS.highlights.get("pig-annotation-active")?.has(marked),"reopened tool annotations must still highlight the original source");
+        card.dispatchEvent(new MouseEvent("mouseleave"));getSelection().removeAllRanges();
+        const rect=marked.getClientRects()[0];source.dispatchEvent(new MouseEvent("click",{bubbles:true,clientX:rect.left+2,clientY:rect.top+2}));
+        check(document.activeElement===card && CSS.highlights.has("pig-annotation-active"),"reopened source clicks must still focus their annotation card");
+        await click(tool.querySelector("summary"));
+        if(grouped)await click(document.querySelector(".tool-group > summary"));
+        await click(document.querySelector(".annotation-remove"));
+        check(source.isConnected && CSS.highlights.get("pig-annotation-saved")?.size===1,"removing one annotation must not discard another annotation's protected body");
+        await click(document.querySelector(".annotation-remove"));
+        await until(()=>!source.isConnected,"removing the last annotation must release the closed protected body");
+        check(!CSS.highlights.has("pig-annotation-saved") && !CSS.highlights.has("pig-annotation-active"),"last annotation removal must clear all highlights");
+        if(grouped)check(!document.querySelector(".tool-group-body"),"annotation removal must also release the closed parent group");
+      }
+      metrics.toolAnnotationsPreserved=true;
       metrics.stage="terminal";
       const owner={hostId:"terminal-stability",sessionId:"terminal-stability",epoch:1};const terminalCommands=[];window.__requests={terminalCommand:command=>{terminalCommands.push(command);return {};}};
       const terminalRequest={...owner,uiId:"pending",kind:"terminal",title:"Fixture terminal"};
@@ -491,7 +678,7 @@ test.skipIf(!existsSync(edge))(
             if(method==="syncDraft")return {applied:true,draft:{...params.content,revision:params.expectedRevision+1}};
             return {};
           }}),send:new Proxy({},{get:()=>noop})};
-          export const sends={subscribe:()=>noop,getTick:()=>0,read:()=>undefined,optimistic:()=>[],queued:()=>[],retained:()=>[],send:async(_address,_content,_attachments,delivery)=>{window.__sendCount=(window.__sendCount??0)+1;window.__sendModes?.push(delivery);}};
+          export const sends={subscribe:()=>noop,getTick:()=>0,read:()=>window.__sendState,optimistic:()=>[],queued:()=>[],retained:()=>[],send:async(_address,_content,_attachments,delivery)=>{window.__sendCount=(window.__sendCount??0)+1;window.__sendModes?.push(delivery);}};
           export const updateAppearance=noop,updateSettings=noop,updateUiPreferences=noop,refreshSessions=noop,refresh=()=>window.__refresh?.()??Promise.resolve(),requestSelection=(_address,request)=>request(),connectRuntime=noop,initRuntimeConnection=noop,cancelOpening=noop,openChat=noop,showPendingOpen=noop,openChatLink=noop,forkChat=noop,regenerate=noop,initSessionLinks=noop,initSessionReadTracking=noop,reconnectRuntime=noop;
         `,
               }));

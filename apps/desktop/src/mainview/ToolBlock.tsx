@@ -19,6 +19,7 @@ import {
   useContext,
   useLayoutEffect,
   useState,
+  useSyncExternalStore,
 } from "react";
 import type { ToolCard, ToolCardBlock } from "../../../../packages/config/src";
 import {
@@ -28,7 +29,13 @@ import {
   shellOutcome,
 } from "../shared/tool-view";
 import type { Transcript } from "../shared/transcript";
+import {
+  annotationRevision,
+  hasAnnotationRange,
+  subscribeAnnotationRanges,
+} from "./annotation-highlights";
 import { ChatContent } from "./ChatContent";
+import { useDisclosureScroll } from "./disclosure-scroll";
 import {
   CodeText,
   HighlightedDiff as Diff,
@@ -67,47 +74,66 @@ function Details({
   className,
   name = "body",
   defaultOpen = false,
+  summary,
+  preview,
   children,
 }: {
   className: string;
   name?: string;
   defaultOpen?: boolean;
-  children: ReactNode;
+  summary: ReactNode;
+  preview?: ReactNode;
+  children: () => ReactNode;
 }) {
   const toolCallId = useContext(ToolCallContext);
-  const { values, scope, reveal } = useContext(DisclosureContext);
+  const parent = useContext(DisclosureContext);
+  const [localValues] = useState<Record<string, boolean>>({});
+  const values = parent.values ?? localValues;
+  const { scope, reveal } = parent;
   const key = `${scope}/${name}`;
   const [open, setOpen] = useState(
-    () => !!reveal || (values?.[key] ?? defaultOpen),
+    () => !!reveal || (values[key] ?? defaultOpen),
   );
+  const scroll = useDisclosureScroll(values, key, open);
+  useSyncExternalStore(
+    subscribeAnnotationRanges,
+    annotationRevision,
+    annotationRevision,
+  );
+  const keepBody = open || hasAnnotationRange(scroll.ref.current);
   useLayoutEffect(() => {
     if (reveal) {
       setOpen(true);
-      if (values) values[key] = true;
+      values[key] = true;
     }
   }, [reveal, key, values]);
   return (
     <details
+      {...scroll}
       className={className}
       data-disclosure={name}
       data-tool-call-id={toolCallId}
       open={open}
       onToggle={(event) => {
         const next = event.currentTarget.open;
-        if (values) values[key] = next;
+        values[key] = next;
         setOpen(next);
       }}
     >
-      {children}
+      {summary}
+      {preview}
+      <DisclosureContext.Provider value={{ values, scope, reveal }}>
+        {keepBody && children()}
+      </DisclosureContext.Provider>
     </details>
   );
 }
 
-function Output({ state }: { state: ToolState }) {
+function Output({ state, language }: { state: ToolState; language?: string }) {
   const content = resultContent(state?.result);
   return content?.length ? (
     <div className="tool-output">
-      <MessageContent content={content} markdown={false} />
+      <MessageContent content={content} markdown={false} language={language} />
     </div>
   ) : null;
 }
@@ -134,25 +160,32 @@ function Row({
 }) {
   const t = useT();
   return (
-    <Details className={`tool-row ${status}`} defaultOpen={defaultOpen}>
-      <summary>
-        {icon}
-        <span className="tool-verb">{verb}</span>
-        <code className="tool-target" title={target}>
-          {target}
-        </code>
-        <span className="tool-meta">
-          {status === "running" ? (
-            <LoaderCircle size={12} className="spinner" />
-          ) : status === "error" ? (
-            <span className="tool-failed">{t.Failed}</span>
-          ) : (
-            meta
-          )}
-          <Chevron />
-        </span>
-      </summary>
-      <div className="tool-body">{children ?? <Output state={state} />}</div>
+    <Details
+      className={`tool-row ${status}`}
+      defaultOpen={defaultOpen}
+      summary={
+        <summary>
+          {icon}
+          <span className="tool-verb">{verb}</span>
+          <code className="tool-target" title={target}>
+            {target}
+          </code>
+          <span className="tool-meta">
+            {status === "running" ? (
+              <LoaderCircle size={12} className="spinner" />
+            ) : status === "error" ? (
+              <span className="tool-failed">{t.Failed}</span>
+            ) : (
+              meta
+            )}
+            <Chevron />
+          </span>
+        </summary>
+      }
+    >
+      {() => (
+        <div className="tool-body">{children ?? <Output state={state} />}</div>
+      )}
     </Details>
   );
 }
@@ -173,36 +206,44 @@ function Shell({
   const text = terminalText(output).trimEnd();
   const lines = text ? text.split("\n") : [];
   return (
-    // v0.2 surface (collapsed, $ prompt, status badge); highlighting kept.
-    <Details className={`tool-term ${status}`}>
-      <summary>
-        <span className="tool-prompt">$</span>
-        <code className="tool-cmd" title={command}>
-          <CodeText text={command} language={language} />
-        </code>
-        <span className="tool-meta">
-          {status === "running" ? (
-            <LoaderCircle size={12} className="spinner" />
+    <Details
+      className={`tool-term ${status}`}
+      defaultOpen={language === "bash"}
+      summary={
+        <summary>
+          <span className="tool-prompt">$</span>
+          <code className="tool-cmd" title={command}>
+            <CodeText text={command} language={language} />
+          </code>
+          <span className="tool-meta">
+            {status === "running" ? (
+              <LoaderCircle size={12} className="spinner" />
+            ) : (
+              <span className={`tool-badge ${status}`}>
+                {status === "done"
+                  ? "exit 0"
+                  : exitCode === undefined
+                    ? t.Failed
+                    : `exit ${exitCode}`}
+              </span>
+            )}
+            <Chevron />
+          </span>
+        </summary>
+      }
+      preview={
+        text && <pre className="tool-peek">{lines.slice(-2).join("\n")}</pre>
+      }
+    >
+      {() => (
+        <pre className="tool-term-output">
+          {lines.length === 0 ? (
+            t["No output"]
           ) : (
-            <span className={`tool-badge ${status}`}>
-              {status === "done"
-                ? "exit 0"
-                : exitCode === undefined
-                  ? t.Failed
-                  : `exit ${exitCode}`}
-            </span>
+            <TerminalOutput text={output.trimEnd()} />
           )}
-          <Chevron />
-        </span>
-      </summary>
-      {text && <pre className="tool-peek">{lines.slice(-2).join("\n")}</pre>}
-      <pre className="tool-term-output">
-        {lines.length === 0 ? (
-          t["No output"]
-        ) : (
-          <TerminalOutput text={output.trimEnd()} />
-        )}
-      </pre>
+        </pre>
+      )}
     </Details>
   );
 }
@@ -324,7 +365,12 @@ export function BuiltinTool({
           }
           state={state}
           status={status}
-        />
+        >
+          <Output
+            state={state}
+            language={status === "error" ? undefined : languageFromPath(path)}
+          />
+        </Row>
       );
     }
     case "grep":
@@ -364,6 +410,7 @@ export function BuiltinTool({
       const { added, removed } = diffStats(diff);
       return (
         <Row
+          defaultOpen
           icon={<Pencil size={ICON} />}
           verb={t.Edit}
           target={path}
@@ -390,6 +437,7 @@ export function BuiltinTool({
       const content = str(args.content);
       return (
         <Row
+          defaultOpen
           icon={<FilePlus size={ICON} />}
           verb={t.Write}
           target={path}
@@ -447,37 +495,45 @@ export const ToolGroup = memo(function ToolGroup({
     <Details
       name={`group:${calls[0]?.id}`}
       className={`tool-row tool-group ${running ? "running" : failed ? "error" : "done"}`}
+      summary={
+        <summary>
+          <Layers size={ICON} />
+          <span className="tool-verb">{t.Explored}</span>
+          <span className="tool-target">
+            {t.exploreSummary(
+              count("read"),
+              count("grep", "find"),
+              count("ls"),
+            )}
+          </span>
+          <span className="tool-meta">
+            {running && <LoaderCircle size={12} className="spinner" />}
+            {!running && failed && (
+              <span className="tool-failed">{t.Failed}</span>
+            )}
+            <Chevron />
+          </span>
+        </summary>
+      }
     >
-      <summary>
-        <Layers size={ICON} />
-        <span className="tool-verb">{t.Explored}</span>
-        <span className="tool-target">
-          {t.exploreSummary(count("read"), count("grep", "find"), count("ls"))}
-        </span>
-        <span className="tool-meta">
-          {running && <LoaderCircle size={12} className="spinner" />}
-          {!running && failed && (
-            <span className="tool-failed">{t.Failed}</span>
-          )}
-          <Chevron />
-        </span>
-      </summary>
-      <div className="tool-group-body">
-        {calls.map((call) => (
-          <DisclosureScope
-            key={call.id}
-            id={`call:${call.id}`}
-            reveal={target?.toolCallId === call.id ? target.serial : 0}
-          >
-            <ToolBlock
-              call={call}
-              state={tools[call.id]}
-              live={live}
-              card={cards?.[call.id]}
-            />
-          </DisclosureScope>
-        ))}
-      </div>
+      {() => (
+        <div className="tool-group-body">
+          {calls.map((call) => (
+            <DisclosureScope
+              key={call.id}
+              id={`call:${call.id}`}
+              reveal={target?.toolCallId === call.id ? target.serial : 0}
+            >
+              <ToolBlock
+                call={call}
+                state={tools[call.id]}
+                live={live}
+                card={cards?.[call.id]}
+              />
+            </DisclosureScope>
+          ))}
+        </div>
+      )}
     </Details>
   );
 });
@@ -500,17 +556,24 @@ export function BuiltinThinking({
       </div>
     );
   return (
-    <Details className="thinking">
-      <summary>
-        <Brain size={ICON} />
-        {label}
-        {text && <Chevron />}
-      </summary>
-      {text && (
-        <div className="thinking-body">
-          <Markdown text={text} />
-        </div>
-      )}
+    <Details
+      className="thinking"
+      defaultOpen
+      summary={
+        <summary>
+          <Brain size={ICON} />
+          {label}
+          {text && <Chevron />}
+        </summary>
+      }
+    >
+      {() =>
+        text && (
+          <div className="thinking-body">
+            <Markdown text={text} />
+          </div>
+        )
+      }
     </Details>
   );
 }

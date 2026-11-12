@@ -262,9 +262,11 @@ export const UserMessage = memo(function UserMessage({
 export const MessageContent = memo(function MessageContent({
   content,
   markdown = true,
+  language,
 }: {
   content: Content;
   markdown?: boolean;
+  language?: string;
 }) {
   const blocks =
     typeof content === "string" ? [{ type: "text", text: content }] : content;
@@ -284,7 +286,13 @@ export const MessageContent = memo(function MessageContent({
             <Markdown key={index} text={block.text} />
           ) : (
             // biome-ignore lint/suspicious/noArrayIndexKey: SDK content blocks retain their indexes.
-            <pre key={index}>{block.text}</pre>
+            <pre key={index}>
+              {language ? (
+                <CodeText text={block.text} language={language} />
+              ) : (
+                block.text
+              )}
+            </pre>
           );
         // All images of a message share one gallery, placed at the first image.
         if (index === firstImage)

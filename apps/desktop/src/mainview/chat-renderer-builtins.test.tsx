@@ -177,15 +177,17 @@ if (process.env.PIG_RENDERER_BUILTINS_CHILD !== "1") {
       },
     ] satisfies ChatRenderer[]);
     const html = renderToStaticMarkup(
-      <ToolBlock
-        call={{ id: "t", name: "unknown", arguments: {} }}
-        state={{ status: "done" }}
-        live={false}
-        card={{
-          title: "Existing card",
-          body: [{ type: "text", text: "Existing content" }],
-        }}
-      />,
+      <DisclosureScope id="card" reveal={1}>
+        <ToolBlock
+          call={{ id: "t", name: "unknown", arguments: {} }}
+          state={{ status: "done" }}
+          live={false}
+          card={{
+            title: "Existing card",
+            body: [{ type: "text", text: "Existing content" }],
+          }}
+        />
+      </DisclosureScope>,
     );
     expect(html).toContain("Existing card");
     expect(html).toContain("Existing content");
@@ -223,6 +225,116 @@ if (process.env.PIG_RENDERER_BUILTINS_CHILD !== "1") {
     expect(unknown).toContain(
       '<code class="language-unknown">literal\n</code>',
     );
+  });
+
+  test("file reads highlight TSX and CSS in standalone rows and exploration groups", async () => {
+    const { highlightCode, languageFromPath } = await import(
+      "./syntax-highlighting"
+    );
+    const files = [
+      {
+        path: "C:\\work\\kit.tsx",
+        text: 'const View = () => <div title="hello">{42}</div>;\r\n\r\n',
+      },
+      { path: "src/styles.css", text: "/* theme */\n.view { color: red; }\n" },
+    ];
+    const calls = files.map((file, index) => ({
+      type: "toolCall" as const,
+      id: `read-${index}`,
+      name: "read",
+      arguments: { path: file.path, offset: 60, limit: 120 },
+    }));
+    const tools = Object.fromEntries(
+      files.map((file, index) => [
+        calls[index].id,
+        {
+          status: "done" as const,
+          result: { content: [{ type: "text", text: file.text }] },
+        },
+      ]),
+    );
+    for (const [index, file] of files.entries()) {
+      await highlightCode(file.text, languageFromPath(file.path));
+      const html = renderToStaticMarkup(
+        <DisclosureScope id="read" reveal={1}>
+          <ToolBlock
+            call={calls[index]}
+            state={tools[calls[index].id]}
+            live={false}
+          />
+        </DisclosureScope>,
+      );
+      expect(html).toContain('<pre><span class="syntax-token"');
+      expect(html).toContain("L60–179");
+      expect(html.replace(/<\/?span\b[^>]*>/g, "")).toContain(
+        renderToStaticMarkup(<pre>{file.text}</pre>),
+      );
+      const group = renderToStaticMarkup(
+        <DisclosureScope id="reads" reveal={1}>
+          <ToolGroup
+            calls={calls}
+            tools={tools}
+            live={false}
+            target={{ toolCallId: calls[index].id, serial: 1 }}
+          />
+        </DisclosureScope>,
+      );
+      expect(group).toContain('<pre><span class="syntax-token"');
+      expect(group.replace(/<\/?span\b[^>]*>/g, "")).toContain(
+        renderToStaticMarkup(<pre>{file.text}</pre>),
+      );
+    }
+  });
+
+  test("read errors, unknown files and other tool output stay literal; read images survive", async () => {
+    const { highlightCode } = await import("./syntax-highlighting");
+    const text = 'const value = "<unsafe>";';
+    await highlightCode(text, "ts");
+    for (const [name, path, status, output] of [
+      ["read", "file.unknown", "done", text],
+      ["read", "file.ts", "error", text],
+      ["grep", "file.ts", "done", text],
+      ["read", "file.ts", "done", "x".repeat(100_001)],
+    ] as const) {
+      const html = renderToStaticMarkup(
+        <DisclosureScope id="plain" reveal={1}>
+          <ToolBlock
+            call={{ id: "plain", name, arguments: { path } }}
+            state={{
+              status,
+              result: { content: [{ type: "text", text: output }] },
+            }}
+            live={false}
+          />
+        </DisclosureScope>,
+      );
+      expect(html).not.toContain("syntax-token");
+      expect(html).toContain(renderToStaticMarkup(<pre>{output}</pre>));
+    }
+    const image = renderToStaticMarkup(
+      <DisclosureScope id="image-read" reveal={1}>
+        <ToolBlock
+          call={{
+            id: "image-read",
+            name: "read",
+            arguments: { path: "image.png" },
+          }}
+          state={{
+            status: "done",
+            result: {
+              content: [
+                { type: "text", text: "Read image file [image/png]" },
+                { type: "image", mimeType: "image/png", data: "YWJj" },
+              ],
+            },
+          }}
+          live={false}
+        />
+      </DisclosureScope>,
+    );
+    expect(image).toContain("Read image file [image/png]");
+    expect(image).toContain("image-preview");
+    expect(image).toContain("data:image/png;base64,YWJj");
   });
 
   test("Bash ANSI output and EDIT code retain their built-in shell and diff structure", async () => {
@@ -306,6 +418,125 @@ if (process.env.PIG_RENDERER_BUILTINS_CHILD !== "1") {
       /<details [^>]*data-tool-call-id="call-0"[^>]*open=/,
     );
     expect(html).not.toContain("text-range");
+  });
+
+  test("bash, edit, write and thinking start open but respect saved closed state", () => {
+    for (const status of ["running", "done", "error"] as const) {
+      for (const name of [
+        "bash",
+        "edit",
+        "write",
+        "powershell",
+        "read",
+        "grep",
+        "find",
+        "ls",
+        "unknown",
+      ]) {
+        const tool = (
+          <ToolBlock
+            call={{
+              id: name,
+              name,
+              arguments: {
+                path: "file.ts",
+                command: "echo hello",
+                content: "hello",
+              },
+            }}
+            state={{ status }}
+            live={status === "running"}
+          />
+        );
+        const html = renderToStaticMarkup(tool);
+        expect(html.split(">")[0].includes('open=""')).toBe(
+          ["bash", "edit", "write"].includes(name),
+        );
+        const closed = renderToStaticMarkup(
+          <DisclosureScope
+            id="saved"
+            values={{ [`/saved/tool:${name}/body`]: false }}
+          >
+            {tool}
+          </DisclosureScope>,
+        );
+        expect(closed.split(">")[0]).not.toContain('open=""');
+      }
+    }
+    const thinking = (
+      <ThinkingBlock text="Reason" label="Thinking" active={false} />
+    );
+    expect(renderToStaticMarkup(thinking).split(">")[0]).toContain('open=""');
+    expect(
+      renderToStaticMarkup(
+        <DisclosureScope id="saved" values={{ "/saved/body": false }}>
+          {thinking}
+        </DisclosureScope>,
+      ).split(">")[0],
+    ).not.toContain('open=""');
+  });
+
+  test("closed tool bodies, groups and thinking do not render their payloads", () => {
+    const text = "hidden payload".repeat(10_000);
+    for (const name of ["read", "powershell", "unknown", "write", "edit"]) {
+      const html = renderToStaticMarkup(
+        <DisclosureScope
+          id="closed"
+          values={{ [`/closed/tool:${name}/body`]: false }}
+        >
+          <ToolBlock
+            call={{
+              id: name,
+              name,
+              arguments: {
+                path: "file.ts",
+                command: "echo fixture",
+                content: text,
+              },
+            }}
+            state={{
+              status: "done",
+              result: {
+                content: [{ type: "text", text }],
+                details: { diff: text },
+              },
+            }}
+            live={false}
+          />
+        </DisclosureScope>,
+      );
+      expect(html).toContain("<summary>");
+      expect(html).not.toContain('class="tool-body"');
+      expect(html).not.toContain('class="tool-term-output"');
+      expect(html).not.toContain('class="syntax-token"');
+    }
+    let renders = 0;
+    installChatRenderers([
+      {
+        id: "counter",
+        kind: "tool",
+        component: () => {
+          renders++;
+          return <span>body</span>;
+        },
+      },
+    ]);
+    const group = renderToStaticMarkup(
+      <ToolGroup
+        calls={[{ type: "toolCall", id: "child", name: "read", arguments: {} }]}
+        tools={{}}
+        live={false}
+      />,
+    );
+    expect(group).not.toContain('class="tool-group-body"');
+    expect(renders).toBe(0);
+    const thinking = renderToStaticMarkup(
+      <DisclosureScope id="closed" values={{ "/closed/body": false }}>
+        <ThinkingBlock text={text} label="Thinking" active={false} />
+      </DisclosureScope>,
+    );
+    expect(thinking).not.toContain(text);
+    expect(thinking).not.toContain('class="thinking-body"');
   });
 
   test("native details retain saved expansion without adding markup wrappers", () => {

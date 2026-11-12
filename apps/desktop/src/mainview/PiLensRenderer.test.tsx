@@ -34,6 +34,7 @@ if (process.env.PIG_LENS_RENDERER_TEST_CHILD !== "1") {
   }));
   const { piLensRenderer, piLensSummary } = await import("./PiLensRenderer");
   const { ToolBlock, WorkToggle } = await import("./ToolBlock");
+  const { DisclosureScope } = await import("./LazyDetails");
   const { Markdown, UserMessage, ToolResultContent } = await import(
     "./MessageContent"
   );
@@ -51,9 +52,13 @@ if (process.env.PIG_LENS_RENDERER_TEST_CHILD !== "1") {
     },
     live: false,
   });
-  const render = (data: ToolData) => {
+  const render = (data: ToolData, open = true) => {
     registerBuiltinChatRenderers([piLensRenderer]);
-    return renderToStaticMarkup(<ToolBlock {...data} />);
+    return renderToStaticMarkup(
+      <DisclosureScope id="test" reveal={open ? 1 : 0}>
+        <ToolBlock {...data} />
+      </DisclosureScope>,
+    );
   };
   afterEach(() => {
     installChatRenderers([]);
@@ -199,9 +204,11 @@ if (process.env.PIG_LENS_RENDERER_TEST_CHILD !== "1") {
     ).toBe("src");
   });
   test("native running, failure and interruption states are retained", () => {
-    expect(render(cases.read)).toMatch(
+    const closed = render(cases.read, false);
+    expect(closed).toMatch(
       /^<details [^>]*data-tool-call-id="fixture-read_symbol"[^>]*><summary>/,
     );
+    expect(closed).not.toContain('class="tool-body"');
     expect(render(cases.read)).toContain('</summary><div class="tool-body">');
     expect(
       render({
