@@ -834,12 +834,6 @@ export function Chat({ snapshot }: { snapshot: ChatSnapshot }) {
           );
         const { record, index } = item;
         const divider = dividers.get(record.id);
-        if (divider)
-          return (
-            <div className="model-divider" key={record.id}>
-              {divider}
-            </div>
-          );
         if (!isVisibleRecord(record)) return null;
         const range = work.get(index);
         const folded = range !== undefined && !openWork[range.key];
@@ -882,6 +876,19 @@ export function Chat({ snapshot }: { snapshot: ChatSnapshot }) {
             data-record-order={record.order}
             tabIndex={-1}
           >
+            {divider && (
+              <div className="model-divider">
+                <span className="model-divider-model">
+                  <ProviderIcon provider={divider.from.provider} size={14} />
+                  {divider.from.provider}/{divider.from.id}
+                </span>
+                →
+                <span className="model-divider-model">
+                  <ProviderIcon provider={divider.to.provider} size={14} />
+                  {divider.to.provider}/{divider.to.id}
+                </span>
+              </div>
+            )}
             <DisclosureScope id={id} values={view.details}>
               {toggle}
               <article className={`message ${message.role}`}>

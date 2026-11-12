@@ -1,8 +1,9 @@
 import { expect, mock, test } from "bun:test";
 import { fileURLToPath } from "node:url";
+import { fauxAssistantMessage } from "@earendil-works/pi-ai";
 import { renderToStaticMarkup } from "react-dom/server";
 import type { Snapshot } from "../shared/rpc-schema";
-import { emptyTranscript } from "../shared/transcript";
+import { emptyTranscript, type Message } from "../shared/transcript";
 import { drafts } from "./draft-store";
 import { useStore } from "./store";
 
@@ -263,6 +264,62 @@ if (process.env.PIG_CHAT_OPENING_CHILD !== "1") {
     } finally {
       state.extensionNotices = previous;
     }
+  });
+
+  test("model dividers keep both turns visible and show provider icons before each model", async () => {
+    const { Chat } = await import("./App");
+    const messages: Message[] = [
+      { role: "user", content: "First prompt", timestamp: 0 },
+      {
+        ...fauxAssistantMessage("First answer"),
+        provider: "anthropic",
+        model: "claude-fable-5-2",
+      },
+      { role: "user", content: "Second prompt", timestamp: 1 },
+      {
+        ...fauxAssistantMessage("Second answer"),
+        provider: "openai-codex",
+        model: "gpt-6.1-sol",
+      },
+    ];
+    const html = renderToStaticMarkup(
+      <Chat
+        snapshot={{
+          ...snapshot,
+          transcript: {
+            ...emptyTranscript(),
+            records: messages.map((message, order) => ({
+              id: `model-test-${order}`,
+              order,
+              parentId: null,
+              branchId: "main",
+              kind: "message",
+              message,
+            })),
+          },
+        }}
+      />,
+    );
+    expect(html.match(/class="model-divider"/g)).toHaveLength(1);
+    const divider = html.slice(
+      html.indexOf('<div class="model-divider">'),
+      html.indexOf("Second prompt"),
+    );
+    for (const name of [
+      "anthropic/claude-fable-5-2",
+      "openai-codex/gpt-6.1-sol",
+    ]) {
+      expect(divider).toContain(name);
+      expect(
+        divider.lastIndexOf("<svg", divider.indexOf(name)),
+      ).toBeGreaterThan(-1);
+    }
+    expect(divider.match(/<svg\b/g)).toHaveLength(2);
+    expect(html.indexOf("First answer")).toBeLessThan(
+      html.indexOf('class="model-divider"'),
+    );
+    expect(html).toContain("Second answer");
+    expect(html.match(/class="message user"/g)).toHaveLength(2);
   });
 
   test("startup metadata and rewind markers leave the conversation empty", async () => {

@@ -7,7 +7,6 @@ import type {
 import { emptyTranscript } from "../shared/transcript";
 import { newerSnapshot } from "./chat-snapshot";
 import { DraftStore, emptyContent } from "./draft-store";
-import { modelDividers } from "./model-dividers";
 import { OptimisticValue } from "./optimistic-value";
 import { SelectionController } from "./selection-controller";
 import { SendController } from "./send-controller";
@@ -305,20 +304,4 @@ test("ordinary streaming snapshots reuse the cached catalog, but new epochs cann
     newerSnapshot(current, { ...next, address: { ...address, epoch: 2 } })
       .modelCatalog,
   ).toBeUndefined();
-});
-
-test("model dividers show real persisted changes, not initialization or repeated selection", () => {
-  const records = ["A", "A", "B", "C"].map((modelId, index) => ({
-    id: String(index),
-    parentId: null,
-    branchId: "root",
-    order: index,
-    kind: "session-entry" as const,
-    entryType: "model_change",
-    data: { provider: "p", modelId },
-  }));
-  expect([...modelDividers(records)]).toEqual([
-    ["2", "p/A → p/B"],
-    ["3", "p/B → p/C"],
-  ]);
 });
