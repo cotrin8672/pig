@@ -1,4 +1,5 @@
 import "./runtime-profile";
+import { statSync } from "node:fs";
 import { join } from "node:path";
 import type { SessionActionRequest } from "../../../../packages/config/src";
 import { AdapterRuntime } from "./adapter-runtime";
@@ -2065,14 +2066,20 @@ export class SessionHost {
   }
   async deleteSession(info: SessionInfo) {
     const m = this.sessions.get(info.id);
+    if (m && m.cwd !== info.cwd)
+      throw new Error("Session does not belong to this project");
     if (m) await this.closeSession(m.address);
     if (this.sessions.has(info.id))
       throw new Error(
         "Stop is unconfirmed; session cannot be deleted while external work may be running",
       );
-    const file = await resolveSessionFile(info.cwd, info.id);
-    const manager = SessionManager.open(file);
-    await removeSessionFile(info.cwd, info.id);
+    const manager =
+      m?.manager ??
+      SessionManager.open(await resolveSessionFile(info.cwd, info.id));
+    const file = manager.getSessionFile();
+    // The SDK creates no file until the first user or assistant message.
+    if (file && statSync(file, { throwIfNoEntry: false }))
+      await removeSessionFile(info.cwd, info.id);
     for (const address of this.recovery.deleteSession(info.id, info.cwd)) {
       this.receipts.forget(address);
       this.options.emit({
