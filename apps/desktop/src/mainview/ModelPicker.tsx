@@ -4,22 +4,36 @@ import {
   ChevronDown,
   Clock3,
   Image,
+  Lock,
+  LogIn,
   Search,
   Settings2,
+  SquarePen,
   X,
 } from "lucide-react";
 import { useEffect, useId, useRef, useState } from "react";
+import {
+  accountModelKey,
+  accountSourceKey,
+  selectionKey,
+} from "../shared/account-models";
 import { effortLabels } from "../shared/effort";
-import { filterModels, modelKey } from "../shared/models";
-import type { ModelInfo, ModelSelection, Snapshot } from "../shared/rpc-schema";
+import type { ModelSelection, Snapshot } from "../shared/rpc-schema";
+import {
+  type AccountModel,
+  accountLocked,
+  accountModelSources,
+} from "./account-picker";
 import { EffortPicker } from "./EffortPicker";
 import { EffortSlider } from "./EffortSlider";
 import { useT } from "./i18n";
 import { navigate } from "./navigation";
 import { changeSelection, usePicker } from "./Picker";
 import { ProviderIcon } from "./ProviderIcon";
-import { requestSelection, rpc, updateUiPreferences } from "./rpc";
+import { startProviderLogin } from "./provider-login";
+import { openChat, requestSelection, rpc, updateUiPreferences } from "./rpc";
 import { useStore } from "./store";
+import "./provider-accounts.css";
 
 export function ModelPicker({
   snapshot,
@@ -32,51 +46,52 @@ export function ModelPicker({
 }) {
   const t = useT();
   const current = selection ?? snapshot ?? { effort: "off", effortLevels: [] };
-  const { models, disabledModels, desktop, providers } = useStore(
-    (state) => state.bootstrap,
+  const bootstrap = useStore((state) => state.bootstrap);
+  const sources = accountModelSources(bootstrap, snapshot);
+  const choices = sources.flatMap((source) =>
+    source.configured ? source.models.map((model) => ({ source, model })) : [],
   );
-  const providerName = (id: string) =>
-    providers.find((p) => p.id === id)?.name ?? id;
+  const choiceKey = ({ source, model }: AccountModel) =>
+    accountModelKey(model, source.accountId);
+  const recent = (bootstrap.desktop.recentModels ?? []).flatMap((key) => {
+    const choice = choices.find((choice) => choiceKey(choice) === key);
+    return choice ? [choice] : [];
+  });
+  const currentSource = sources.find(
+    (source) =>
+      source.key ===
+      accountSourceKey(current.model?.provider ?? "", current.accountId),
+  );
+  const multiple = bootstrap.providers.find(
+    (provider) => provider.id === current.model?.provider,
+  )?.accounts?.length;
   const [query, setQuery] = useState("");
-  const recent = desktop.recentModels ?? [];
-  const [source, setSource] = useState(current.model?.provider);
+  const [source, setSource] = useState<string>();
   const [highlight, setHighlight] = useState(-1);
   const [open, setOpen] = useState(false);
   const search = useRef<HTMLInputElement>(null);
   const list = useRef<HTMLDivElement>(null);
   const listId = useId();
   const { ref, close } = usePicker();
-  const catalog = snapshot?.modelCatalog ?? models;
-  const enabled = filterModels(catalog, disabledModels);
-  const recentModels = recent.flatMap((key) => {
-    const model = enabled.find((entry) => modelKey(entry) === key);
-    return model ? [model] : [];
-  });
-  const sources = [
-    ...(recentModels.length
-      ? [{ id: "recent", label: t.Recent, count: recentModels.length }]
-      : []),
-    ...[
-      ...new Set([
-        ...providers.map((provider) => provider.id),
-        ...enabled.map((model) => model.provider),
-      ]),
-    ].flatMap((id) => {
-      const count = enabled.filter((model) => model.provider === id).length;
-      return count ? [{ id, label: providerName(id), count }] : [];
-    }),
-  ];
-  const activeSource = sources.some((entry) => entry.id === source)
-    ? source
-    : sources[0]?.id;
+  const activeKey =
+    source === "recent" && recent.length
+      ? source
+      : sources.some((entry) => entry.key === source)
+        ? source
+        : (currentSource?.key ?? sources[0]?.key);
+  const activeSource = sources.find((entry) => entry.key === activeKey);
   const searching = !!query.trim();
   const visible = searching
-    ? filterModels(catalog, disabledModels, query)
-    : activeSource === "recent"
-      ? recentModels
-      : enabled.filter((model) => model.provider === activeSource);
+    ? choices.filter(({ source, model }) =>
+        `${source.label} ${model.name} ${model.id} ${model.provider}`
+          .toLowerCase()
+          .includes(query.trim().toLowerCase()),
+      )
+    : activeKey === "recent"
+      ? recent
+      : choices.filter((choice) => choice.source.key === activeKey);
   const selectedIndex = visible.findIndex(
-    (model) => current.model && modelKey(model) === modelKey(current.model),
+    (choice) => choiceKey(choice) === selectionKey(current),
   );
   const activeIndex =
     highlight >= 0 && highlight < visible.length
@@ -84,44 +99,53 @@ export function ModelPicker({
       : searching
         ? 0
         : selectedIndex;
+  const locked = activeSource && accountLocked(activeSource, snapshot);
+  const signedOut = activeSource && !activeSource.configured;
   useEffect(() => {
     if (open && activeIndex >= 0)
       list.current
         ?.querySelector(`[data-model-index="${activeIndex}"]`)
         ?.scrollIntoView({ block: "nearest" });
   }, [open, activeIndex]);
-  function select(model: ModelInfo) {
-    const desired: ModelSelection = {
+  function desired({ source, model }: AccountModel): ModelSelection {
+    return {
       model,
+      accountId: source.accountId,
       effort: model.effectiveDefaultEffort ?? "off",
       effortLevels: model.effortLevels ?? [],
     };
+  }
+  function select(choice: AccountModel) {
+    if (accountLocked(choice.source, snapshot)) return;
+    const next = desired(choice);
     close();
     if (!snapshot || snapshot.ready === false) {
-      onSelect?.(desired);
+      onSelect?.(next);
       return;
     }
-    void changeSelection(snapshot.address, desired, () =>
+    void changeSelection(snapshot.address, next, () =>
       requestSelection(snapshot.address, () =>
         rpc.request.setModel({
           ...snapshot.address,
-          provider: model.provider,
-          id: model.id,
+          provider: choice.model.provider,
+          id: choice.model.id,
+          accountId: choice.source.accountId ?? null,
         }),
       ),
     ).then(() => {
-      const chosen = useStore.getState().snapshots[snapshot.info.id]?.model;
-      if (!chosen || modelKey(chosen) !== modelKey(model)) return;
+      const confirmed = useStore.getState().snapshots[snapshot.info.id];
+      if (!confirmed || selectionKey(confirmed) !== choiceKey(choice)) return;
       const previous = useStore.getState().bootstrap.desktop.recentModels ?? [];
-      const next = [
-        modelKey(model),
-        ...previous.filter((key) => key !== modelKey(model)),
-      ].slice(0, 6);
-      updateUiPreferences({ recentModels: next });
+      updateUiPreferences({
+        recentModels: [
+          choiceKey(choice),
+          ...previous.filter((key) => key !== choiceKey(choice)),
+        ].slice(0, 6),
+      });
     });
   }
-  function selectSource(id: string) {
-    setSource(id);
+  function selectSource(key: string) {
+    setSource(key);
     setQuery("");
     setHighlight(-1);
     search.current?.focus();
@@ -140,7 +164,7 @@ export function ModelPicker({
       <summary
         className="picker-trigger"
         aria-label={t.chooseModel(
-          current.model?.name ?? t.None,
+          `${currentSource?.label ?? ""} ${current.model?.name ?? t.None}`.trim(),
           effortLabels[current.effort],
         )}
         onClick={() => {
@@ -148,13 +172,21 @@ export function ModelPicker({
             setQuery("");
             setHighlight(-1);
             setSource(
-              recentModels.length
+              recent.length
                 ? "recent"
-                : (current.model?.provider ?? sources[0]?.id),
+                : (currentSource?.key ?? sources[0]?.key),
             );
           }
         }}
       >
+        {(multiple || current.accountId) && (
+          <span
+            className="picker-account-label"
+            title={currentSource?.label ?? current.accountId}
+          >
+            {currentSource?.label ?? current.accountId}
+          </span>
+        )}
         <span className="picker-model-label">
           {current.model?.name ?? t["Select model"]}
         </span>
@@ -165,7 +197,7 @@ export function ModelPicker({
         )}
         <ChevronDown size={12} />
       </summary>
-      {/* biome-ignore lint/a11y/noStaticElementInteractions: Keyboard events are delegated from native inputs and model buttons. */}
+      {/* biome-ignore lint/a11y/noStaticElementInteractions: Keyboard events are delegated from inputs and options. */}
       <div
         className="picker-panel model-panel"
         onKeyDown={(event) => {
@@ -180,14 +212,16 @@ export function ModelPicker({
           }
           const target = event.target as HTMLElement;
           if (!target.matches("input, .model-option")) return;
-          if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+          if (
+            (event.key === "ArrowDown" || event.key === "ArrowUp") &&
+            visible.length
+          ) {
             event.preventDefault();
             const next =
               (activeIndex +
                 (event.key === "ArrowDown" ? 1 : -1) +
                 visible.length) %
               visible.length;
-            if (!visible.length) return;
             setHighlight(next);
             if (target.matches(".model-option"))
               list.current
@@ -198,8 +232,8 @@ export function ModelPicker({
           }
           if (event.key === "Enter" && target === search.current) {
             event.preventDefault();
-            const model = visible[Math.max(0, activeIndex)];
-            if (model) select(model);
+            const choice = visible[Math.max(0, activeIndex)];
+            if (choice) select(choice);
           }
         }}
       >
@@ -251,24 +285,45 @@ export function ModelPicker({
         </div>
         <div
           className="model-browser"
-          data-has-rail={sources.length > 1 || undefined}
+          data-has-rail={
+            sources.length + (recent.length ? 1 : 0) > 1 || undefined
+          }
         >
-          {sources.length > 1 && (
+          {sources.length + (recent.length ? 1 : 0) > 1 && (
             <nav className="model-source-rail" aria-label={t["Model sources"]}>
+              {!!recent.length && (
+                <button
+                  type="button"
+                  aria-pressed={activeKey === "recent" && !searching}
+                  onClick={() => selectSource("recent")}
+                >
+                  <Clock3 size={12} />
+                  <span>{t.Recent}</span>
+                  <small>{recent.length}</small>
+                </button>
+              )}
               {sources.map((entry) => (
                 <button
-                  key={entry.id}
+                  key={entry.key}
                   type="button"
-                  aria-pressed={activeSource === entry.id && !searching}
-                  onClick={() => selectSource(entry.id)}
+                  aria-pressed={activeKey === entry.key && !searching}
+                  data-unavailable={
+                    !entry.configured ||
+                    accountLocked(entry, snapshot) ||
+                    undefined
+                  }
+                  onClick={() => selectSource(entry.key)}
+                  title={entry.label}
                 >
-                  {entry.id === "recent" ? (
-                    <Clock3 size={12} />
-                  ) : (
-                    <ProviderIcon provider={entry.id} size={12} />
-                  )}
+                  <ProviderIcon provider={entry.provider} size={12} />
                   <span>{entry.label}</span>
-                  <small>{entry.count}</small>
+                  {accountLocked(entry, snapshot) ? (
+                    <Lock size={10} aria-label={t.accountLocked} />
+                  ) : (
+                    <small>
+                      {entry.configured ? entry.models.length : "!"}
+                    </small>
+                  )}
                 </button>
               ))}
             </nav>
@@ -280,58 +335,109 @@ export function ModelPicker({
             role="listbox"
             aria-label={t.Models}
           >
-            {visible.map((model, index) => {
-              const selected =
-                current.model && modelKey(model) === modelKey(current.model);
-              const showGroup =
-                searching &&
-                (index === 0 || visible[index - 1].provider !== model.provider);
-              return (
-                <div key={modelKey(model)}>
-                  {showGroup && (
-                    <div className="picker-group-title">
-                      {providerName(model.provider)}
+            {!searching && signedOut && activeSource ? (
+              <div className="model-account-action">
+                <p>{t.accountSignInNeeded(activeSource.label)}</p>
+                <button
+                  type="button"
+                  onClick={() => {
+                    close();
+                    startProviderLogin({
+                      provider: activeSource.provider,
+                      accountId: activeSource.accountId,
+                    });
+                  }}
+                >
+                  <LogIn size={13} />
+                  {t["Sign in"]}
+                </button>
+              </div>
+            ) : (
+              <>
+                {!searching && locked && activeSource && (
+                  <div className="model-account-action">
+                    <p>{t.accountLocked}</p>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const model = activeSource.models[0];
+                        if (!model || !snapshot) return;
+                        close();
+                        void openChat(
+                          snapshot.info.cwd,
+                          undefined,
+                          true,
+                          desired({ source: activeSource, model }),
+                        );
+                      }}
+                      disabled={!activeSource.models.length}
+                    >
+                      <SquarePen size={13} />
+                      {t.newChatWithAccount(activeSource.label)}
+                    </button>
+                  </div>
+                )}
+                {visible.map((choice, index) => {
+                  const { model, source } = choice;
+                  const selected = choiceKey(choice) === selectionKey(current);
+                  const showGroup =
+                    searching &&
+                    (index === 0 ||
+                      visible[index - 1].source.key !== source.key);
+                  return (
+                    <div key={choiceKey(choice)}>
+                      {showGroup && (
+                        <div className="picker-group-title">{source.label}</div>
+                      )}
+                      <button
+                        type="button"
+                        className="model-option"
+                        role="option"
+                        aria-selected={selected}
+                        aria-disabled={
+                          accountLocked(source, snapshot) || undefined
+                        }
+                        data-highlighted={index === activeIndex || undefined}
+                        data-model-index={index}
+                        id={`${listId}-${index}`}
+                        title={`${source.label}\n${model.name}\n${model.id}`}
+                        onPointerMove={() => setHighlight(index)}
+                        onClick={() => select(choice)}
+                      >
+                        <span className="model-option-name">{model.name}</span>
+                        {!searching && activeKey === "recent" && (
+                          <small className="picker-account-label">
+                            {source.label}
+                          </small>
+                        )}
+                        <span className="model-capabilities">
+                          {model.reasoning && (
+                            <Brain size={12} aria-label={t.Reasoning} />
+                          )}
+                          {model.vision && (
+                            <Image size={12} aria-label={t.Images} />
+                          )}
+                          {model.contextWindow && (
+                            <small>
+                              {Math.round(model.contextWindow / 1000)}k
+                            </small>
+                          )}
+                        </span>
+                        <span className="model-selected-mark">
+                          {selected && <Check size={13} />}
+                        </span>
+                      </button>
                     </div>
-                  )}
-                  <button
-                    type="button"
-                    className="model-option"
-                    role="option"
-                    aria-selected={!!selected}
-                    data-highlighted={index === activeIndex || undefined}
-                    data-model-index={index}
-                    id={`${listId}-${index}`}
-                    title={`${model.name}\n${model.id}`}
-                    onPointerMove={() => setHighlight(index)}
-                    onClick={() => select(model)}
-                  >
-                    <span className="model-option-name">{model.name}</span>
-                    <span className="model-capabilities">
-                      {model.reasoning && (
-                        <Brain size={12} aria-label={t.Reasoning} />
-                      )}
-                      {model.vision && (
-                        <Image size={12} aria-label={t.Images} />
-                      )}
-                      {model.contextWindow && (
-                        <small>{Math.round(model.contextWindow / 1000)}k</small>
-                      )}
-                    </span>
-                    <span className="model-selected-mark">
-                      {selected && <Check size={13} />}
-                    </span>
-                  </button>
-                </div>
-              );
-            })}
-            {!visible.length && (
-              <p className="picker-empty">
-                {searching
-                  ? t["No matching models"]
-                  : enabled.length
-                    ? t["No recent models"]
-                    : t["Enable models in provider settings"]}
-              </p>
+                  );
+                })}
+                {!visible.length && (
+                  <p className="picker-empty">
+                    {searching
+                      ? t["No matching models"]
+                      : t["Enable models in provider settings"]}
+                  </p>
+                )}
+              </>
             )}
           </div>
         </div>
@@ -339,13 +445,7 @@ export function ModelPicker({
           <EffortSlider
             levels={current.effortLevels}
             value={current.effort}
-            onCommit={async (effort) =>
-              onSelect({
-                model: current.model,
-                effort,
-                effortLevels: current.effortLevels,
-              })
-            }
+            onCommit={async (effort) => onSelect({ ...current, effort })}
           />
         )}
         {snapshot && (

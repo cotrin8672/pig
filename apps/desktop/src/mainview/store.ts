@@ -4,6 +4,7 @@ import type { AppUpdateState } from "../shared/app-update";
 import { defaultAppearance } from "../shared/appearance";
 import type { ExtensionStatus, UIRequest } from "../shared/extension-ui";
 import { dictionary } from "../shared/i18n";
+import type { AccountTarget } from "../shared/provider-accounts";
 import type {
   Appearance,
   AuthMethod,
@@ -39,6 +40,8 @@ export interface LoginState {
   loginId: string;
   provider: string;
   method: AuthMethod;
+  accountId?: string;
+  addAccount?: boolean;
   event?: AuthEvent;
   authUrl?: Extract<AuthEvent, { type: "auth_url" }>;
   deviceCode?: Extract<AuthEvent, { type: "device_code" }>;
@@ -107,6 +110,7 @@ export const useStore = create<{
   notices: (Notice & { id: string })[];
   noticeHistory: NoticeRecord[];
   login?: LoginState;
+  providerSelection?: AccountTarget;
   /** Selected-view state only; pendingOpens tracks startup without locking navigation. */
   opening: boolean;
   appearance: Appearance;

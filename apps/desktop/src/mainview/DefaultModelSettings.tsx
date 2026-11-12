@@ -1,3 +1,4 @@
+import { accountSourceKey } from "../shared/account-models";
 import { filterModels } from "../shared/models";
 import { useT } from "./i18n";
 import { rpc } from "./rpc";
@@ -10,13 +11,20 @@ export function DefaultModelSettings() {
   const {
     models,
     disabledModels,
+    accountCatalogs,
     defaultModel = null,
   } = useStore((s) => s.bootstrap);
   return (
     <>
       <ModelSelect
         label={t["Default model"]}
-        models={filterModels(models, disabledModels)}
+        models={filterModels(models, disabledModels).filter(
+          (model) =>
+            !accountCatalogs ||
+            accountCatalogs[accountSourceKey(model.provider)]?.some(
+              (entry) => entry.id === model.id,
+            ),
+        )}
         value={defaultModel}
         emptyLabel={t.Automatic}
         onChange={(model) => {

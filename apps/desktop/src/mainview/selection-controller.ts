@@ -4,11 +4,13 @@ import { addressKey } from "./chat-snapshot";
 
 const selectionOf = ({
   model,
+  accountId,
   effort,
   effortLevels,
   contextUsage,
 }: ModelSelection): ModelSelection => ({
   model,
+  accountId,
   effort,
   effortLevels,
   contextUsage,

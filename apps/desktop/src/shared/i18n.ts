@@ -2,6 +2,16 @@ import type { ResponseErrorKind } from "./response-error";
 import type { Settings } from "./settings";
 
 export const en = {
+  accountName: "Account name",
+  addAccount: "Add account",
+  addAccountTo: (name: string) => `Add account to ${name}`,
+  accountActions: (name: string) => `Account actions: ${name}`,
+  removeAccount: "Remove account",
+  standardAccount: "Default",
+  accountSignInNeeded: (name: string) =>
+    `Sign in to ${name} to use this account.`,
+  accountLocked: "Changing accounts currently requires a new chat.",
+  newChatWithAccount: (name: string) => `New chat with ${name}`,
   appUpdateTitle: "About & updates",
   appUpdateCheck: "Check for updates",
   appUpdateRestart: "Update and restart",
@@ -542,6 +552,15 @@ export const en = {
 };
 type Dictionary = { [K in keyof typeof en]: (typeof en)[K] };
 export const ja: Dictionary = {
+  accountName: "アカウント名",
+  addAccount: "アカウントを追加",
+  addAccountTo: (name: string) => `${name} にアカウントを追加`,
+  accountActions: (name: string) => `アカウントの操作: ${name}`,
+  removeAccount: "アカウントを削除",
+  standardAccount: "既定",
+  accountSignInNeeded: (name: string) => `「${name}」はサインインが必要です。`,
+  accountLocked: "アカウントの変更には新しいチャットが必要です。",
+  newChatWithAccount: (name: string) => `「${name}」で新しいチャット`,
   appUpdateTitle: "アプリについて・更新",
   appUpdateCheck: "更新を確認",
   appUpdateRestart: "更新して再起動",

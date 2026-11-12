@@ -49,7 +49,7 @@ import { OptimisticMessages } from "./OptimisticMessages";
 import "./model-dividers.css";
 import { Notifications } from "./Notifications";
 import { initNavigation, navigate } from "./navigation";
-import { ProviderIcon, useProviderName } from "./ProviderIcon";
+import { ProviderIcon } from "./ProviderIcon";
 import { Providers } from "./Providers";
 
 import { ResponseError } from "./ResponseError";
@@ -315,7 +315,17 @@ function OAuthLoginDialog({ login }: { login: LoginState }) {
   const [copied, setCopied] = useState<string>();
   const [copyError, setCopyError] = useState<string>();
   const { prompt, authUrl, deviceCode, event } = login;
-  const name = useProviderName(login.provider);
+  const name = useStore((state) => {
+    const provider = state.bootstrap.providers.find(
+      (p) => p.id === login.provider,
+    );
+    if (!provider) return login.provider;
+    if (login.addAccount) return provider.name;
+    return login.accountId
+      ? (provider.accounts?.find((account) => account.id === login.accountId)
+          ?.label ?? provider.name)
+      : (provider.accountLabel ?? provider.name);
+  });
   useEffect(() => {
     dialog.current?.show();
   }, []);

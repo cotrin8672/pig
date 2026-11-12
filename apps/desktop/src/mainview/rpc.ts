@@ -1,4 +1,5 @@
 import { Electroview } from "electrobun/view";
+import { accountSourceKey } from "../shared/account-models";
 import {
   legacyUiPreferences,
   type UiPreferences,
@@ -31,6 +32,7 @@ import { OpenController } from "./open-controller";
 import { mergeOpeningText } from "./opening-draft";
 import {
   openingDraftKey,
+  queueOpeningSelection,
   restoreOpeningSends,
   takeOpeningOps,
 } from "./opening-sends";
@@ -250,7 +252,11 @@ export const rpc = Electroview.defineRPC<RPCSchema>({
       },
       loginFrame: (frame) => {
         const login = useStore.getState().login;
-        if (!login || login.loginId !== frame.loginId) return;
+        if (!login || login.loginId !== frame.loginId) {
+          // Closing a dialog after the credential commit cannot undo that commit.
+          if (frame.kind === "success") void refresh().catch(showError);
+          return;
+        }
         if (frame.kind === "event")
           useStore.setState({
             login: {
@@ -278,8 +284,15 @@ export const rpc = Electroview.defineRPC<RPCSchema>({
           });
         if (frame.kind === "success" || frame.kind === "cancelled") {
           // Connected now; models arrive with the refresh below.
-          if (frame.kind === "success")
+          if (frame.kind === "success" && !frame.accountId)
             publishProvider(frame.provider, { configured: true, stored: true });
+          if (frame.kind === "success" && login.addAccount && frame.accountId)
+            useStore.setState({
+              providerSelection: {
+                provider: frame.provider,
+                accountId: frame.accountId,
+              },
+            });
           useStore.setState({ login: undefined });
           void refresh().catch(showError);
         }
@@ -466,6 +479,7 @@ async function applySelection(
     ...address,
     provider: model.provider,
     id: model.id,
+    accountId: desired.accountId ?? null,
   });
   return selected.effort === desired.effort ||
     !selected.effortLevels.includes(desired.effort)
@@ -676,6 +690,7 @@ export async function openChat(
   cwd: string,
   id?: string,
   push = true,
+  selection?: ModelSelection,
 ): Promise<Snapshot | undefined> {
   const key = JSON.stringify([cwd, id ?? null]);
   const pending =
@@ -687,6 +702,7 @@ export async function openChat(
         })
       : undefined);
   if (pending && !opens.isCancelled(pending.openId)) {
+    if (selection && !id) queueOpeningSelection(pending.openId, selection);
     showOpening(pending.openId, push);
     return pending.promise;
   }
@@ -725,6 +741,7 @@ export async function openChat(
     openId,
     { id, cwd },
   );
+  if (selection && !id) queueOpeningSelection(openId, selection);
   pendingChats.set(key, { openId, promise });
   const settled = () => {
     if (pendingChats.get(key)?.openId === openId) pendingChats.delete(key);
@@ -858,7 +875,15 @@ async function openSnapshot(
 ): Promise<Snapshot | undefined> {
   const previous = useStore.getState();
   if (optimistic) {
-    const { models, disabledModels, defaultModel } = previous.bootstrap;
+    const { disabledModels, defaultModel, accountCatalogs } =
+      previous.bootstrap;
+    const models = previous.bootstrap.models.filter(
+      (model) =>
+        !accountCatalogs ||
+        accountCatalogs[accountSourceKey(model.provider)]?.some(
+          (entry) => entry.id === model.id,
+        ),
+    );
     const model =
       !optimistic.id &&
       (models.find(

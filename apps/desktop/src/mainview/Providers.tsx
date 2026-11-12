@@ -1,58 +1,75 @@
 import { LoaderCircle, LogIn, LogOut, Search, X } from "lucide-react";
 import { type ReactNode, useId, useState } from "react";
-import type { AuthMethod, ProviderInfo } from "../shared/rpc-schema";
+import {
+  type AccountSource,
+  providerAccountSources,
+} from "../shared/account-models";
+import type { ProviderInfo } from "../shared/rpc-schema";
 import { ConfirmButton } from "./ConfirmButton";
 import { ContentPage } from "./ContentPage";
 import { useT } from "./i18n";
+import { ProviderAccounts } from "./ProviderAccounts";
 import { ProviderIcon } from "./ProviderIcon";
 import { ProviderModels } from "./ProviderModels";
+import { startProviderLogin } from "./provider-login";
 import { refresh, rpc } from "./rpc";
 import { showError, useStore } from "./store";
 import {
   ClassificationSettings,
   ImageModelSettings,
 } from "./UtilityModelSettings";
-import { publishProvider } from "./ui-mutations";
 
 const filters = ["all", "connected", "oauth", "api_key", "extension"] as const;
 type Filter = (typeof filters)[number];
 const matchesFilter = (p: ProviderInfo, filter: Filter) =>
   filter === "all" ||
   (filter === "connected"
-    ? p.configured
+    ? p.configured || p.accounts?.some((account) => account.configured)
     : filter === "oauth"
       ? !!p.oauth
       : filter === "api_key"
         ? p.apiKey
         : p.extension);
 
-function startLogin(provider: string, method: AuthMethod) {
-  const previous = useStore.getState().login;
-  if (previous) rpc.send.cancelLogin({ loginId: previous.loginId });
-  const loginId = crypto.randomUUID();
-  useStore.setState({ login: { loginId, provider, method } });
-  rpc.send.startLogin({ provider, method, loginId });
-}
-
 export function Providers() {
   const t = useT();
   const providers = useStore((s) => s.bootstrap.providers);
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState<Filter>("all");
-  const [selected, setSelected] = useState<string>();
+  const selected = useStore((s) => s.providerSelection);
+  const select = (target: NonNullable<typeof selected>) =>
+    useStore.setState({ providerSelection: target });
   const [category, setCategory] = useState("chat");
   const q = query.trim().toLowerCase();
   const matches = providers.filter(
     (p) =>
       matchesFilter(p, filter) &&
-      (!q || `${p.name} ${p.id}`.toLowerCase().includes(q)),
+      (!q ||
+        `${p.name} ${p.id} ${providerAccountSources(p)
+          .map((account) => account.label)
+          .join(" ")}`
+          .toLowerCase()
+          .includes(q)),
   );
   const groups = [
-    { label: t.Connected, items: matches.filter((p) => p.configured) },
-    { label: t.Providers, items: matches.filter((p) => !p.configured) },
+    {
+      label: t.Connected,
+      items: matches.filter((p) => matchesFilter(p, "connected")),
+    },
+    {
+      label: t.Providers,
+      items: matches.filter((p) => !matchesFilter(p, "connected")),
+    },
   ].filter((group) => group.items.length);
   const current =
-    providers.find((p) => p.id === selected) ?? groups[0]?.items[0];
+    matches.find((p) => p.id === selected?.provider) ?? groups[0]?.items[0];
+  const account =
+    current &&
+    providerAccountSources(current).find(
+      (entry) =>
+        entry.accountId ===
+        (current.id === selected?.provider ? selected.accountId : undefined),
+    );
   const filterLabels: Record<Filter, string> = {
     all: t.All,
     connected: t.Connected,
@@ -149,34 +166,17 @@ export function Providers() {
                 <section key={group.label} aria-label={group.label}>
                   <h2 className="provider-group-title">{group.label}</h2>
                   {group.items.map((p) => (
-                    <button
+                    <ProviderAccounts
                       key={p.id}
-                      type="button"
-                      className="provider-row"
-                      aria-current={p.id === current?.id || undefined}
-                      onClick={() => setSelected(p.id)}
-                    >
-                      <ProviderIcon provider={p.id} size={16} />
-                      <span className="provider-row-name">{p.name}</span>
-                      {p.extension ? (
-                        <small className="provider-tag" data-kind="extension">
-                          {t.Extension}
-                        </small>
-                      ) : (
-                        p.oauth?.subscription && (
-                          <small className="provider-tag">
-                            {t.Subscription}
-                          </small>
-                        )
-                      )}
-                      {p.configured && (
-                        <span
-                          className="provider-dot"
-                          role="img"
-                          aria-label={t.Connected}
-                        />
-                      )}
-                    </button>
+                      provider={p}
+                      selected={
+                        current?.id === selected?.provider
+                          ? selected
+                          : { provider: current?.id ?? "" }
+                      }
+                      query={q}
+                      onSelect={select}
+                    />
                   ))}
                 </section>
               ))}
@@ -185,7 +185,13 @@ export function Providers() {
               )}
             </div>
           </div>
-          {current && <ProviderDetail key={current.id} provider={current} />}
+          {current && (
+            <ProviderDetail
+              key={account?.key ?? current.id}
+              provider={current}
+              account={account}
+            />
+          )}
         </div>
       )}
     </ContentPage>
@@ -193,17 +199,33 @@ export function Providers() {
 }
 
 export function ProviderDetail({
-  provider: p,
+  provider,
+  account,
   children,
 }: {
   provider: ProviderInfo;
+  account?: AccountSource;
   children?: ReactNode;
 }) {
+  const target = { provider: provider.id, accountId: account?.accountId };
+  const p = account?.accountId
+    ? {
+        ...provider,
+        name: account.label,
+        configured: account.configured,
+        stored: account.configured,
+        source: account.configured ? "OAuth" : undefined,
+        apiKey: false,
+      }
+    : { ...provider, name: account?.label ?? provider.name };
   const titleId = useId();
   const t = useT();
   const login = useStore((s) => s.login);
   const [loggingOut, setLoggingOut] = useState(false);
-  const mine = login?.provider === p.id;
+  const mine =
+    login?.provider === p.id &&
+    login.accountId === account?.accountId &&
+    !login.addAccount;
   const error = mine ? login?.error : undefined;
   const busy = mine && !error;
   const state = error
@@ -250,22 +272,13 @@ export function ProviderDetail({
               disabled={loggingOut}
               onConfirm={() => {
                 const current = useStore.getState().login;
-                if (current?.provider === p.id) {
+                if (mine && current) {
                   rpc.send.cancelLogin({ loginId: current.loginId });
                   useStore.setState({ login: undefined });
                 }
                 setLoggingOut(true);
-                // Show signed out now; an env or file credential may still
-                // connect it, which the refresh reports.
-                const ambient =
-                  !!p.source && p.source !== "stored" && p.source !== "runtime";
-                publishProvider(p.id, {
-                  stored: false,
-                  configured: ambient && p.configured,
-                });
                 void rpc.request
-                  .logout({ provider: p.id })
-                  .catch(showError)
+                  .logout(target)
                   .then(refresh)
                   .catch(showError)
                   .finally(() => setLoggingOut(false));
@@ -279,7 +292,7 @@ export function ProviderDetail({
                 <button
                   type="button"
                   className="primary"
-                  onClick={() => startLogin(p.id, "oauth")}
+                  onClick={() => startProviderLogin(target, "oauth")}
                 >
                   <LogIn size={14} /> {p.oauth.label ?? t["Sign in"]}
                 </button>
@@ -288,7 +301,7 @@ export function ProviderDetail({
                 <button
                   type="button"
                   className={p.oauth ? undefined : "primary"}
-                  onClick={() => startLogin(p.id, "api_key")}
+                  onClick={() => startProviderLogin(target, "api_key")}
                 >
                   {t["API key"]}
                 </button>

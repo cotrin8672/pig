@@ -1,0 +1,113 @@
+.provider-account-row {
+  display: flex;
+  align-items: center;
+  border-radius: 5px;
+}
+.provider-account-row > .provider-row {
+  flex: 1;
+  min-width: 0;
+  background: transparent;
+}
+.provider-account-row:hover,
+.provider-account-row[data-current] {
+  background: var(--ds-bg-hover);
+}
+.provider-account-row[data-current] > .provider-row {
+  color: var(--ds-text-primary);
+}
+.provider-account-row[data-nested] > .provider-row {
+  padding-left: 30px;
+}
+.provider-account-dot {
+  display: grid;
+  place-items: center;
+  width: 8px;
+  height: 8px;
+  flex: none;
+}
+.provider-account-dot::before {
+  content: "";
+  width: 6px;
+  height: 6px;
+  border: 1px solid var(--ds-text-muted);
+  border-radius: 50%;
+}
+.provider-account-dot[data-connected]::before {
+  border-color: var(--ds-success);
+  background: var(--ds-success);
+}
+.provider-account-chevron {
+  width: 8px;
+  flex: none;
+  color: var(--ds-text-muted);
+}
+.provider-row[aria-expanded="true"] .provider-account-chevron {
+  transform: rotate(90deg);
+}
+.provider-account-actions {
+  display: flex;
+  align-items: center;
+  flex: none;
+  padding-right: 2px;
+}
+.provider-account-actions .provider-account-add,
+.provider-account-actions .thread-more {
+  width: 24px;
+  height: 26px;
+  padding: 0;
+  color: var(--ds-text-muted);
+}
+.provider-account-row:hover .thread-more,
+.provider-account-row:focus-within .thread-more {
+  opacity: 1;
+}
+.provider-account-renaming input.inline-rename {
+  flex: 1;
+  height: 20px;
+  padding: 0;
+  border: 0;
+  border-bottom: 1px solid var(--ds-focus);
+  border-radius: 0;
+  background: transparent;
+  font-size: inherit;
+}
+.picker-account-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex: none;
+  max-width: 130px;
+  padding: 0 5px;
+  border-radius: 4px;
+  background: var(--ds-bg-chip);
+  color: var(--ds-text-secondary);
+  font-size: 10px;
+}
+.model-source-rail {
+  min-width: 0;
+  max-width: 160px;
+}
+.model-option[aria-disabled="true"] {
+  color: var(--ds-text-muted);
+  cursor: default;
+}
+.model-source-rail button[data-unavailable] {
+  color: var(--ds-text-muted);
+  opacity: 0.65;
+}
+.model-account-action {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 10px 6px;
+  color: var(--ds-text-secondary);
+  font-size: 11px;
+}
+.model-account-action p {
+  margin: 0;
+}
+.model-account-action button {
+  background: var(--ds-bg-chip);
+  font-size: 11px;
+}
