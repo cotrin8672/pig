@@ -1,12 +1,12 @@
 {
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "A thin GUI client for the pi agent harness (pi on gui)",
   "homepage": "https://github.com/cotrin8672/pig",
   "license": "MIT",
   "architecture": {
     "64bit": {
-      "url": "https://github.com/cotrin8672/pig/releases/download/v0.3.0/pig-windows-x64.zip",
-      "hash": "3f935c3979f0bc4230f4671203bb38c7a551f94cb5c920dacb81c5eee424d9e1"
+      "url": "https://github.com/cotrin8672/pig/releases/download/v0.4.0/pig-windows-x64.zip",
+      "hash": "090010206c83768eec155e16834d04891e0388a5c04c40eeac9ab3e3213f6f90"
     }
   },
   "bin": [["bin/launcher.exe", "pig"]],
