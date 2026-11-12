@@ -8,6 +8,7 @@ import Electrobun, {
 } from "electrobun/bun";
 import { dictionary } from "../shared/i18n";
 import { sanitizeOverride } from "../shared/model-overrides";
+import { isModelEnabled } from "../shared/models";
 import { knownProject, withoutProject } from "../shared/projects";
 import type { Notice, RPCSchema, SessionTarget } from "../shared/rpc-schema";
 import type { OpenSessionParams } from "../shared/runtime-contract";
@@ -23,6 +24,7 @@ import {
 } from "./appearance";
 import { attachmentPreview, storeFile } from "./attachments";
 import { ChatRendererLoader } from "./chat-renderer-loader";
+import { readDefaultModel, writeDefaultModel } from "./default-model";
 import {
   desktopConfigDir,
   generalCwd,
@@ -304,6 +306,14 @@ const rpc = BrowserView.defineRPC<RPCSchema>({
           providers,
           ...utilities,
           models: models.map(modelInfo),
+          defaultModel: (() => {
+            try {
+              return readDefaultModel();
+            } catch (error) {
+              report(error);
+              return null;
+            }
+          })(),
         };
       },
       listSessions: async ({ cwd }) => {
@@ -382,6 +392,13 @@ const rpc = BrowserView.defineRPC<RPCSchema>({
       },
       refreshProviderModels: ({ provider }) => refreshProviderModels(provider),
       setModel: (input) => setSessionModel(input),
+      setDefaultModel: async ({ model }) =>
+        writeDefaultModel(
+          model,
+          (await availableModels()).filter((candidate) =>
+            isModelEnabled(candidate, modelPreferences.disabled),
+          ),
+        ),
       setModelEnabled: async ({ provider, id, enabled }) => {
         if (
           typeof enabled !== "boolean" ||

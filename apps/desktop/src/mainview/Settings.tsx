@@ -20,6 +20,7 @@ import {
 import { AppUpdateSettings } from "./AppUpdateSettings";
 import { ChatRendererSettings } from "./ChatRendererSettings";
 import { ContentPage } from "./ContentPage";
+import { DefaultModelSettings } from "./DefaultModelSettings";
 import { FontSettings } from "./FontSettings";
 import { useT } from "./i18n";
 import { PiDataSettings } from "./PiDataSettings";
@@ -97,6 +98,7 @@ export function Settings() {
           aria-labelledby={`settings-category-${category}`}
         >
           <h2>{categories.find(({ id }) => id === category)?.label}</h2>
+          {category === "general" && <DefaultModelSettings />}
           {category === "general" && (
             <SettingsSection>
               <SettingsRow

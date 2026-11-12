@@ -10,6 +10,7 @@ test("real SDK sends retain request identities and unavailable saved models fall
       import { expect } from "bun:test";
       import { fauxProvider, fauxAssistantMessage } from "@earendil-works/pi-ai";
       import { SessionHost } from ${JSON.stringify(new URL("./session-host.ts", import.meta.url).href)};
+      import { writeDefaultModel } from ${JSON.stringify(new URL("./default-model.ts", import.meta.url).href)};
       import { modelInfo, disposeSessions } from ${JSON.stringify(new URL("./pi-service.ts", import.meta.url).href)};
       const faux = fauxProvider({ tokensPerSecond: Infinity, models: [{ id: "a" }, { id: "b" }] });
       let hidden = [];
@@ -17,8 +18,15 @@ test("real SDK sends retain request identities and unavailable saved models fall
         configureModels: (models) => models.registerNativeProvider(faux.provider),
         emit() {}, emitUI() {}, emitTerminal() {},
       });
-      let snapshot = await host.openSession({ cwd: ${JSON.stringify(home)}, openId: "initial" });
       const a = faux.getModel("a"), b = faux.getModel("b");
+      await writeDefaultModel({ provider: b.provider, id: b.id }, [a, b]);
+      let snapshot = await host.openSession({ cwd: ${JSON.stringify(home)}, openId: "initial" });
+      expect(snapshot.model.id).toBe(b.id);
+      await writeDefaultModel({ provider: a.provider, id: a.id }, [a, b]);
+      const next = await host.openSession({ cwd: ${JSON.stringify(home)}, openId: "next" });
+      expect(next.model.id).toBe(a.id);
+      expect(host.getSessionSnapshot(snapshot.address).model.id).toBe(b.id);
+      await host.closeSession(next.address);
       await host.setModel({ ...snapshot.address, provider: b.provider, id: b.id });
       for (const requestId of ["first", "identical-text-second"]) {
         faux.setResponses([fauxAssistantMessage("answer", { provider: b.provider, model: b.id })]);

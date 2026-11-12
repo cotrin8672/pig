@@ -138,11 +138,14 @@ export interface Appearance {
   opacity: Record<Backdrop, number>;
   effect: "acrylic" | "mica";
 }
+export type DefaultModel = Pick<ModelInfo, "provider" | "id"> | null;
 export interface Bootstrap {
   projects: string[];
   generalCwd: string;
   providers: ProviderInfo[];
   models: ModelInfo[];
+  /** Global pi default; existing chats retain their saved model. */
+  defaultModel?: DefaultModel;
   imageModels: UtilityModelInfo[];
   classificationModels: UtilityModelInfo[];
   classificationProviders: string[];
@@ -363,6 +366,10 @@ export type RPCSchema = {
           accountId?: string | null;
         };
         response: ModelSelection;
+      };
+      setDefaultModel: {
+        params: { model: DefaultModel };
+        response: DefaultModel;
       };
       setModelEnabled: {
         params: { provider: string; id: string; enabled: boolean };

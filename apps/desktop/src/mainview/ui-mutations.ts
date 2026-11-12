@@ -2,6 +2,7 @@ import type { DesktopState } from "../shared/desktop-state";
 import type { ModelOverride } from "../shared/model-overrides";
 import { modelKey, replaceModelVisibility } from "../shared/models";
 import type {
+  DefaultModel,
   Effort,
   ModelInfo,
   ProviderInfo,
@@ -39,6 +40,9 @@ export function publishProvider(id: string, patch: Partial<ProviderInfo>) {
     },
   }));
 }
+export const defaultModelPreference = new OptimisticValue<DefaultModel>(
+  showError,
+);
 export const defaultEfforts = new OptimisticValue<Effort | null>(showError);
 /** A pending reset keeps the inherited level until the host recomputes it. */
 export function overlayDefaultEffort(model: ModelInfo): ModelInfo {

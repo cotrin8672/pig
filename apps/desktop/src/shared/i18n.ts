@@ -122,6 +122,10 @@ export const en = {
   No: "No",
   "Image generation": "Image generation",
   Classification: "Classification",
+  "Default model": "Default model",
+  Automatic: "Automatic",
+  "Used for new chats. Existing chats keep their model.":
+    "Used for new chats. Existing chats keep their model.",
   "Image generation model": "Image generation model",
   "Classification model": "Classification model",
   "Classification providers": "Classification providers",
@@ -627,6 +631,10 @@ export const ja: Dictionary = {
   No: "いいえ",
   "Image generation": "画像生成",
   Classification: "Classification（分類）",
+  "Default model": "デフォルトモデル",
+  Automatic: "自動",
+  "Used for new chats. Existing chats keep their model.":
+    "新規チャットに適用します。既存のチャットのモデルは変更しません。",
   "Image generation model": "画像生成モデル",
   "Classification model": "分類モデル",
   "Classification providers": "分類用プロバイダー",

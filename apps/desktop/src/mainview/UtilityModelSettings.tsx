@@ -12,16 +12,18 @@ type Selection = { provider: string; id: string } | null;
 const selectionKey = (model: Selection) =>
   model ? JSON.stringify([model.provider, model.id]) : "";
 
-function ModelSelect({
+export function ModelSelect({
   label,
   models,
   value,
   onChange,
+  emptyLabel,
 }: {
   label: string;
   models: UtilityModelInfo[];
   value: Selection;
   onChange: (value: Selection) => void;
+  emptyLabel?: string;
 }) {
   const t = useT();
   const id = useId();
@@ -64,7 +66,7 @@ function ModelSelect({
             onChange(model ? { provider: model.provider, id: model.id } : null);
           }}
         >
-          <option value="">{t.None}</option>
+          <option value="">{emptyLabel ?? t.None}</option>
           {!available && value && (
             <option value={key} disabled>
               {name(value.provider)} / {value.id} — {t["Model unavailable"]}

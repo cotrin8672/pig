@@ -148,6 +148,40 @@ if (process.env.PIG_OPEN_NAVIGATION_CHILD !== "1") {
     });
   });
 
+  test("new chats preview the configured default rather than the first model", async () => {
+    const { bootstrap } = useStore.getState();
+    const first = { provider: "test", id: "first", name: "First" };
+    const preferred: ModelInfo = {
+      provider: "openai-codex",
+      id: "preferred",
+      name: "Preferred",
+      effectiveDefaultEffort: "high",
+      effortLevels: ["low", "high"],
+    };
+    useStore.setState({
+      bootstrap: {
+        ...bootstrap,
+        models: [first, preferred],
+        disabledModels: [],
+        defaultModel: { provider: preferred.provider, id: preferred.id },
+      },
+    });
+    try {
+      const promise = openChat("project");
+      const selection = useStore.getState().openingTarget?.selection;
+      await Bun.sleep(1);
+      calls[calls.length - 1].deferred.resolve(snapshot(crypto.randomUUID()));
+      await promise;
+      expect(selection).toMatchObject({
+        model: preferred,
+        effort: "high",
+        effortLevels: ["low", "high"],
+      });
+    } finally {
+      useStore.setState({ bootstrap });
+    }
+  });
+
   test("A → B → A reuses startup; a background completion cannot clear or replace the foreground", async () => {
     const aId = crypto.randomUUID(),
       bId = crypto.randomUUID();

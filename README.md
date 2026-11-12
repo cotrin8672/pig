@@ -88,6 +88,10 @@ with the project's **+**. Enter sends; Shift+Enter inserts a newline. Sending
 while pi is running queues a follow-up. Stop aborts the current run. Closing a
 chat releases its live SDK session without deleting history.
 
+Choose **Settings → General → Default model** to set the model for new chats.
+This saves pi's shared default; existing chats keep their saved model.
+Choose **Automatic** to reset the preference.
+
 Each chat's **…** menu provides Rename, Pin/Unpin, Archive/Restore, Copy link,
 and Delete. Rename updates the pi session name; pins and archive flags are
 Desktop-only. Archived chats remain available from **Archived chats**. Delete

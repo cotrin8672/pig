@@ -57,6 +57,7 @@ import {
   useStore,
 } from "./store";
 import {
+  defaultModelPreference,
   markRead,
   overlayDefaultEffort,
   overlayDesktop,
@@ -384,6 +385,8 @@ export async function refresh() {
   bootstrap.projects = overlayProjects(bootstrap.projects);
   bootstrap.modelOverrides = overlayModelOverrides(bootstrap.modelOverrides);
   bootstrap.models = bootstrap.models.map(overlayDefaultEffort);
+  const desiredDefault = defaultModelPreference.value("default");
+  if (desiredDefault !== undefined) bootstrap.defaultModel = desiredDefault;
   bootstrap.desktop = overlayDesktop(bootstrap.desktop);
   useStore.setState((s) => ({
     initialized: true,
@@ -855,9 +858,16 @@ async function openSnapshot(
 ): Promise<Snapshot | undefined> {
   const previous = useStore.getState();
   if (optimistic) {
-    const { models, disabledModels } = previous.bootstrap;
+    const { models, disabledModels, defaultModel } = previous.bootstrap;
     const model =
-      !optimistic.id && models.find((m) => isModelEnabled(m, disabledModels));
+      !optimistic.id &&
+      (models.find(
+        (m) =>
+          m.provider === defaultModel?.provider &&
+          m.id === defaultModel.id &&
+          isModelEnabled(m, disabledModels),
+      ) ??
+        models.find((m) => isModelEnabled(m, disabledModels)));
     useStore.setState({
       pendingOpens: {
         ...previous.pendingOpens,
