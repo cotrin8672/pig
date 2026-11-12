@@ -1,0 +1,10 @@
+import { contentStories } from "../DesignProposals";
+import { CustomEntry, RecordDetails } from "../item-fixtures";
+export default { title: "Chat/Extensions/Record" };
+const stories = contentStories("record", CustomEntry);
+export const Default = stories.Default;
+export const PropertyInspector = stories.Rail;
+export const EventTimeline = stories.Sheet;
+export const JsonDocument = stories.Folded;
+export const RecordComparison = { ...stories.Compare, name: "Compare all" };
+export const Details = { render: RecordDetails };

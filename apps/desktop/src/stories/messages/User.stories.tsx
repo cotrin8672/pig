@@ -1,0 +1,10 @@
+import { contentStories } from "../DesignProposals";
+import { UserTurn, UserTurnWithAnnotations } from "../item-fixtures";
+export default { title: "Chat/Messages/User" };
+const stories = contentStories("user", UserTurn.render);
+export const Default = { ...stories.Default, parameters: UserTurn.parameters };
+export const RequestTicket = stories.Rail;
+export const SpeechBubble = stories.Sheet;
+export const PromptDocument = stories.Folded;
+export const RequestComparison = { ...stories.Compare, name: "Compare all" };
+export const WithAnnotations = UserTurnWithAnnotations;

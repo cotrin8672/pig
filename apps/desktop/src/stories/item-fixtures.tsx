@@ -12,14 +12,12 @@ import { ResponseFooter } from "../mainview/ResponseFooter";
 import { ThinkingBlock, WorkToggle } from "../mainview/ToolBlock";
 import { type DraftAnnotation, withAnnotations } from "../shared/annotations";
 
+import { designData } from "./design-data";
+
 export default { title: "Chat/Items" } satisfies Meta;
 export const AssistantMarkdown = () => (
   <div className="prose">
-    <Markdown
-      text={
-        '### Findings\n\nThe **greeting** module exports one value:\n\n```ts\nexport const greeting = "Hello, world!";\n```\n\n| Check | Result |\n| --- | --- |\n| Tests | Passed |\n\nInline math: $a^2 + b^2 = c^2$.'
-      }
-    />
+    <Markdown text={designData.answer} />
   </div>
 );
 export const UserTurn = {
@@ -29,7 +27,7 @@ export const UserTurn = {
       message={{
         role: "user",
         timestamp: Date.UTC(2026, 0, 1, 12),
-        content: "Show me where the greeting is defined.",
+        content: designData.request,
       }}
       sessionId="preview"
       disabled={false}
@@ -38,11 +36,7 @@ export const UserTurn = {
   ),
 };
 export const Thinking = () => (
-  <ThinkingBlock
-    active={false}
-    label="Thinking"
-    text="First, look for the **greeting** export."
-  />
+  <ThinkingBlock active={false} label="Thinking" text={designData.reasoning} />
 );
 export const ThinkingActive = () => (
   <ThinkingBlock active label="Thinking" text="" />
@@ -51,10 +45,7 @@ export const SingleImage = () => (
   <ImageGallery sources={[icon]} alt="pig icon" />
 );
 export const MultipleImages = () => (
-  <ImageGallery
-    sources={[icon, new URL("../../assets/icon.svg", import.meta.url).href]}
-    alt="pig app artwork"
-  />
+  <ImageGallery sources={designData.images} alt="pig app artwork" />
 );
 export const CustomEntry = () => (
   <CustomRecord
@@ -65,7 +56,7 @@ export const CustomEntry = () => (
       order: 0,
       kind: "custom-entry",
       customType: "review.checkpoint",
-      data: { file: "src/greeting.ts", status: "reviewed" },
+      data: designData.record,
     }}
   />
 );
@@ -83,19 +74,7 @@ export const RecordDetails = () => (
     {() => <pre>{JSON.stringify({ source: "extension" }, null, 2)}</pre>}
   </LazyDetails>
 );
-const annotated = [
-  {
-    quote: 'export const greeting = "Hello, world!";',
-    comment: "Keep this export name — the docs reference it.",
-  },
-  {
-    quote:
-      "The greeting module exports one value, and every caller in the workspace reads it from the barrel file rather than the source module, so renaming the export means touching the barrel too.",
-    comment:
-      "This sentence is doing too much. Split it, and name the barrel file instead of saying “the barrel”.",
-  },
-  { quote: "All checks passed.", comment: "" },
-];
+const annotated = designData.annotations;
 
 /** Select any passage of the response above, then comment on it. */
 export const Annotations = () => {
@@ -171,16 +150,6 @@ export const Footer = () => (
   <ResponseFooter
     sessionId="preview"
     canRegenerate={false}
-    stats={{
-      stopReason: "stop",
-      durationMs: 5700,
-      endedAt: Date.UTC(2026, 0, 1, 12),
-      timestamp: Date.UTC(2026, 0, 1, 12),
-      tools: 2,
-      totalTokens: 340,
-      tokensPerSecond: 42,
-      model: "Preview model",
-      text: "All checks passed.",
-    }}
+    stats={designData.stats}
   />
 );

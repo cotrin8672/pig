@@ -1,0 +1,10 @@
+import { contentStories } from "../DesignProposals";
+import { MultipleImages, SingleImage } from "../item-fixtures";
+export default { title: "Chat/Media/Images" };
+const stories = contentStories("images", MultipleImages);
+export const Default = stories.Default;
+export const ContactSheet = stories.Rail;
+export const FilmstripViewer = stories.Sheet;
+export const AttachmentBrowser = stories.Folded;
+export const ImageComparison = { ...stories.Compare, name: "Compare all" };
+export const Single = { render: SingleImage };

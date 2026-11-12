@@ -1,0 +1,10 @@
+import { contentStories } from "../DesignProposals";
+import { Thinking, ThinkingActive } from "../item-fixtures";
+export default { title: "Chat/Activity/Thinking" };
+const stories = contentStories("thinking", Thinking);
+export const Default = stories.Default;
+export const ThoughtFlow = stories.Rail;
+export const MarginNote = stories.Sheet;
+export const ReasoningJournal = stories.Folded;
+export const ThinkingComparison = { ...stories.Compare, name: "Compare all" };
+export const Running = { render: ThinkingActive };

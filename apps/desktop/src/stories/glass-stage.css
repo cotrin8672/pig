@@ -1,0 +1,30 @@
+/*
+  Storybook stand-in for the desktop: a colourful wallpaper behind the real
+  .app-shell gradient, so every story is judged against what the DWM acrylic
+  actually shows through.
+*/
+.glass-stage {
+  position: relative;
+  height: 100vh;
+  overflow: hidden;
+}
+.glass-wallpaper {
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(60% 45% at 18% 22%, #5b7cfa 0%, transparent 62%),
+    radial-gradient(55% 40% at 82% 18%, #b56bff 0%, transparent 60%),
+    radial-gradient(70% 55% at 70% 88%, #1f9e8a 0%, transparent 65%),
+    radial-gradient(50% 40% at 25% 85%, #ff8a5c 0%, transparent 60%),
+    linear-gradient(160deg, #0d1526, #131a2b 55%, #0a101c);
+}
+.glass-shell {
+  position: absolute;
+  inset: 0;
+}
+.glass-shell > .glass-scroll {
+  flex: 1;
+  min-width: 0;
+  overflow: auto;
+  padding: 24px;
+}

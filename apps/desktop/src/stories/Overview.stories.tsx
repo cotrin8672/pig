@@ -1,7 +1,7 @@
 import { composeStories, type Meta } from "@storybook/react-vite";
-import * as items from "./Items.stories";
+import * as items from "./item-fixtures";
 import { StoryTurn } from "./StoryTurn";
-import * as tools from "./Tools.stories";
+import * as tools from "./tool-fixtures";
 import "./overview.css";
 
 export default {
@@ -15,7 +15,7 @@ const groups = [
 ];
 
 export const AllComponents = () => (
-  <main className="renderer-overview">
+  <div className="renderer-overview">
     <h1>Chat renderers</h1>
     {groups.map(({ title, stories }) => (
       <section key={title}>
@@ -30,5 +30,5 @@ export const AllComponents = () => (
         ))}
       </section>
     ))}
-  </main>
+  </div>
 );

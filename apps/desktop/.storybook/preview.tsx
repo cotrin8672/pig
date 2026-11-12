@@ -1,30 +1,43 @@
 import type { Preview } from "@storybook/react-vite";
+import type { CSSProperties, ReactNode } from "react";
 import { StoryTurn } from "../src/stories/StoryTurn";
 import "katex/dist/katex.min.css";
+import "../src/stories/glass-stage.css";
 import "../src/mainview/styles.css";
+
+/**
+ * Every story runs inside the real window shell over a wallpaper, so glass and
+ * translucent surfaces are judged against the acrylic they ship on.
+ */
+function GlassStage({ children }: { children: ReactNode }) {
+  return (
+    <div className="glass-stage">
+      <div className="glass-wallpaper" aria-hidden="true" />
+      <div
+        className="app-shell glass-shell"
+        style={{ "--window-opacity": 0.78 } as CSSProperties}
+      >
+        <div className="glass-scroll">
+          <div className="transcript">{children}</div>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 export default {
   parameters: { layout: "fullscreen" },
   decorators: [
     (Story, { parameters }) => (
-      <div
-        style={{
-          height: "100vh",
-          overflow: "auto",
-          background: "var(--ds-bg-primary)",
-          padding: "24px",
-        }}
-      >
-        <div className="transcript">
-          {parameters.gallery ? (
+      <GlassStage>
+        {parameters.gallery ? (
+          <Story />
+        ) : (
+          <StoryTurn role={parameters.role}>
             <Story />
-          ) : (
-            <StoryTurn role={parameters.role}>
-              <Story />
-            </StoryTurn>
-          )}
-        </div>
-      </div>
+          </StoryTurn>
+        )}
+      </GlassStage>
     ),
   ],
 } satisfies Preview;
