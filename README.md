@@ -1,7 +1,7 @@
 # pig
 
 pig (pi on gui) is a thin GUI client for the pi agent harness.
-Electrobun **1.18.1**, Bun, React 19, Vite, Tailwind v4, and zustand.
+Electrobun **2.0.6**, Bun, React 19, Vite, Tailwind v4, and zustand.
 
 ## Install
 
@@ -63,10 +63,12 @@ Wait for that bucket commit before installing the first stable build. See
 
 Requires Windows with WebView2, Node 22+, pnpm 10.14, and Bun (tested with 1.4.2).
 
-Windows x64 builds also require Visual Studio 2022/2026 C++ Build Tools with
-CMake and the Windows SDK. The post-build hook compiles the pinned Electrobun
-native drag-region backport, downloads about 170 MB of checksum-verified SDKs on
-the first build, and caches the result. Installed dependencies are not modified.
+Builds use Electrobun's stock Windows native binaries; no local C++ build is
+required. `dev`, `build`, and `typecheck` first run `electrobun sync` to generate
+`apps/desktop/.hutch/devkit`. Hutch downloads its pinned SDK/toolchains into
+`~/.hutch`; application code continues to run on Bun (bundled 1.4.4).
+See [Windows migration checks](apps/desktop/scripts/windows-smoke.md) for the
+native regression test and remaining manual release gates.
 
 ```sh
 mise exec -- pnpm install
@@ -94,9 +96,9 @@ response/command first. Removing a project still never deletes its chats.
 
 Copied `pig://session/<id>` links are local, not cloud shares. Paste a link in
 pig outside a text field, or click a Markdown chat link inside pig, to open it.
-Only sessions in registered project folders can be opened. Electrobun 1.18.1
-does not support OS-level URL activation on Windows/Linux, so links do not
-launch the app from other applications.
+Only sessions in registered project folders can be opened. pig does not register
+OS-level URL activation on Windows/Linux, so links do not launch the app from
+other applications.
 
 On Windows, `mise run dev` focuses the running development app, or starts
 `pnpm dev` in the background. Logs are written to `%TEMP%/pig-dev.stdout.log`
@@ -138,13 +140,11 @@ and packages a portable ZIP instead.
   automatically. Cancel handles both the whole flow and per-prompt cancellation.
 - The Windows folder picker uses an RPC **message**, not a request, to avoid
   Electrobun #156. Both RPC endpoints allow ten-minute requests.
-- `patches/electrobun@1.18.1.patch` only suppresses type-checking in two upstream
-  implementation files: missing optional Three.js declarations and Bun FFI
-  pointer/nullability errors. App code remains strict and uses the package's
-  real API types. Remove this patch when those upstream errors are fixed.
-- pnpm's normal isolated linker downloaded the Electrobun CLI/core binaries
-  successfully; no hoisting workaround was needed. Only electrobun/esbuild
-  dependency build scripts are approved.
+- Electrobun types and Vite aliases come from the generated `.hutch/devkit`.
+  No upstream type-suppression or native DLL patch is applied. Do not edit the
+  generated SDK or Hutch's shared store.
+- pnpm's normal isolated linker works without a hoisting workaround. Only
+  electrobun/esbuild dependency build scripts are approved.
 
 The smoke script creates and disposes an in-memory session without sending a
 prompt or initiating login. Automated session/storage tests use scratch files;

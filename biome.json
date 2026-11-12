@@ -3,6 +3,8 @@
   "files": {
     "includes": [
       "**",
+      "!!**/.hutch",
+      "!!**/.cottontail-tmp",
       "!!**/dist",
       "!!**/build",
       "!!**/artifacts",

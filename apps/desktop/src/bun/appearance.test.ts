@@ -4,11 +4,19 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { defaultAppearance, toggleBackdrop } from "../shared/appearance";
 import {
+  applyBackdrop,
   loadAppearance,
   saveAppearance,
   validateAppearance,
   windowStyleForBackdrop,
 } from "./appearance";
+
+test("backdrop rejects a missing Windows HWND before calling native APIs", () => {
+  if (process.platform === "win32")
+    expect(() => applyBackdrop(null, defaultAppearance)).toThrow(
+      "closed window",
+    );
+});
 
 test("appearance validates backdrop and clamps finite opacity", () => {
   expect(validateAppearance({ backdrop: "none", opacity: -1 })).toEqual({

@@ -67,7 +67,9 @@ function noLinks(path: string) {
 }
 
 describe("SDK runtime production packaging", () => {
-  test("Electrobun wires external roots, closure copy and existing native hook", () => {
+  test("Electrobun keeps Bun, external roots, closure copy and release metadata hook", () => {
+    expect(config.build.mainProcess).toBe("bun");
+    expect(config.build.bun.entrypoint).toBe("src/bun/index.ts");
     expect(config.build.bun.external).toEqual(SDK_RUNTIME_EXTERNALS);
     expect(config.build.copy["build/sdk-runtime/node_modules"]).toBe(
       "node_modules",

@@ -7,8 +7,8 @@ and the worker adjacent to the original host module.
 
 `electrobun.config.ts` therefore externalizes the three public Pi package roots
 (and their subpaths) through supported `build.bun.external`. The existing host
-bundle, Electrobun framework/native setup, frontend copy entries and native
-postBuild hook remain in place. Do not externalize all packages indiscriminately:
+bundle, stock Electrobun framework/native setup, frontend copy entries and
+release-metadata postBuild hook remain in place. Do not externalize all packages indiscriminately:
 Electrobun's own framework bundling has different native path requirements.
 
 The `preBuild` hook `sdk-runtime-assets.ts` stages the **installed production
@@ -43,8 +43,8 @@ On a cache miss, the hook copies into `.next` before replacing the generated
 stage. An existing interrupted `.next` blocks rebuilding until explicit
 removal/review; it is never reused as a cache. Replacement removes the old stage
 before renaming `.next`, so interruption in that window also requires manual
-recovery. A copy failure leaves the old stage intact. Keep the
-normal directory layout; enabling ASAR needs separate WASM/worker resolver tests.
+recovery. A copy failure leaves the old stage intact. Electrobun 2 keeps this
+normal directory layout; do not reintroduce the removed v1 ASAR build options.
 
 ## Verification
 

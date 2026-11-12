@@ -4,9 +4,10 @@
   "version": "0.3.0",
   "type": "module",
   "scripts": {
-    "dev": "vite build && bun scripts/dev.ts",
-    "build": "vite build && electrobun build",
-    "typecheck": "tsc --noEmit",
+    "prepare:electrobun": "electrobun sync",
+    "dev": "electrobun sync && vite build && bun scripts/dev.ts",
+    "build": "electrobun sync && vite build && electrobun build",
+    "typecheck": "electrobun sync && tsc --noEmit",
     "smoke": "bun scripts/smoke.ts"
   },
   "dependencies": {
@@ -20,7 +21,7 @@
     "@xterm/addon-fit": "0.10.0",
     "@xterm/xterm": "5.5.0",
     "ansi-regex": "6.6.0",
-    "electrobun": "1.18.1",
+    "electrobun": "2.0.6",
     "katex": "^0.16.47",
     "lucide-react": "^0.468.0",
     "react": "^19.0.0",

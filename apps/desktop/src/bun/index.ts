@@ -81,7 +81,6 @@ import {
 } from "./pi-service";
 import { validateSessionScope } from "./session-scope";
 import { loadSettings, saveSettings } from "./settings";
-import { synchronizeClientArea } from "./window-layout";
 
 await prepareDesktopConfig(Utils.paths.userData);
 const chatRendererLoader = new ChatRendererLoader(
@@ -602,11 +601,9 @@ window.on("focus", () => {
 window.on("blur", () => {
   windowFocused = false;
 });
-// Apply once the webview exists: before that Electrobun's container child is missing and
-// would keep its opaque class brush (verified: a startup-only apply leaves the client gray).
+// Apply once on ready; Electrobun 2 owns initial client bounds and DPI-aware resizing.
 let backdropApplied = false;
 window.on("resize", () => {
-  if (backdropApplied) synchronizeClientArea(window.ptr, window.webview);
   rpc.send.windowState({ maximized: window.isMaximized() });
 });
 // Native navigation invalidates the old Root even if its cooperative unload
@@ -619,9 +616,6 @@ window.webview.on("dom-ready", () => {
       applyBackdrop(window.ptr, appearance);
       backdropApplied = true;
     }
-    // Controller creation is asynchronous and initially uses the outer frame.
-    // Sync after it exists (also after navigation), never by nudging the HWND.
-    synchronizeClientArea(window.ptr, window.webview);
   } catch (error) {
     console.error("Cannot apply backdrop:", error);
     rpc.send.appearanceError({ message: String(error) });

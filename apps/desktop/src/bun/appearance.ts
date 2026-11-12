@@ -31,7 +31,6 @@ const dwm =
           returns: "i32",
         },
         DwmExtendFrameIntoClientArea: { args: ["ptr", "ptr"], returns: "i32" },
-        DwmEnableBlurBehindWindow: { args: ["ptr", "ptr"], returns: "i32" },
       })
     : undefined;
 
@@ -44,18 +43,7 @@ const user =
           args: ["ptr", "ptr", "i32", "i32", "i32", "i32", "u32"],
           returns: "i32",
         },
-        SetClassLongPtrW: { args: ["ptr", "i32", "ptr"], returns: "ptr" },
-        FindWindowExW: { args: ["ptr", "ptr", "ptr", "ptr"], returns: "ptr" },
         RedrawWindow: { args: ["ptr", "ptr", "ptr", "u32"], returns: "i32" },
-      })
-    : undefined;
-
-const gdi =
-  process.platform === "win32"
-    ? dlopen("gdi32.dll", {
-        GetStockObject: { args: ["i32"], returns: "ptr" },
-        CreateRectRgn: { args: ["i32", "i32", "i32", "i32"], returns: "ptr" },
-        DeleteObject: { args: ["ptr"], returns: "i32" },
       })
     : undefined;
 
@@ -64,18 +52,12 @@ export function windowStyleForBackdrop(style: number) {
   return (style & ~(0x02000000 | 0x00c00000)) | 0x000b0000;
 }
 
-export function applyBackdrop(hwnd: Pointer, appearance: Appearance) {
+export function applyBackdrop(hwnd: Pointer | null, appearance: Appearance) {
   if (!dwm) return;
+  if (!hwnd) throw new Error("Cannot apply backdrop to a closed window.");
   let frameChanged = false;
   if (user) {
-    // Electrobun needs transparent=true to clear WebView2, but DWM needs a non-layered HWND.
-    const style = user.symbols.GetWindowLongW(hwnd, -20);
-    if (style & 0x80000) {
-      user.symbols.SetWindowLongW(hwnd, -20, style & ~0x80000);
-      frameChanged = true;
-    }
-    // HiddenInset adds WS_CLIPCHILDREN; it clips the black alpha clear out of the
-    // WebView2 area, leaving an opaque surface even with the correct class brushes.
+    // Electrobun 2 uses WS_EX_NOREDIRECTIONBITMAP for alpha; no GDI/layered-window repair.
     const windowStyle = user.symbols.GetWindowLongW(hwnd, -16);
     // Remove native caption painting while preserving SYSMENU and both boxes for Snap.
     const nextStyle = windowStyleForBackdrop(windowStyle);
@@ -96,34 +78,6 @@ export function applyBackdrop(hwnd: Pointer, appearance: Appearance) {
   // DWMWA_TRANSITIONS_FORCEDISABLED: keep Acrylic; disable only native animation.
   const disableTransitions = new Int32Array([1]);
   check(dwm.symbols.DwmSetWindowAttribute(hwnd, 3, ptr(disableTransitions), 4));
-  if (user && gdi) {
-    // Black GDI clears preserve glass alpha; the STATIC fallback otherwise erases gray.
-    // Class brushes must be changed in-process, not by an external diagnostics helper.
-    user.symbols.SetClassLongPtrW(hwnd, -10, gdi.symbols.GetStockObject(4));
-    // Keep FFI buffers referenced until the call returns; a temporary can be collected.
-    const staticClass = Buffer.from("Static\0", "utf16le");
-    const child = user.symbols.FindWindowExW(
-      hwnd,
-      null,
-      ptr(staticClass),
-      null,
-    );
-    if (child)
-      user.symbols.SetClassLongPtrW(child, -10, gdi.symbols.GetStockObject(4));
-    // Tao's empty blur region enables per-pixel alpha without blurring backdrop=none.
-    // shortcut: DWM_BLURBEHIND uses the Windows x64 ABI (24 bytes).
-    const region = gdi.symbols.CreateRectRgn(0, 0, -1, -1);
-    const blur = new ArrayBuffer(24);
-    const data = new DataView(blur);
-    data.setUint32(0, 3, true);
-    data.setInt32(4, 1, true);
-    data.setBigUint64(8, BigInt(region ?? 0), true);
-    try {
-      check(dwm.symbols.DwmEnableBlurBehindWindow(hwnd, ptr(blur)));
-    } finally {
-      gdi.symbols.DeleteObject(region);
-    }
-  }
   const dark = new Int32Array([1]);
   check(dwm.symbols.DwmSetWindowAttribute(hwnd, 20, ptr(dark), 4));
   const margins = new Int32Array([-1, -1, -1, -1]);

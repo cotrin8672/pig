@@ -57,17 +57,15 @@ jobs:
           fi
           echo "sha=$sha" >> "$GITHUB_OUTPUT"
       - run: pnpm install --frozen-lockfile
-      # electrobun downloads its CLI/core binaries from GitHub Releases on first build; cache them.
+      # Hutch owns the pinned SDK and runtime toolchains; the project devkit is regenerated.
       - uses: actions/cache@v4
         with:
-          path: |
-            node_modules/.pnpm/electrobun@*/node_modules/electrobun/bin/electrobun.exe
-            node_modules/.pnpm/electrobun@*/node_modules/electrobun/.cache
-            node_modules/.pnpm/electrobun@*/node_modules/electrobun/dist-win-x64
-          key: electrobun-${{ runner.os }}-${{ hashFiles('pnpm-workspace.yaml', 'patches/electrobun@*.patch') }}
+          path: ~/.hutch
+          key: hutch-${{ runner.os }}-${{ hashFiles('apps/desktop/package.json', 'pnpm-lock.yaml') }}
       - run: pnpm typecheck
       - run: pnpm lint
       - run: pnpm test
+      - run: bun test apps/desktop/scripts/sdk-runtime-assets.test.ts apps/desktop/scripts/post-build.test.ts
       - name: Build portable app (shared stable profile)
         env:
           PIG_RELEASE_CHANNEL: ${{ steps.release.outputs.tag == 'nightly' && 'nightly' || 'stable' }}

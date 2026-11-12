@@ -7,7 +7,8 @@ import {
 export default {
   app: { name: "pig", identifier: "dev.pig.desktop", version: "0.3.0" },
   build: {
-    bun: { external: SDK_RUNTIME_EXTERNALS },
+    mainProcess: "bun",
+    bun: { entrypoint: "src/bun/index.ts", external: SDK_RUNTIME_EXTERNALS },
     copy: {
       "dist/index.html": "views/mainview/index.html",
       "dist/assets": "views/mainview/assets",
