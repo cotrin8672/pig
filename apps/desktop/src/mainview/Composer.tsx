@@ -44,7 +44,6 @@ import { ExtensionWidgets } from "./extension-status";
 import { useT } from "./i18n";
 import { MessageQueue } from "./MessageQueue";
 import { ModelPicker } from "./ModelPicker";
-import { navigate } from "./navigation";
 import { rpc, sends } from "./rpc";
 import { subscribeOwnership } from "./runtime-events";
 import {
@@ -112,7 +111,6 @@ export function Composer({ snapshot }: { snapshot: Snapshot }) {
   const loads = attachmentReads.read(address);
   const loading = loads.some((load) => load.state === "pending");
   const { text, images, pastes, files = [], annotations = [] } = draft.content;
-  const [mirrorError, setMirrorError] = useState<string>();
   const [stopping, setStopping] = useState<string>();
   function stop() {
     if (stopping === key) return;
@@ -286,10 +284,7 @@ export function Composer({ snapshot }: { snapshot: Snapshot }) {
   useEffect(() => {
     if (!draft.dirty || draft.conflict || draft.retired) return;
     const timer = setTimeout(() => {
-      void drafts.flush(slashAddress, mirror).then(
-        () => setMirrorError(undefined),
-        (error) => setMirrorError(String(error)),
-      );
+      void drafts.flush(slashAddress, mirror).catch(showError);
     }, 120);
     return () => clearTimeout(timer);
   }, [slashAddress, draft, mirror]);
@@ -349,7 +344,7 @@ export function Composer({ snapshot }: { snapshot: Snapshot }) {
           textareaRef.current?.focus();
         }}
       />
-      <ExtensionWidgets address={address} placement="aboveEditor" />
+      <ExtensionWidgets address={address} />
       <MessageQueue
         items={sends
           .queued(address)
@@ -771,25 +766,6 @@ export function Composer({ snapshot }: { snapshot: Snapshot }) {
           </div>
         </div>
       </form>
-      <ExtensionWidgets address={address} placement="belowEditor" />
-      {sendState?.message && (
-        <p className="composer-hint" role="status">
-          {sendState.message}
-        </p>
-      )}
-      {mirrorError && (
-        <p className="composer-hint" role="alert">
-          {mirrorError}
-        </p>
-      )}
-      {!canSend && !extensionSend && (
-        <p className="composer-hint">
-          {t["Choose an enabled model to send a message."]}{" "}
-          <button type="button" onClick={() => navigate("providers")}>
-            {t["Manage models"]}
-          </button>
-        </p>
-      )}
     </ComposerFrame>
   );
 }
