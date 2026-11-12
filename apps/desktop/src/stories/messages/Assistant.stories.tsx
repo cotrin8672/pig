@@ -1,9 +1,10 @@
-import { contentStories } from "../DesignProposals";
-import { AssistantMarkdown } from "../item-fixtures";
+import { AnswerDefault, assistantProposals } from "../proposals/content";
+import { contentStories } from "../proposals/kit";
+
 export default { title: "Chat/Messages/Assistant" };
-const stories = contentStories("assistant", AssistantMarkdown);
+const stories = contentStories(assistantProposals, AnswerDefault);
 export const Default = stories.Default;
-export const AnswerSpread = stories.Rail;
-export const EvidenceBoard = stories.Sheet;
-export const TabbedAnswer = stories.Folded;
-export const AnswerComparison = { ...stories.Compare, name: "Compare all" };
+export const Compare = stories.Compare;
+export const Lead = stories.Lead;
+export const Outline = stories.Outline;
+export const Ask = stories.Ask;

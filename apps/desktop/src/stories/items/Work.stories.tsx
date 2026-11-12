@@ -1,9 +1,10 @@
-import { contentStories } from "../DesignProposals";
-import { Work } from "../item-fixtures";
+import { WorkDefault, workProposals } from "../proposals/content";
+import { contentStories } from "../proposals/kit";
+
 export default { title: "Chat/Activity/Work" };
-const stories = contentStories("work", Work);
+const stories = contentStories(workProposals, WorkDefault);
 export const Default = stories.Default;
-export const WorkTimeline = stories.Rail;
-export const WorkSummary = stories.Sheet;
-export const ActivityConsole = stories.Folded;
-export const WorkComparison = { ...stories.Compare, name: "Compare all" };
+export const Compare = stories.Compare;
+export const Strip = stories.Strip;
+export const Chapters = stories.Chapters;
+export const Outcome = stories.Outcome;

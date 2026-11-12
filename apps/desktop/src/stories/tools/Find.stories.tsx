@@ -1,9 +1,11 @@
-import { toolControls, toolStories } from "../DesignProposals";
-import { Find } from "../tool-fixtures";
-export default { title: "Chat/Tools/Find", ...toolControls };
-const stories = toolStories(Find);
-export const FindDefault = { ...stories.Default, name: "Default" };
-export const FindLedger = { ...stories.Ledger, name: "Path index" };
-export const FindSheet = { ...stories.Sheet, name: "Folder explorer" };
-export const FindReceipt = { ...stories.Receipt, name: "File tiles" };
-export const FindCompare = stories.Compare;
+import { find } from "../proposals/data";
+import { phaseControls, toolStories } from "../proposals/kit";
+import { findProposals } from "../proposals/tools";
+
+export default { title: "Chat/Tools/Find", ...phaseControls };
+const stories = toolStories(find, findProposals);
+export const Default = stories.Default;
+export const Compare = stories.Compare;
+export const Tree = stories.Tree;
+export const Matched = stories.Matched;
+export const Facets = stories.Facets;

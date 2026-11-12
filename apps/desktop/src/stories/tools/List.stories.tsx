@@ -1,9 +1,11 @@
-import { toolControls, toolStories } from "../DesignProposals";
-import { Ls } from "../tool-fixtures";
-export default { title: "Chat/Tools/List", ...toolControls };
-const stories = toolStories(Ls);
-export const ListDefault = { ...stories.Default, name: "Default" };
-export const ListLedger = { ...stories.Ledger, name: "Directory table" };
-export const ListSheet = { ...stories.Sheet, name: "Folder explorer" };
-export const ListReceipt = { ...stories.Receipt, name: "File tiles" };
-export const ListCompare = stories.Compare;
+import { ls } from "../proposals/data";
+import { phaseControls, toolStories } from "../proposals/kit";
+import { lsProposals } from "../proposals/tools";
+
+export default { title: "Chat/Tools/List", ...phaseControls };
+const stories = toolStories(ls, lsProposals);
+export const Default = stories.Default;
+export const Compare = stories.Compare;
+export const Icons = stories.Icons;
+export const Summary = stories.Summary;
+export const Columns = stories.Columns;

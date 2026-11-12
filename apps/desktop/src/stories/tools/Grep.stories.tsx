@@ -1,9 +1,11 @@
-import { toolControls, toolStories } from "../DesignProposals";
-import { Grep } from "../tool-fixtures";
-export default { title: "Chat/Tools/Grep", ...toolControls };
-const stories = toolStories(Grep);
-export const GrepDefault = { ...stories.Default, name: "Default" };
-export const GrepLedger = { ...stories.Ledger, name: "Search table" };
-export const GrepSheet = { ...stories.Sheet, name: "File explorer" };
-export const GrepReceipt = { ...stories.Receipt, name: "Match cards" };
-export const GrepCompare = stories.Compare;
+import { grep } from "../proposals/data";
+import { phaseControls, toolStories } from "../proposals/kit";
+import { grepProposals } from "../proposals/tools";
+
+export default { title: "Chat/Tools/Grep", ...phaseControls };
+const stories = toolStories(grep, grepProposals);
+export const Default = stories.Default;
+export const Compare = stories.Compare;
+export const Groups = stories.Groups;
+export const Distribution = stories.Distribution;
+export const Sentence = stories.Sentence;

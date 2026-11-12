@@ -1,9 +1,11 @@
-import { toolControls, toolStories } from "../DesignProposals";
-import { ConfiguredCard } from "../tool-fixtures";
-export default { title: "Chat/Tools/Configured card", ...toolControls };
-const stories = toolStories(ConfiguredCard);
-export const CardDefault = { ...stories.Default, name: "Default" };
-export const CardLedger = { ...stories.Ledger, name: "Review dashboard" };
-export const CardSheet = { ...stories.Sheet, name: "Evidence notebook" };
-export const CardReceipt = { ...stories.Receipt, name: "Review checklist" };
-export const CardCompare = stories.Compare;
+import { card } from "../proposals/data";
+import { phaseControls, toolStories } from "../proposals/kit";
+import { cardProposals } from "../proposals/tools";
+
+export default { title: "Chat/Tools/Configured card", ...phaseControls };
+const stories = toolStories(card, cardProposals);
+export const Default = stories.Default;
+export const Compare = stories.Compare;
+export const Report = stories.Report;
+export const Summary = stories.Summary;
+export const Progress = stories.Progress;

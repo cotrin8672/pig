@@ -1,15 +1,11 @@
-import { toolControls, toolStories } from "../DesignProposals";
-import { Generic } from "../tool-fixtures";
-export default { title: "Chat/Tools/Extension", ...toolControls };
-const stories = toolStories(Generic);
-export const ExtensionDefault = { ...stories.Default, name: "Default" };
-export const ExtensionLedger = {
-  ...stories.Ledger,
-  name: "Request / Response",
-};
-export const ExtensionSheet = { ...stories.Sheet, name: "Call pipeline" };
-export const ExtensionReceipt = {
-  ...stories.Receipt,
-  name: "Protocol transcript",
-};
-export const ExtensionCompare = stories.Compare;
+import { lookup } from "../proposals/data";
+import { phaseControls, toolStories } from "../proposals/kit";
+import { extensionProposals } from "../proposals/tools";
+
+export default { title: "Chat/Tools/Extension", ...phaseControls };
+const stories = toolStories(lookup, extensionProposals);
+export const Default = stories.Default;
+export const Compare = stories.Compare;
+export const Signature = stories.Signature;
+export const Table = stories.Table;
+export const ResultFirst = stories.ResultFirst;

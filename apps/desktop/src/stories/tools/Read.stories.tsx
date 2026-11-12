@@ -1,9 +1,11 @@
-import { toolControls, toolStories } from "../DesignProposals";
-import { Read } from "../tool-fixtures";
-export default { title: "Chat/Tools/Read", ...toolControls };
-const stories = toolStories(Read);
-export const ReadDefault = { ...stories.Default, name: "Default" };
-export const ReadLedger = { ...stories.Ledger, name: "Editor tab" };
-export const ReadSheet = { ...stories.Sheet, name: "Range inspector" };
-export const ReadReceipt = { ...stories.Receipt, name: "Source manuscript" };
-export const ReadCompare = stories.Compare;
+import { read } from "../proposals/data";
+import { phaseControls, toolStories } from "../proposals/kit";
+import { readProposals } from "../proposals/tools";
+
+export default { title: "Chat/Tools/Read", ...phaseControls };
+const stories = toolStories(read, readProposals);
+export const Default = stories.Default;
+export const Compare = stories.Compare;
+export const RangeMap = stories.RangeMap;
+export const Citation = stories.Citation;
+export const Peek = stories.Peek;

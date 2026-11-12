@@ -1,13 +1,12 @@
-import { contentStories } from "../DesignProposals";
-import { Annotations, SentAnnotations } from "../item-fixtures";
+import { Annotations } from "../item-fixtures";
+import { AnnotationsDefault, annotationProposals } from "../proposals/content";
+import { contentStories } from "../proposals/kit";
+
 export default { title: "Chat/Review/Annotations" };
-const stories = contentStories("annotations", SentAnnotations.render);
-export const Default = {
-  ...stories.Default,
-  parameters: SentAnnotations.parameters,
-};
-export const ReviewMatrix = stories.Rail;
-export const InlineReview = stories.Sheet;
-export const CommentInspector = stories.Folded;
-export const AnnotationComparison = { ...stories.Compare, name: "Compare all" };
+const stories = contentStories(annotationProposals, AnnotationsDefault);
+export const Default = stories.Default;
+export const Compare = stories.Compare;
+export const Threads = stories.Threads;
+export const Badge = stories.Badge;
+export const Footnotes = stories.Footnotes;
 export const Selection = { render: Annotations };
