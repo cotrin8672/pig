@@ -12,7 +12,18 @@ const killTree = (proc: Bun.Subprocess) =>
     ? Bun.spawnSync(["taskkill", "/PID", String(proc.pid), "/T", "/F"])
     : proc.kill();
 
-const vite = run(["vite"]);
+// A leftover Vite from an earlier session would otherwise be picked up below and
+// serve stale pre-bundled deps (the app then sits blank on RPC timeouts).
+if (
+  await fetch("http://localhost:5173", { method: "HEAD" }).then(
+    () => true,
+    () => false,
+  )
+)
+  throw new Error(
+    "Port 5173 is already serving; stop the leftover Vite/dev process first.",
+  );
+const vite = run(["vite", "--strictPort"]);
 for (let tries = 0; ; tries++) {
   try {
     await fetch("http://localhost:5173", { method: "HEAD" });

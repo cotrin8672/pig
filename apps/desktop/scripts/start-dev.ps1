@@ -30,8 +30,14 @@ public static class DevWindow {
 
 $outLog = Join-Path $env:TEMP 'pig-dev.stdout.log'
 $errLog = Join-Path $env:TEMP 'pig-dev.stderr.log'
-$process = Start-Process -FilePath (Get-Command mise.exe).Source `
-    -ArgumentList @('exec', '--', 'pnpm', 'dev') -WorkingDirectory $root `
+# The hidden child may not inherit mise on PATH (e.g. from `mise run`), and the
+# root script's nested `pnpm --filter` then fails with "pnpm not recognized".
+# Pin mise's directory and run the desktop package script without that hop.
+$mise = (Get-Command mise.exe).Source
+$env:PATH = "$(Split-Path $mise);$env:PATH"
+$process = Start-Process -FilePath $mise `
+    -ArgumentList @('exec', '--', 'pnpm', '--dir', 'apps/desktop', 'run', 'dev') `
+    -WorkingDirectory $root `
     -WindowStyle Hidden -RedirectStandardOutput $outLog `
     -RedirectStandardError $errLog -PassThru
 Write-Output "Starting dev app in background (PID $($process.Id))."
