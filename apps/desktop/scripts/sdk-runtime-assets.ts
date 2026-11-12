@@ -344,8 +344,13 @@ function assemble(
   }
 }
 
-if (import.meta.main) {
-  const projectDir = resolve(import.meta.dir, "..");
+/** Hutch (Electrobun 2) imports the preBuild hook and calls its default
+ * export; `bun scripts/sdk-runtime-assets.ts` runs it directly. Both paths
+ * must stage, so no work may hide behind import.meta.main or process.exit.
+ */
+export function stageSdkRuntime(
+  projectDir = resolve(import.meta.dir, ".."),
+): void {
   const destination = join(projectDir, SDK_RUNTIME_STAGE);
   if (
     existsSync(dirname(destination)) &&
@@ -357,7 +362,7 @@ if (import.meta.main) {
     throw new Error("SDK stage must not be a symlink");
   if (sdkStageMatches({ projectDir, destination })) {
     console.log("[sdk-runtime] Reusing verified SDK runtime.");
-    process.exit(0);
+    return;
   }
   const temporary = `${destination}.next`;
   if (existsSync(temporary))
@@ -369,3 +374,7 @@ if (import.meta.main) {
     `[sdk-runtime] Staged ${manifest.packages.length} package placements (no Durable).`,
   );
 }
+export default function preBuild() {
+  stageSdkRuntime();
+}
+if (import.meta.main) stageSdkRuntime();

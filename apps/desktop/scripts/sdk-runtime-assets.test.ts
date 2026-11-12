@@ -178,6 +178,29 @@ describe("SDK runtime production packaging", () => {
     }
     expect(JSON.stringify(manifest)).not.toContain(f.projectDir);
   });
+  test("Hutch-style import + default() stages a clean build (CopySourceMissing regression)", () => {
+    const f = fixture();
+    for (const name of SDK_RUNTIME_ROOTS) pkg(join(f.installRoot, name), name);
+    const script = join(f.projectDir, "scripts", "sdk-runtime-assets.ts");
+    mkdirSync(dirname(script), { recursive: true });
+    copyFileSync(join(import.meta.dir, "sdk-runtime-assets.ts"), script);
+    const stage = join(f.projectDir, SDK_RUNTIME_STAGE);
+    // Mirrors Hutch run_hook_helper.js: import the module, call its default.
+    const hook = Bun.spawnSync(
+      [
+        process.execPath,
+        "--no-install",
+        "--eval",
+        `const m = await import(${JSON.stringify(script)}); if (typeof m.default !== "function") process.exit(3); await m.default();`,
+      ],
+      { cwd: f.projectDir, stdout: "pipe", stderr: "pipe" },
+    );
+    expect(hook.exitCode, hook.stderr.toString()).toBe(0);
+    expect(existsSync(join(stage, "node_modules"))).toBe(true);
+    expect(
+      sdkStageMatches({ ...f, destination: stage, roots: SDK_RUNTIME_ROOTS }),
+    ).toBe(true);
+  });
   test("an interrupted rebuild preserves the previous stage and never trusts partial next contents", () => {
     const f = fixture();
     for (const name of SDK_RUNTIME_ROOTS) pkg(join(f.installRoot, name), name);
