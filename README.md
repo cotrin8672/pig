@@ -88,6 +88,12 @@ with the project's **+**. Enter sends; Shift+Enter inserts a newline. Sending
 while pi is running queues a follow-up. Stop aborts the current run. Closing a
 chat releases its live SDK session without deleting history.
 
+Subscriptions support multiple accounts: press **+** beside the connected provider
+to sign in, then optionally rename its nested account with **… → Edit name**.
+Choose the account and model together in the model picker. A chat with messages
+keeps its account; use the picker's **New chat with…** action to switch accounts.
+See [account storage and limits](docs/provider-accounts.md).
+
 Choose **Settings → General → Default model** to set the model for new chats.
 This saves pi's shared default; existing chats keep their saved model.
 Choose **Automatic** to reset the preference.

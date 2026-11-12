@@ -1,62 +1,55 @@
-# サブスクリプションの複数アカウント：内部実装
+# サブスクリプションの複数アカウント
 
-## 境界
+## UX
 
-- UIは未実装。次はStorybookで見た目を確認し、承認後に本番UIへ組み込む。
-- 将来の「Codex Private」「Codex Work」は表示上のグループ。SDKへ渡すProvider IDとモデルIDは常に元の値（例 `openai-codex`）。
-- 追加対象は `provider.auth.oauth.isSubscription` が有効なサブスクリプション。APIキーの複数登録、自動ローテーション、上限到達時の別アカウントへのフォールバックはない。
-- アカウント分離は認証の選択であり、プロジェクト・ファイル・履歴・拡張機能のセキュリティ隔離ではない。
+- Providers画面では、同じProviderのアカウントを子行としてネストする。アカウントが1つだけなら従来と同じ1行。
+- 接続済みサブスクの親行の「+」で、既存のOAuthサインインPopupがすぐ開く。名前入力の画面は挟まない。
+- **認証に成功した時点でだけ追加する。** キャンセル／認証失敗では未接続の行を作らない。既定の認証は変更しない。
+- 初期名は `OpenAI Codex 1`（pi標準の認証）、`OpenAI Codex 2` …。追加分は2以降の空き番号を使う。既存の表示名は維持する。
+- 名前変更は各行の「…」から、Projectと同じ `InlineRename` で行う。サインアウト／削除は2回押しの確認付き。既定の認証は削除対象にしない。
+- 接続状態の丸は左、操作は右。親行のアカウント件数は表示しない。
+- 右の詳細は既存の `ProviderDetail` / `ProviderModels` を使う。表示・既定の推論レベルなどのモデル設定はProvider単位で共通。
+- ピッカーではアカウントごとに別ソースとして表示し、モデルとアカウントを一緒に選ぶ。最近使用のキーとチェックマークもアカウントを区別する。SDKのProvider IDは常に元の `openai-codex` などのまま。
+- サインアウト済みのソースにはサインインへの導線を出す。履歴のあるチャットで別アカウントを選んだ場合は、新しいチャットを開く導線を出す。
 
-## 保存と認証
+## 保存・認証
 
-`src/bun/provider-accounts.ts`:
+- 既存の認証はpi標準の `auth.json` のまま。移動・コピー・形式変更はしない。
+- 追加アカウントのUUID、名前、元Provider ID、OAuth credentialは `~/.config/pig/provider-accounts.json` に保存する。
+- 既定アカウントの表示名だけは `provider-accounts.json.names.json` に保存する。名前を変えても認証情報やチャットの参照は変わらない。
+- `AccountCredentials` がチャットごとの選択に応じて保存先を振り分ける。書き込み先はロック待ちの前に捕捉する。
+- refreshはロック内のread-modify-write。二重refresh、削除後のトークン復活、別アカウントへの書き戻しを防ぐ。トークン更新開始後のキャンセルでは更新結果の保存を捨てない。
+- 選択した追加アカウントが未認証・削除済みならエラーにする。pi標準認証や環境変数への自動フォールバックはしない。
+- アカウント変更に失敗した後は、再度アカウントを選ぶまで送信を拒否する。変更の後ろにキューされた送信が以前の認証で流れるのを防ぐ。
+- UIに返すアカウント情報は `{ id, provider, label, configured }` のみ。トークンは含めない。
 
-- 既存の既定認証はpi標準の `auth.json` のまま。移動・コピー・形式変更はしない。
-- 追加アカウントの名前、元Provider ID、OAuth credentialは `~/.config/pig/provider-accounts.json` に保存。安定したUUIDが識別子で、名前変更では変わらない。
-- SDKの `CredentialStore` を実装する `AccountCredentials` が、各ランタイムの選択に応じて保存先を振り分ける。
-- ファイルロック中にread-modify-writeを行い、同時refreshの二重実行、refresh後の削除の取り消し、別アカウントへのトークン書き戻しを防ぐ。
-- refreshを開始した後のキャンセルでは、ローテーション済みトークンの保存を捨てない。
-- 選択された追加アカウントが未認証・削除済みならエラー。`undefined` を返して既定認証や環境変数へ戻すことはしない。
-- UIへ返すアカウント情報は `{ id, provider, label, configured }` だけ。トークンは含めない。
+既定の認証のコマンド解決・ロック等を再実装しないため、`src/bun/sdk.ts` にSDK **1.5.2** の内部 `AuthStorage` ローダーを集約している。この版には公開exportがない。SDK更新時は内部パスと `CredentialStore` 互換性を確認する。
 
-既定認証のコマンド解決・ロック等を再実装しないため、`src/bun/sdk.ts` のみにSDK **1.5.2** の内部 `AuthStorage` ローダーを集約している。このバージョンは型定義にクラスがあるが公開exportにはない。SDK更新時には内部ファイルのパスと `CredentialStore` 互換性を確認する必要がある。パッケージは既存のSDK runtime stagingで非バンドル配置される。
+## チャットとカタログ
 
-## チャット単位の選択
+- `SessionFlags.accounts` に `{ [providerId]: accountId }` を保持し、pigの `desktop.json` に保存する。
+- 再オープン・再読み込み・フォークで選択を引き継ぐ。ピン留めや完了通知の更新では消さない。
+- `ModelSelection.accountId` は追加アカウントのID。省略は標準の認証。
+- `setModel.accountId` は省略すると現在の選択を維持し、`null` で標準の認証を明示的に選ぶ。UIは取り違えを避けるため常にIDまたは `null` を送る。
+- `Snapshot.sessionAccounts` と `accountSwitchAllowed` をピッカーの切替制限に使う。最終的な許可判定はサーバー側で行う。
+- Bootstrapの `accountCatalogs` はUI用の `[provider, accountId|null]` キーで各アカウントの利用可能モデルを返す。`models` はそれらの和集合で、既存の共通モデル設定UIに使う。
+- piのグローバル既定モデルと新規チャットの自動選択は、標準の認証で使えるモデルに限定する。特定アカウントで新しいチャットを開く場合は、アカウント付きモデル選択を送信と同じ順序付き開始待ちキューに入れる。
+- 認証／モデル設定の更新後は、開いているチャットへ最新のカタログも配信する。
 
-`SessionFlags.accounts` に `{ [providerId]: accountId }` を保持し、pigの `desktop.json` に保存する。
+## 制限
 
-- チャットごとの `ModelRuntime` にそれぞれ独立した選択を渡す。同時に開いている別チャットには影響しない。
-- 再オープン・再読み込み・フォークで選択を引き継ぐ。ピン留め・完了通知などの更新で選択を消さない。
-- 保存やモデル選択に失敗した場合は、元のアカウント・モデルへ戻す。
-- 名前を変えても選択は保持される。サインアウトでは名前とIDを残し、削除ではトークンも消す。
-- 選択したアカウント／モデルが使えなくなった場合、勝手に別Provider・別アカウントで再開しない。
-
-**現段階の制限:** user/assistantメッセージがあるチャットではアカウント変更を拒否する。同じアカウントのモデル変更は可能。OpenAIの暗号化推論などのアカウント間再送を実機確認してから、この制限と必要な履歴変換を見直す。
-
-選択はpig固有のメタデータであり、pi CLIへは引き継がれない。CLIで履歴を開くと通常のpi認証が使われる。`desktop.json` を失うとアカウント選択も失われるので、バックアップには両方のpigファイルを含める。
-
-## 本番UI未接続のRPC
-
-| 操作 | パラメーター |
-|---|---|
-| `createProviderAccount` | `{ provider, label }` → 非秘密のアカウント情報 |
-| `renameProviderAccount` | `{ provider, accountId, label }` |
-| `removeProviderAccount` | `{ provider, accountId }` |
-| `startLogin` メッセージ | 既存引数 + 任意の `accountId` |
-| `logout` | `{ provider, accountId? }` |
-| `accountModels` | `{ provider, accountId? }` → アカウント認証による利用可能モデル |
-| `setModel` | 既存引数 + `accountId?: string \| null` |
-
-`setModel.accountId` は省略するとそのProviderの現在の選択を維持し、`null` ならpiの既定認証を明示的に選ぶ。`ModelSelection` / `Snapshot` に現在の `accountId` を含める。`listProviders()` の追加アカウント情報は `ProviderInfo.accounts` に含まれる。
-
-ログインのキャンセル／サインアウトはアカウント単位。同一ProviderのOAuthブラウザフローはコールバック待受ポートの競合を避けるため直列実行する。
-
-`accountModels` は通信なしで既知のカタログとProviderのcredential filterから一覧を作る。Providerがプラン別のモデル制限を公開していない場合、その制限を独自に推測しない。
+- 追加対象は `provider.auth.oauth.isSubscription` が有効なOAuthサブスクのみ。APIキーの複数登録・自動ローテーション・上限時の別アカウントへの切替は対象外。
+- **user/assistantメッセージのあるチャットではアカウント変更を拒否する。** 同じアカウントのモデル変更は可能。OpenAIの暗号化推論などのアカウント間再送を実機検証してから制限を見直す。
+- Providerがプラン別制限を公開していない場合、独自にモデル制限を推測しない。
+- アカウント選択はpig固有のメタデータ。pi CLIには引き継がれず、CLIで同じ履歴を開くと標準のpi認証が使われる。`desktop.json` を失うと選択も失われるため、バックアップに含める。
+- 認証の選択であり、プロジェクト・ファイル・履歴・拡張のセキュリティ隔離ではない。
 
 ## 検証
 
-- `provider-accounts.test.ts`: 保存、名前変更、秘密情報の非公開、個別認証、refreshの排他とキャンセル、削除との競合、ambient fallback禁止、破損ファイルの保全。
-- `session-accounts.test.ts`: 模擬サブスクOAuthでログインから送信・選択保存・失敗時の復元・再オープン・フォーク・サインアウトまで実SDKで確認。
-- `auth-operations.test.ts` / `desktop-state.test.ts`: アカウント別のキャンセルとProvider別の直列化、他のデスクトップ状態更新との共存。
+- `provider-account-login.test.ts`: 模擬OAuthで成功後だけ追加、キャンセル／失敗、連番、標準認証の保全。
+- `provider-accounts.test.ts` / `session-accounts.test.ts`: トークン更新の排他、削除競合、送信の分離、選択失敗後の送信拒否、再オープン、フォーク。
+- `account-picker.test.ts`: 独立したソース、共通モデル設定、アカウント別カタログ、履歴による制限、最近使用のキー。
+- `provider-accounts-ui.test.ts`: EdgeでNested表示、「+」直後の認証要求、行内リネーム、実モデル設定UI、アカウントIDの受け渡し、サインアウト済みアカウントの再認証。
+- `provider-login-events.test.ts`: 新規／遅延した認証成功が既定アカウントの状態を誤って書き換えないこと。
 
-実際のCodex/Claudeアカウントでのブラウザログイン、プラン差、会話途中の切替は未検証。
+実際のCodex/Claudeアカウントでのブラウザ認証・プラン差は未検証。
