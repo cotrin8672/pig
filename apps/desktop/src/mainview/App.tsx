@@ -73,10 +73,6 @@ import { initShortcuts } from "./shortcuts";
 import { type LoginState, showError, useStore } from "./store";
 import { ThinkingBlock, ToolBlock, ToolGroup, WorkToggle } from "./ToolBlock";
 import {
-  TranscriptSearch,
-  type TranscriptSearchTarget,
-} from "./TranscriptSearch";
-import {
   isThreadAtBottom,
   pruneThreadViews,
   threadView,
@@ -574,9 +570,6 @@ export function Chat({ snapshot }: { snapshot: ChatSnapshot }) {
   const prependScroll = useRef<{ top: number; height: number } | undefined>(
     undefined,
   );
-  const [jump, setJump] = useState<
-    TranscriptSearchTarget & { id: string; serial: number; runIndex?: number }
-  >();
   const followOptimistic = useCallback(() => {
     if (thread.current && view.follow)
       thread.current.scrollTop = thread.current.scrollHeight;
@@ -643,42 +636,6 @@ export function Chat({ snapshot }: { snapshot: ChatSnapshot }) {
       ),
     [transcript.records, transcript.running, starting],
   );
-  function revealRecord(id: string, target?: TranscriptSearchTarget) {
-    const index = transcript.records.findIndex((record) => record.id === id);
-    if (index < 0) return;
-    view.follow = false;
-    const range = work.get(index);
-    if (range) {
-      view.work = { ...view.work, [range.key]: true };
-      setOpenWork(view.work);
-    }
-    const record = transcript.records[index];
-    const runs =
-      record.kind === "message" && record.message.role === "assistant"
-        ? groupBlocks(record.message.content)
-        : [];
-    const runIndex = runs.findIndex(({ start, blocks }) =>
-      target?.toolCallId
-        ? blocks.some(
-            (block) =>
-              block.type === "toolCall" && block.id === target.toolCallId,
-          )
-        : target?.blockIndex !== undefined &&
-          start <= target.blockIndex &&
-          target.blockIndex < start + blocks.length,
-    );
-    const selected = {
-      ...target,
-      id,
-      toolCallId: runIndex < 0 ? undefined : target?.toolCallId,
-      details: !target?.toolCallId && target?.details,
-    };
-    setJump((previous) => ({
-      ...selected,
-      runIndex: runIndex < 0 ? undefined : runIndex,
-      serial: (previous?.serial ?? 0) + 1,
-    }));
-  }
   const [indexFooters] = useState(createResponseFooterIndex);
   const footers = useMemo(
     () =>
@@ -726,37 +683,6 @@ export function Chat({ snapshot }: { snapshot: ChatSnapshot }) {
       element.scrollTop = element.scrollHeight;
     }
   }, [transcript, notices, view]);
-  useLayoutEffect(() => {
-    if (!jump) return;
-    const frame = requestAnimationFrame(() => {
-      const marker = thread.current?.querySelector<HTMLElement>(
-        `[data-record-id="${CSS.escape(jump.id)}"]`,
-      );
-      const record =
-        marker instanceof HTMLTemplateElement
-          ? marker.nextElementSibling
-          : marker;
-      if (!(record instanceof HTMLElement)) return;
-      if (marker !== record && !record.hasAttribute("tabindex"))
-        record.tabIndex = -1;
-      const selector = jump.toolCallId
-        ? `[data-tool-call-id="${CSS.escape(jump.toolCallId)}"]`
-        : jump.blockIndex !== undefined
-          ? `[data-content-index="${jump.blockIndex}"]`
-          : jump.details
-            ? '[data-disclosure="details"]'
-            : undefined;
-      const target =
-        (selector ? record.querySelector<HTMLElement>(selector) : null) ??
-        record;
-      target.scrollIntoView({ block: "nearest" });
-      (target === record
-        ? record
-        : (target.querySelector<HTMLElement>("summary") ?? target)
-      ).focus({ preventScroll: true });
-    });
-    return () => cancelAnimationFrame(frame);
-  }, [jump]);
   return (
     <ChatLayout
       threadRef={thread}
@@ -796,12 +722,6 @@ export function Chat({ snapshot }: { snapshot: ChatSnapshot }) {
         )
       }
     >
-      {hasConversation && (
-        <TranscriptSearch
-          records={transcript.records}
-          onSelect={revealRecord}
-        />
-      )}
       {transcript.history?.before && (
         <button
           type="button"
@@ -859,9 +779,6 @@ export function Chat({ snapshot }: { snapshot: ChatSnapshot }) {
           return (
             <Fragment key={record.id}>
               {toggle}
-              {jump?.id === record.id && (
-                <template data-record-id={record.id} />
-              )}
               <CustomRecord record={record} />
             </Fragment>
           );
@@ -907,17 +824,12 @@ export function Chat({ snapshot }: { snapshot: ChatSnapshot }) {
                             (block) => block.type === "text",
                           )
                         : message.content,
-                    ).map(({ start, blocks }, runIndex) => {
+                    ).map(({ start, blocks }) => {
                       const content = blocks[0];
                       return (
                         <DisclosureScope
                           key={`${content.type}-${start}`}
                           id={`block:${start}`}
-                          reveal={
-                            jump?.id === id && jump.runIndex === runIndex
-                              ? jump.serial
-                              : 0
-                          }
                         >
                           <div
                             data-content-index={start}
@@ -937,16 +849,6 @@ export function Chat({ snapshot }: { snapshot: ChatSnapshot }) {
                                 tools={transcript.tools}
                                 live={transcript.running}
                                 cards={snapshot.sessionUI?.toolCards}
-                                target={
-                                  jump?.id === id &&
-                                  jump.runIndex === runIndex &&
-                                  jump.toolCallId
-                                    ? {
-                                        toolCallId: jump.toolCallId,
-                                        serial: jump.serial,
-                                      }
-                                    : undefined
-                                }
                               />
                             ) : content.type === "text" ? (
                               <div className="prose">
@@ -995,10 +897,7 @@ export function Chat({ snapshot }: { snapshot: ChatSnapshot }) {
                   <CustomRecord record={record} />
                 )}
                 {record.details !== undefined && (
-                  <DisclosureScope
-                    id="record-details"
-                    reveal={jump?.id === id && jump.details ? jump.serial : 0}
-                  >
+                  <DisclosureScope id="record-details">
                     <LazyDetails name="details" summary="Details">
                       {() => <pre>{dataText(record.details)}</pre>}
                     </LazyDetails>

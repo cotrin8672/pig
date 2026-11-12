@@ -404,8 +404,6 @@ export const en = {
   "Load more": "Load more",
   responseComplete: "Response completed.",
   searchChats: "Filter chat titles",
-  searchLoaded: "Find in loaded messages",
-  noMatches: "No matches",
   editPastes: "Expand pasted text to edit",
   "Load earlier messages": "Load earlier messages",
   "Packages from your user and project configuration.":
@@ -969,8 +967,6 @@ export const ja: Dictionary = {
   "Load more": "さらに読み込む",
   responseComplete: "応答が完了しました。",
   searchChats: "チャット名で絞り込み",
-  searchLoaded: "読み込み済みのメッセージを検索",
-  noMatches: "一致なし",
   editPastes: "貼り付けた本文を展開して編集",
   "Load earlier messages": "以前のメッセージを読み込む",
   "Packages from your user and project configuration.":

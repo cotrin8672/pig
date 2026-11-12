@@ -300,21 +300,6 @@ p {
   clip-path: inset(50%);
   white-space: nowrap;
 }
-.transcript-search > button {
-  display: block;
-  max-width: 100%;
-  overflow: hidden;
-  white-space: nowrap;
-  text-overflow: ellipsis;
-  text-align: start;
-}
-.transcript-search {
-  color: var(--ds-text-muted);
-}
-.transcript-search output {
-  margin-inline-start: 0.5em;
-}
-
 .project-threads {
   margin-left: 12px;
   padding-left: 5px;
