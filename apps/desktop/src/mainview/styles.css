@@ -2535,6 +2535,9 @@ input:not([type="range"]) {
 .user-turn .user-bubble {
   max-width: 100%;
 }
+.user-turn .sent-attachments {
+  justify-content: flex-end;
+}
 
 /* Annotations: a quoted passage of an agent response plus the user's comment. */
 .annotation-card {
@@ -2822,7 +2825,7 @@ input:not([type="range"]) {
   padding: 32px 0 0;
   border: 0;
   overflow: hidden;
-  background: var(--ds-bg-primary);
+  background: transparent;
   color: var(--ds-text-primary);
 }
 .image-viewer[open] {
@@ -2830,7 +2833,7 @@ input:not([type="range"]) {
   flex-direction: column;
 }
 .image-viewer::backdrop {
-  background: var(--ds-bg-primary);
+  background: color-mix(in srgb, var(--ds-bg-primary) 80%, transparent);
 }
 .image-viewer button {
   display: inline-flex;

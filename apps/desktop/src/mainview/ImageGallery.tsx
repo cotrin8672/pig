@@ -131,6 +131,9 @@ function ImageViewer({
         if (multiple && e.key === "ArrowLeft") go(-1);
         else if (multiple && e.key === "ArrowRight") go(1);
       }}
+      onClick={(e) => {
+        if (!(e.target as Element).closest("button")) onClose(index);
+      }}
     >
       <header className="image-viewer-header">
         <strong>
