@@ -58,10 +58,30 @@ export function AnnotationPopover({
   });
 
   useEffect(() => {
+    let selecting = false;
     const update = () => {
-      if (editingRef.current) return;
+      if (editingRef.current || selecting) return;
       const found = responseSelection();
       setTarget(found && { ...found, rect: measure(found.range) });
+    };
+    const startSelection = (event: PointerEvent) => {
+      if (
+        event.button !== 0 ||
+        editingRef.current ||
+        panel.current?.contains(event.target as Node)
+      )
+        return;
+      selecting = true;
+      setTarget(undefined);
+    };
+    const finishSelection = () => {
+      if (!selecting) return;
+      selecting = false;
+      update();
+    };
+    const cancelSelection = () => {
+      selecting = false;
+      if (!editingRef.current) setTarget(undefined);
     };
     // Follow the anchor when the thread scrolls or the window resizes.
     const reposition = () =>
@@ -73,10 +93,18 @@ export function AnnotationPopover({
           },
       );
     document.addEventListener("selectionchange", update);
+    document.addEventListener("pointerdown", startSelection, true);
+    document.addEventListener("pointerup", finishSelection, true);
+    document.addEventListener("pointercancel", cancelSelection, true);
+    window.addEventListener("blur", cancelSelection);
     window.addEventListener("scroll", reposition, true);
     window.addEventListener("resize", reposition);
     return () => {
       document.removeEventListener("selectionchange", update);
+      document.removeEventListener("pointerdown", startSelection, true);
+      document.removeEventListener("pointerup", finishSelection, true);
+      document.removeEventListener("pointercancel", cancelSelection, true);
+      window.removeEventListener("blur", cancelSelection);
       window.removeEventListener("scroll", reposition, true);
       window.removeEventListener("resize", reposition);
     };
