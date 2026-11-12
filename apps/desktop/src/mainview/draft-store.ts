@@ -25,6 +25,8 @@ export type EditorDraft = {
   conflict?: DraftState;
   retired?: boolean;
   transferred?: boolean;
+  /** Late receipts track the destination version without retaining its payload. */
+  transferredVersion?: number;
   clearedForSend?: boolean;
   owner?: DraftOwner;
 };
@@ -148,7 +150,11 @@ export class DraftStore {
     } else if (remote.revision === draft.revision) {
       // Initial/repeated state cannot overwrite unsynced edits.
       if (!draft.dirty)
-        this.put(address, { ...draft, content: contentOf(remote) });
+        this.put(address, {
+          ...draft,
+          content: contentOf(remote),
+          version: draft.version + 1,
+        });
     } else if (draft.dirty) {
       this.put(address, {
         ...draft,
@@ -176,12 +182,25 @@ export class DraftStore {
     });
   }
   transfer(previous: SessionAddress, next: SessionAddress) {
+    if (addressKey(previous) === addressKey(next)) return;
     const old = this.read(previous);
-    this.put(previous, { ...old, retired: true, transferred: true });
+    if (old.transferred) return;
     const current = this.read(next);
     // A new epoch's startup editor event may beat the replaced publication.
     // Never overwrite that newer extension text with a clean old mirror.
-    if ((!old.dirty || old.clearedForSend) && current.revision > 0) return;
+    const keepCurrent =
+      (!old.dirty || old.clearedForSend) && current.revision > 0;
+    const version = Math.max(old.version, current.version) + 1;
+    this.put(previous, {
+      ...old,
+      content: emptyContent(),
+      conflict: undefined,
+      dirty: false,
+      retired: true,
+      transferred: true,
+      transferredVersion: keepCurrent ? undefined : version,
+    });
+    if (keepCurrent) return;
     this.put(next, {
       ...current,
       content: old.content,
@@ -192,7 +211,7 @@ export class DraftStore {
         !equal(old.content, current.content)
           ? { ...current.content, revision: current.revision }
           : old.conflict,
-      version: Math.max(old.version, current.version) + 1,
+      version,
     });
   }
   retire(address: SessionAddress) {
@@ -319,7 +338,7 @@ export class DraftStore {
         this.receive(address, result.draft);
         if (!result.applied) {
           const now = this.read(address);
-          if (!equal(now.content, result.draft))
+          if (!now.retired && !equal(now.content, result.draft))
             this.put(address, { ...now, conflict: result.draft });
           throw new Error(
             "Editor revision conflict; your draft has been retained",

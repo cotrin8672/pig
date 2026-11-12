@@ -667,7 +667,8 @@ export class SendController {
       const moved: SendState = {
         ...source,
         version:
-          old.version === source.version && current.content === old.content
+          old.version === source.version &&
+          current.version === old.transferredVersion
             ? current.version
             : -1,
         state: "unknown",

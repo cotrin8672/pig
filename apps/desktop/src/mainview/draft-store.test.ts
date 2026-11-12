@@ -122,6 +122,97 @@ test("late old-epoch ACK and accepted clear cannot mutate transferred draft", as
   expect(store.read(next).content.text).toBe("unsynced");
   await expect(store.flush(a, mirror())).rejects.toThrow("replaced");
 });
+test("transfers release old payloads and conflicts, retaining only the destination draft", () => {
+  const store = new DraftStore();
+  let address = a;
+  const previous = [];
+  for (let i = 0; i < 20; i++) {
+    const payload = {
+      ...content(`draft ${i}`),
+      pastes: [{ id: "paste", marker: "[paste]", text: "x".repeat(100_000) }],
+      images: [
+        {
+          id: "image",
+          image: {
+            type: "image" as const,
+            mimeType: "image/png",
+            data: "x".repeat(100_000),
+          },
+        },
+      ],
+    };
+    store.edit(address, () => payload);
+    store.receive(address, { ...content("extension"), revision: i + 1 });
+    const next = { ...address, epoch: address.epoch + 1 };
+    store.transfer(address, next);
+    expect(store.read(next).content).toBe(payload);
+    expect(store.read(next).conflict?.text).toBe("extension");
+    expect(store.read(address).content).toEqual(emptyContent());
+    expect(store.read(address).conflict).toBeUndefined();
+    expect(store.read(address).transferredVersion).toBe(
+      store.read(next).version,
+    );
+    previous.push(address);
+    store.resolve(next, "local");
+    expect(store.clearAccepted(next, store.read(next).version)).toBe(true);
+    address = next;
+  }
+  for (const owner of previous) {
+    store.receive(owner, { ...content("late ACK"), revision: 100 });
+    store.restoreSent(owner, content("late rejection"));
+    expect(store.read(owner).content).toEqual(emptyContent());
+  }
+  expect(store.read(address).content).toEqual(emptyContent());
+  expect(store.retained()).toEqual([]);
+});
+
+test("a late CAS conflict cannot reattach payloads to a transferred owner", async () => {
+  const store = new DraftStore();
+  store.edit(a, () => content("local"));
+  const response = Promise.withResolvers<DraftSyncResult>();
+  const started = Promise.withResolvers<void>();
+  const flush = store.flush(a, () => {
+    started.resolve();
+    return response.promise;
+  });
+  await started.promise;
+  const next = { ...a, epoch: 2 };
+  store.transfer(a, next);
+  response.resolve({
+    applied: false,
+    draft: { ...content("remote payload"), revision: 99 },
+  });
+  await expect(flush).rejects.toThrow("conflict");
+  expect(store.read(a).content).toEqual(emptyContent());
+  expect(store.read(a).conflict).toBeUndefined();
+  expect(store.read(next).content.text).toBe("local");
+});
+
+test("repeated transfers cannot overwrite newer edits or retire the current owner", () => {
+  const store = new DraftStore();
+  store.edit(a, () => content("original"));
+  const next = { ...a, epoch: 2 };
+  store.transfer(a, next);
+  store.edit(next, () => content("newer"));
+  store.transfer(a, next);
+  store.transfer(next, next);
+  expect(store.read(next).content.text).toBe("newer");
+  expect(store.read(next).retired).toBeUndefined();
+});
+
+test("same-revision startup content invalidates the transferred version for late receipts", () => {
+  const store = new DraftStore();
+  store.receive(a, { ...content("old mirror"), revision: 0 });
+  const next = { ...a, epoch: 2 };
+  store.transfer(a, next);
+  const version = store.read(next).version;
+  expect(store.read(a).transferredVersion).toBe(version);
+  store.receive(next, { ...content("startup text"), revision: 0 });
+  expect(store.read(next).version).not.toBe(version);
+  expect(store.clearAccepted(next, version)).toBe(false);
+  expect(store.read(next).content.text).toBe("startup text");
+});
+
 test("acceptance only clears the exact unchanged local revision", () => {
   const store = new DraftStore();
   store.edit(a, () => content("send me"));
