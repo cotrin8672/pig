@@ -24,11 +24,15 @@ test("progress coalesces without delaying boundaries; completed opens retain onl
       host.connectUI({clientId: "root"});
       let chat = await host.openSession({cwd, openId: "first"});
       const session = host.session(chat.info.id);
+      const manager = session.sessionManager;
+      const modifiedBeforeRun = chat.info.modified;
       const managed = host.sessions.get(chat.info.id);
       const seen = [];
       const projectEvent = managed.projector.event.bind(managed.projector);
       managed.projector.event = event => {seen.push(event); projectEvent(event);};
       session._emit({type: "agent_start"});
+      await Bun.sleep(5);
+      manager.appendMessage({role: "user", content: "First question", timestamp: Date.now()});
       let message = fauxAssistantMessage("initial");
       session._emit({type: "message_start", message});
       events.length = deliveries.length = seen.length = 0;
@@ -42,6 +46,8 @@ test("progress coalesces without delaying boundaries; completed opens retain onl
       await Bun.sleep(50);
       expect(events).toHaveLength(1);
       expect(events[0].snapshot.transcript.records.at(-1).message.content).toEqual(message.content);
+      expect(events[0].snapshot.info.title).toBe("First question");
+      expect(events[0].snapshot.info.modified).toBe(modifiedBeforeRun);
 
       events.length = deliveries.length = 0;
       session._emit({type: "message_update", message});
@@ -64,17 +70,22 @@ test("progress coalesces without delaying boundaries; completed opens retain onl
       expect(events.at(-1).snapshot.failure).toBe("fixture update error");
       expect(managed.publishTimer).toBeUndefined();
       session._emit({type: "message_update", message});
+      manager.appendMessage(message);
       session._emit({type: "message_end", message: {...message, stopReason: "error", errorMessage: "fixture error"}});
       expect(events.at(-1).snapshot.failure).toBe("fixture error");
       session._emit({type: "agent_end", messages: [message], willRetry: false});
       expect(events.at(-1).snapshot.transcript.running).toBe(true);
+      expect(events.every(e => e.snapshot.info.modified === modifiedBeforeRun)).toBe(true);
+      expect((await host.listSessions(cwd)).find(s => s.id === chat.info.id).modified).toBe(modifiedBeforeRun);
       session._emit({type: "agent_settled", aborted: false});
       expect(events.at(-1).snapshot.transcript.running).toBe(false);
+      const completedModified = events.at(-1).snapshot.info.modified;
+      expect(completedModified).toBeGreaterThan(modifiedBeforeRun);
+      expect((await host.listSessions(cwd)).find(s => s.id === chat.info.id).modified).toBe(completedModified);
       const finalCount = events.length;
       await Bun.sleep(50);
       expect(events).toHaveLength(finalCount);
 
-      const manager = session.sessionManager;
       for (let i = 0; i < 1000; i++)
         manager.appendMessage(i % 2 ? fauxAssistantMessage(String(i)) : {role: "user", content: String(i), timestamp: i});
       expect(host.opens.size).toBe(0);

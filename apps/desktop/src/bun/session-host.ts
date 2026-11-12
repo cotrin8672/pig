@@ -149,6 +149,7 @@ type Managed = {
   infoCache?: {
     leaf: ReturnType<SDKSessionManager["getLeafEntry"]>;
     count: number;
+    running: boolean;
     value: SessionInfo;
   };
   contextCache?: {
@@ -1227,9 +1228,11 @@ export class SessionHost {
   private info(m: Managed): SessionInfo {
     const leaf = m.manager.getLeafEntry();
     const count = m.manager.getEntryCount();
+    const running = m.projector?.running ?? false;
     if (
       m.infoCache?.leaf === leaf &&
       m.infoCache?.count === count &&
+      m.infoCache.running === running &&
       m.infoCache.value.id === m.address.sessionId
     )
       return m.infoCache.value;
@@ -1253,11 +1256,13 @@ export class SessionHost {
       id: m.address.sessionId,
       cwd: m.cwd,
       title: m.manager.getSessionName() ?? (title || "New chat"),
+      // Persisted tool/message entries must not reorder chats before agent_settled.
       modified:
-        Date.parse(m.manager.getEntries().at(-1)?.timestamp ?? "") ||
-        Date.now(),
+        (running ? m.infoCache?.value.modified : undefined) ??
+        (Date.parse(m.manager.getEntries().at(-1)?.timestamp ?? "") ||
+          Date.now()),
     };
-    m.infoCache = { leaf, count, value };
+    m.infoCache = { leaf, count, running, value };
     return value;
   }
   private snapshot(m: Managed, includeCatalog = true): Snapshot {
