@@ -33,7 +33,6 @@ import { CustomRecord } from "./CustomRecord";
 import type { ChatSnapshot } from "./chat-snapshot";
 import { addressKey, prependHistory, sameAddress } from "./chat-snapshot";
 import { dataText, isVisibleRecord } from "./custom-data";
-import { DraftRecovery } from "./DraftRecovery";
 import { Extensions } from "./Extensions";
 import {
   ExtensionNoticeLine,
@@ -279,7 +278,6 @@ export function App() {
           </div>
         )}
       </main>
-      {state.initialized && <DraftRecovery />}
       <UIRequestBroker />
       <WindowTitlebar
         maximized={state.maximized}

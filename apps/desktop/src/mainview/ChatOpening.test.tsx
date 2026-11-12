@@ -52,7 +52,6 @@ if (process.env.PIG_CHAT_OPENING_CHILD !== "1") {
     initSessionLinks: () => {},
     initSessionReadTracking: () => {},
   }));
-  mock.module("./DraftRecovery", () => ({ DraftRecovery: () => null }));
   mock.module("./Composer", () => ({ Composer: () => null }));
   const { ChatOpening } = await import("./ChatOpening");
   const { ChatHeader } = await import("./ChatHeader");
