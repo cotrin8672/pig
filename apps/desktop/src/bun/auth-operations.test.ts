@@ -43,6 +43,47 @@ test("logout cancels active and queued login, waits for completion and cannot be
   expect(events.at(-1)).toBe("new-login");
 });
 
+test("accounts share a provider login queue but logout cancels only its target", async () => {
+  const ops = new AuthOperations();
+  const work = new AbortController(),
+    personal = new AbortController();
+  const started = Promise.withResolvers<void>(),
+    release = Promise.withResolvers<void>();
+  const events: string[] = [];
+  const first = ops.login(
+    "work",
+    work,
+    async () => {
+      started.resolve();
+      await release.promise;
+      events.push("work");
+    },
+    "codex",
+  );
+  await started.promise;
+  const second = ops.login(
+    "private",
+    personal,
+    async () => {
+      events.push("private");
+    },
+    "codex",
+  );
+  const logout = ops.logout(
+    "work",
+    async () => {
+      events.push("work logout");
+    },
+    "codex",
+  );
+  expect(work.signal.aborted).toBe(true);
+  expect(personal.signal.aborted).toBe(false);
+  expect(events).toEqual([]);
+  release.resolve();
+  await Promise.all([first, second, logout]);
+  expect(events).toEqual(["work", "private", "work logout"]);
+});
+
 test("logins for the same provider execute in request order even after failure", async () => {
   const ops = new AuthOperations();
   const events: number[] = [];

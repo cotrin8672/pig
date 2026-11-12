@@ -11,6 +11,7 @@ import type {
 import type { ExtensionUIEvent, UIReply } from "./extension-ui";
 import type { ModelOverride } from "./model-overrides";
 import type { ProjectFlags } from "./projects";
+import type { AccountTarget, ProviderAccount } from "./provider-accounts";
 import type {
   DraftSyncParams,
   DraftSyncResult,
@@ -54,6 +55,7 @@ export interface ProviderInfo {
   source?: string;
   stored: boolean;
   extension: boolean;
+  accounts?: ProviderAccount[];
 }
 export type AuthMethod = "oauth" | "api_key";
 export interface UtilityModelInfo {
@@ -109,6 +111,8 @@ export interface ContextUsage {
 }
 export interface ModelSelection {
   model?: ModelInfo;
+  /** Absent means the standard pi credential; never a synthetic Provider ID. */
+  accountId?: string;
   effort: Effort;
   effortLevels: Effort[];
   contextUsage?: ContextUsage | null;
@@ -147,7 +151,11 @@ export interface Bootstrap {
   modelOverrides: Record<string, ModelOverride>;
   desktop: DesktopState;
 }
-export type LoginFrame = { loginId: string; provider: string } & (
+export type LoginFrame = {
+  loginId: string;
+  provider: string;
+  accountId?: string;
+} & (
   | { kind: "event"; event: AuthEvent }
   | { kind: "prompt"; prompt: AuthPrompt }
   | { kind: "promptEnd" }
@@ -325,14 +333,35 @@ export type RPCSchema = {
       };
       openProjectFolder: { params: { cwd: string }; response: boolean };
       // biome-ignore lint/suspicious/noConfusingVoidType: Electrobun's empty response convention.
-      logout: { params: { provider: string }; response: void };
+      logout: { params: AccountTarget; response: void };
+      createProviderAccount: {
+        params: { provider: string; label: string };
+        response: ProviderAccount;
+      };
+      renameProviderAccount: {
+        params: { provider: string; accountId: string; label: string };
+        response: ProviderAccount;
+      };
+      removeProviderAccount: {
+        params: { provider: string; accountId: string };
+        // biome-ignore lint/suspicious/noConfusingVoidType: Electrobun convention.
+        response: void;
+      };
+      accountModels: {
+        params: AccountTarget;
+        response: ModelInfo[];
+      };
       refreshProviderModels: {
         params: { provider: string };
         // biome-ignore lint/suspicious/noConfusingVoidType: Electrobun's empty response convention.
         response: void;
       };
       setModel: {
-        params: SessionAddress & { provider: string; id: string };
+        params: SessionAddress & {
+          provider: string;
+          id: string;
+          accountId?: string | null;
+        };
         response: ModelSelection;
       };
       setModelEnabled: {
@@ -381,7 +410,7 @@ export type RPCSchema = {
       setAppearance: Appearance;
       setSettings: SettingsPatch;
       windowControl: { action: "minimize" | "toggleMaximize" | "close" };
-      startLogin: { provider: string; method: AuthMethod; loginId: string };
+      startLogin: AccountTarget & { method: AuthMethod; loginId: string };
       resolveLogin: { loginId: string; value: string };
       cancelLogin: { loginId: string };
       openExternal: { url: string };

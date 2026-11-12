@@ -2,12 +2,18 @@ import "./runtime-profile";
 import {
   type Api,
   clampThinkingLevel,
+  createModels,
   getSupportedThinkingLevels,
+  InMemoryCredentialStore,
   type Model,
 } from "@earendil-works/pi-ai";
 import { registerBunOAuthFlows } from "@earendil-works/pi-ai/bun-oauth";
 import { displayedEffort, effortOptions } from "../shared/effort";
 import type { ExtensionUIEvent } from "../shared/extension-ui";
+import {
+  validateAccountId,
+  validateProviderId,
+} from "../shared/provider-accounts";
 import type { Effort, ProviderInfo, SessionInfo } from "../shared/rpc-schema";
 import type {
   OpenSessionParams,
@@ -25,8 +31,13 @@ import {
   refreshAllModelRuntimes,
 } from "./model-runtime";
 import { defaultEffort, loadEfforts } from "./model-settings";
+import { AccountCredentials, providerAccounts } from "./provider-accounts";
 import { REMOTE_CATALOG_REFRESH_INTERVAL_MS } from "./remote-catalog";
-import { loadExclusive, SessionHost } from "./session-host";
+import {
+  loadExclusive,
+  type SessionAccountPersistence,
+  SessionHost,
+} from "./session-host";
 import { reloadUserCatalog } from "./user-catalog";
 
 registerBunOAuthFlows();
@@ -113,6 +124,7 @@ const providerNames: Record<string, string> = {
   "openai-api": "OpenAI API",
 };
 export async function listProviders(): Promise<ProviderInfo[]> {
+  const accounts = await providerAccounts.list();
   const stored = new Set(
     (await runtime.listCredentials()).map((item) => item.providerId),
   );
@@ -131,6 +143,11 @@ export async function listProviders(): Promise<ProviderInfo[]> {
         source: auth?.source,
         stored: stored.has(p.id),
         extension: isExtensionProvider(runtime, p.id),
+        ...(accounts.some((account) => account.provider === p.id)
+          ? {
+              accounts: accounts.filter((account) => account.provider === p.id),
+            }
+          : {}),
       };
     }),
   );
@@ -164,6 +181,27 @@ export function modelInfo(model: Model<Api>) {
     ),
   };
 }
+/** Account-specific availability for a future picker; never registers synthetic Providers. */
+export async function accountModels(provider: string, accountId?: string) {
+  validateProviderId(provider);
+  if (accountId === undefined)
+    return (await runtime.getAvailable(provider)).map(modelInfo);
+  validateAccountId(accountId);
+  const definition = runtime.getProvider(provider);
+  if (!definition?.auth.oauth?.isSubscription)
+    throw new Error("Only subscription accounts are supported.");
+  if (!(await providerAccounts.read(accountId, provider)))
+    throw new Error("Selected account is signed out. Sign in again.");
+  const scoped = createModels({
+    credentials: new AccountCredentials(
+      new InMemoryCredentialStore(),
+      providerAccounts,
+      { [provider]: accountId },
+    ),
+  });
+  scoped.setProvider(definition);
+  return (await scoped.getAvailable(provider)).map(modelInfo);
+}
 type EventSinks = {
   runtime: (event: RuntimeEvent) => void;
   ui: (event: ExtensionUIEvent) => void;
@@ -175,17 +213,25 @@ function transport() {
   return sinks;
 }
 let disabled: readonly string[] = [];
+let sessionAccountPersistence: SessionAccountPersistence | undefined;
 export function configureSessionHost(
   events: EventSinks,
   hidden: readonly string[] = [],
+  accounts?: SessionAccountPersistence,
 ) {
   sinks = events;
   disabled = hidden;
+  sessionAccountPersistence = accounts;
 }
 export function setDisabledModels(hidden: readonly string[]) {
   disabled = hidden;
 }
 export const sessionHost = new SessionHost({
+  sessionAccounts: {
+    read: (id) => sessionAccountPersistence?.read(id) ?? {},
+    write: async (id, accounts) =>
+      sessionAccountPersistence?.write(id, accounts),
+  },
   modelInfo,
   emit: (event) => transport().runtime(event),
   emitUI: (event) => transport().ui(event),
@@ -203,7 +249,11 @@ export const abortSession = (address: SessionAddress) =>
 export const closeSession = (address: SessionAddress) =>
   sessionHost.closeSession(address);
 export const setSessionModel = (
-  input: SessionAddress & { provider: string; id: string },
+  input: SessionAddress & {
+    provider: string;
+    id: string;
+    accountId?: string | null;
+  },
 ) => sessionHost.setModel(input);
 export const setSessionEffort = (input: SessionAddress & { effort: Effort }) =>
   sessionHost.setEffort(input);

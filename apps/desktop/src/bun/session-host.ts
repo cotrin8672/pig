@@ -27,6 +27,12 @@ import { displayedEffort } from "../shared/effort";
 import type { ExtensionUIEvent, UIReply } from "../shared/extension-ui";
 import { isModelEnabled } from "../shared/models";
 import { unfoldPastes } from "../shared/paste";
+import {
+  type SessionAccounts,
+  validateAccountId,
+  validateProviderId,
+  validateSessionAccounts,
+} from "../shared/provider-accounts";
 import type {
   Effort,
   ModelInfo,
@@ -62,9 +68,11 @@ import {
   createModelRuntime,
   releaseModelRuntime,
   resetExtensionProviders,
+  runtimeAccounts,
 } from "./model-runtime";
 import { defaultEffort } from "./model-settings";
 import { resolveProjectTrust } from "./project-trust";
+import { providerAccounts } from "./provider-accounts";
 import { desktopResourceOptions } from "./resources";
 import { agentDir } from "./runtime-profile";
 import { initializeRuntimeTheme } from "./runtime-theme";
@@ -107,6 +115,7 @@ type Managed = {
   controller: AbortController;
   runtime?: AgentSessionRuntime;
   models?: ModelRuntime;
+  accounts: SessionAccounts;
   modelCatalog?: ModelInfo[];
   catalogSource?: readonly Model<Api>[];
   projector?: SDKProjector;
@@ -163,7 +172,12 @@ type OpenResult = {
     | { state: "ready"; address: SessionAddress }
     | Extract<OpenState, { state: "failed" | "cancelled" }>;
 };
+export type SessionAccountPersistence = {
+  read: (sessionId: string) => SessionAccounts;
+  write: (sessionId: string, accounts: SessionAccounts) => Promise<unknown>;
+};
 type Options = {
+  sessionAccounts?: SessionAccountPersistence;
   modelInfo: (model: Model<Api>) => ModelInfo;
   emit: (event: RuntimeEvent) => void;
   emitUI: (event: ExtensionUIEvent) => void;
@@ -526,6 +540,9 @@ export class SessionHost {
         seq: 0,
         openId: input.openId,
         manager,
+        accounts: validateSessionAccounts(
+          this.options.sessionAccounts?.read(address.sessionId) ?? {},
+        ),
         projector: new SDKProjector(
           manager,
           address.epoch,
@@ -593,7 +610,10 @@ export class SessionHost {
             level: "warning",
             message: `Safe mode: omitted project resources: ${trust.omitted.map((r) => r.path).join(", ")}. Trust and reload to enable them.`,
           });
-        const models = await createModelRuntime();
+        const targetId = target.sessionManager.getSessionId();
+        if (targetId !== managed.address.sessionId)
+          await this.options.sessionAccounts?.write(targetId, managed.accounts);
+        const models = await createModelRuntime(managed.accounts);
         managed.models = models;
         await this.options.configureModels?.(models);
         controller.signal.throwIfAborted();
@@ -671,6 +691,20 @@ export class SessionHost {
         const branch = target.sessionManager.getBranch();
         const enabled = (candidate: Model<Api>) =>
           isModelEnabled(candidate, this.options.disabled?.() ?? []);
+        // A saved account must never silently resume under a different identity/provider.
+        if (
+          context.model &&
+          managed.accounts[context.model.provider] &&
+          !available.some(
+            (candidate) =>
+              candidate.provider === context.model?.provider &&
+              candidate.id === context.model.modelId &&
+              enabled(candidate),
+          )
+        )
+          throw new Error(
+            "Saved account or model is unavailable. Sign in or enable that model again.",
+          );
         const model =
           (context.model
             ? available.find(
@@ -1159,6 +1193,9 @@ export class SessionHost {
     const usage = m.contextCache.value;
     return {
       model: info,
+      ...(model && m.accounts[model.provider]
+        ? { accountId: m.accounts[model.provider] }
+        : {}),
       effort: displayedEffort(
         session.thinkingLevel,
         info?.effortLevels ?? [],
@@ -1816,14 +1853,89 @@ export class SessionHost {
       return change(m);
     });
   }
-  async setModel(params: SessionAddress & { provider: string; id: string }) {
+  async setModel(
+    params: SessionAddress & {
+      provider: string;
+      id: string;
+      accountId?: string | null;
+    },
+  ) {
+    validateProviderId(params.provider);
+    if (typeof params.id !== "string" || !params.id)
+      throw new Error("Invalid model ID.");
+    if (params.accountId !== undefined && params.accountId !== null)
+      validateAccountId(params.accountId);
     return this.orderedSelection(params, async (m) => {
-      await this.applyModel(m, params.provider, params.id);
+      const previous = m.accounts[params.provider];
+      const next =
+        params.accountId === undefined
+          ? previous
+          : (params.accountId ?? undefined);
+      const changed = previous !== next;
+      const models = required(m.models);
+      const credentials = runtimeAccounts(models);
+      const session = required(m.runtime).session;
+      const oldModel = session.model;
+      const oldEffort = session.thinkingLevel;
+      if (changed) {
+        // shortcut: prohibit account changes with history until cross-account reasoning replay is verified.
+        if (
+          m.manager
+            .getEntries()
+            .some(
+              (entry) =>
+                entry.type === "message" &&
+                (entry.message.role === "user" ||
+                  entry.message.role === "assistant"),
+            )
+        )
+          throw new Error("Account changes currently require a new chat.");
+        if (next) {
+          if (!models.getProvider(params.provider)?.auth.oauth?.isSubscription)
+            throw new Error("Only subscription accounts are supported.");
+          if (!(await providerAccounts.read(next, params.provider)))
+            throw new Error("Selected account is signed out. Sign in again.");
+        }
+        credentials.select(params.provider, next ?? null);
+      }
+      try {
+        if (changed)
+          await models.refresh({
+            providers: [params.provider],
+            allowNetwork: false,
+          });
+        await this.applyModel(m, params.provider, params.id, changed);
+        if (changed) {
+          const accounts = credentials.selection();
+          await this.options.sessionAccounts?.write(
+            m.address.sessionId,
+            accounts,
+          );
+          m.accounts = accounts;
+        }
+      } catch (error) {
+        if (changed) {
+          credentials.select(params.provider, previous ?? null);
+          await models.refresh({
+            providers: [params.provider],
+            allowNetwork: false,
+          });
+          if (oldModel && session.model !== oldModel)
+            await session.setModel(oldModel);
+          session.setThinkingLevel(oldEffort);
+        }
+        throw error;
+      }
       this.publish(m);
       return this.selection(m);
     });
   }
-  private async applyModel(m: Managed, provider: string, id: string) {
+  private async applyModel(
+    m: Managed,
+    provider: string,
+    id: string,
+    strict = false,
+  ) {
     const session = required(m.runtime).session;
     const available = required(m.models).getAvailableSnapshot();
     m.modelCatalog = available.map(this.options.modelInfo);
@@ -1831,8 +1943,15 @@ export class SessionHost {
       isModelEnabled(model, this.options.disabled?.() ?? []),
     );
     const settings = session.settingsManager;
+    const requested = enabled.find(
+      (model) => model.provider === provider && model.id === id,
+    );
+    if (!requested && (strict || m.accounts[provider]))
+      throw new Error(
+        "Selected account or model is unavailable. No account fallback was used.",
+      );
     const model =
-      enabled.find((model) => model.provider === provider && model.id === id) ??
+      requested ??
       enabled.find(
         (model) =>
           model.provider === settings.getDefaultProvider() &&

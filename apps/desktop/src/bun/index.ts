@@ -35,7 +35,10 @@ import { copyImage, initImageMenu, saveImage, showImageMenu } from "./images";
 import {
   cancelAllLogins,
   cancelLogin,
+  createProviderAccount,
   logoutProvider,
+  removeProviderAccount,
+  renameProviderAccount,
   resolveLogin,
   startLogin,
 } from "./login";
@@ -59,6 +62,7 @@ import {
 } from "./pi-data";
 import {
   abortSession,
+  accountModels,
   applyModelSettings,
   availableModels,
   closeSession,
@@ -354,10 +358,18 @@ const rpc = BrowserView.defineRPC<RPCSchema>({
         desktopState.setProject(knownProject(input?.cwd, projects), input),
       openProjectFolder: (input) =>
         Utils.openPath(knownProject(input?.cwd, projects)),
-      logout: async ({ provider }) => {
+      createProviderAccount: ({ provider, label }) =>
+        createProviderAccount(provider, label),
+      renameProviderAccount: ({ provider, accountId, label }) =>
+        renameProviderAccount(provider, accountId, label),
+      removeProviderAccount: ({ provider, accountId }) =>
+        removeProviderAccount(provider, accountId),
+      accountModels: ({ provider, accountId }) =>
+        accountModels(provider, accountId),
+      logout: async ({ provider, accountId }) => {
         if (typeof provider !== "string" || !runtime.getProvider(provider))
           throw new Error("Invalid provider.");
-        await logoutProvider(provider);
+        await logoutProvider(provider, accountId);
       },
       refreshProviderModels: ({ provider }) => refreshProviderModels(provider),
       setModel: (input) => setSessionModel(input),
@@ -487,13 +499,14 @@ const rpc = BrowserView.defineRPC<RPCSchema>({
           rpc.send.projects(projects);
         })().catch(report);
       },
-      startLogin: ({ provider, method, loginId }) => {
+      startLogin: ({ provider, method, loginId, accountId }) => {
         void startLogin(
           provider,
           method,
           loginId,
           (frame) => rpc.send.loginFrame(frame),
           (url) => Utils.openExternal(url),
+          accountId,
         ).catch(report);
       },
       resolveLogin: ({ loginId, value }) => resolveLogin(loginId, value),
@@ -598,6 +611,10 @@ configureSessionHost(
     },
   },
   modelPreferences.disabled,
+  {
+    read: (id) => desktopState.value.sessions[id]?.accounts ?? {},
+    write: (id, accounts) => desktopState.setSessionAccounts(id, accounts),
+  },
 );
 let url = "views://mainview/index.html";
 if ((await Updater.localInfo.channel()) === "dev") {

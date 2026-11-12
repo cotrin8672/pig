@@ -18,11 +18,12 @@ export class AuthOperations {
     provider: string,
     controller: AbortController,
     fn: () => Promise<T>,
+    queueKey = provider,
   ) {
     const pending = this.logins.get(provider) ?? new Set<AbortController>();
     this.logins.set(provider, pending);
     pending.add(controller);
-    return this.enqueue(provider, async () => {
+    return this.enqueue(queueKey, async () => {
       try {
         controller.signal.throwIfAborted();
         return await fn();
@@ -32,10 +33,10 @@ export class AuthOperations {
       }
     });
   }
-  logout(provider: string, fn: () => Promise<void>) {
+  logout(provider: string, fn: () => Promise<void>, queueKey = provider) {
     for (const controller of this.logins.get(provider) ?? [])
       controller.abort();
-    return this.enqueue(provider, fn);
+    return this.enqueue(queueKey, fn);
   }
 }
 export const authOperations = new AuthOperations();

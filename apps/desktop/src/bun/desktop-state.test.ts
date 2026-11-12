@@ -30,6 +30,29 @@ async function fixture() {
   return join(directory, "settings", "desktop-state.json");
 }
 
+test("account selections survive flag/completion changes and reload; clearing preserves other metadata", async () => {
+  const file = await fixture();
+  const store = new DesktopStateStore(file);
+  await store.setSessionAccounts("chat", { "openai-codex": "work-id" });
+  await store.setSession("chat", { pinned: true, archived: true });
+  await store.completeSession("chat", "success");
+  await store.clearCompletion("chat");
+  expect(store.value.sessions.chat?.accounts).toEqual({
+    "openai-codex": "work-id",
+  });
+  const reloaded = new DesktopStateStore(file);
+  await reloaded.load();
+  expect(reloaded.value).toEqual(store.value);
+  expect(() =>
+    store.setSessionAccounts("chat", { "openai-codex": "../escape" }),
+  ).toThrow();
+  await expect(
+    store.setSessionAccounts("../escape", { "openai-codex": "work-id" }),
+  ).rejects.toThrow();
+  await store.setSessionAccounts("chat", {});
+  expect(store.value.sessions.chat).toEqual({ pinned: true, archived: true });
+});
+
 test("missing desktop state defaults to empty sessions without creating files", async () => {
   const file = await fixture();
   const store = new DesktopStateStore(file);

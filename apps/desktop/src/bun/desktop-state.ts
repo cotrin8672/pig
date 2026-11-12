@@ -7,6 +7,7 @@ import {
   validateUiPreferences,
 } from "../shared/desktop-state";
 import { validateProjectFlags } from "../shared/projects";
+import { validateSessionAccounts } from "../shared/provider-accounts";
 
 export class DesktopStateStore {
   value: DesktopState = { sessions: {} };
@@ -120,10 +121,25 @@ export class DesktopStateStore {
       const next = {
         ...(flags.pinned ? { pinned: true } : {}),
         ...(flags.archived ? { archived: true } : {}),
+        ...(flags.accounts ? { accounts: flags.accounts } : {}),
         ...(flags.completion ? { completion: flags.completion } : {}),
         ...(flags.readCompletionId
           ? { readCompletionId: flags.readCompletionId }
           : {}),
+      };
+      const sessions = { ...current.sessions };
+      if (Object.keys(next).length) sessions[id] = next;
+      else delete sessions[id];
+      return { ...current, sessions };
+    });
+  }
+  setSessionAccounts(id: string, value: unknown) {
+    const accounts = validateSessionAccounts(value);
+    return this.update((current) => {
+      const { accounts: _previous, ...flags } = current.sessions[id] ?? {};
+      const next = {
+        ...flags,
+        ...(Object.keys(accounts).length ? { accounts } : {}),
       };
       const sessions = { ...current.sessions };
       if (Object.keys(next).length) sessions[id] = next;

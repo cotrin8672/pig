@@ -1,9 +1,14 @@
 import { clampChatWidth } from "./chat-width";
 import { type ProjectFlags, validateProjectFlags } from "./projects";
+import {
+  type SessionAccounts,
+  validateSessionAccounts,
+} from "./provider-accounts";
 
 export interface SessionFlags {
   pinned?: boolean;
   archived?: boolean;
+  accounts?: SessionAccounts;
   completion?: { id: string; outcome: "success" | "error" };
   readCompletionId?: string;
 }
@@ -65,6 +70,9 @@ export function validateSessionFlags(value: unknown): SessionFlags {
   return {
     ...(input.pinned !== undefined ? { pinned: input.pinned } : {}),
     ...(input.archived !== undefined ? { archived: input.archived } : {}),
+    ...(input.accounts !== undefined
+      ? { accounts: validateSessionAccounts(input.accounts) }
+      : {}),
     ...(input.completion !== undefined
       ? { completion: { ...input.completion } }
       : {}),

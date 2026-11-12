@@ -6,15 +6,24 @@ import {
 } from "@earendil-works/pi-ai/providers/all";
 import { personalizeOpenRouterCatalog } from "@earendil-works/pi-ai/providers/openrouter";
 import type { ModelRuntime as SDKModelRuntime } from "@earendil-works/pi-coding-agent";
+import type { SessionAccounts } from "../shared/provider-accounts";
 import { withCodexImages } from "./codex-images";
 import { desktopConfigDir } from "./desktop-config";
 import { composeProviders } from "./model-composition";
 import { readModelConfig } from "./model-settings";
 import { FileModelsStore } from "./models-store";
+import { AccountCredentials, providerAccounts } from "./provider-accounts";
 import { withPersonalizedCatalog, withRemoteCatalog } from "./remote-catalog";
-import { ModelRuntime } from "./sdk";
+import { AuthStorage, ModelRuntime } from "./sdk";
 
+const defaultCredentials = AuthStorage.create();
 const owned = new Set<SDKModelRuntime>();
+const accountCredentials = new WeakMap<SDKModelRuntime, AccountCredentials>();
+export function runtimeAccounts(runtime: SDKModelRuntime) {
+  const credentials = accountCredentials.get(runtime);
+  if (!credentials) throw new Error("ModelRuntime is not app-owned");
+  return credentials;
+}
 const bases = new WeakMap<SDKModelRuntime, Provider[]>();
 const applied = new WeakMap<SDKModelRuntime, Map<string, Provider>>();
 const virtuals = new WeakMap<
@@ -28,13 +37,20 @@ const modelsStore = new FileModelsStore(
 );
 
 /** Distinct runtime per catalog/session; shared persistence, never shared registrations. */
-export async function createModelRuntime() {
+export async function createModelRuntime(accounts: SessionAccounts = {}) {
+  const credentials = new AccountCredentials(
+    defaultCredentials,
+    providerAccounts,
+    accounts,
+  );
   const runtime = await ModelRuntime.create({
+    credentials,
     modelsPath: null,
     modelsStore,
     refreshOnCreate: false,
     allowModelNetwork: false,
   });
+  accountCredentials.set(runtime, credentials);
   const generatedAt = getBuiltinModelDataGeneratedAt();
   const base = builtinProviders().map((builtin) => {
     const provider = withCodexImages(builtin);
