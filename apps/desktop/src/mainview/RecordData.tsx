@@ -5,7 +5,6 @@ import {
   dataText,
   rendererOrFallback,
 } from "./custom-data";
-import { useT } from "./i18n";
 
 function BasicRecord({
   record,
@@ -14,15 +13,12 @@ function BasicRecord({
   record: TranscriptRecord;
   images?: ReactNode;
 }) {
-  const t = useT();
   const view = customPresentation(record);
   if (view.hidden) return null;
   const blocks = Array.isArray(view.content) ? view.content : [view.content];
   return (
     <section className="custom-record">
-      <small>
-        {view.label === "Cancelled queued prompt" ? t.Cancelled : view.label}
-      </small>
+      <small>{view.label}</small>
       {images}
       {blocks.map((block, index) => {
         if (block == null || block?.type === "image") return null;

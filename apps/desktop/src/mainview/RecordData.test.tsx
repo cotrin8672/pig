@@ -1,9 +1,8 @@
 import { expect, test } from "bun:test";
 import { renderToStaticMarkup } from "react-dom/server";
 import type { TranscriptRecord } from "../shared/transcript";
-import { customImageSources } from "./custom-data";
+import { customImageSources, isVisibleRecord } from "./custom-data";
 import { RecordData } from "./RecordData";
-import { useStore } from "./store";
 
 const entry = {
   id: "e",
@@ -70,10 +69,7 @@ test("custom-entry content is retained without exposing raw records or hidden se
   );
   expect(metadata).toBe("");
 });
-test("cancelled queued messages show localized cancellation, plain text and attachments without internal data", () => {
-  const settings = useStore.getState().settings;
-  const initial = useStore.getInitialState();
-  const initialSettings = initial.settings;
+test("cancelled queued messages are excluded from the conversation without leaving text, attachments or empty cards", () => {
   const record: TranscriptRecord = {
     ...entry,
     id: "recovered:internal-id",
@@ -92,29 +88,17 @@ test("cancelled queued messages show localized cancellation, plain text and atta
       details: { requestId: "internal-request" },
     },
   };
-  try {
-    for (const [language, label] of [
-      ["ja", "キャンセル済み"],
-      ["en", "Cancelled"],
-    ] as const) {
-      initial.settings = { ...settings, language };
-      useStore.setState({ settings: initial.settings });
-      const html = renderToStaticMarkup(
+  for (const entryId of ["saved", undefined]) {
+    const message = { ...record, entryId };
+    expect(isVisibleRecord(message)).toBe(false);
+    expect(
+      renderToStaticMarkup(
         <RecordData
-          record={record}
+          record={message}
           images={<img src="data:image/png;base64,YWJj" alt="" />}
         />,
-      );
-      expect(html).toContain(label);
-      expect(html).toContain("楽観的UIの観点も含めて\n&lt;script&gt;");
-      expect(html).toContain('src="data:image/png;base64,YWJj"');
-      expect(html).not.toMatch(
-        /Cancelled queued prompt|internal-id|internal-request|Raw record|Details|<pre|<details|<script>|&quot;type&quot;/,
-      );
-    }
-  } finally {
-    initial.settings = initialSettings;
-    useStore.setState({ settings });
+      ),
+    ).toBe("");
   }
 });
 test("nested custom images use inert approved raster MIME data URLs only", () => {

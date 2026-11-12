@@ -48,7 +48,8 @@ export function customPresentation(record: TranscriptRecord) {
       label: message.customType,
       content: message.content,
       details: message.details ?? record.details,
-      hidden: !message.display,
+      hidden:
+        !message.display || message.customType === "Cancelled queued prompt",
     };
   return {
     label: record.customType ?? message.role,
