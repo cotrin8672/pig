@@ -40,6 +40,7 @@ import {
   interleaveExtensionNotices,
 } from "./extension-notices";
 import { workingLabel } from "./extension-status";
+import { fontFamilyValue } from "./font-family";
 import { getT, useT } from "./i18n";
 import { DisclosureScope, LazyDetails } from "./LazyDetails";
 import { Markdown, UserMessage } from "./MessageContent";
@@ -93,6 +94,23 @@ function isWindowDragTarget(target: EventTarget) {
 export function App() {
   const t = useT();
   const state = useStore(useShallow(selectAppView));
+  const fontFamily = useStore((state) => state.settings.fontFamily);
+  const codeFontFamily = useStore((state) => state.settings.codeFontFamily);
+  useLayoutEffect(() => {
+    const style = document.documentElement.style;
+    style.setProperty(
+      "--font-sans",
+      fontFamilyValue(fontFamily, "var(--font-sans-default)"),
+    );
+    style.setProperty(
+      "--font-mono",
+      fontFamilyValue(codeFontFamily, "var(--font-mono-default)"),
+    );
+    return () => {
+      style.removeProperty("--font-sans");
+      style.removeProperty("--font-mono");
+    };
+  }, [fontFamily, codeFontFamily]);
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [startupFailed, setStartupFailed] = useState(false);
   const initialize = useCallback(() => {

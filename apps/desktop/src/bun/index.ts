@@ -30,6 +30,7 @@ import {
 } from "./desktop-config";
 import { DesktopStateStore } from "./desktop-state";
 import { flushDraftsBeforeClose } from "./draft-close";
+import { listFontFamilies } from "./fonts";
 import { copyImage, initImageMenu, saveImage, showImageMenu } from "./images";
 import {
   cancelAllLogins,
@@ -259,6 +260,7 @@ const rpc = BrowserView.defineRPC<RPCSchema>({
       storeAttachment: ({ name, data }) => storeFile(name, data),
       appearance: () => appearance,
       settings: () => settings,
+      listFontFamilies,
       bootstrap: async () => {
         for (const message of modelErrors.splice(0)) report(message);
         const [providers, models, utilities, modelOverrides] =
@@ -483,9 +485,7 @@ const rpc = BrowserView.defineRPC<RPCSchema>({
           method,
           loginId,
           (frame) => rpc.send.loginFrame(frame),
-          (url) => {
-            Utils.openExternal(url);
-          },
+          (url) => Utils.openExternal(url),
         ).catch(report);
       },
       resolveLogin: ({ loginId, value }) => resolveLogin(loginId, value),

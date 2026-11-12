@@ -246,6 +246,8 @@ export type RPCSchema = {
       appearance: { params: void; response: Appearance };
       // biome-ignore lint/suspicious/noConfusingVoidType: Electrobun's parameterless RPC convention.
       settings: { params: void; response: Settings };
+      // biome-ignore lint/suspicious/noConfusingVoidType: Electrobun's parameterless RPC convention.
+      listFontFamilies: { params: void; response: string[] };
       listSessions: { params: { cwd: string }; response: SessionInfo[] };
       renameSession: {
         params: SessionTarget & { name: string };

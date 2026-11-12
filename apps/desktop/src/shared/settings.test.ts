@@ -50,6 +50,8 @@ test("utility selections validate independently, preserve settings, and clear", 
     ...old,
     shell: "git-bash",
     blockImages: false,
+    fontFamily: "",
+    codeFontFamily: "",
     imageGenerationModel: null,
     classificationModel: null,
   });
@@ -66,6 +68,8 @@ test("utility selections validate independently, preserve settings, and clear", 
     ...old,
     shell: "git-bash",
     blockImages: false,
+    fontFamily: "",
+    codeFontFamily: "",
     imageGenerationModel,
     classificationModel,
   });
@@ -97,6 +101,34 @@ test("utility selections validate independently, preserve settings, and clear", 
     ]) {
       expect(() => validateSettings({ [field]: value })).toThrow();
     }
+  }
+});
+
+test("font families default, normalize, validate, and reset independently", () => {
+  const selected = patchSettings(defaultSettings, {
+    fontFamily: "  游ゴシック  ",
+    codeFontFamily: "Cascadia Code",
+  });
+  expect(selected.fontFamily).toBe("游ゴシック");
+  expect(selected.codeFontFamily).toBe("Cascadia Code");
+  expect(patchSettings(selected, { language: "ja" }).fontFamily).toBe(
+    "游ゴシック",
+  );
+  expect(patchSettings(selected, { fontFamily: "" })).toEqual({
+    ...selected,
+    fontFamily: "",
+  });
+  for (const field of ["fontFamily", "codeFontFamily"]) {
+    for (const value of [
+      null,
+      123,
+      [],
+      {},
+      "x".repeat(257),
+      "bad\nfont",
+      "bad\u0000font",
+    ])
+      expect(() => validateSettings({ [field]: value })).toThrow();
   }
 });
 

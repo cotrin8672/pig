@@ -27,6 +27,8 @@ test("missing and corrupt settings default without overwriting; valid saves roun
       ...old,
       shell: "git-bash",
       blockImages: false,
+      fontFamily: "",
+      codeFontFamily: "",
       imageGenerationModel: null,
       classificationModel: null,
     });
@@ -35,6 +37,8 @@ test("missing and corrupt settings default without overwriting; valid saves roun
       contextDisplay: "used",
       shell: "powershell",
       blockImages: true,
+      fontFamily: "游ゴシック",
+      codeFontFamily: "Cascadia Code",
       keybindings: { "settings.open": null },
       imageGenerationModel: { provider: "disconnected-image", id: "image-1" },
       classificationModel: { provider: "typesafe", id: "jev-latest" },

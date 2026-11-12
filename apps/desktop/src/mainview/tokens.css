@@ -101,9 +101,11 @@
   --radius-full: 9999px;
   --radius-round: 50%;
 
-  --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
-  --font-mono: ui-monospace, "SFMono-Regular", "SF Mono", Menlo, Consolas, "Liberation Mono",
+  --font-sans-default: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+  --font-mono-default: ui-monospace, "SFMono-Regular", "SF Mono", Menlo, Consolas, "Liberation Mono",
     monospace;
+  --font-sans: var(--font-sans-default);
+  --font-mono: var(--font-mono-default);
 
   /* Type ramp (Codex metrics; "-plus" = half-step between named sizes) */
   --text-3xs: calc(10.5px * var(--font-scale));

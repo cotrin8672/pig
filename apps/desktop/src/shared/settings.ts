@@ -10,6 +10,8 @@ export interface Settings {
   contextDisplay: "remaining" | "used";
   shell: "git-bash" | "powershell";
   blockImages: boolean;
+  fontFamily: string;
+  codeFontFamily: string;
   keybindings: KeyOverrides;
   imageGenerationModel: UtilityModelSelection | null;
   classificationModel: UtilityModelSelection | null;
@@ -20,6 +22,8 @@ export const defaultSettings: Settings = {
   contextDisplay: "remaining",
   shell: "git-bash",
   blockImages: false,
+  fontFamily: "",
+  codeFontFamily: "",
   keybindings: {},
   imageGenerationModel: null,
   classificationModel: null,
@@ -81,11 +85,25 @@ export function validateSettings(value: unknown): Settings {
     contextDisplay,
     shell,
     blockImages,
+    fontFamily: validateFontFamily(input.fontFamily),
+    codeFontFamily: validateFontFamily(input.codeFontFamily),
     keybindings,
     imageGenerationModel: validateModelSelection(input.imageGenerationModel),
     classificationModel: validateModelSelection(input.classificationModel),
   };
 }
+function validateFontFamily(value: unknown): string {
+  if (value === undefined) return "";
+  if (
+    typeof value !== "string" ||
+    value.length > 256 ||
+    // biome-ignore lint/suspicious/noControlCharactersInRegex: Reject control characters in saved CSS family names.
+    /[\u0000-\u001f\u007f]/.test(value)
+  )
+    throw new Error("Invalid font family.");
+  return value.trim();
+}
+
 export function patchSettings(
   current: Settings,
   patch: SettingsPatch,

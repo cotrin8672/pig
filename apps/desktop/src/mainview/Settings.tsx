@@ -20,6 +20,7 @@ import {
 import { AppUpdateSettings } from "./AppUpdateSettings";
 import { ChatRendererSettings } from "./ChatRendererSettings";
 import { ContentPage } from "./ContentPage";
+import { FontSettings } from "./FontSettings";
 import { useT } from "./i18n";
 import { PiDataSettings } from "./PiDataSettings";
 import { updateAppearance, updateSettings } from "./rpc";
@@ -182,6 +183,7 @@ export function Settings() {
           {category === "appearance" && (
             <>
               <AppearanceSettings />
+              <FontSettings />
               <ChatRendererSettings />
             </>
           )}
