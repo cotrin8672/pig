@@ -91,6 +91,7 @@ import {
   removeSessionFile,
   resolveSessionFile,
   sameSessionPath,
+  sessionDirFor,
 } from "./session-files";
 import { currentSettings } from "./settings";
 import { desktopShellTool } from "./shell-tools";
@@ -504,9 +505,10 @@ export class SessionHost {
         open.state = { state: "ready", snapshot };
         return snapshot;
       }
+      // open() derives the directory from the file, which matches sessionDirFor.
       const manager = file
         ? SessionManager.open(file)
-        : SessionManager.create(input.cwd);
+        : SessionManager.create(input.cwd, await sessionDirFor(input.cwd));
       controller.signal.throwIfAborted();
       const address = this.address(manager.getSessionId());
       this.failedHistory.delete(address.sessionId);
@@ -581,7 +583,7 @@ export class SessionHost {
           managed.address,
           this.broker,
           transitionSignal,
-          agentDir,
+          desktopConfigDir,
           controller.signal,
         );
         if (!trust.trusted)
@@ -632,7 +634,7 @@ export class SessionHost {
             managed.address,
             this.broker,
             managed.transition?.signal ?? controller.signal,
-            agentDir,
+            desktopConfigDir,
             controller.signal,
           );
           services.settingsManager.setProjectTrusted(nextTrust.trusted);
@@ -931,7 +933,9 @@ export class SessionHost {
         fork: (entryId, options) =>
           this.transition(m, () => required(m.runtime).fork(entryId, options)),
         switchSession: async (path, options) => {
-          const known = (await SessionManager.list(m.cwd)).find(
+          const known = (
+            await SessionManager.list(m.cwd, await sessionDirFor(m.cwd))
+          ).find(
             (info) =>
               sameSessionPath(info.path, path) &&
               sameSessionPath(info.cwd, m.cwd),

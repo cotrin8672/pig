@@ -1,9 +1,10 @@
-import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rename, unlink, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import type { ModelOverride } from "../shared/model-overrides";
 import { modelKey } from "../shared/models";
 import type { Effort } from "../shared/rpc-schema";
 import { desktopConfigDir } from "./desktop-config";
+import { agentDir } from "./runtime-profile";
 
 type ModelsJson = {
   providers?: Record<
@@ -12,7 +13,17 @@ type ModelsJson = {
   >;
 } & Record<string, unknown>;
 
-export const modelsJsonPath = () => join(desktopConfigDir, "models.json");
+/** Pi's standard models.json, shared with the CLI. */
+export const modelsJsonPath = () => join(agentDir, "models.json");
+
+async function rawText(file: string) {
+  try {
+    return await readFile(file, "utf8");
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined;
+    throw error;
+  }
+}
 
 export async function readModelsJson(
   file = modelsJsonPath(),
@@ -28,7 +39,9 @@ export async function readModelsJson(
     const parsed = JSON.parse(text.replace(/^\uFEFF/, ""));
     if (parsed && typeof parsed === "object" && !Array.isArray(parsed))
       return parsed;
-  } catch {}
+  } catch {
+    /* Not plain JSON: refuse below instead of rewriting. */
+  }
   // pi accepts JSONC; rewriting it would drop the user's comments.
   throw new Error(
     `Cannot edit ${file}: it is not plain JSON (comments?). Edit it manually.`,
@@ -67,6 +80,7 @@ export function writeModelOverride(
   file = modelsJsonPath(),
 ) {
   const run = queue.then(async () => {
+    const before = await rawText(file);
     const json = await readModelsJson(file);
     json.providers ??= {};
     json.providers[provider] ??= {};
@@ -80,6 +94,11 @@ export function writeModelOverride(
     await mkdir(dirname(file), { recursive: true });
     const temporary = `${file}.${crypto.randomUUID()}.tmp`;
     await writeFile(temporary, `${JSON.stringify(json, null, 2)}\n`);
+    // The CLI or an editor may share this file; never replace a newer version.
+    if ((await rawText(file)) !== before) {
+      await unlink(temporary);
+      throw new Error(`${file} changed on disk; reload and retry`);
+    }
     await rename(temporary, file);
   });
   queue = run.catch(() => {});

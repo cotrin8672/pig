@@ -13,7 +13,7 @@ import { dirname, join, resolve } from "node:path";
 import type { UIRequest } from "../shared/extension-ui";
 import type { SessionAddress } from "../shared/runtime-contract";
 import { desktopConfigDir } from "./desktop-config";
-import { agentDir } from "./runtime-profile";
+import { agentDir, legacyAgentDir } from "./runtime-profile";
 import type { UIRequestBroker } from "./ui-request-broker";
 
 const once = new WeakMap<AbortSignal, Map<string, string>>();
@@ -101,7 +101,7 @@ export async function resolveProjectTrust(
   address: SessionAddress,
   broker: UIRequestBroker,
   signal: AbortSignal,
-  directory = agentDir,
+  directory = desktopConfigDir,
   approvalScope = signal,
 ) {
   const resources = await discoverProjectResources(cwd);
@@ -149,7 +149,18 @@ export async function resolveProjectTrust(
     omitted: reply.value === "safe" ? resources : [],
   };
 }
+/** pig-only data lives under ~/.config/pig, not in Pi's shared agent dir.
+ * Grants made by v0.2/v0.3 (stored in the old private profile) still count.
+ */
 async function readTrust(directory: string) {
+  if (resolve(directory) !== resolve(desktopConfigDir))
+    return readTrustFile(directory);
+  return {
+    ...(await readTrustFile(legacyAgentDir)),
+    ...(await readTrustFile(directory)),
+  };
+}
+async function readTrustFile(directory: string) {
   try {
     const value: unknown = JSON.parse(
       await readFile(join(directory, "desktop-trust.json"), "utf8"),
@@ -167,10 +178,16 @@ async function readTrust(directory: string) {
   return {} as Record<string, string>;
 }
 /** Folder-scoped like VS Code/Claude Code: editing project files does not revoke trust. */
-export async function isProjectTrusted(cwd: string, directory = agentDir) {
+export async function isProjectTrusted(
+  cwd: string,
+  directory = desktopConfigDir,
+) {
   return (await readTrust(directory))[await realpath(cwd)] !== undefined;
 }
-export async function persistProjectTrust(cwd: string, directory = agentDir) {
+export async function persistProjectTrust(
+  cwd: string,
+  directory = desktopConfigDir,
+) {
   const saved = await readTrust(directory);
   saved[await realpath(cwd)] = "trusted";
   await mkdir(directory, { recursive: true });

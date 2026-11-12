@@ -4,7 +4,23 @@ import { resolve } from "node:path";
 import { createInterface } from "node:readline";
 import type { FileEntry } from "@earendil-works/pi-coding-agent";
 import type { SessionInfo } from "../shared/rpc-schema";
-import { SessionManager } from "./sdk";
+import { isProjectTrusted } from "./project-trust";
+import { agentDir, expandHome } from "./runtime-profile";
+import { SessionManager, SettingsManager } from "./sdk";
+
+/** Pi CLI precedence (without --session-dir): PI_CODING_AGENT_SESSION_DIR,
+ * then settings sessionDir; undefined selects the SDK per-cwd default.
+ * Every create/list/find/open must use this same value.
+ */
+export async function sessionDirFor(cwd: string) {
+  const env = process.env.PI_CODING_AGENT_SESSION_DIR;
+  if (env) return expandHome(env);
+  // A missing/unreadable cwd cannot be trusted; fall back to global settings only.
+  const projectTrusted = await isProjectTrusted(cwd).catch(() => false);
+  return SettingsManager.create(cwd, agentDir, {
+    projectTrusted,
+  }).getSessionDir();
+}
 
 export function validSessionId(id: string) {
   if (
@@ -26,7 +42,7 @@ export function sameSessionPath(left: string, right: string) {
   return key(left) === key(right);
 }
 export async function listSessionFiles(cwd: string): Promise<SessionInfo[]> {
-  return (await SessionManager.list(cwd))
+  return (await SessionManager.list(cwd, await sessionDirFor(cwd)))
     .filter((info) => sameSessionPath(info.cwd, cwd))
     .map((info) => ({
       id: info.id,
@@ -37,7 +53,7 @@ export async function listSessionFiles(cwd: string): Promise<SessionInfo[]> {
 }
 export async function resolveSessionFile(cwd: string, id: string) {
   validSessionId(id);
-  const file = SessionManager.findById(cwd, id);
+  const file = SessionManager.findById(cwd, id, await sessionDirFor(cwd));
   if (file) {
     const stream = createReadStream(file, { encoding: "utf8" });
     const lines = createInterface({ input: stream, crlfDelay: Infinity });

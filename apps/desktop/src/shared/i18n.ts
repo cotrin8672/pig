@@ -491,6 +491,19 @@ export const en = {
   "Comment on this passage…": "Comment on this passage…",
   "Add comment": "Add comment",
   "Remove comment": "Remove comment",
+  "Opening your browser…": "Opening your browser…",
+  "Couldn't open your browser. Copy the link and open it manually.":
+    "Couldn't open your browser. Copy the link and open it manually.",
+  piDataTitle: "Pi data",
+  piDataAgentDir: "Agent directory",
+  piDataSessions: "Chats",
+  piDataModels: "Models",
+  piDataState: (state: "missing" | "unreadable" | "invalid") =>
+    ({
+      missing: "not found",
+      unreadable: "could not be read",
+      invalid: "unrecognized format; left untouched",
+    })[state],
 };
 type Dictionary = { [K in keyof typeof en]: (typeof en)[K] };
 export const ja: Dictionary = {
@@ -980,6 +993,19 @@ export const ja: Dictionary = {
   "Comment on this passage…": "この部分へのコメント…",
   "Add comment": "追加",
   "Remove comment": "コメントを削除",
+  "Opening your browser…": "ブラウザーを開いています…",
+  "Couldn't open your browser. Copy the link and open it manually.":
+    "ブラウザーを開けませんでした。リンクをコピーして手動で開いてください。",
+  piDataTitle: "Pi のデータ",
+  piDataAgentDir: "エージェントディレクトリ",
+  piDataSessions: "チャット",
+  piDataModels: "モデル",
+  piDataState: (state) =>
+    ({
+      missing: "見つかりません",
+      unreadable: "読み取れませんでした",
+      invalid: "形式を認識できません（変更していません）",
+    })[state],
 };
 export function dictionary(language: Settings["language"]): Dictionary {
   return language === "ja" ? ja : en;

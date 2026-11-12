@@ -21,6 +21,7 @@ import { AppUpdateSettings } from "./AppUpdateSettings";
 import { ChatRendererSettings } from "./ChatRendererSettings";
 import { ContentPage } from "./ContentPage";
 import { useT } from "./i18n";
+import { PiDataSettings } from "./PiDataSettings";
 import { updateAppearance, updateSettings } from "./rpc";
 import { useStore } from "./store";
 import "./settings.css";
@@ -185,7 +186,12 @@ export function Settings() {
             </>
           )}
           {category === "keyboard" && <KeyboardSettings />}
-          {category === "updates" && <AppUpdateSettings />}
+          {category === "updates" && (
+            <>
+              <AppUpdateSettings />
+              <PiDataSettings />
+            </>
+          )}
         </section>
       </div>
     </ContentPage>

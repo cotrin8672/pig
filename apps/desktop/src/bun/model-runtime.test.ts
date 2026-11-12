@@ -38,7 +38,7 @@ test("user-only catalog and same-cwd/different-cwd SDK ModelRuntimes isolate pro
       expect(B.getModel("workspace-fixture","b-model")).toBeDefined();
       expect(C.getModel("workspace-fixture","a-model")).toBeDefined();
       expect(app.runtime.getProvider("workspace-fixture")).toBeUndefined();
-      await writeFile(join(global,"pi-agent/auth.json"),JSON.stringify({"workspace-fixture":{type:"api_key",key:"fixture-only"}}));
+      await mkdir(join(home,".pi/agent"),{recursive:true}); await writeFile(join(home,".pi/agent/auth.json"),JSON.stringify({"workspace-fixture":{type:"api_key",key:"fixture-only"}}));
       await app.refreshModels({providers:["workspace-fixture"],allowNetwork:false});
       expect((await A.getAvailable("workspace-fixture")).length).toBe(1); expect((await B.getAvailable("workspace-fixture")).length).toBe(1);
       await rm(join(a,".pi/extensions/provider.ts"));
@@ -54,7 +54,14 @@ test("user-only catalog and same-cwd/different-cwd SDK ModelRuntimes isolate pro
     `;
     const child = Bun.spawn([process.execPath, "--eval", script], {
       cwd: join(import.meta.dir, "../.."),
-      env: { ...process.env, HOME: home, USERPROFILE: home, PI_OFFLINE: "1" },
+      env: {
+        ...process.env,
+        PI_CODING_AGENT_DIR: "",
+        PI_CODING_AGENT_SESSION_DIR: "",
+        HOME: home,
+        USERPROFILE: home,
+        PI_OFFLINE: "1",
+      },
       stdout: "pipe",
       stderr: "pipe",
     });

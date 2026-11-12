@@ -1,5 +1,3 @@
-import "./runtime-profile";
-// Dynamic import is intentional: SDK config reads PI_CODING_AGENT_DIR on import.
 export const {
   ModelRuntime,
   SessionManager,

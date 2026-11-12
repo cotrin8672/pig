@@ -191,12 +191,21 @@ export interface SlashCommand {
 }
 
 import type { AppUpdateState } from "./app-update";
+import type { PiDataImportResult, PiDataReport } from "./pi-data";
 
 export type RPCSchema = {
   bun: {
     requests: {
       // biome-ignore lint/suspicious/noConfusingVoidType: Electrobun convention.
       getAppUpdate: { params: void; response: AppUpdateState };
+      // biome-ignore lint/suspicious/noConfusingVoidType: Electrobun convention.
+      getPiData: { params: void; response: PiDataReport };
+      importLegacyAuth: {
+        params: { file: string; providers: string[] };
+        response: PiDataImportResult;
+      };
+      // biome-ignore lint/suspicious/noConfusingVoidType: Electrobun convention.
+      importLegacySessions: { params: void; response: PiDataImportResult };
       getChatRendererBundle: {
         // biome-ignore lint/suspicious/noConfusingVoidType: Electrobun convention.
         params: void;

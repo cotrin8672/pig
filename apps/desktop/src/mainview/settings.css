@@ -55,6 +55,39 @@
   min-width: 0;
   overflow-wrap: anywhere;
 }
+.settings-group-title {
+  margin: 28px 0 10px;
+  color: var(--ds-text-muted);
+  font-size: var(--text-sm);
+  font-weight: var(--font-weight-medium);
+}
+.settings-path {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: right;
+  color: var(--ds-text-muted);
+  font-size: var(--text-sm);
+}
+.settings-row:has(> .settings-path) {
+  grid-template-columns: auto minmax(0, 1fr);
+}
+.app-update-version {
+  font-variant-numeric: tabular-nums;
+  color: var(--ds-text-secondary);
+}
+.app-update-status {
+  margin-top: 2px;
+  color: var(--ds-text-muted);
+  font-size: var(--text-sm);
+}
+.app-update-status:empty {
+  display: none;
+}
+.app-update-status[data-error] {
+  color: var(--ds-error);
+}
 .settings-select {
   position: relative;
   width: 168px;

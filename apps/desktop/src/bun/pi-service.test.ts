@@ -4,18 +4,34 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
+/** The parent may run under a Pi harness; children must resolve the default profile. */
+function piEnv() {
+  const env = { ...process.env };
+  delete env.PI_CODING_AGENT_DIR;
+  delete env.PI_CODING_AGENT_SESSION_DIR;
+  return env;
+}
+
 // Subprocess isolation is required before importing profile/bootstrap/catalog.
-test("application uses the fixed SDK profile and preserves model/auth helpers", async () => {
+test("application uses the standard Pi profile and preserves model/auth helpers", async () => {
   const home = await mkdtemp(join(tmpdir(), "pig-app-sdk-"));
   try {
     const script = `
       import { expect } from "bun:test";
       import { join } from "node:path";
+
+/** The parent may run under a Pi harness; children must resolve the default profile. */
+function piEnv() {
+  const env = { ...process.env };
+  delete env.PI_CODING_AGENT_DIR;
+  delete env.PI_CODING_AGENT_SESSION_DIR;
+  return env;
+}
       import { fauxProvider, fauxAssistantMessage } from "@earendil-works/pi-ai";
       import * as app from ${JSON.stringify(new URL("./pi-service.ts", import.meta.url).href)};
       import { SessionHost } from ${JSON.stringify(new URL("./session-host.ts", import.meta.url).href)};
       expect((await app.utilityModels()).imageModels.some(m => m.provider === "openai-codex")).toBe(false);
-      await Bun.write(join(${JSON.stringify(home)}, ".config/pig/pi-agent/auth.json"), JSON.stringify({"openai-codex": {type: "oauth", access: "test-only", refresh: "test-only", expires: Date.now() + 3600000, accountId: "test-account"}}));
+      await Bun.write(join(${JSON.stringify(home)}, ".pi/agent/auth.json"), JSON.stringify({"openai-codex": {type: "oauth", access: "test-only", refresh: "test-only", expires: Date.now() + 3600000, accountId: "test-account"}}));
       expect((await app.utilityModels()).imageModels.filter(m => m.provider === "openai-codex").length).toBe(2);
       await app.runtime.logout("openai-codex");
       const faux = fauxProvider({tokensPerSecond: Infinity});
@@ -63,7 +79,7 @@ test("application uses the fixed SDK profile and preserves model/auth helpers", 
     `;
     const child = Bun.spawn([process.execPath, "--eval", script], {
       cwd: join(import.meta.dir, "../.."),
-      env: { ...process.env, HOME: home, USERPROFILE: home, PI_OFFLINE: "1" },
+      env: { ...piEnv(), HOME: home, USERPROFILE: home, PI_OFFLINE: "1" },
       stdout: "pipe",
       stderr: "pipe",
     });
@@ -73,14 +89,11 @@ test("application uses the fixed SDK profile and preserves model/auth helpers", 
       new Response(child.stderr).text(),
     ]);
     expect({ code, stdout, stderr }).toMatchObject({ code: 0 });
-    expect(
-      existsSync(join(home, ".config", "pig", "pi-agent", "sessions")),
-    ).toBe(true);
-    expect(
-      existsSync(join(home, ".config", "pig", "pi-agent", "auth.json")),
-    ).toBe(true);
+    expect(existsSync(join(home, ".pi", "agent", "sessions"))).toBe(true);
+    expect(existsSync(join(home, ".pi", "agent", "auth.json"))).toBe(true);
     expect(existsSync(join(home, ".config", "pig", "auth.json"))).toBe(false);
-    expect(existsSync(join(home, ".pi", "agent"))).toBe(false);
+    // pig must not create its own private Pi profile any more.
+    expect(existsSync(join(home, ".config", "pig", "pi-agent"))).toBe(false);
   } finally {
     await rm(home, { recursive: true, force: true });
   }
@@ -95,6 +108,14 @@ test("OpenAI API uses SDK credential precedence and mirrors the ChatGPT catalog"
       import { expect } from "bun:test";
       import { writeFile } from "node:fs/promises";
       import { join } from "node:path";
+
+/** The parent may run under a Pi harness; children must resolve the default profile. */
+function piEnv() {
+  const env = { ...process.env };
+  delete env.PI_CODING_AGENT_DIR;
+  delete env.PI_CODING_AGENT_SESSION_DIR;
+  return env;
+}
       const home = ${JSON.stringify(home)};
       process.env.OPENAI_API_KEY = "ambient-openai";
       const app = await import(${JSON.stringify(new URL("./pi-service.ts", import.meta.url).href)});
@@ -133,7 +154,7 @@ test("OpenAI API uses SDK credential precedence and mirrors the ChatGPT catalog"
       await app.refreshModels({allowNetwork: false});
       mirror();
       expect(app.runtime.getProvider("openai-api").auth.oauth).toBeUndefined();
-      const configFile = join(home, ".config", "pig", "models.json");
+      const configFile = join(home, ".pi", "agent", "models.json");
       await writeFile(configFile, JSON.stringify({providers: {"openai-api": {modelOverrides: {[base.id]: {name: "API-only override"}}}}}));
       await app.refreshModels({providers: ["openai-api"], allowNetwork: false});
       expect(app.runtime.getModel("openai-api", base.id).name).toBe("API-only override");
@@ -150,7 +171,7 @@ test("OpenAI API uses SDK credential precedence and mirrors the ChatGPT catalog"
     `;
     const child = Bun.spawn([process.execPath, "--eval", script], {
       cwd: join(import.meta.dir, "../.."),
-      env: { ...process.env, HOME: home, USERPROFILE: home, PI_OFFLINE: "1" },
+      env: { ...piEnv(), HOME: home, USERPROFILE: home, PI_OFFLINE: "1" },
       stdout: "pipe",
       stderr: "pipe",
     });
@@ -173,7 +194,15 @@ test("models.json composes app configuration and malformed config reports an err
         import { expect } from "bun:test";
         import { mkdir, writeFile } from "node:fs/promises";
         import { join } from "node:path";
-        const dir = join(${JSON.stringify(home)}, ".config", "pig");
+
+/** The parent may run under a Pi harness; children must resolve the default profile. */
+function piEnv() {
+  const env = { ...process.env };
+  delete env.PI_CODING_AGENT_DIR;
+  delete env.PI_CODING_AGENT_SESSION_DIR;
+  return env;
+}
+        const dir = join(${JSON.stringify(home)}, ".pi", "agent");
         await mkdir(dir, {recursive: true});
         const config = {providers: {local: {api: "openai-completions", baseUrl: "http://localhost:1234", apiKey: "literal", models: [{id: "custom"}]}}};
         await writeFile(join(dir, "models.json"), ${invalid} ? '{"providers":[]}' : '// JSONC is supported\\n' + JSON.stringify(config));
@@ -196,7 +225,7 @@ test("models.json composes app configuration and malformed config reports an err
       `;
       const child = Bun.spawn([process.execPath, "--eval", script], {
         cwd: join(import.meta.dir, "../.."),
-        env: { ...process.env, HOME: home, USERPROFILE: home, PI_OFFLINE: "1" },
+        env: { ...piEnv(), HOME: home, USERPROFILE: home, PI_OFFLINE: "1" },
         stdout: "pipe",
         stderr: "pipe",
       });

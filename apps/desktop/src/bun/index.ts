@@ -1,4 +1,3 @@
-import "./runtime-profile";
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import Electrobun, {
@@ -53,6 +52,11 @@ import {
   searchPackages,
 } from "./packages";
 import {
+  importLegacyAuth,
+  importLegacySessions,
+  piDataReport,
+} from "./pi-data";
+import {
   abortSession,
   applyModelSettings,
   availableModels,
@@ -68,6 +72,7 @@ import {
   modelInfo,
   openSession,
   promptSession,
+  refreshModels,
   refreshProviderModels,
   refreshUserCatalog,
   renameSession,
@@ -79,10 +84,13 @@ import {
   setSessionModel,
   utilityModels,
 } from "./pi-service";
+import { agentDir, agentDirSource } from "./runtime-profile";
 import { validateSessionScope } from "./session-scope";
 import { loadSettings, saveSettings } from "./settings";
 
 await prepareDesktopConfig(Utils.paths.userData);
+// Paths only (never values): GUI env can differ from the user's shell.
+console.info(`Pi agent directory: ${agentDir} (${agentDirSource})`);
 const chatRendererLoader = new ChatRendererLoader(
   join(desktopConfigDir, "chat-renderers.tsx"),
 );
@@ -206,6 +214,20 @@ const rpc = BrowserView.defineRPC<RPCSchema>({
   handlers: {
     requests: {
       getAppUpdate: () => appUpdater.info(),
+      getPiData: () => piDataReport(),
+      importLegacyAuth: async ({ file, providers }) => {
+        if (
+          typeof file !== "string" ||
+          !Array.isArray(providers) ||
+          !providers.every((id) => typeof id === "string")
+        )
+          throw new Error("Invalid import request.");
+        const result = await importLegacyAuth(file, providers);
+        if (result.copied)
+          await refreshModels({ providers, allowNetwork: false });
+        return result;
+      },
+      importLegacySessions: () => importLegacySessions(),
       getChatRendererBundle: () => chatRendererLoader.load(),
       searchPackages: (input) => searchPackages(input),
       packagePreviews: (input) => packagePreviews(input),
