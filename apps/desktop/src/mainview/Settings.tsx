@@ -207,7 +207,6 @@ function KeyboardSettings() {
     "navigation.back": t.Back,
     "navigation.forward": t.Forward,
     "settings.open": t["Open settings"],
-    "composer.send": t.Send,
     "composer.queue": t["Queue follow-up"],
     "composer.steer": t["Steer response"],
     "composer.newline": t["Insert newline"],

@@ -45,35 +45,40 @@ test("overrides preserve defaults, null disables and deletion resets", () => {
   expect(resolveBindings({})["settings.open"]).toBe("Ctrl+,");
 });
 
-test("composer defaults distinguish send, queue, steering and newline with exact modifiers", () => {
-  expect(composerAction(event("Enter"), {})).toBe("composer.send");
+test("composer has only newline, queue and steering with exact modifiers", () => {
+  expect(composerAction(event("Enter"), {})).toBe("composer.newline");
   expect(composerAction(event("Enter", { shiftKey: true }), {})).toBe(
     "composer.queue",
   );
   expect(composerAction(event("Enter", { ctrlKey: true }), {})).toBe(
     "composer.steer",
   );
-  expect(composerAction(event("Enter", { altKey: true }), {})).toBe(
-    "composer.newline",
-  );
+  expect(composerAction(event("Enter", { altKey: true }), {})).toBeUndefined();
   expect(composerAction(event("Enter", { metaKey: true }), {})).toBeUndefined();
   expect(
     composerAction(event("Enter", { ctrlKey: true, shiftKey: true }), {}),
   ).toBeUndefined();
   expect(
-    composerAction(event("Enter"), { "composer.send": null }),
+    composerAction(event("Enter"), { "composer.newline": null }),
   ).toBeUndefined();
   expect(
-    composerAction(event("Enter"), {
-      "composer.send": "Ctrl+S",
-      "composer.newline": "Enter",
+    composerAction(event("Enter"), { "composer.newline": "Ctrl+J" }),
+  ).toBeUndefined();
+  expect(
+    composerAction(event("j", { ctrlKey: true }), {
+      "composer.newline": "Ctrl+J",
     }),
   ).toBe("composer.newline");
   expect(
     composerAction(event("s", { ctrlKey: true }), {
-      "composer.send": "Ctrl+S",
+      "composer.steer": "Ctrl+S",
     }),
-  ).toBe("composer.send");
+  ).toBe("composer.steer");
+  expect(
+    Object.keys(defaultBindings).filter((action) =>
+      action.startsWith("composer."),
+    ),
+  ).toHaveLength(3);
 });
 
 test("captured punctuation and whitespace round trip through normalization", () => {

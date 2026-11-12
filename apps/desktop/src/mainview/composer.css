@@ -212,17 +212,6 @@
   background: var(--ds-bg-hover);
   color: var(--ds-text-primary);
 }
-.composer-key-hints {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 2px 12px;
-  margin: 5px 12px 0;
-  color: var(--ds-text-secondary);
-  font-size: 11px;
-}
-.composer-key-hints kbd {
-  font: inherit;
-}
 @media (pointer: coarse) {
   .message-queue-action {
     width: 44px;

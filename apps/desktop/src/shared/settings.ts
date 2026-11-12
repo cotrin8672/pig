@@ -64,6 +64,8 @@ export function validateSettings(value: unknown): Settings {
     )
       throw new Error("Invalid keybindings.");
     for (const [action, combo] of Object.entries(input.keybindings)) {
+      // Ignore the removed send shortcut without discarding the rest of saved settings.
+      if (action === "composer.send") continue;
       if (
         !actionIds.includes(action as (typeof actionIds)[number]) ||
         (combo !== null &&

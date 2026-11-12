@@ -5,7 +5,6 @@ import type { PromptDelivery } from "../shared/runtime-contract";
 import { ChatEmpty, ChatLayout } from "./ChatLayout";
 import { ComposerEditor, insertEditorNewline } from "./ComposerEditor";
 import { ComposerFrame } from "./ComposerFrame";
-import { ComposerKeyHints } from "./ComposerKeyHints";
 import { ComposerSubmit } from "./ComposerSubmit";
 import { ContextIndicator } from "./ContextIndicator";
 import { addressKey } from "./chat-snapshot";
@@ -162,7 +161,6 @@ export function OpeningComposer({ preview }: { preview?: Snapshot }) {
           </div>
         </div>
       </form>
-      <ComposerKeyHints />
     </ComposerFrame>
   );
 }

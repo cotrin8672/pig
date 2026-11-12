@@ -35,7 +35,6 @@ import { rememberAnnotationRange } from "./annotation-highlights";
 import { AttachmentReads, maxImageBase64 } from "./attachment-reads";
 import { ComposerEditor, insertEditorNewline } from "./ComposerEditor";
 import { ComposerFrame } from "./ComposerFrame";
-import { ComposerKeyHints } from "./ComposerKeyHints";
 import { ComposerSubmit } from "./ComposerSubmit";
 import { ContextIndicator } from "./ContextIndicator";
 import { addressKey } from "./chat-snapshot";
@@ -747,7 +746,6 @@ export function Composer({ snapshot }: { snapshot: Snapshot }) {
         </div>
       </form>
       <ExtensionWidgets address={address} placement="belowEditor" />
-      <ComposerKeyHints />
       {sendState?.message && (
         <p className="composer-hint" role="status">
           {sendState.message}

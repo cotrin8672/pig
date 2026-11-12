@@ -29,6 +29,17 @@ test("settings defaults and patches validate enums and normalize overrides", () 
     expect(() => validateSettings(value)).toThrow();
 });
 
+test("removed send shortcut does not reset other saved settings", () => {
+  const settings = validateSettings({
+    language: "ja",
+    shell: "powershell",
+    keybindings: { "composer.send": "Enter", "composer.steer": "Ctrl+S" },
+  });
+  expect(settings.language).toBe("ja");
+  expect(settings.shell).toBe("powershell");
+  expect(settings.keybindings).toEqual({ "composer.steer": "Ctrl+S" });
+});
+
 test("utility selections validate independently, preserve settings, and clear", () => {
   const old = {
     language: "ja",

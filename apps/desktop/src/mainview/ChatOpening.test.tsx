@@ -111,6 +111,7 @@ if (process.env.PIG_CHAT_OPENING_CHILD !== "1") {
         expect(html).toContain(text);
       expect(html).not.toContain("chat-opening-composer");
       expect(html).not.toContain("chat-opening-heading");
+      expect(html).not.toContain("<kbd");
       expect(html.match(/<textarea\b/g)).toHaveLength(1);
       expect(html.includes('title="Send" aria-label="Send" disabled=""')).toBe(
         existing,

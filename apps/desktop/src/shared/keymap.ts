@@ -3,10 +3,9 @@ export const defaultBindings = {
   "navigation.back": "Alt+ArrowLeft",
   "navigation.forward": "Alt+ArrowRight",
   "settings.open": "Ctrl+,",
-  "composer.send": "Enter",
   "composer.queue": "Shift+Enter",
   "composer.steer": "Ctrl+Enter",
-  "composer.newline": "Alt+Enter",
+  "composer.newline": "Enter",
 } as const;
 export type ActionId = keyof typeof defaultBindings;
 export const actionIds = Object.keys(defaultBindings) as ActionId[];
@@ -80,7 +79,6 @@ export function matchesCombo(event: KeyEvent, combo: string | null): boolean {
   );
 }
 export const composerActions = [
-  "composer.send",
   "composer.queue",
   "composer.steer",
   "composer.newline",
