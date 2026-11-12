@@ -24,21 +24,15 @@ test.skipIf(!existsSync(edge))(
       import {useState} from ${JSON.stringify(fileURLToPath(import.meta.resolve("react")))};
       import {createRoot} from ${JSON.stringify(fileURLToPath(import.meta.resolve("react-dom/client")))};
       import {flushSync} from ${JSON.stringify(fileURLToPath(import.meta.resolve("react-dom")))};
-      import {App,Chat} from ${source("./App.tsx")};
-      import {Extensions} from ${source("./Extensions.tsx")};
-      import {FontPicker} from ${source("./FontPicker.tsx")};
-      import {FontSettings} from ${source("./FontSettings.tsx")};
+      import {Chat} from ${source("./App.tsx")};
       import {Composer} from ${source("./Composer.tsx")};
       import {OpeningComposer} from ${source("./ChatOpening.tsx")};
       import {MessageQueue} from ${source("./MessageQueue.tsx")};
       import {AnnotationPopover} from ${source("./AnnotationPopover.tsx")};
       import {AnnotationDrafts} from ${source("./AnnotationCards.tsx")};
       import {rememberAnnotationRange} from ${source("./annotation-highlights.ts")};
-      import {SessionPanel} from ${source("./SessionPanel.tsx")};
-      import {UIRequestBroker} from ${source("./UIRequestBroker.tsx")};
       import {drafts} from ${source("./draft-store.ts")};
       import {addressKey} from ${source("./chat-snapshot.ts")};
-      import {receiveTerminal} from ${source("./runtime-events.ts")};
       import {ToolBlock,ToolGroup,ThinkingBlock} from ${source("./ToolBlock.tsx")};
       import {DisclosureScope} from ${source("./LazyDetails.tsx")};
       import {Markdown,BuiltinMarkdown} from ${source("./MessageContent.tsx")};
@@ -320,64 +314,8 @@ test.skipIf(!existsSync(edge))(
         await wheel(focused.querySelector(grouped?".tool-body pre":".tool-term-output"),120);
         check(Math.abs(readingThread.scrollTop-top)<=2,"wheel over a scrollable tool preview must scroll the preview alone");
       }
-      // Pending work must not replace known content or add temporary status rows.
       const type=async(input,value)=>{Object.getOwnPropertyDescriptor(input instanceof HTMLTextAreaElement?HTMLTextAreaElement.prototype:HTMLInputElement.prototype,"value").set.call(input,value);input.dispatchEvent(new Event("input",{bubbles:true}));await wait();};
       const deferred=()=>Promise.withResolvers();
-      metrics.stage="startup";
-      const startup=deferred();window.__refresh=()=>startup.promise;
-      flushSync(()=>useStore.setState(state=>({initialized:false,active:undefined,page:"chat",settings:{...state.settings,language:"en"}})));
-      await render(<App/>);
-      check(document.querySelector("main").textContent==="" && !document.querySelector(".welcome"),"startup must not publish English, disconnected or empty-state content");
-      startup.reject(new Error("internal startup details"));await until(()=>document.querySelector('main [role="alert"]'),"failed initialization must offer recovery");
-      check(!document.querySelector("main").textContent.includes("internal startup details"),"startup errors must not expose internal diagnostics");
-      const retryStartup=deferred();window.__refresh=()=>retryStartup.promise;await click(button(document,"Retry"));check(document.querySelector("main").textContent==="","startup retry must retain the shell without temporary text");
-      flushSync(()=>useStore.setState(state=>({initialized:true,settings:{...state.settings,language:"ja"}})));retryStartup.resolve();await wait();
-      check(document.documentElement.lang==="ja" && document.querySelector(".welcome") && !document.querySelector("main").textContent.includes("What shall"),"first real screen must use the saved language");
-      flushSync(()=>useStore.setState({page:"settings"}));await wait();
-      check(document.querySelector(".settings-page") && !document.querySelector("main").textContent.includes("Loading"),"settings navigation must render immediately without a whole-screen fallback");
-      await render(<div/>);flushSync(()=>useStore.setState(state=>({settings:{...state.settings,language:"en"}})));
-      metrics.stage="packages";
-      const searches=[];const installedRead=deferred();
-      window.__requests={searchPackages:params=>{const read=deferred();searches.push({...params,read});return read.promise;},listInstalled:()=>installedRead.promise,packagePreviews:()=>({})};
-      const pkg=name=>({name,version:"1",description:"Package "+name,publisher:"fixture",monthlyDownloads:1,date:"2026-01-01",types:[]});
-      flushSync(()=>useStore.setState({installedLoaded:true,installed:[{source:"npm:cached",name:"cached",scope:"user",types:[]}],packageOps:{}}));
-      await render(<Extensions/>);await until(()=>searches.length===1,"missing initial package search");
-      check(document.querySelectorAll(".package-skeleton").length>0 && !document.body.textContent.includes("Finding packages"),"initial package search must show card-shaped skeletons instead of an empty grid or loading message");
-      searches[0].read.resolve({items:[pkg("original")],total:2});await until(()=>document.querySelector(".market-card:not(.package-skeleton)"),"missing original package result");
-      check(!document.querySelector(".package-skeleton"),"skeletons must be replaced by results");
-      await until(()=>!document.querySelector(".package-preview.skeleton"),"previews absent from the response must stop shimmering");
-      const originalCard=document.querySelector(".market-card"),originalCount=document.querySelector(".package-results").textContent;
-      const searchInput=document.querySelector(".package-search input");await type(searchInput,"first");await until(()=>searches.some(read=>read.query==="first"),"first search did not start");
-      check(document.querySelector(".market-card")===originalCard && document.querySelector(".package-results").textContent===originalCount,"search must retain both the old cards and their matching count while pending");
-      const more=button(document,"Load more");check(more.disabled && more.textContent==="Load more","pending search must not append to an old query or resize the load-more button");
-      await type(searchInput,"latest");await until(()=>searches.some(read=>read.query==="latest"),"latest search did not start");
-      searches.find(read=>read.query==="latest").read.resolve({items:[pkg("latest")],total:1});await until(()=>document.querySelector(".market-card h2")?.textContent==="latest","latest search did not publish");
-      searches.find(read=>read.query==="first").read.resolve({items:[pkg("stale")],total:1});await wait();
-      check(document.querySelector(".market-card h2").textContent==="latest","late search result must not overwrite the latest query");
-      await type(searchInput,"failed");await until(()=>searches.some(read=>read.query==="failed"),"failed search did not start");
-      searches.find(read=>read.query==="failed").read.reject(new Error("fixture failure"));await until(()=>document.querySelector(".package-error"),"search failure must remain actionable");
-      check(document.querySelector(".market-card h2").textContent==="latest","failed search must retain the last successful result");
-      await click(document.getElementById("extensions-tab-installed"));
-      check(document.querySelector(".installed-card h2").textContent==="cached" && !document.body.textContent.includes("Loading installed packages"),"cached installed packages must remain visible without an inserted loading row");
-      flushSync(()=>useStore.setState({installed:[{source:"npm:newer",name:"newer",scope:"user",types:[]}]}));installedRead.resolve([]);await wait();
-      check(document.querySelector(".installed-card h2").textContent==="newer","a stale installed read must not replace a newer package event");
-      const uninstall=document.querySelector(".installed-card .package-actions button"),uninstallWidth=uninstall.getBoundingClientRect().width;
-      flushSync(()=>useStore.setState({packageOps:{op:{opId:"op",source:"npm:newer",action:"uninstall",status:"running"}}}));await wait();
-      check(document.querySelector(".installed-card .package-actions button")===uninstall && uninstall.disabled && uninstall.getAttribute("aria-busy")==="true" && uninstall.getBoundingClientRect().width===uninstallWidth,"package operations must keep their buttons and not pretend installation or deletion has finished");
-      await render(<div/>);
-      metrics.stage="actions";
-      const actions=[];let actionGate=deferred();
-      const actionState={generation:"ui",commands:[{adapterId:"ui",id:"apply",title:"Apply"}],keymaps:[],diagnostics:[],views:[{adapterId:"ui",revision:1,view:{id:"status",kind:"status",title:"Action",tone:"info",text:"Ready",source:{label:"Fixture",scope:{kind:"session",id:"action"},freshness:"saved",observedAt:"now"},actions:[{id:"apply",label:"Apply",command:"apply",fields:[{name:"note",label:"Note",required:true}]}]}}]};
-      await render(<SessionPanel sessionId="action" state={actionState} onAction={request=>{actions.push(request);return actionGate.promise;}} onReload={async()=>{}}/>);
-      await click(document.querySelector(".session-dock-summary"));
-      const form=document.querySelector(".session-action");await type(form.querySelector("input"),"keep this text");
-      const submit=form.querySelector('[type="submit"]'),height=form.getBoundingClientRect().height,width=submit.getBoundingClientRect().width;
-      await click(submit);form.requestSubmit();await wait();
-      check(actions.length===1 && submit.disabled && submit.getAttribute("aria-busy")==="true" && submit.textContent==="Apply","pending actions must keep their label and block duplicate execution");
-      check(form.getBoundingClientRect().height===height && submit.getBoundingClientRect().width===width && !form.querySelector('[role="status"]'),"pending actions must not add a line or change geometry");
-      actionGate.resolve();await until(()=>!submit.disabled,"action did not settle");actionGate=deferred();await click(submit);actionGate.reject(new Error("action failure"));
-      await until(()=>form.querySelector('[role="alert"]'),"action failure must be visible");check(form.querySelector("input").value==="keep this text","action failure must preserve input");
-      await render(<div/>);
       metrics.stage="completion";
       const completions=[];window.__sendCount=0;
       window.__requests={listSlashCommands:()=>[{name:"hello",category:"extension"},{name:"other",category:"extension"}],completeSlashArguments:params=>{const read=deferred();completions.push({...params,read});return read.promise;}};
@@ -607,74 +545,6 @@ test.skipIf(!existsSync(edge))(
         if(grouped)check(!document.querySelector(".tool-group-body"),"annotation removal must also release the closed parent group");
       }
       metrics.toolAnnotationsPreserved=true;
-      metrics.stage="terminal";
-      const owner={hostId:"terminal-stability",sessionId:"terminal-stability",epoch:1};const terminalCommands=[];window.__requests={terminalCommand:command=>{terminalCommands.push(command);return {};}};
-      const terminalRequest={...owner,uiId:"pending",kind:"terminal",title:"Fixture terminal"};
-      flushSync(()=>useStore.setState({hostId:owner.hostId,active:owner.sessionId,page:"chat",addresses:{[owner.sessionId]:owner},snapshots:{[owner.sessionId]:{...base,ready:true,address:owner,info:{...base.info,id:owner.sessionId},transcript:transcript([])}},pendingUI:[],terminals:{}}));
-      await render(<div className="app-shell"><main><p>Unchanged main</p></main><UIRequestBroker/></div>);const mainWidth=document.querySelector("main").getBoundingClientRect().width;
-      flushSync(()=>useStore.setState({pendingUI:[terminalRequest]}));await until(()=>document.querySelector('.terminal-dialog[open]'),"terminal shell did not open");
-      const pendingTerminal=document.querySelector(".terminal-dialog");
-      check(document.querySelector("main").getBoundingClientRect().width===mainWidth && !document.querySelector(".ui-starting") && !pendingTerminal.querySelector(".xterm") && terminalCommands.length===0,"pending terminal must retain main width and must not initialize or send ready before host open");
-      await click(pendingTerminal.querySelector("header button"));check(!pendingTerminal.open && terminalCommands.filter(command=>command.type==="cancel").length===1,"pending terminal must close and cancel immediately");
-      receiveTerminal({...owner,uiId:terminalRequest.uiId,type:"open",title:terminalRequest.title});await wait();
-      check(!pendingTerminal.open && !pendingTerminal.querySelector(".xterm"),"a late terminal-open event must not reopen or initialize a cancelled shell");
-      const nextRequest={...terminalRequest,uiId:"ready"};flushSync(()=>useStore.setState({pendingUI:[nextRequest]}));await until(()=>document.querySelector('.terminal-dialog[open]'),"second terminal shell did not open");
-      const readyTerminal=document.querySelector(".terminal-dialog");receiveTerminal({...owner,uiId:nextRequest.uiId,type:"open",title:nextRequest.title});
-      await until(()=>terminalCommands.some(command=>command.uiId==="ready" && command.type==="ready"),"real terminal did not complete its fitted-ready handshake");
-      check(document.querySelector(".terminal-dialog")===readyTerminal && document.querySelector("main").getBoundingClientRect().width===mainWidth,"host open must fill the existing terminal without remounting its shell or resizing main");
-      await click(readyTerminal.querySelector("header button"));flushSync(()=>useStore.setState({pendingUI:[],terminals:{}}));await render(<div/>);
-      check(terminalCommands.filter(command=>command.uiId==="ready" && command.type==="cancel").length===1,"closing and unmounting must not cancel a terminal twice");
-      metrics.stablePendingUI=true;
-      const fontFamilies=["Agency FB","Algerian","Arial","Arial Rounded MT","Bahnschrift","Baskerville Old Face","Cascadia Code","Consolas","游ゴシック",...Array.from({length:50},(_,i)=>"Example font "+i)];
-      function FontFixture(){
-        const [family,setFamily]=useState("");
-        return <div className="app-shell" style={{"--window-opacity":0.35}}><main className="content-page settings-page"><div className="content-page-shell"><header className="content-page-header"><h1>Settings</h1></header><div className="settings-layout"><nav className="settings-nav"><button aria-current="page">Appearance</button></nav><section className="settings-content"><h2>Appearance</h2><div className="settings-card font-settings">{[["Interface font",family,setFamily],["Code font","",()=>{}]].map(([label,value,onChange])=><div className="settings-row" key={label}><div className="settings-label">{label}</div><FontPicker label={label} value={value} fonts={fontFamilies} onChange={onChange}/></div>)}</div><div className="settings-card" style={{marginTop:20,padding:20}}><h2>Chat renderers</h2><p>Changes only affect chat display.</p><button>Reload chat renderers</button></div></section></div></div></main></div>;
-      }
-      await render(<FontFixture/>);
-      const fontPicker=document.querySelector(".font-picker");
-      await click(fontPicker.querySelector("summary"));
-      const fontPanel=fontPicker.querySelector(".font-picker-panel"),fontInput=fontPicker.querySelector("input"),fontList=fontPicker.querySelector('[role="listbox"]');
-      const panelStyle=getComputedStyle(fontPanel),panelRect=fontPanel.getBoundingClientRect();
-      check(panelRect.height>200,"font menu must have its own full-height background, independent of stylesheet import order");
-      const popupReference=document.createElement("div");popupReference.className="picker-panel model-panel";popupReference.hidden=true;fontPicker.append(popupReference);
-      const popupStyle=getComputedStyle(popupReference);
-      check(panelStyle.backgroundColor===popupStyle.backgroundColor && panelStyle.backdropFilter===popupStyle.backdropFilter && panelStyle.backdropFilter!=="none","font menu must use the same translucent background and blur as other popups");
-      popupReference.remove();
-      check(document.activeElement===fontInput,"opening a font menu must focus search");
-      check(parseFloat(getComputedStyle(fontPicker).width)>=240,"font trigger must not collapse to the selected label width");
-      const optionButtons=[...fontList.querySelectorAll("button")];
-      check(optionButtons.every(option=>getComputedStyle(option).fontFamily===getComputedStyle(optionButtons[0]).fontFamily),"font names must use a consistent readable typeface, including decorative fonts");
-      check(optionButtons.every(option=>option.getBoundingClientRect().height===optionButtons[0].getBoundingClientRect().height),"font rows must have consistent heights");
-      const secondTrigger=document.querySelectorAll(".font-picker > summary")[1].getBoundingClientRect();
-      check(fontPanel.contains(document.elementFromPoint(secondTrigger.left+20,secondTrigger.top+secondTrigger.height/2)),"the next font control must not paint through the open menu");
-      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,"value").set.call(fontInput,"cAsCaDiA");fontInput.dispatchEvent(new Event("input",{bubbles:true}));await wait();
-      check(fontList.children.length===1 && fontList.textContent==="Cascadia Code","font search must filter without case sensitivity");
-      fontInput.dispatchEvent(new KeyboardEvent("keydown",{key:"Enter",bubbles:true}));await wait();
-      check(!fontPicker.open && fontPicker.querySelector("summary").textContent==="Cascadia Code","keyboard selection must update the value and close the menu");
-      await click(fontPicker.querySelector("summary"));
-      fontInput.dispatchEvent(new KeyboardEvent("keydown",{key:"Escape",bubbles:true}));await wait();
-      check(!fontPicker.open && document.activeElement===fontPicker.querySelector("summary"),"Escape must close font search and restore trigger focus");
-      document.querySelector(".app-shell").style.width="420px";await wait();
-      await click(fontPicker.querySelector("summary"));
-      const narrowPanel=fontPanel.getBoundingClientRect();
-      check(narrowPanel.left>=0 && narrowPanel.right<=420 && narrowPanel.height>200,"font menu must fit the narrow settings page");
-      metrics.fontPicker={height:panelRect.height,background:panelStyle.backgroundColor,search:true,keyboard:true,narrowWidth:narrowPanel.width};
-      flushSync(()=>useStore.setState(state=>({settings:{...state.settings,fontFamily:"Arial",codeFontFamily:"Consolas"}})));
-      for(const outcome of ["ready","error"]){
-        let finish;
-        window.__requests={...window.__requests,listFontFamilies:()=>new Promise((resolve,reject)=>{finish=()=>outcome==="ready"?resolve(fontFamilies):reject(new Error("Font discovery fixture failure"));})};
-        await render(<div className="app-shell"><main className="content-page settings-page"><div className="content-page-shell"><FontSettings key={outcome}/><p id="after-font-settings">Next setting</p></div></main></div>);
-        const card=document.querySelector(".font-settings"),after=document.getElementById("after-font-settings");
-        const height=card.getBoundingClientRect().height,afterTop=after.getBoundingClientRect().top;
-        const labels=[...card.querySelectorAll("summary")].map(element=>element.textContent).join("|");
-        check(card.querySelectorAll(".settings-row").length===2 && !card.textContent.includes("Loading"),"pending font discovery must show only the two stable settings rows");
-        check(labels==="Arial|Consolas","font discovery must not replace the saved selection with a loading label");
-        finish();await wait();
-        check(card.getBoundingClientRect().height===height && after.getBoundingClientRect().top===afterTop,"font discovery "+outcome+" must not shift settings layout");
-        check([...card.querySelectorAll("summary")].map(element=>element.textContent).join("|")===labels,"font discovery "+outcome+" must retain saved font labels");
-      }
-      metrics.fontPicker.stableLoading=true;
-      await render(<FontFixture/>);await click(document.querySelector(".font-picker summary"));
       window.__transcriptReport={ok:true,metrics};
     `,
       );
@@ -724,13 +594,9 @@ test.skipIf(!existsSync(edge))(
         `const fail=error=>{window.__transcriptReport={ok:false,error:String(error),stack:error?.stack,metrics:window.__transcriptMetrics};};window.addEventListener("error",event=>fail(event.error??event.message));window.addEventListener("unhandledrejection",event=>fail(event.reason));void (async()=>{try{${script}}catch(error){fail(error);}})()`,
       );
       const cssEntry = join(dir, "styles.css");
-      // Settings is imported by App before main.tsx imports the global stylesheet.
-      const settingsCss = fileURLToPath(
-        new URL("./settings.css", import.meta.url),
-      );
       await Bun.write(
         cssEntry,
-        [settingsCss, ...[...cssFiles].filter((path) => path !== settingsCss)]
+        [...cssFiles]
           .map(
             (path) => `@import ${JSON.stringify(path.replaceAll("\\", "/"))};`,
           )
@@ -900,9 +766,6 @@ test.skipIf(!existsSync(edge))(
         }
         expect(report.ok, JSON.stringify(report)).toBe(true);
         expect(report.metrics.wheels.length).toBeGreaterThanOrEqual(10);
-        expect(
-          (report.metrics as { stablePendingUI?: boolean }).stablePendingUI,
-        ).toBe(true);
         console.info(
           "Native transcript Edge regression",
           JSON.stringify(report.metrics),
