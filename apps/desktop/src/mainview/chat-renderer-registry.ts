@@ -72,7 +72,9 @@ export function installChatRenderers(value: unknown, file = "") {
     )
       throw new Error("Chat renderer IDs must be nonempty and unique");
     if (
-      !["markdown", "image", "tool", "custom", "thinking"].includes(entry.kind)
+      !["markdown", "image", "tool", "custom", "thinking", "error"].includes(
+        entry.kind,
+      )
     )
       throw new Error(`Unknown renderer kind: ${entry.kind}`);
     const component = entry.component;

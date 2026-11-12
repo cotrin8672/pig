@@ -84,6 +84,7 @@ test("unmatched kinds fall back, all render kinds accept a component", () => {
     "thinking",
     "tool",
     "custom",
+    "error",
   ] as const) {
     installChatRenderers([{ id: kind, kind, component: () => null }]);
     expect(rendererSnapshot().renderers[0].kind).toBe(kind);

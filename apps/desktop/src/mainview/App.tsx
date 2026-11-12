@@ -53,6 +53,7 @@ import { initNavigation, navigate } from "./navigation";
 import { ProviderIcon, useProviderName } from "./ProviderIcon";
 import { Providers } from "./Providers";
 
+import { ResponseError } from "./ResponseError";
 import { ResponseFooter } from "./ResponseFooter";
 import { createResponseFooterIndex } from "./response-footers";
 import {
@@ -975,17 +976,12 @@ export function Chat({ snapshot }: { snapshot: ChatSnapshot }) {
                         </DisclosureScope>
                       );
                     })}
-                    {message.errorMessage && (
-                      <p
-                        className={
-                          message.stopReason === "aborted" ? "muted" : "error"
-                        }
-                      >
-                        {t.responseError(
-                          message.stopReason,
-                          message.errorMessage,
-                        )}
-                      </p>
+                    {(message.errorMessage ||
+                      message.stopReason === "error") && (
+                      <ResponseError
+                        message={message.errorMessage ?? "Model request failed"}
+                        stopReason={message.stopReason}
+                      />
                     )}
                   </>
                 ) : (
@@ -1016,11 +1012,15 @@ export function Chat({ snapshot }: { snapshot: ChatSnapshot }) {
       )}
       {readOnly && <OpeningMessages />}
       <OptimisticMessages snapshot={snapshot} onChange={followOptimistic} />
-      {snapshot.failure && (
-        <p className="error" role="alert">
-          {snapshot.failure}
-        </p>
-      )}
+      {snapshot.failure &&
+        !transcript.records.some(
+          (record) =>
+            record.kind === "message" &&
+            record.message.role === "assistant" &&
+            record.message.stopReason === "error" &&
+            (record.message.errorMessage ?? "Model request failed") ===
+              snapshot.failure,
+        ) && <ResponseError message={snapshot.failure} />}
       {readOnly && !opening && snapshot.failure && (
         <button
           type="button"

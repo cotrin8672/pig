@@ -1018,6 +1018,18 @@ export class SessionHost {
           ? m.requestIds.get(event.message)
           : undefined,
       );
+      if (
+        event.type === "message_end" &&
+        event.message.role === "assistant" &&
+        event.message.stopReason === "error" &&
+        m.phase !== "closing" &&
+        !m.stopping
+      ) {
+        // Abort synchronously before the SDK can retry or deliver queued input.
+        void this.abort(m.address).catch((error) =>
+          console.error("Stop after model error failed", error),
+        );
+      }
       if (event.type === "agent_settled") {
         for (const key of m.startedSends.splice(0)) {
           try {

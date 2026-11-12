@@ -1,3 +1,4 @@
+import type { ResponseErrorKind } from "./response-error";
 import type { Settings } from "./settings";
 
 export const en = {
@@ -452,6 +453,60 @@ export const en = {
   installedError: (error: string) =>
     `Could not check installed packages. ${error}`,
   copyError: (error: string) => `Could not copy command: ${error}`,
+  responseFailure: (reason: ResponseErrorKind) =>
+    ({
+      stopped: {
+        title: "Response stopped",
+        detail:
+          "The response was cancelled. Send another message when you are ready.",
+      },
+      rate_limit: {
+        title: "Response stopped: rate limit reached",
+        detail:
+          "The provider's request or token rate limit was reached. Wait a while before sending again, or switch accounts or models.",
+      },
+      quota: {
+        title: "Response stopped: usage limit reached",
+        detail:
+          "The account has insufficient credits or has reached its usage limit. Check billing and limits, or switch accounts.",
+      },
+      authentication: {
+        title: "Response stopped: authentication failed",
+        detail:
+          "The provider did not accept the credentials. Sign in again or check your API key in settings.",
+      },
+      permission: {
+        title: "Response stopped: access denied",
+        detail:
+          "The account is not allowed to use this model or resource. Check permissions or choose another model.",
+      },
+      context: {
+        title: "Response stopped: input too large",
+        detail:
+          "The request exceeded the model's input limit. Shorten the input, compact the conversation, or start a new chat.",
+      },
+      unavailable: {
+        title: "Response stopped: provider unavailable",
+        detail:
+          "The provider reported a server error or overload. Try again later or choose another model.",
+      },
+      network: {
+        title: "Response stopped: connection failed",
+        detail:
+          "The connection failed or timed out. Check your network and try again.",
+      },
+      invalid_request: {
+        title: "Response stopped: request rejected",
+        detail:
+          "The provider rejected the request or could not find the model. Check your model and provider settings.",
+      },
+      unknown: {
+        title: "Response stopped: an error occurred",
+        detail:
+          "The request could not be completed. Check the error details before trying again.",
+      },
+    })[reason],
+  responseErrorDetails: "Error details",
   responseError: (stopReason: string, error: string) =>
     stopReason === "aborted" ? "Response stopped." : error,
   relativeDate: (count: number, unit: "d" | "mo" | "y") =>
@@ -960,6 +1015,60 @@ export const ja: Dictionary = {
   installedError: (error) =>
     `インストール済みパッケージを確認できませんでした。${error}`,
   copyError: (error) => `コマンドをコピーできませんでした: ${error}`,
+  responseFailure: (reason) =>
+    ({
+      stopped: {
+        title: "応答を停止しました",
+        detail:
+          "応答がキャンセルされました。続ける場合はメッセージを送信してください。",
+      },
+      rate_limit: {
+        title: "利用頻度の制限により応答を停止しました",
+        detail:
+          "プロバイダーのリクエスト数またはトークン数の上限に達しました。時間をおいて再送するか、アカウントやモデルを切り替えてください。",
+      },
+      quota: {
+        title: "利用枠の上限により応答を停止しました",
+        detail:
+          "アカウントの残高不足、または利用枠の上限に達しました。請求・利用上限を確認するか、アカウントを切り替えてください。",
+      },
+      authentication: {
+        title: "認証に失敗したため応答を停止しました",
+        detail:
+          "プロバイダーが認証情報を受け付けませんでした。設定から再ログインするか、APIキーを確認してください。",
+      },
+      permission: {
+        title: "アクセスが拒否されたため応答を停止しました",
+        detail:
+          "このアカウントにはモデルやリソースの利用権限がありません。権限を確認するか、別のモデルを選んでください。",
+      },
+      context: {
+        title: "入力サイズの上限により応答を停止しました",
+        detail:
+          "モデルが扱える入力サイズを超えました。入力を短くするか、会話を圧縮するか、新しいチャットを開始してください。",
+      },
+      unavailable: {
+        title: "プロバイダーの障害・混雑により応答を停止しました",
+        detail:
+          "プロバイダーからサーバーエラーが返されました。時間をおいて再送するか、別のモデルを選んでください。",
+      },
+      network: {
+        title: "接続に失敗したため応答を停止しました",
+        detail:
+          "通信エラーまたはタイムアウトが発生しました。ネットワーク接続を確認して再送してください。",
+      },
+      invalid_request: {
+        title: "リクエストが拒否されたため応答を停止しました",
+        detail:
+          "リクエストが受け付けられないか、モデルが見つかりません。モデルとプロバイダーの設定を確認してください。",
+      },
+      unknown: {
+        title: "エラーにより応答を停止しました",
+        detail:
+          "リクエストを完了できませんでした。エラーの詳細を確認してから再送してください。",
+      },
+    })[reason],
+  responseErrorDetails: "エラーの詳細",
   responseError: (stopReason, error) =>
     stopReason === "aborted" ? "応答を停止しました。" : error,
   relativeDate: (count, unit) =>

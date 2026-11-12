@@ -5,6 +5,7 @@ export interface ChatRenderData {
   markdown: { text: string };
   image: { sources: string[]; alt?: string };
   thinking: { text: string; label: string; active: boolean };
+  error: { message: string; stopReason?: string };
   tool: {
     call: { id: string; name: string; arguments: Record<string, unknown> };
     state?: { status: "running" | "done" | "error"; result?: unknown };
