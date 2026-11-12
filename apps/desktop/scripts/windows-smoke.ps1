@@ -1,7 +1,7 @@
 param(
     [Parameter(Mandatory = $true)][int]$ProcessId,
     [Parameter(Mandatory = $true)][string]$Executable,
-    [ValidateSet('inspect', 'resize', 'maximize', 'restore', 'minimize', 'activate', 'close', 'drag')][string]$Action = 'inspect',
+    [ValidateSet('inspect', 'resize', 'maximize', 'restore', 'minimize', 'activate', 'close', 'drag', 'transparency')][string]$Action = 'inspect',
     [string]$Screenshot
 )
 $ErrorActionPreference = 'Stop'
@@ -23,6 +23,10 @@ public static class PigWindowProbe {
     [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();
     [DllImport("user32.dll")] public static extern void mouse_event(uint flags, uint dx, uint dy, uint data, UIntPtr extra);
     [DllImport("user32.dll")] public static extern bool GetClientRect(IntPtr h, out Rect rect);
+    [DllImport("user32.dll")] public static extern bool ClientToScreen(IntPtr h, ref Point point);
+    [DllImport("user32.dll")] public static extern IntPtr GetDC(IntPtr h);
+    [DllImport("user32.dll")] public static extern int ReleaseDC(IntPtr h, IntPtr dc);
+    [DllImport("gdi32.dll")] public static extern uint GetPixel(IntPtr dc, int x, int y);
     [DllImport("user32.dll")] public static extern bool GetWindowRect(IntPtr h, out Rect rect);
     [DllImport("user32.dll")] public static extern uint GetDpiForWindow(IntPtr h);
     [DllImport("user32.dll")] public static extern IntPtr SetThreadDpiAwarenessContext(IntPtr context);
@@ -58,6 +62,40 @@ if ($Action -eq 'close') {
     return
 }
 switch ($Action) {
+    'transparency' {
+        # PrintWindow and DWM attributes cannot prove desktop alpha: change the actual pixels behind pig.
+        Add-Type -AssemblyName System.Windows.Forms
+        $bounds = New-Object PigWindowProbe+Rect
+        $size = New-Object PigWindowProbe+Rect
+        [PigWindowProbe]::GetWindowRect($handle, [ref]$bounds) | Out-Null
+        [PigWindowProbe]::GetClientRect($handle, [ref]$size) | Out-Null
+        $point = New-Object PigWindowProbe+Point
+        $point.X = 20; $point.Y = [int](($size.Bottom - $size.Top) / 2)
+        [PigWindowProbe]::ClientToScreen($handle, [ref]$point) | Out-Null
+        $underlay = New-Object System.Windows.Forms.Form
+        $underlay.FormBorderStyle = 'None'
+        $underlay.ShowInTaskbar = $false
+        $underlay.StartPosition = 'Manual'
+        $underlay.Bounds = New-Object System.Drawing.Rectangle($bounds.Left, $bounds.Top, ($bounds.Right - $bounds.Left), ($bounds.Bottom - $bounds.Top))
+        try {
+            $underlay.BackColor = [System.Drawing.Color]::Red
+            $underlay.Show()
+            if (-not [PigWindowProbe]::SetWindowPos($underlay.Handle, $handle, 0, 0, 0, 0, 0x13)) { throw 'Cannot position the alpha test underlay' }
+            [PigWindowProbe]::SetForegroundWindow($handle) | Out-Null
+            $pixels = foreach ($color in @([System.Drawing.Color]::Red, [System.Drawing.Color]::Lime)) {
+                $underlay.BackColor = $color
+                $underlay.Refresh()
+                Start-Sleep -Milliseconds 500
+                $dc = [PigWindowProbe]::GetDC([IntPtr]::Zero)
+                try { [PigWindowProbe]::GetPixel($dc, $point.X, $point.Y) }
+                finally { [PigWindowProbe]::ReleaseDC([IntPtr]::Zero, $dc) | Out-Null }
+            }
+            if ($pixels -contains [uint32]::MaxValue) { throw 'Cannot sample the desktop alpha test' }
+            $redDelta = [int]($pixels[0] -band 255) - [int]($pixels[1] -band 255)
+            $greenDelta = [int](($pixels[1] -shr 8) -band 255) - [int](($pixels[0] -shr 8) -band 255)
+            if ($redDelta -lt 20 -or $greenDelta -lt 20) { throw "Desktop is not visible through the window: red delta $redDelta, green delta $greenDelta" }
+        } finally { $underlay.Dispose() }
+    }
     'drag' {
         $cursor = New-Object PigWindowProbe+Point
         $before = New-Object PigWindowProbe+Rect

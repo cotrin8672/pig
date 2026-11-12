@@ -174,6 +174,7 @@ for (const [backdrop, expected] of [
       return native;
     }
     await probe("inspect");
+    if (backdrop === "none") await probe("transparency", false);
     await probe("resize");
     assert((await probe("maximize"))?.maximized);
     await probe("activate");
@@ -181,6 +182,7 @@ for (const [backdrop, expected] of [
     assert((await probe("minimize", false))?.minimized);
     assert(!(await probe("restore"))?.minimized);
     await probe("activate");
+    if (backdrop === "none") await probe("transparency", false);
     if (process.argv.includes("--interactive")) await probe("drag");
     await probe("close", false);
     assert.equal(

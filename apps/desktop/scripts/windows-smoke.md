@@ -13,8 +13,10 @@ We use the stock DLL, not the 1.18.1 native backport:
   `GetClientRect` -> `resizeWebview` FFI shim also became incorrect: that API
   now converts DIP inputs to physical pixels.
 - Keep the app's Win32 caption/Snap style adjustment and DWM backdrop selection.
-  Transparent windows now use `WS_EX_NOREDIRECTIONBITMAP`; remove the old
-  layered-window/GDI brush/empty-blur-region repairs.
+  Transparent windows use `WS_EX_NOREDIRECTIONBITMAP`; no layered-window or
+  GDI brush repair is needed. Windowed WebView2 still requires
+  `DwmEnableBlurBehindWindow` with an empty region to enable desktop alpha.
+  The composition flag and requested DWM backdrop alone do not enable it.
 - The old `WM_NCACTIVATE` patch is not upstream. Before deciding to omit it,
   the stock DLL was run with repeated non-client activation messages, normal
   and maximized windows, and the resulting screenshots were inspected.
@@ -61,6 +63,12 @@ Checks for each of none, Acrylic and Mica:
   backdrop value match expectations;
 - optional real mouse drag moves the window by the requested offset.
 
+For `none`, the runner also places a red, then green window behind pig and
+samples the actual desktop pixels through a blank part of its sidebar. Both
+colors must show through, initially and after maximize/minimize/restore. This
+catches opaque/black composition that geometry and PrintWindow checks miss.
+It briefly brings the test app to the foreground; do not cover it during the run.
+
 Screenshots must be reviewed separately: successful assertions alone do not
 prove correct transparent composition, transient animation or content rendering.
 The script intentionally does not rely on CDP: on the tested WebView2 runtime,
@@ -86,6 +94,18 @@ It does not claim end-to-end RPC, IME, keyboard Snap or mixed-DPI coverage.
   After extracting that ZIP outside the repository, the 24 non-interactive
   state/geometry probes passed again, with clean exits for all three modes
   (artifacts: `%TEMP%/pig-windows-smoke-IruZAW`).
+
+## Desktop alpha regression check
+
+The migration's attribute/geometry checks missed disabled desktop alpha. On the
+same Windows/WebView2 versions, a minimal two-window probe reproduced an opaque
+background before `DwmEnableBlurBehindWindow` and measured red/green transmission
+after enabling an empty blur region, without changing brushes or extended styles.
+Opacity 0/0.3/1 and all three backdrops were exercised; opacity 1 stayed opaque.
+
+The fixed relocated stable bundle passed all 26 native probes, including the two
+new desktop-pixel checks. Artifacts: `%TEMP%/pig-windows-smoke-OvckBv`. Mixed-DPI
+and transient animation coverage remain separate manual gates.
 
 ## Remaining release gates
 

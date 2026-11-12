@@ -31,6 +31,7 @@ const dwm =
           returns: "i32",
         },
         DwmExtendFrameIntoClientArea: { args: ["ptr", "ptr"], returns: "i32" },
+        DwmEnableBlurBehindWindow: { args: ["ptr", "ptr"], returns: "i32" },
       })
     : undefined;
 
@@ -47,6 +48,14 @@ const user =
       })
     : undefined;
 
+const gdi =
+  process.platform === "win32"
+    ? dlopen("gdi32.dll", {
+        CreateRectRgn: { args: ["i32", "i32", "i32", "i32"], returns: "ptr" },
+        DeleteObject: { args: ["ptr"], returns: "i32" },
+      })
+    : undefined;
+
 export function windowStyleForBackdrop(style: number) {
   // Custom controls own the caption; keep resize/Snap flags without native buttons.
   return (style & ~(0x02000000 | 0x00c00000)) | 0x000b0000;
@@ -57,7 +66,6 @@ export function applyBackdrop(hwnd: Pointer | null, appearance: Appearance) {
   if (!hwnd) throw new Error("Cannot apply backdrop to a closed window.");
   let frameChanged = false;
   if (user) {
-    // Electrobun 2 uses WS_EX_NOREDIRECTIONBITMAP for alpha; no GDI/layered-window repair.
     const windowStyle = user.symbols.GetWindowLongW(hwnd, -16);
     // Remove native caption painting while preserving SYSMENU and both boxes for Snap.
     const nextStyle = windowStyleForBackdrop(windowStyle);
@@ -82,6 +90,22 @@ export function applyBackdrop(hwnd: Pointer | null, appearance: Appearance) {
   check(dwm.symbols.DwmSetWindowAttribute(hwnd, 20, ptr(dark), 4));
   const margins = new Int32Array([-1, -1, -1, -1]);
   check(dwm.symbols.DwmExtendFrameIntoClientArea(hwnd, ptr(margins)));
+  if (gdi) {
+    // Windowed WebView2 still needs DWM alpha enabled, even with NOREDIRECTIONBITMAP.
+    const region = gdi.symbols.CreateRectRgn(0, 0, -1, -1);
+    if (!region) throw new Error("Cannot create the Windows alpha region.");
+    // DWM_BLURBEHIND uses the Windows x64 ABI; an empty region enables alpha without blur.
+    const blur = new ArrayBuffer(24);
+    const data = new DataView(blur);
+    data.setUint32(0, 3, true); // DWM_BB_ENABLE | DWM_BB_BLURREGION
+    data.setInt32(4, 1, true);
+    data.setBigUint64(8, BigInt(region), true);
+    try {
+      check(dwm.symbols.DwmEnableBlurBehindWindow(hwnd, ptr(blur)));
+    } finally {
+      gdi.symbols.DeleteObject(region);
+    }
+  }
   const type = new Int32Array([
     { none: 1, mica: 2, acrylic: 3 }[appearance.backdrop],
   ]);
