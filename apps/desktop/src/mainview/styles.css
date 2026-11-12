@@ -336,19 +336,17 @@ p {
 }
 .session-dot.running {
   background: var(--ds-warning);
-  box-shadow: 0 0 6px 1px color-mix(in srgb, var(--ds-warning) 25%, transparent);
-  animation: session-dot-breathe 2.8s ease-in-out infinite;
+  box-shadow:
+    0 0 4px 1px color-mix(in srgb, var(--ds-warning) 40%, transparent),
+    0 0 12px 4px color-mix(in srgb, var(--ds-warning) 20%, transparent);
+  animation: session-dot-breathe 2.4s ease-in-out infinite;
 }
 @keyframes session-dot-breathe {
-  0%,
-  100% {
-    opacity: 1;
-    box-shadow: 0 0 6px 1px
-      color-mix(in srgb, var(--ds-warning) 25%, transparent);
-  }
   50% {
-    opacity: 0.55;
-    box-shadow: 0 0 2px 0 color-mix(in srgb, var(--ds-warning) 8%, transparent);
+    opacity: 0.45;
+    box-shadow:
+      0 0 2px 0 color-mix(in srgb, var(--ds-warning) 15%, transparent),
+      0 0 6px 1px color-mix(in srgb, var(--ds-warning) 8%, transparent);
   }
 }
 @media (prefers-reduced-motion: reduce) {
