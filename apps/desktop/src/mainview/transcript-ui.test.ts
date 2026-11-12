@@ -526,6 +526,37 @@ test.skipIf(!existsSync(edge))(
       check(!CSS.highlights.has("pig-annotation-saved") && !CSS.highlights.has("pig-annotation-active"),"leaving the draft must clean up all source marks");
       flushSync(()=>useStore.setState(state=>({settings:{...state.settings,language:"en"}})));
       metrics.annotations=true;
+      metrics.stage="annotation-targets";
+      const annotationCall={id:"annotation-target",name:"read",arguments:{path:"fixture.txt"}};
+      await render(<><article className="message assistant">
+        <div className="before-label"><Markdown text="Response content"/></div>
+        <ThinkingBlock text="Reasoning content" label="Thinking" active={false}/>
+        <ThinkingBlock text="" label="Thinking" active/>
+        <ToolBlock call={{id:"annotation-shell",name:"bash",arguments:{command:"echo fixture"}}} state={{status:"done",result:{content:[{type:"text",text:"Execution result"}]}}} live={false}/>
+        <ToolBlock call={annotationCall} state={{status:"done"}} live={false}/>
+        <ToolGroup calls={[annotationCall]} tools={{}} live={false}/>
+        <div className="after-label"><Markdown text="More response content"/></div>
+        <div className="response-footer"><strong>Finished</strong><time>12:00</time></div>
+        <button type="button">Show work</button>
+      </article><AnnotationPopover onAdd={()=>{}}/></>);
+      const selectAnnotationTarget=async selector=>{
+        const element=document.querySelector(selector),range=document.createRange();
+        check(element,"missing annotation target: "+selector);range.selectNodeContents(element);
+        getSelection().removeAllRanges();getSelection().addRange(range);await wait();
+      };
+      for(const selector of [".before-label p",".thinking-body p",".tool-cmd",".tool-term-output",".tool-row:not(.tool-group) .tool-target"]){
+        await selectAnnotationTarget(selector);
+        check(document.querySelector(".annotation-popover > button"),"response and execution content must remain annotatable: "+selector);
+      }
+      for(const selector of [".thinking > summary",".thinking.active",".tool-verb",".tool-badge",".tool-prompt",".tool-group > summary .tool-target",".response-footer strong",".response-footer time","article > button"]){
+        await selectAnnotationTarget(selector);
+        check(!document.querySelector(".annotation-popover"),"UI labels must not offer annotation: "+selector);
+      }
+      const mixedRange=document.createRange();mixedRange.setStartBefore(document.querySelector(".before-label"));mixedRange.setEndAfter(document.querySelector(".after-label"));
+      getSelection().removeAllRanges();getSelection().addRange(mixedRange);await wait();
+      check(!document.querySelector(".annotation-popover"),"content endpoints must not allow UI labels in the middle of a quote");
+      getSelection().removeAllRanges();
+      metrics.annotationTargets=true;
       metrics.stage="tool-annotations";
       function ToolAnnotationFixture({grouped}){
         const [items,setItems]=useState([]);

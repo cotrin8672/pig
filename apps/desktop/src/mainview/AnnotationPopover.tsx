@@ -12,7 +12,15 @@ import { useT } from "./i18n";
 const highlightName = "pig-annotation";
 const supportsHighlights = typeof CSS !== "undefined" && "highlights" in CSS;
 
-/** The selection must stay inside one agent response to become an annotation. */
+const annotationUI = [
+  "button, input, textarea, select",
+  ".thinking > summary, .thinking.active",
+  ".tool-verb, .tool-meta, .tool-prompt",
+  ".tool-group > summary",
+  ".response-footer",
+].join(", ");
+
+/** Annotate response content, never UI labels (even inside a larger selection). */
 function responseSelection() {
   const selection = document.getSelection();
   if (!selection || selection.isCollapsed || !selection.rangeCount) return;
@@ -24,6 +32,12 @@ function responseSelection() {
   const article = owner(range.startContainer);
   const quote = selection.toString().trim();
   if (!article || article !== owner(range.endContainer) || !quote) return;
+  if (
+    Array.from(article.querySelectorAll(annotationUI)).some((element) =>
+      range.intersectsNode(element),
+    )
+  )
+    return;
   return { range: range.cloneRange(), quote };
 }
 
