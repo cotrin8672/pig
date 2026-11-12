@@ -151,6 +151,8 @@ export type LoginFrame = { loginId: string; provider: string } & (
   | { kind: "event"; event: AuthEvent }
   | { kind: "prompt"; prompt: AuthPrompt }
   | { kind: "promptEnd" }
+  /** Whether the OS accepted the sign-in URL (not that sign-in succeeded). */
+  | { kind: "browser"; opened: boolean }
   | { kind: "success" | "cancelled" }
   | { kind: "error"; message: string }
 );

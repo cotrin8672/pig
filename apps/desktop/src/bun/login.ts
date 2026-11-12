@@ -24,7 +24,8 @@ export async function startLogin(
   method: AuthMethod,
   loginId: string,
   push: (frame: LoginFrame) => void,
-  open: (url: string) => void,
+  /** false/throw when the OS refused the URL; true only means it was handed off. */
+  open: (url: string) => boolean,
 ) {
   const auth =
     typeof provider === "string"
@@ -48,7 +49,14 @@ export async function startLogin(
     signal: login.abort.signal,
     notify(event) {
       push({ loginId, provider, kind: "event", event });
-      if (event.type === "auth_url") open(event.url);
+      if (event.type !== "auth_url") return;
+      let opened = false;
+      try {
+        opened = open(event.url);
+      } catch (error) {
+        console.error("Opening sign-in URL failed:", error);
+      }
+      push({ loginId, provider, kind: "browser", opened });
     },
     prompt: ({ signal, ...prompt }) =>
       new Promise<string>((resolve, reject) => {

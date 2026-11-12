@@ -265,6 +265,10 @@ export const rpc = Electroview.defineRPC<RPCSchema>({
           });
         if (frame.kind === "prompt")
           useStore.setState({ login: { ...login, prompt: frame.prompt } });
+        if (frame.kind === "browser")
+          useStore.setState({
+            login: { ...login, browserOpened: frame.opened },
+          });
         if (frame.kind === "promptEnd")
           useStore.setState({ login: { ...login, prompt: undefined } });
         if (frame.kind === "error")

@@ -399,7 +399,15 @@ function OAuthLoginDialog({ login }: { login: LoginState }) {
         <>
           {authUrl && (
             <div className="oauth-block">
-              <p>{t["Browser opened — finish signing in there"]}</p>
+              <p role={login.browserOpened === false ? "alert" : undefined}>
+                {login.browserOpened === undefined
+                  ? t["Opening your browser…"]
+                  : login.browserOpened
+                    ? t["Browser opened — finish signing in there"]
+                    : t[
+                        "Couldn't open your browser. Copy the link and open it manually."
+                      ]}
+              </p>
               {authUrl.instructions && (
                 <p className="muted">{authUrl.instructions}</p>
               )}

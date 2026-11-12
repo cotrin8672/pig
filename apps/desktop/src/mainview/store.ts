@@ -42,6 +42,8 @@ export interface LoginState {
   event?: AuthEvent;
   authUrl?: Extract<AuthEvent, { type: "auth_url" }>;
   deviceCode?: Extract<AuthEvent, { type: "device_code" }>;
+  /** undefined until the host reports whether the OS accepted the URL. */
+  browserOpened?: boolean;
   error?: string;
   prompt?: AuthPrompt;
 }
