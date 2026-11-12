@@ -6,16 +6,6 @@
   display: grid;
   gap: 32px;
 }
-.acp-root > section > h2 {
-  margin-bottom: 4px;
-  font-size: var(--text-lg);
-  font-weight: var(--font-weight-semibold);
-}
-.acp-root > section > p {
-  margin: 0 0 14px;
-  color: var(--ds-text-muted);
-  font-size: var(--text-sm);
-}
 .acp-split {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(min(100%, 520px), 1fr));
@@ -39,137 +29,98 @@
 .acp-page .providers-layout {
   grid-template-columns: 240px minmax(0, 1fr);
 }
-.acp-title {
+
+/* A row hosts its select button plus actions, like the sidebar's project heading. */
+.acp-row {
   display: flex;
   align-items: center;
-  gap: 4px;
-}
-.acp-title button {
-  padding: 4px;
-  color: var(--ds-text-muted);
-}
-.acp-danger:hover {
-  color: var(--ds-error);
-}
-.acp-warning-tag {
-  flex: none;
-  color: var(--ds-warning, #f3b562);
-  font-size: 10px;
-}
-.provider-row[data-nested] {
-  padding-left: 32px;
-}
-.acp-provider-heading {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  height: 28px;
-  padding: 0 8px;
-  color: var(--ds-text-secondary);
-  font-size: 12px;
-}
-.acp-provider-heading small {
-  margin-left: auto;
-  color: var(--ds-text-muted);
-  font-size: 10px;
-}
-.acp-section {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-.acp-add-inline {
-  margin-left: auto;
-  padding: 3px 6px;
-  color: var(--ds-text-secondary);
-  font-size: 11px;
-}
-.acp-siblings,
-.acp-model-list {
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-.acp-siblings li,
-.acp-model-list li {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  height: 30px;
-  padding: 0 8px;
   border-radius: 5px;
-  color: var(--ds-text-secondary);
-  font-size: 12px;
 }
-.acp-siblings li[data-current] {
+.acp-row .provider-row {
+  flex: 1;
+  min-width: 0;
+  background: transparent;
+}
+.acp-row:hover,
+.acp-row[aria-current="true"] {
   background: var(--ds-bg-hover);
+}
+.acp-row[aria-current="true"] .provider-row {
   color: var(--ds-text-primary);
 }
-.acp-siblings small,
-.acp-model-list code {
-  color: var(--ds-text-muted);
-  font-size: 10px;
+.acp-row[data-nested] .provider-row {
+  padding-left: 30px;
 }
-.acp-siblings small[data-state] {
-  margin-left: auto;
-}
-.acp-siblings small[data-state="signed-out"] {
-  color: var(--ds-warning, #f3b562);
-}
-.acp-model-list code {
-  margin-left: auto;
-}
-
-.acp-dialog {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-  margin: 0;
-}
-.acp-dialog h2 {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-.acp-field {
+.acp-dot,
+.acp-dot-slot {
+  flex: none;
+  width: 8px;
+  height: 8px;
   display: grid;
-  gap: 6px;
-  font-size: var(--text-sm);
-  color: var(--ds-text-secondary);
+  place-items: center;
+  color: var(--ds-text-muted);
 }
-.acp-presets {
+.acp-dot::before {
+  content: "";
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+}
+.acp-dot[data-state="online"]::before {
+  background: var(--ds-success);
+}
+.acp-dot[data-state="signed-out"]::before {
+  box-sizing: border-box;
+  border: 1px solid var(--ds-warning, #f3b562);
+}
+.acp-chevron {
+  flex: none;
+  width: 8px;
+  color: var(--ds-text-muted);
+  transition: transform var(--motion-duration-fast) var(--motion-ease-out);
+}
+.provider-row[aria-expanded="true"] .acp-chevron {
+  transform: rotate(90deg);
+}
+.acp-row-actions {
   display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  margin-top: -6px;
+  flex: none;
+  padding-right: 2px;
+  opacity: 0;
 }
-.acp-presets button {
-  height: 24px;
-  padding: 0 8px;
-  border: 1px solid #ffffff14;
-  border-radius: 999px;
-  color: var(--ds-text-secondary);
-  font-size: 11px;
+.acp-row-actions > button {
+  width: 24px;
+  height: 26px;
+  padding: 0;
+  color: var(--ds-text-muted);
 }
-.acp-presets button[aria-pressed="true"] {
-  border-color: #ffffff2a;
-  background: var(--ds-bg-hover);
+.acp-row-actions > button:hover {
   color: var(--ds-text-primary);
 }
-.acp-inline-error {
-  margin: -8px 0 0;
-  color: var(--ds-error);
-  font-size: var(--text-sm);
+/* "+" stays discoverable; menus appear on hover like the sidebar. */
+.acp-row-actions[data-visible],
+.acp-row:hover .acp-row-actions,
+.acp-row:focus-within .acp-row-actions,
+.acp-row-actions:has([aria-expanded="true"]) {
+  opacity: 1;
 }
-.acp-actions {
-  gap: 8px;
+.acp-row .thread-more {
+  opacity: 1;
 }
-.acp-dialog .oauth-block p {
-  display: flex;
-  align-items: center;
-  gap: 6px;
+.acp-renaming {
+  cursor: text;
 }
-
+.acp-renaming input.inline-rename {
+  flex: 1;
+  height: 20px;
+  padding: 0;
+  border: 0;
+  border-bottom: 1px solid var(--ds-focus);
+  border-radius: 0;
+  background: transparent;
+  color: var(--ds-text-primary);
+  font-size: inherit;
+}
 .acp-picker-stage {
   display: flex;
   flex-direction: column;
@@ -245,6 +196,16 @@
 .acp-trigger {
   background: var(--ds-bg-hover);
 }
+.acp-root > section > h2 {
+  margin-bottom: 4px;
+  font-size: var(--text-lg);
+  font-weight: var(--font-weight-semibold);
+}
+.acp-root > section > p {
+  margin: 0 0 14px;
+  color: var(--ds-text-muted);
+  font-size: var(--text-sm);
+}
 .acp-trigger-account {
   display: inline-flex;
   align-items: center;
@@ -254,4 +215,29 @@
   background: var(--ds-bg-chip);
   color: var(--ds-text-secondary);
   font-size: 11px;
+}
+.acp-page {
+  position: relative;
+}
+/* Same card the app shows; non-modal, centred over the page like the real <dialog>. */
+.acp-signin {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  translate: -50% -50%;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  margin: 0;
+  z-index: 2;
+}
+.acp-signin .dialog-heading h2 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.acp-signin .oauth-status {
+  display: flex;
+  align-items: center;
+  gap: 6px;
 }
