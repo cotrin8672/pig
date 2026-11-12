@@ -1,4 +1,5 @@
 import { execFile } from "node:child_process";
+import { resolveGitBash } from "./git-bash";
 
 /** Only explicit saved/configured values are resolved. Never look up ambient environment keys. */
 export async function resolveSavedValue(
@@ -19,10 +20,13 @@ export async function resolveSavedValue(
     );
   }
   return new Promise((resolve, reject) => {
-    const shell =
-      process.platform === "win32"
-        ? `${process.env.PROGRAMFILES ?? "C:/Program Files"}/Git/usr/bin/bash.exe`
-        : "/bin/sh";
+    const shell = process.platform === "win32" ? resolveGitBash() : "/bin/sh";
+    if (!shell)
+      return reject(
+        new Error(
+          "Git Bash is required to resolve saved configuration commands, but Git for Windows' usr/bin/bash.exe was not found. Install Git for Windows.",
+        ),
+      );
     execFile(
       shell,
       ["-c", value.slice(1)],
