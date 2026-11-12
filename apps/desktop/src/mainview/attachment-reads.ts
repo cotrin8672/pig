@@ -207,6 +207,31 @@ export class AttachmentReads {
       fail(error);
     }
   }
+  startClipboard(address: SessionAddress, load: () => Promise<string | null>) {
+    const started = this.begin(address, new File([], "clipboard.png"), "image");
+    if (!started) return;
+    const { read, fail } = started;
+    this.changed();
+    void load().then((data) => {
+      if (!this.reads.has(read.id) || read.state !== "pending") return;
+      if (!data) {
+        this.deliver(read, { images: [] });
+        return;
+      }
+      if (data.length > maxImageBase64) {
+        fail(new Error("Each image must be at most 4.5 MiB of base64 data."));
+        return;
+      }
+      this.deliver(read, {
+        images: [
+          {
+            id: read.id,
+            image: { type: "image", mimeType: "image/png", data },
+          },
+        ],
+      });
+    }, fail);
+  }
   /** Non-image files go to the agent as a stored path, like pi's TUI paste. */
   startFile(
     address: SessionAddress,

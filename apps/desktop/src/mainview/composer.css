@@ -33,6 +33,32 @@
   color: var(--ds-text-primary);
 }
 
+.sent-attachments {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  max-width: 100%;
+}
+.sent-attachment {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  max-width: 240px;
+  padding: 12px;
+  border: 1px solid var(--ds-border);
+  border-radius: 8px;
+  background: var(--ds-bg-composer);
+}
+.sent-attachment svg {
+  flex-shrink: 0;
+}
+.sent-attachment span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+}
+
 .composer-attachments {
   display: flex;
   flex-wrap: wrap;

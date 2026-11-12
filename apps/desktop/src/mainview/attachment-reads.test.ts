@@ -39,6 +39,36 @@ function fixture() {
   return { drafts, reads, readers, notices, finish, start };
 }
 
+test("pathless native clipboard images participate in pending sends and draft transfers", async () => {
+  const f = fixture();
+  const pending = Promise.withResolvers<string | null>();
+  f.reads.startClipboard(a, () => pending.promise);
+  const next = { ...a, epoch: 2 };
+  f.drafts.transfer(a, next);
+  f.reads.transfer(a, next);
+  const claimed = f.reads.claim(next);
+  pending.resolve("cG5n");
+  expect((await claimed)?.images[0].image).toEqual({
+    type: "image",
+    mimeType: "image/png",
+    data: "cG5n",
+  });
+  expect(f.drafts.read(next).content.images).toHaveLength(0);
+});
+
+test("empty clipboard and cancelled native reads do not leave attachments behind", async () => {
+  const f = fixture();
+  f.reads.startClipboard(a, async () => null);
+  expect((await f.reads.claim(a))?.images).toEqual([]);
+  expect(f.reads.pending(a)).toBe(0);
+  const pending = Promise.withResolvers<string | null>();
+  f.reads.startClipboard(a, () => pending.promise);
+  f.reads.cancel(f.reads.read(a)[0].id);
+  pending.resolve("cG5n");
+  await Promise.resolve();
+  expect(f.drafts.read(a).content.images).toHaveLength(0);
+});
+
 test("pending reads follow explicit epoch/fork transfers and preserve selection order across late loads", () => {
   const f = fixture();
   f.start();

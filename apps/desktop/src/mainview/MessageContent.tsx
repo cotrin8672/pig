@@ -14,6 +14,7 @@ import rehypeKatex from "rehype-katex";
 import remarkGfm from "remark-gfm";
 import remarkMath from "remark-math";
 import { parseAnnotations, withAnnotations } from "../shared/annotations";
+import { splitAttachmentPaths } from "../shared/attachments";
 import { normalizeMath } from "../shared/math";
 import { sessionIdFromLink } from "../shared/session-links";
 import type { Message } from "../shared/transcript";
@@ -26,6 +27,7 @@ import { ImageGallery } from "./ImageGallery";
 import { useT } from "./i18n";
 import { editKey, messageEdits } from "./message-edits";
 import { openChatLink, regenerate, rpc } from "./rpc";
+import { SentAttachments } from "./SentAttachments";
 import { showError } from "./store";
 import { createTextSampler } from "./streaming-text";
 
@@ -160,9 +162,13 @@ export const UserMessage = memo(function UserMessage({
   // Editing touches only the body; annotation blocks ride along unchanged.
   const parsed = parseAnnotations(original);
   const shown = parseAnnotations(text);
+  const attachments = splitAttachmentPaths(shown.body);
   return (
     <div className="user-turn">
       {sources.length > 0 && <ImageGallery sources={sources} />}
+      {!editing && attachments.paths.length > 0 && (
+        <SentAttachments paths={attachments.paths} />
+      )}
       {shown.annotations.length > 0 && (
         <ul className="user-annotations">
           {shown.annotations.map((annotation, index) => (
@@ -215,7 +221,9 @@ export const UserMessage = memo(function UserMessage({
           </div>
         </form>
       ) : (
-        shown.body && <div className="user-bubble">{shown.body}</div>
+        attachments.body && (
+          <div className="user-bubble">{attachments.body}</div>
+        )
       )}
       <div className="response-actions user-actions">
         <time dateTime={new Date(message.timestamp).toISOString()}>

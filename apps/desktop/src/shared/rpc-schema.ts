@@ -358,6 +358,11 @@ export type RPCSchema = {
       // biome-ignore lint/suspicious/noConfusingVoidType: Electrobun's empty response convention.
       copyImage: { params: { src: string }; response: void };
       saveImage: { params: { src: string }; response: string };
+      readClipboardImage: {
+        params: Record<string, never>;
+        response: string | null;
+      };
+      attachmentPreview: { params: { path: string }; response: string | null };
       /** Stores a dropped/pasted file and returns its absolute path. */
       storeAttachment: {
         params: { name: string; data: string };

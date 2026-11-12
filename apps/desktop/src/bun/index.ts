@@ -21,7 +21,7 @@ import {
   setNativeEnvironment,
   validateAppearance,
 } from "./appearance";
-import { storeFile } from "./attachments";
+import { attachmentPreview, storeFile } from "./attachments";
 import { ChatRendererLoader } from "./chat-renderer-loader";
 import {
   desktopConfigDir,
@@ -255,6 +255,14 @@ const rpc = BrowserView.defineRPC<RPCSchema>({
       reloadSession: (input) => sessionHost.reloadSession(input),
       invokeSessionAction: (input) => sessionHost.invokeSessionAction(input),
       reloadAdapterConfig: () => sessionHost.reloadAdapterConfig(),
+      readClipboardImage: () => {
+        const bytes = Utils.clipboardReadImage();
+        if (!bytes?.length) return null;
+        if (bytes.length > 3.375 * 1024 * 1024)
+          throw new Error("Each image must be at most 4.5 MiB of base64 data.");
+        return Buffer.from(bytes).toString("base64");
+      },
+      attachmentPreview: ({ path }) => attachmentPreview(path),
       copyImage: ({ src }) => copyImage(src),
       saveImage: ({ src }) => saveImage(src),
       storeAttachment: ({ name, data }) => storeFile(name, data),

@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
-import { mkdir, writeFile } from "node:fs/promises";
-import { extname, join } from "node:path";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { basename, dirname, extname, join, resolve } from "node:path";
 import type { ImageContent } from "@earendil-works/pi-ai";
 import { desktopConfigDir } from "./desktop-config";
 
@@ -36,5 +36,21 @@ export const storeImage = (image: ImageContent, dir?: string) =>
     `.${image.mimeType.split("/")[1]?.replace("jpeg", "jpg")}`,
     dir,
   );
+
+export async function attachmentPreview(path: string, dir = attachmentsDir) {
+  if (
+    dirname(resolve(path)) !== resolve(dir) ||
+    !/^[a-f0-9]{64}\.(png|jpe?g|gif|webp)$/i.test(basename(path))
+  )
+    return null;
+  try {
+    const bytes = await readFile(path);
+    if (bytes.length > maxAttachmentBytes) return null;
+    const ext = extname(path).slice(1).toLowerCase();
+    return `data:image/${ext === "jpg" ? "jpeg" : ext};base64,${bytes.toString("base64")}`;
+  } catch {
+    return null;
+  }
+}
 
 export { withAttachmentPaths } from "../shared/attachments";

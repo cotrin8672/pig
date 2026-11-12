@@ -618,6 +618,11 @@ export function Composer({ snapshot }: { snapshot: Snapshot }) {
           }}
           onPaste={(event) => {
             const files = Array.from(event.clipboardData.files);
+            if (!files.length)
+              for (const item of Array.from(event.clipboardData.items)) {
+                const file = item.kind === "file" ? item.getAsFile() : null;
+                if (file) files.push(file);
+              }
             if (files.length) {
               event.preventDefault();
               void attach(files);
@@ -626,6 +631,23 @@ export function Composer({ snapshot }: { snapshot: Snapshot }) {
             const pasted = event.clipboardData
               .getData("text/plain")
               .replace(/\r\n/g, "\n");
+            if (!pasted && !event.clipboardData.getData("text/html")) {
+              event.preventDefault();
+              if (
+                images.length +
+                  loads.filter(
+                    (load) => load.kind === "image" && load.state === "pending",
+                  ).length >=
+                8
+              ) {
+                showError(t["You can attach up to 8 images."]);
+                return;
+              }
+              attachmentReads.startClipboard(address, () =>
+                rpc.request.readClipboardImage({}),
+              );
+              return;
+            }
             if (!shouldCollapse(pasted)) return;
             let id = nextPaste.current++;
             while (

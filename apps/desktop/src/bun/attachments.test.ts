@@ -2,7 +2,13 @@ import { expect, test } from "bun:test";
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { storeFile, storeImage, withAttachmentPaths } from "./attachments";
+import { splitAttachmentPaths } from "../shared/attachments";
+import {
+  attachmentPreview,
+  storeFile,
+  storeImage,
+  withAttachmentPaths,
+} from "./attachments";
 import { ComposerBridge, validateDraftContent } from "./composer-bridge";
 
 test("attachments are content-addressed paths appended after a blank line", async () => {
@@ -19,6 +25,12 @@ test("attachments are content-addressed paths appended after a blank line", asyn
       dir,
     );
     expect(image).toEndWith(".jpg");
+    expect(await attachmentPreview(image, dir)).toBe(
+      `data:image/jpeg;base64,${data}`,
+    );
+    expect(await attachmentPreview(a, dir)).toBeNull();
+    expect(await attachmentPreview(image, join(dir, "other"))).toBeNull();
+    expect(await attachmentPreview(join(dir, "private.png"), dir)).toBeNull();
     expect(withAttachmentPaths("look", [a, image])).toBe(
       `look\n\n${a}\n${image}`,
     );
@@ -26,6 +38,23 @@ test("attachments are content-addressed paths appended after a blank line", asyn
   } finally {
     await rm(dir, { recursive: true, force: true });
   }
+});
+
+test("only trailing managed attachment paths become UI cards, without changing the sent text", () => {
+  const hash = "a".repeat(64);
+  for (const path of [
+    `C:\\Users\\me\\attachments\\${hash}.png`,
+    `/home/me/attachments/${hash}.pdf`,
+  ]) {
+    expect(splitAttachmentPaths(`hello\n\n${path}`)).toEqual({
+      body: "hello",
+      paths: [path],
+    });
+    expect(splitAttachmentPaths(path)).toEqual({ body: "", paths: [path] });
+    const prose = `${path}\nkeep this`;
+    expect(splitAttachmentPaths(prose)).toEqual({ body: prose, paths: [] });
+  }
+  expect(splitAttachmentPaths("hello\n\n/private/file.txt").paths).toEqual([]);
 });
 
 test("draft files are sent as trailing paths and validated", () => {
