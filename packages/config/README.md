@@ -57,7 +57,7 @@ mise exec -- pnpm add -D 'C:\path\to\pig\packages\config'
 
 - `sources.entries('branch'|'all')`: 復元規則はExtensionに合わせて選ぶ。読み取りは複製され、履歴再生は操作を呼ばない。
 - `sources.tools()`: 保存済みの結果と現runtimeの途中更新。`origin`で履歴とliveを区別。再起動後の古い結果をrunningへ復活させない。
-- `sources.subscribe(fn)`: 初回即時＋更新通知。再取得型なので連続通知を集約する。
+- `sources.subscribe(fn)`: 初回即時＋snapshot更新通知。再取得型なので連続通知を集約する。保存済みentry・tool observationが変わらない本文deltaでは通知しない（hookがentryを書いた場合は通知する）。本文delta自体が必要なら `onEvent` を使う。
 - `sources.onEvent/onBus`: 生イベントは順序付きで配送。過大backlogは診断して当該Adapterを止める。
 - `views.set(view)`: 表示snapshot全体を置換。9種のdiscriminated union。不正なnested値・重複ID・関数・循環・過大JSONを拒否。
 - `commands.register`: Hostの操作。ボタンとkeymapは同じID。処理中は同Adapterへの二重要求を拒否。
