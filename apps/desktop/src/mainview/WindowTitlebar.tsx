@@ -8,26 +8,30 @@ export function isTitlebarHotzone(
   x: number,
   y: number,
   bounds: Pick<DOMRect, "left" | "right" | "top" | "bottom">,
+  expanded = false,
 ) {
+  const margin = expanded ? 24 : 0;
   return (
-    x >= bounds.left &&
-    x <= bounds.right &&
-    y >= bounds.top &&
-    y <= Math.max(bounds.top + 32, bounds.bottom)
+    x >= bounds.left - margin &&
+    x <= bounds.right + margin &&
+    y >= bounds.top - margin &&
+    y <= Math.max(bounds.top + 32, bounds.bottom) + margin
   );
 }
 
 export class TitlebarHover {
+  expanded = false;
   private timer?: ReturnType<typeof setTimeout>;
   private dragging = false;
 
   constructor(
     private show: (visible: boolean) => void,
-    private isHovered: () => boolean,
+    private isHovered: (expanded: boolean) => boolean,
   ) {}
 
   enter = () => {
     this.dispose();
+    this.expanded = true;
     this.show(true);
   };
 
@@ -36,8 +40,8 @@ export class TitlebarHover {
     // Native window moves can briefly report a false mouseleave.
     this.timer = setTimeout(() => {
       this.timer = undefined;
-      if (!this.dragging && !this.isHovered()) this.show(false);
-    }, 180);
+      if (!this.dragging && !this.isHovered(this.expanded)) this.reset();
+    }, 300);
   };
 
   startDrag = () => {
@@ -48,13 +52,14 @@ export class TitlebarHover {
   endDrag = () => {
     if (!this.dragging) return;
     this.dragging = false;
-    if (this.isHovered()) this.enter();
+    if (this.isHovered(this.expanded)) this.enter();
     else this.leave();
   };
 
   reset = () => {
     this.dragging = false;
     this.dispose();
+    this.expanded = false;
     this.show(false);
   };
 
@@ -80,11 +85,13 @@ export function WindowTitlebar({
   const [expanded, setExpanded] = useState(false);
   const [hover] = useState(
     () =>
-      new TitlebarHover(setExpanded, () => {
+      new TitlebarHover(setExpanded, (expanded) => {
         const point = pointer.current;
         const bounds = root.current?.getBoundingClientRect();
         return (
-          !!point && !!bounds && isTitlebarHotzone(point.x, point.y, bounds)
+          !!point &&
+          !!bounds &&
+          isTitlebarHotzone(point.x, point.y, bounds, expanded)
         );
       }),
   );
@@ -94,13 +101,17 @@ export function WindowTitlebar({
     const onMouseMove = (event: MouseEvent) => {
       pointer.current = { x: event.clientX, y: event.clientY };
       const bounds = root.current?.getBoundingClientRect();
-      if (bounds && isTitlebarHotzone(event.clientX, event.clientY, bounds))
+      if (
+        bounds &&
+        isTitlebarHotzone(event.clientX, event.clientY, bounds, hover.expanded)
+      )
         hover.enter();
       else hover.leave();
       if (event.buttons === 0) hover.endDrag();
     };
-    const onLeaveWindow = () => {
-      pointer.current = null;
+    const onLeaveWindow = (event: MouseEvent) => {
+      // Snapped Windows frames can report a leave just above the client area.
+      pointer.current = { x: event.clientX, y: event.clientY };
       hover.leave();
     };
     const onBlur = () => {

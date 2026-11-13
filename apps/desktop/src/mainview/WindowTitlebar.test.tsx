@@ -7,7 +7,7 @@ import {
   WindowTitlebar,
 } from "./WindowTitlebar";
 
-const waitForHide = () => Bun.sleep(220);
+const waitForHide = () => Bun.sleep(350);
 
 function setup() {
   const changes: boolean[] = [];
@@ -36,6 +36,24 @@ test("the trigger extends 32px down without covering the sidebar", () => {
   expect(isTitlebarHotzone(600, 34, { ...collapsed, bottom: 34 })).toBe(true);
 });
 
+test("only an expanded bar keeps a 24px margin on every edge", () => {
+  const bounds = { left: 260, right: 1272, top: 0, bottom: 34 };
+  for (const [x, y] of [
+    [600, 58],
+    [236, 24],
+    [1296, 24],
+    [600, -1],
+    [600, -24],
+  ]) {
+    expect(isTitlebarHotzone(x, y, bounds, true)).toBe(true);
+    expect(isTitlebarHotzone(x, y, bounds)).toBe(false);
+  }
+  expect(isTitlebarHotzone(600, 59, bounds, true)).toBe(false);
+  expect(isTitlebarHotzone(235, 24, bounds, true)).toBe(false);
+  expect(isTitlebarHotzone(1297, 24, bounds, true)).toBe(false);
+  expect(isTitlebarHotzone(600, -25, bounds, true)).toBe(false);
+});
+
 test("hover opens immediately and leaving waits before hiding", async () => {
   const { hover, changes } = setup();
   hover.enter();
@@ -53,7 +71,7 @@ test("moving outside repeatedly does not postpone hiding indefinitely", async ()
   hover.leave();
   await Bun.sleep(100);
   hover.leave();
-  await Bun.sleep(120);
+  await Bun.sleep(250);
   expect(changes).toEqual([true, false]);
   hover.dispose();
 });
@@ -62,6 +80,8 @@ test("returning before the hide delay cancels collapse", async () => {
   const { hover, changes } = setup();
   hover.enter();
   hover.leave();
+  await Bun.sleep(220);
+  expect(changes).toEqual([true]);
   hover.enter();
   await waitForHide();
   expect(changes).toEqual([true, true]);
@@ -75,6 +95,25 @@ test("a transient native mouseleave does not hide a still-hovered bar", async ()
   setHovered(true);
   await waitForHide();
   expect(changes).toEqual([true]);
+  hover.dispose();
+});
+
+test("a snapped-window leave above the client area preserves the expanded bar", async () => {
+  const bounds = { left: 260, right: 1272, top: 0, bottom: 34 };
+  let y = -1;
+  const changes: boolean[] = [];
+  const hover = new TitlebarHover(
+    (visible) => changes.push(visible),
+    (expanded) => isTitlebarHotzone(600, y, bounds, expanded),
+  );
+  hover.enter();
+  hover.leave();
+  await waitForHide();
+  expect(changes).toEqual([true]);
+  y = -25;
+  hover.leave();
+  await waitForHide();
+  expect(changes).toEqual([true, false]);
   hover.dispose();
 });
 
@@ -118,6 +157,28 @@ test("blur or a window-state change clears dragging and pending hides", async ()
   const count = changes.length;
   await waitForHide();
   expect(changes).toHaveLength(count);
+  hover.dispose();
+});
+
+test("the retention margin follows visibility and resets after hiding or blur", async () => {
+  const states: boolean[] = [];
+  const hover = new TitlebarHover(
+    () => {},
+    (expanded) => {
+      states.push(expanded);
+      return false;
+    },
+  );
+  expect(hover.expanded).toBe(false);
+  hover.enter();
+  expect(hover.expanded).toBe(true);
+  hover.leave();
+  await waitForHide();
+  expect(states).toEqual([true]);
+  expect(hover.expanded).toBe(false);
+  hover.enter();
+  hover.reset();
+  expect(hover.expanded).toBe(false);
   hover.dispose();
 });
 

@@ -428,7 +428,7 @@ main {
   border-radius: var(--radius-sm);
   overflow: hidden;
   box-shadow: 0 0 0 100vmax var(--ds-bg-sidebar);
-  transition: top var(--motion-duration-fast) var(--motion-ease-out);
+  transition: top var(--motion-duration-slow) var(--motion-ease-out);
 }
 .main-viewport {
   position: absolute;
@@ -477,7 +477,7 @@ main > *,
   user-select: none;
   pointer-events: none;
   transition:
-    height var(--motion-duration-fast) var(--motion-ease-out),
+    height var(--motion-duration-slow) var(--motion-ease-out),
     left var(--motion-duration-normal) var(--motion-ease-out);
 }
 .sidebar-collapsed .window-titlebar {
@@ -489,7 +489,9 @@ main > *,
   visibility: hidden;
   opacity: 0;
   pointer-events: none;
-  transition: opacity var(--motion-duration-fast) var(--motion-ease-out);
+  transition:
+    opacity var(--motion-duration-slow) var(--motion-ease-out),
+    visibility 0s var(--motion-duration-slow);
 }
 .window-titlebar:is([data-expanded="true"], :focus-within) {
   height: 34px;
@@ -500,6 +502,7 @@ main > *,
   visibility: visible;
   opacity: 1;
   pointer-events: auto;
+  transition-delay: 0s;
 }
 .window-titlebar-drag {
   display: flex;

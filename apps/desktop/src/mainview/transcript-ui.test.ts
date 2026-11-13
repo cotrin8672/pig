@@ -7,10 +7,63 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import tailwindcss from "@tailwindcss/vite";
 import { build as buildStyles } from "vite";
 import { renderWorkerFixturePlugin } from "../../scripts/render-worker-fixture";
+import {
+  fixtureHelpers,
+  fixtureImport,
+  runUiFixture,
+} from "../../scripts/ui-fixture";
 
 const edge =
   process.env.PIG_UI_BROWSER ??
   "C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe";
+
+test.skipIf(!existsSync(edge) && !process.env.PIG_REQUIRE_UI_TESTS)(
+  "titlebar in Edge: snapped top edge and slower synchronized animation",
+  () =>
+    runUiFixture(
+      "titlebar",
+      `
+      const {createRoot}=await import(${fixtureImport(import.meta.resolve("react-dom/client"))});
+      const {flushSync}=await import(${fixtureImport(import.meta.resolve("react-dom"))});
+      const {WindowTitlebar}=await import(${fixtureImport(new URL("./WindowTitlebar.tsx", import.meta.url))});
+      const {MainViewport}=await import(${fixtureImport(new URL("./MainViewport.tsx", import.meta.url))});
+      await import(${fixtureImport(new URL("./styles.css", import.meta.url))});
+      ${fixtureHelpers}
+      const pause=ms=>new Promise(resolve=>setTimeout(resolve,ms));
+      const root=createFixtureRoot(createRoot);
+      for(const collapsed of [false,true]){
+        flushSync(()=>root.render(<div className={'app-shell'+(collapsed?' sidebar-collapsed':'')}><aside className="sidebar"/><MainViewport><div id="page">Content</div></MainViewport><WindowTitlebar maximized={false} onAction={()=>{}}/></div>));
+        await pause(350);
+        const bar=document.querySelector('.window-titlebar'),clip=document.querySelector('.main-clip'),content=bar.firstElementChild,page=document.querySelector('#page');
+        check(getComputedStyle(bar).transitionDuration.split(',')[0]==='0.3s','band animation must take 300ms');
+        check(getComputedStyle(clip).transitionDuration==='0.3s','clipping animation must match the band');
+        const before=page.getBoundingClientRect();
+        const x=bar.getBoundingClientRect().left+100;
+        window.dispatchEvent(new MouseEvent('mousemove',{clientX:x,clientY:2}));
+        await pause(350);
+        for(const y of [-1,0,-8,-24]){
+          window.dispatchEvent(new MouseEvent('mousemove',{clientX:x,clientY:y}));
+          document.documentElement.dispatchEvent(new MouseEvent('mouseleave',{clientX:x,clientY:y}));
+          await pause(350);
+          check(bar.dataset.expanded==='true' && bar.getBoundingClientRect().height===34,'top-edge mouseleave must not collapse the band');
+        }
+        window.dispatchEvent(new Event('blur'));
+        await pause(75);
+        const fading=getComputedStyle(content);
+        check(fading.visibility==='visible' && Number(fading.opacity)>0 && Number(fading.opacity)<1,'closing content must fade rather than disappear');
+        await pause(350);
+        check(bar.getBoundingClientRect().height===0 && getComputedStyle(content).visibility==='hidden','band must finish closing');
+        window.dispatchEvent(new MouseEvent('mousemove',{clientX:x,clientY:2}));await pause(350);
+        document.documentElement.dispatchEvent(new MouseEvent('mouseleave',{clientX:x,clientY:-25}));await pause(700);
+        check(bar.dataset.expanded==='false' && bar.getBoundingClientRect().height===0,'leaving beyond top tolerance must still close');
+        const after=page.getBoundingClientRect();
+        check(before.y===after.y && before.height===after.height,'animation must not shift or resize the page');
+      }
+      root.unmount();
+      `,
+    ),
+  60_000,
+);
 
 test.skipIf(!existsSync(edge) && !process.env.PIG_REQUIRE_UI_TESTS)(
   "transcript in Edge: native scrolling, scrollbar geometry, history, attachments and streaming",
@@ -165,7 +218,7 @@ test.skipIf(!existsSync(edge) && !process.env.PIG_REQUIRE_UI_TESTS)(
           for(const expanded of [true,false]){
             if(expanded){const r=bar.getBoundingClientRect();window.dispatchEvent(new MouseEvent('mousemove',{clientX:r.left+100,clientY:2}));}
             else window.dispatchEvent(new Event('blur'));
-            for(let frame=0;frame<6;frame++){
+            for(let frame=0;frame<10;frame++){
               await pause(35);
               check(measure().every((value,i)=>Math.abs(value-before[i])<0.01),'titlebar must not resize or move chat/composer/records or change scroll position during animation');
             }
@@ -179,9 +232,25 @@ test.skipIf(!existsSync(edge) && !process.env.PIG_REQUIRE_UI_TESTS)(
           }
           metrics.titlebarClipping.push({collapsed,position,drift:0});
         }
-        bar.focus();await pause(220);
+        const barBounds=bar.getBoundingClientRect();
+        const move=(x,y)=>window.dispatchEvent(new MouseEvent('mousemove',{clientX:x,clientY:y}));
+        move(barBounds.left+100,46);await pause(350);
+        check(bar.dataset.expanded==='false','retention margin must not open a closed band');
+        move(barBounds.left+100,2);await pause(350);
+        for(const [x,y] of [[barBounds.left+100,58],[barBounds.left-24,24],[barBounds.right+4,24]]){
+          move(x,y);await pause(350);
+          check(bar.dataset.expanded==='true','open band must stay visible in its retention margin');
+        }
+        check(!document.elementFromPoint(barBounds.left+100,46)?.closest('.window-titlebar'),'retention margin must not intercept page input');
+        move(barBounds.left+100,72);await pause(220);
+        check(bar.dataset.expanded==='true','leaving must allow 300ms to return');
+        move(barBounds.left+100,46);await pause(350);
+        check(bar.dataset.expanded==='true','returning to the margin must cancel collapse');
+        move(barBounds.left+100,72);await pause(700);
+        check(bar.dataset.expanded==='false' && Math.abs(clip.getBoundingClientRect().top-8)<0.01,'leaving beyond the margin must collapse the band');
+        bar.focus();await pause(350);
         check(Math.abs(clip.getBoundingClientRect().top-34)<0.01,'keyboard focus must reveal the band');
-        bar.blur();await pause(220);
+        bar.blur();await pause(350);
       }
       metrics.stage="response-errors";
       const providerError='429 {"type":"error","error":{"type":"rate_limit_error","message":"Please try again later."},"request_id":"req_ui_error"}';
