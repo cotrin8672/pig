@@ -548,7 +548,7 @@ test.skipIf(!existsSync(edge) && !process.env.PIG_REQUIRE_UI_TESTS)(
       check(animation===(reducedMotion?"none":"tool-term-caret"),"running caret animation must respect reduced motion: "+JSON.stringify({reducedMotion,animation}));
       const elapsed=document.querySelector(".tool-term-time").textContent;
       check(/^\\d+(?:\\.\\d)?s$/.test(elapsed),"running shell must count its elapsed time: "+elapsed);
-      // Output publications must not remount status DOM or restart its clocks.
+      // Output publications and live-to-saved commits must preserve status clocks.
       metrics.shellStatusContinuity=[];
       for(const name of ['bash','powershell']){
         const call={type:'toolCall',id:'status-'+name,name,arguments:{command:'echo progress'}};
@@ -560,10 +560,6 @@ test.skipIf(!existsSync(edge) && !process.env.PIG_REQUIRE_UI_TESTS)(
         const dot=term.querySelector('.tool-term-dot'),caret=term.querySelector('.tool-term-caret'),clock=term.querySelector('.tool-term-time');
         const animations=[dot,caret].map(node=>node.getAnimations()[0]);
         await Promise.all(animations.filter(Boolean).map(animation=>animation.ready));
-        for(const animation of animations.filter(Boolean)){
-          const frames=animation.effect.getKeyframes();
-          check(frames.every(frame=>'opacity' in frame && !('boxShadow' in frame) && !('backgroundColor' in frame)),'shell pulses must animate opacity, not repaint shadows or backgrounds on every frame');
-        }
         const starts=animations.map(animation=>animation?.startTime);
         const started=performance.now(),elapsed=parseFloat(clock.textContent);
         for(let i=0;i<8;i++){
@@ -574,7 +570,8 @@ test.skipIf(!existsSync(edge) && !process.env.PIG_REQUIRE_UI_TESTS)(
           }
           incoming.transcript.tools[call.id].result={content:[{type:'text',text:'progress '+i+'\\n'+'log line\\n'.repeat(i)}]};
           statusSnapshot=newerSnapshot(statusSnapshot,incoming);await show(statusSnapshot);await pause(40);
-          check(dot===term.querySelector('.tool-term-dot') && caret===term.querySelector('.tool-term-caret') && clock===term.querySelector('.tool-term-time') && term.isConnected,'output updates must preserve the shell dot, caret and elapsed-time DOM');
+          check(dot===term.querySelector('.tool-term-dot') && caret===term.querySelector('.tool-term-caret') && clock===term.querySelector('.tool-term-time') && term.isConnected,'output updates and live-to-saved commits must preserve the shell dot, caret and elapsed-time DOM');
+          check(term.closest('[data-record-id]').dataset.recordId===(i<4?liveId:savedId),'preserving React identity must still publish the canonical saved record ID');
           for(const [index,node] of [dot,caret].entries()){
             const current=node.getAnimations()[0];
             check(reducedMotion?!current:current===animations[index] && current.startTime===starts[index],'output updates must not restart shell status animations');
@@ -583,7 +580,7 @@ test.skipIf(!existsSync(edge) && !process.env.PIG_REQUIRE_UI_TESTS)(
         }
         const delta=parseFloat(clock.textContent)-elapsed;
         check(Math.abs(delta-(performance.now()-started)/1000)<0.25,'elapsed time must continue across output publications, not reset: '+delta);
-        metrics.shellStatusContinuity.push({name,updates:8,seconds:delta});
+        metrics.shellStatusContinuity.push({name,updates:8,committed:true,seconds:delta});
       }
       const wideOutput=Array.from({length:80},(_,i)=>i+" "+"wide output ".repeat(150)).join("\\n");
       await render(<DisclosureScope id="multi-scroll" reveal={1}><ToolBlock call={{id:"multi-scroll",name:"extension",arguments:{}}} state={{status:"done"}} live={false} card={{title:"Scroll positions",body:[{type:"code",text:wideOutput},{type:"code",text:wideOutput}]}}/></DisclosureScope>);

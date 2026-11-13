@@ -548,6 +548,13 @@ function OAuthLoginDialog({ login }: { login: LoginState }) {
 export function Chat({ snapshot }: { snapshot: ChatSnapshot }) {
   const t = useT();
   const { info, transcript } = snapshot;
+  // Persistence replaces live IDs; keep their React keys so tool clocks survive.
+  const liveIds = new Map(
+    Object.entries(transcript.liveToEntry).map(([liveId, entryId]) => [
+      entryId,
+      liveId,
+    ]),
+  );
   const dividers = useMemo(
     () => modelDividers(transcript.records),
     [transcript.records],
@@ -767,6 +774,7 @@ export function Chat({ snapshot }: { snapshot: ChatSnapshot }) {
             <ExtensionNoticeLine key={item.notice.id} notice={item.notice} />
           );
         const { record, index } = item;
+        const key = liveIds.get(record.id) ?? record.id;
         const divider = dividers.get(record.id);
         if (!isVisibleRecord(record)) return null;
         const range = work.get(index);
@@ -788,10 +796,10 @@ export function Chat({ snapshot }: { snapshot: ChatSnapshot }) {
         );
         if (range) renderedWork.add(range.key);
         if (folded && index !== range.final)
-          return toggle ? <Fragment key={record.id}>{toggle}</Fragment> : null;
+          return toggle ? <Fragment key={key}>{toggle}</Fragment> : null;
         if (record.kind !== "message" || record.message.role === "custom")
           return (
-            <Fragment key={record.id}>
+            <Fragment key={key}>
               {toggle}
               <CustomRecord record={record} />
             </Fragment>
@@ -801,7 +809,7 @@ export function Chat({ snapshot }: { snapshot: ChatSnapshot }) {
           transcript.running && index === transcript.records.length - 1;
         return (
           <div
-            key={id}
+            key={key}
             className="response-turn"
             data-record-id={id}
             data-record-order={record.order}
