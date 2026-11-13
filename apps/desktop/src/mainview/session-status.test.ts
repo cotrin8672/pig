@@ -1,5 +1,6 @@
 import { afterEach, expect, test } from "bun:test";
 import type { SessionFlags } from "../shared/desktop-state";
+import { navigationRevision } from "./navigation";
 import {
   isInlineResultVisible,
   isViewedCompletion,
@@ -59,7 +60,7 @@ test("only the rendered, focused, visible, settled chat acknowledges its exact c
   for (const patch of [
     { active: "other" },
     { page: "settings" },
-    { opening: true },
+    { opening: true, openingViewRevision: navigationRevision },
     { snapshots: {} },
   ])
     expect(
@@ -107,7 +108,7 @@ test("only successful completion of the chat being watched is silent", () => {
   for (const patch of [
     { active: "other" },
     { page: "settings" },
-    { opening: true },
+    { opening: true, openingViewRevision: navigationRevision },
     { snapshots: {} },
     { pendingUI: [{ sessionId: "chat" }] },
   ]) {
@@ -129,6 +130,56 @@ test("only successful completion of the chat being watched is silent", () => {
   expect(
     isViewedCompletion({ ...notice, kind: undefined }, state(), true, true),
   ).toBe(false);
+});
+
+test("displayed history acknowledges completion before runtime startup, not the previous chat", () => {
+  const opening = {
+    ...state(),
+    active: "previous",
+    opening: true,
+    openingViewRevision: navigationRevision,
+    openingTarget: { id: "chat" },
+  };
+  const notice = {
+    kind: "completion" as const,
+    level: "success" as const,
+    message: "Done",
+    session: { id: "chat", cwd: "general" },
+  };
+  expect(isViewedCompletion(notice, opening, true, true)).toBe(true);
+  expect(visibleCompletion(opening, true, true)?.completionId).toBe("turn-1");
+  expect(
+    isViewedCompletion(
+      { ...notice, session: { id: "previous", cwd: "general" } },
+      opening,
+      true,
+      true,
+    ),
+  ).toBe(false);
+  expect(
+    isViewedCompletion(notice, { ...opening, snapshots: {} }, true, true),
+  ).toBe(false);
+  expect(
+    isViewedCompletion(
+      notice,
+      { ...opening, pendingUI: [{ sessionId: "chat" }] },
+      true,
+      true,
+    ),
+  ).toBe(false);
+});
+
+test("background startup does not prevent the displayed chat from becoming read", () => {
+  const background = {
+    ...state(),
+    opening: true,
+    openingViewRevision: navigationRevision - 1,
+    openingTarget: { id: "other" },
+  };
+  expect(visibleCompletion(background, true, true)?.completionId).toBe(
+    "turn-1",
+  );
+  expect(visibleCompletion(background, true, false)).toBeUndefined();
 });
 
 test("inline operation errors notify globally only when their own form cannot be seen", () => {

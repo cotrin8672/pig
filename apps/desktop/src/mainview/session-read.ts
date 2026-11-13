@@ -1,11 +1,14 @@
 import type { SessionFlags } from "../shared/desktop-state";
 import type { Notice, SessionInfo } from "../shared/rpc-schema";
+import { navigationRevision } from "./navigation";
 import { hasUnreadCompletion } from "./session-status";
 
 type ReadingState = {
   active?: string;
   page: string;
   opening: boolean;
+  openingViewRevision?: number;
+  openingTarget?: { id?: string };
   pendingUI?: { sessionId: string }[];
   snapshots: Record<
     string,
@@ -31,17 +34,20 @@ export function visibleChat(
   visible: boolean,
   focused: boolean,
 ) {
+  // Match App's rendered chat: history is readable before runtime startup finishes.
+  const openingView =
+    state.opening && state.openingViewRevision === navigationRevision;
+  const id = openingView ? state.openingTarget?.id : state.active;
   if (
     !visible ||
     !focused ||
     state.page !== "chat" ||
-    state.opening ||
-    !state.active ||
-    state.pendingUI?.some((request) => request.sessionId === state.active)
+    !id ||
+    state.pendingUI?.some((request) => request.sessionId === id)
   )
     return;
-  const snapshot = state.snapshots[state.active];
-  if (snapshot) return { id: state.active, cwd: snapshot.info.cwd };
+  const snapshot = state.snapshots[id];
+  if (snapshot) return { id, cwd: snapshot.info.cwd };
 }
 
 export function isViewedCompletion(

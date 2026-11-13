@@ -1,5 +1,6 @@
 import { afterEach, expect, jest, test } from "bun:test";
 import { emptyTranscript } from "../shared/transcript";
+import { navigationRevision } from "./navigation";
 import {
   NOTICE_HISTORY_LIMIT,
   parseNoticeHistory,
@@ -132,12 +133,22 @@ test("stored history round-trips and ignores corrupt or invalid entries", () => 
   ).toHaveLength(NOTICE_HISTORY_LIMIT);
 });
 
-test("returning to a chat clears only its successful completion toast and marks its history read", () => {
+test.each([
+  "ready",
+  "preview",
+  "background",
+] as const)("opening a %s chat clears its completion toast and marks its history read", (view) => {
   jest.useFakeTimers();
   useStore.setState({
-    active: "chat",
+    active: view === "preview" ? "previous" : "chat",
     page: "chat",
-    opening: false,
+    opening: view !== "ready",
+    openingViewRevision:
+      view === "background" ? navigationRevision - 1 : navigationRevision,
+    openingTarget:
+      view === "preview"
+        ? { id: "chat", cwd: "project" }
+        : { id: "other", cwd: "project" },
     pendingUI: [],
     snapshots: {
       chat: {
