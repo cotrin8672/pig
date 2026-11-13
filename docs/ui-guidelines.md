@@ -50,6 +50,11 @@ UIの追加・変更・レビュー時に適用する。スクリーンショッ
   のときだけfocusで開く）、ポインター起点のものは一覧のスクロール・リサイズで閉じる
   （`ActionsMenu` と同じ）。面は他のPopoverと同じ `--ds-bg-popover`・`blur(20px)`・
   `--ds-border-strong`・`--ds-shadow-dialog`。`provider-usage-hover-ui.test.ts` が実入力で検査する。
+- 背景系の面（shell・サイドバー・Popover・Composer・elevated等）はメインカラーのprimaryパレットから作る
+  （無彩色seedはneutral）。透過・Acrylic前提なので灰色のneutralは使わない。文字色はneutralのまま。
+  Popover背景は40%の色レイヤーとする。ウィンドウ背景の上へ80%の面を重ねると、
+  合成後はほぼ不透明になり背景色を失う。個別の色や全体opacityで補修しない。
+  同テストでPickerとの描画像の色一致・縞模様のぼかし・ウィンドウ背景越しの壁紙色の透過を検査する。
 
 ### 動的配色とカラーピッカー
 

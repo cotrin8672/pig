@@ -70,12 +70,24 @@ test("all seeds produce complete deterministic palettes with translucent surface
       "--ds-tool-row-bg",
       "--ds-bg-active",
       "--ds-bg-hover",
+      "--ds-bg-popover",
     ] as const) {
       expect(tokens[key]).toMatch(/^#[\da-f]{8}$/);
       const alpha = Number.parseInt(tokens[key].slice(7), 16);
       expect(alpha).toBeGreaterThan(0);
       expect(alpha).toBeLessThan(255);
     }
+    expect(tokens["--ds-bg-popover"].slice(7)).toBe("66");
+    const seedHct = Hct.fromInt(argbFromHex(seed));
+    const popover = Hct.fromInt(
+      argbFromHex(tokens["--ds-bg-popover"].slice(0, 7)),
+    );
+    if (seedHct.chroma >= 4) {
+      // Popover glass must keep the theme hue, not collapse to grey.
+      expect(popover.chroma).toBeGreaterThan(8);
+      const delta = Math.abs(popover.hue - seedHct.hue) % 360;
+      expect(Math.min(delta, 360 - delta)).toBeLessThan(20);
+    } else expect(popover.chroma).toBeLessThan(4);
   }
   expect(createThemeTokens("#ff0000")["--ds-shell-start"]).not.toBe(
     createThemeTokens("#0000ff")["--ds-shell-start"],

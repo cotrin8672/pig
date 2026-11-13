@@ -30,6 +30,10 @@ export function createThemeTokens(
         tone,
       ),
     );
+  // Surfaces sit on Acrylic/transparency, so they carry the main colour itself;
+  // TonalSpot's neutral (~chroma 4) reads as grey. Text stays on neutral/ink.
+  const surface = (tone: number) =>
+    hct.chroma < 4 ? neutral(tone) : primary(tone);
   const ink = hex(scheme.onSurface);
   const success = extended("#249c64");
   const warning = extended("#d99a20");
@@ -41,19 +45,20 @@ export function createThemeTokens(
     "--ds-accent-soft": secondary(80),
     "--ds-bg-active": `${primary(80)}1f`,
     "--ds-bg-chip": `${ink}0d`,
-    "--ds-bg-composer": `${neutral(25)}e6`,
-    "--ds-bg-elevated": `${neutral(22)}f5`,
-    "--ds-bg-elevated-opaque": neutral(22),
-    "--ds-bg-popover": `${neutral(22)}cc`,
+    "--ds-bg-composer": `${surface(25)}e6`,
+    "--ds-bg-elevated": `${surface(22)}f5`,
+    "--ds-bg-elevated-opaque": surface(22),
+    // Light alpha: a dense overlay on the shell hides the backdrop.
+    "--ds-bg-popover": `${surface(22)}66`,
     "--ds-bg-hover": `${ink}0d`,
-    "--ds-bg-inset": neutral(12),
-    "--ds-bg-primary": neutral(18),
-    "--ds-bg-secondary": neutral(25),
-    "--ds-bg-sidebar": `${neutral(6)}1f`,
-    "--ds-bg-tertiary": neutral(23),
-    "--ds-bg-under": neutral(18),
-    "--ds-shell-start": neutral(21),
-    "--ds-shell-end": neutral(16),
+    "--ds-bg-inset": surface(12),
+    "--ds-bg-primary": surface(18),
+    "--ds-bg-secondary": surface(25),
+    "--ds-bg-sidebar": `${surface(6)}1f`,
+    "--ds-bg-tertiary": surface(23),
+    "--ds-bg-under": surface(18),
+    "--ds-shell-start": surface(21),
+    "--ds-shell-end": surface(16),
     "--ds-border-default": "transparent",
     "--ds-border-subtle": "transparent",
     "--ds-border-strong": `${hex(scheme.outline)}60`,
@@ -61,7 +66,7 @@ export function createThemeTokens(
     "--ds-field-inset-bg": `${ink}0d`,
     "--ds-focus": primary(90),
     "--ds-placeholder-ink": neutral(72),
-    "--ds-raised": neutral(25),
+    "--ds-raised": surface(25),
     "--ds-shadow-composer": `0 6px 18px ${neutral(3)}3d, inset 0 1px 0 ${ink}08`,
     "--ds-shadow-dialog": `0 16px 48px ${neutral(3)}66`,
     "--ds-text-faint": neutral(69),
@@ -71,7 +76,7 @@ export function createThemeTokens(
     "--ds-tool-row-bg": `${ink}07`,
     "--ds-tile": `${ink}08`,
     "--ds-tile-hover": `${ink}0f`,
-    "--ds-thinking-code-bg": neutral(12),
+    "--ds-thinking-code-bg": surface(12),
     "--ds-success": success,
     "--ds-error": error,
     "--ds-on-error": hex(scheme.onError),
