@@ -19,6 +19,7 @@ import {
 } from "../shared/keymap";
 import { AppUpdateSettings } from "./AppUpdateSettings";
 import { ChatRendererSettings } from "./ChatRendererSettings";
+import { ColorPicker } from "./ColorPicker";
 import { ContentPage } from "./ContentPage";
 import { DefaultModelSettings } from "./DefaultModelSettings";
 import { FontSettings } from "./FontSettings";
@@ -387,13 +388,22 @@ function KeyboardSettings() {
   );
 }
 
-function AppearanceSettings() {
+export function AppearanceSettings() {
   const t = useT();
   const appearance = useStore((s) => s.appearance);
   const alpha = Math.round(appearance.opacity[appearance.backdrop] * 100);
   return (
     <>
       <SettingsSection>
+        <SettingsRow label={t.themeColor}>
+          <ColorPicker
+            label={t.themeColor}
+            value={appearance.themeColor}
+            onChange={(themeColor) =>
+              updateAppearance((current) => ({ ...current, themeColor }))
+            }
+          />
+        </SettingsRow>
         <SettingsRow
           label={<span id="backdrop-label">{t["Window backdrop"]}</span>}
         >

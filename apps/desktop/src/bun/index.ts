@@ -199,8 +199,10 @@ function updateAppearance(value: unknown) {
   appearanceQueue = appearanceQueue
     .then(async () => {
       const next = validateAppearance(value);
-      // Apply before persisting so a rejected backdrop is never saved or re-applied at startup.
-      applyBackdrop(window.ptr, next);
+      // Colour/opacity previews must not reconfigure DWM or redraw the native frame.
+      // Apply before persisting so a rejected backdrop is never saved at startup.
+      if (next.backdrop !== appearance.backdrop)
+        applyBackdrop(window.ptr, next);
       await saveAppearance(appearanceFile, next);
       appearance = next;
       rpc.send.appearance(appearance);

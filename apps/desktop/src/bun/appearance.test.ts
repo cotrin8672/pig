@@ -3,6 +3,7 @@ import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { defaultAppearance, toggleBackdrop } from "../shared/appearance";
+import { defaultThemeColor } from "../shared/theme-color";
 import {
   applyBackdrop,
   loadAppearance,
@@ -21,11 +22,13 @@ test("backdrop rejects a missing Windows HWND before calling native APIs", () =>
 test("appearance validates backdrop and clamps finite opacity", () => {
   expect(validateAppearance({ backdrop: "none", opacity: -1 })).toEqual({
     backdrop: "none",
+    themeColor: defaultThemeColor,
     opacity: { none: 0, acrylic: 0, mica: 0 },
     effect: "acrylic",
   });
   expect(validateAppearance({ backdrop: "mica", opacity: 2 })).toEqual({
     backdrop: "mica",
+    themeColor: defaultThemeColor,
     opacity: { none: 1, acrylic: 1, mica: 1 },
     effect: "mica",
   });
@@ -73,10 +76,17 @@ test("corrupt appearance remains untouched until an explicit valid save", async 
     expect(migrated).toEqual({
       backdrop: "mica",
       effect: "mica",
+      themeColor: defaultThemeColor,
       opacity: { none: 0.4, acrylic: 0.4, mica: 0.4 },
     });
     await saveAppearance(file, migrated);
     expect(await loadAppearance(file)).toEqual(migrated);
+    const tinted = validateAppearance({ ...migrated, themeColor: "#A3F" });
+    await saveAppearance(file, tinted);
+    expect(await loadAppearance(file)).toEqual({
+      ...migrated,
+      themeColor: "#aa33ff",
+    });
   } finally {
     await rm(directory, { recursive: true, force: true });
   }

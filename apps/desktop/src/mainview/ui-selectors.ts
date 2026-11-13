@@ -21,7 +21,8 @@ export function selectAppView(s: State) {
     sidebarReady: s.initialized || s.cachedSidebar,
     page: s.page,
     language: s.settings.language,
-    appearance: s.appearance,
+    // Seed previews update CSS independently, never re-render the conversation.
+    windowOpacity: s.appearance.opacity[s.appearance.backdrop],
     connected: s.bootstrap.models.length > 0,
     generalCwd: s.bootstrap.generalCwd,
     openingView,

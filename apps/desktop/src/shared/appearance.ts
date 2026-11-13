@@ -1,8 +1,10 @@
 import type { Appearance, Backdrop } from "./rpc-schema";
+import { defaultThemeColor, normalizeThemeColor } from "./theme-color";
 
 export const defaultAppearance: Appearance = {
   backdrop: "acrylic",
   effect: "acrylic",
+  themeColor: defaultThemeColor,
   opacity: { none: 0.78, acrylic: 0.78, mica: 0.78 },
 };
 export function toggleBackdrop(appearance: Appearance): Appearance {
@@ -29,5 +31,10 @@ export function validateAppearance(value: unknown): Appearance {
       throw new Error("Invalid appearance.");
     opacity[mode] = Math.min(1, Math.max(0, alpha));
   }
-  return { backdrop, effect, opacity };
+  const themeColor =
+    input.themeColor === undefined
+      ? defaultThemeColor
+      : normalizeThemeColor(input.themeColor);
+  if (!themeColor) throw new Error("Invalid theme color.");
+  return { backdrop, effect, opacity, themeColor };
 }

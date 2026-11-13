@@ -47,6 +47,23 @@ function request(): UIRequest {
   };
 }
 
+test("theme previews do not invalidate the app/conversation; opacity still updates the shell", () => {
+  const state = fixture();
+  const app = selectAppView(state);
+  const broker = selectBrokerView(state);
+  for (const themeColor of ["#ff0000", "#000000", "#ffffff", "#7dbfbd"]) {
+    state.appearance = { ...state.appearance, themeColor };
+    expect(shallow(selectAppView(state), app)).toBe(true);
+    expect(shallow(selectBrokerView(state), broker)).toBe(true);
+  }
+  state.appearance = {
+    ...state.appearance,
+    opacity: { ...state.appearance.opacity, [state.appearance.backdrop]: 0.5 },
+  };
+  expect(selectAppView(state).windowOpacity).toBe(0.5);
+  expect(shallow(selectAppView(state), app)).toBe(false);
+});
+
 test("100 background tokens leave the app, broker, project and footer ownership selections unchanged", () => {
   const state = fixture();
   const app = selectAppView(state);
@@ -235,6 +252,8 @@ test("replacement drops old-epoch waits and accepts the new owner's requests", (
   }
 });
 
+// Structural notification regression, not a wall-time benchmark. Allow the
+// synthetic workload to share CI CPUs with the browser and SDK integration tests.
 test("20 projects with 500 sessions do not publish changed activity for 100 token updates", () => {
   const state = fixture();
   const projects = Array.from({ length: 20 }, (_, i) => `project-${i}`);
@@ -266,4 +285,4 @@ test("20 projects with 500 sessions do not publish changed activity for 100 toke
     });
   }
   expect(changed).toBe(0);
-});
+}, 30_000);

@@ -33,6 +33,7 @@ import { CustomRecord } from "./CustomRecord";
 import type { ChatSnapshot } from "./chat-snapshot";
 import { addressKey, prependHistory, sameAddress } from "./chat-snapshot";
 import { dataText, isVisibleRecord } from "./custom-data";
+import { DynamicTheme } from "./DynamicTheme";
 import { Extensions } from "./Extensions";
 import {
   ExtensionNoticeLine,
@@ -52,7 +53,6 @@ import { initNavigation, navigate } from "./navigation";
 import { ProviderIcon } from "./ProviderIcon";
 import { Providers } from "./Providers";
 import { ProviderUsage } from "./ProviderUsage";
-
 import { ResponseError } from "./ResponseError";
 import { ResponseFooter } from "./ResponseFooter";
 import { createResponseFooterIndex } from "./response-footers";
@@ -67,7 +67,6 @@ import {
 } from "./rpc";
 import { SessionPanel } from "./SessionPanel";
 import { Settings } from "./Settings";
-
 import { SidebarSessions } from "./SidebarSessions";
 import { initShortcuts } from "./shortcuts";
 import { type LoginState, showError, useStore } from "./store";
@@ -159,11 +158,11 @@ export function App() {
       }}
       style={
         {
-          "--window-opacity":
-            state.appearance.opacity[state.appearance.backdrop],
+          "--window-opacity": state.windowOpacity,
         } as React.CSSProperties
       }
     >
+      <DynamicTheme />
       <button
         type="button"
         className="sidebar-toggle electrobun-webkit-app-region-no-drag"

@@ -139,6 +139,8 @@ export interface Snapshot extends ModelSelection {
 // (0..1), `backdrop` the Windows 11 DWM system backdrop behind it.
 export type Backdrop = "none" | "acrylic" | "mica";
 export interface Appearance {
+  /** Opaque sRGB seed for the generated dark palette. */
+  themeColor: string;
   backdrop: Backdrop;
   opacity: Record<Backdrop, number>;
   effect: "acrylic" | "mica";

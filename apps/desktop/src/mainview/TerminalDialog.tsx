@@ -107,13 +107,21 @@ function TerminalModal(props: TerminalDialogProps) {
       }
     };
     try {
+      const terminalTheme = () => {
+        const style = getComputedStyle(modal);
+        return {
+          background: style.backgroundColor,
+          foreground: style.color,
+          cursor: style.color,
+        };
+      };
       const term = new Terminal({
         cursorBlink: true,
         fontFamily: '"Cascadia Mono", Consolas, monospace',
         fontSize: 14,
         scrollback: 500,
         screenReaderMode: true,
-        theme: { background: "#1e2430", foreground: "#f1edf5" },
+        theme: terminalTheme(),
         linkHandler: {
           activate: (_event, value) => {
             const url = safeTerminalURL(value);
@@ -126,6 +134,15 @@ function TerminalModal(props: TerminalDialogProps) {
       const fit = new FitAddon();
       term.loadAddon(fit);
       term.open(element);
+      // Only default ink/canvas follow the UI; ANSI indices and RGB stay intact.
+      const themeObserver = new MutationObserver(() => {
+        term.options.theme = terminalTheme();
+      });
+      themeObserver.observe(document.documentElement, {
+        attributes: true,
+        attributeFilter: ["style"],
+      });
+      cleanups.push(() => themeObserver.disconnect());
       // Subscribe before ready: Bun can synchronously emit from the ready handler.
       cleanups.push(callbacks.current.subscribe(client.receive));
       const input = term.onData((data) => client.input(data, "text"));

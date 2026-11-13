@@ -1,7 +1,21 @@
-/* Blue-gray Seamless, matched to PI-Desktop. Geometry and type keep its token ramp. */
+/* Static first-paint/fallback palette. DynamicTheme replaces colour tokens only. */
 :root {
   color-scheme: dark;
   --ds-accent: #c5d9ff;
+  --ds-on-accent: #21324d;
+  --ds-shell-start: #303c50;
+  --ds-shell-end: #272632;
+  --ds-scrollbar-thumb: #ffffff2e;
+  --ds-scrollbar-thumb-hover: #ffffff52;
+  --ds-syntax-keyword: #81a1c1;
+  --ds-syntax-function: #88c0d0;
+  --ds-syntax-type: #8fbcbb;
+  --ds-syntax-string: #a3be8c;
+  --ds-syntax-number: #b48ead;
+  --ds-syntax-comment: #a0a9ba;
+  --ds-syntax-constant: #ebcb8b;
+  --ds-syntax-decorator: #d08770;
+  --ds-syntax-text: #d8dee9;
   --ds-accent-hover: #d9e7ff;
   --ds-accent-soft: #adc4e6;
   --ds-bg-active: #c5d9ff1f;
@@ -37,6 +51,7 @@
   --ds-thinking-code-bg: #252c39;
   --ds-success: #67dfa0;
   --ds-error: #ff9996;
+  --ds-on-error: #690005;
   --ds-warning: #ffb88e;
   --ds-info: #adc4e6;
   --ds-purple: #c8afff;
