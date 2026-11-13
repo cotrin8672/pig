@@ -329,6 +329,61 @@ if (process.env.PIG_OPEN_NAVIGATION_CHILD !== "1") {
     await c.promise;
     expect(useStore.getState().active).toBe(c.ready.info.id);
   });
+  test("pane creation, background opening, focus and closing preserve independent sessions", async () => {
+    const { createPane, closePane, focusPane } = await import("./pane-state");
+    const first = snapshot(crypto.randomUUID());
+    receiveSnapshot(first);
+    useStore.setState({
+      initialized: true,
+      page: "chat",
+      active: first.info.id,
+      activePane: 1,
+      paneTree: { type: "pane", id: 1 },
+      panes: { 1: { sessionId: first.info.id } },
+    });
+    createPane("rows");
+    await Bun.sleep(1);
+    const call = calls.at(-1);
+    if (!call) throw Error("Expected pane session open");
+    const second = snapshot(crypto.randomUUID());
+    receiveRuntime({
+      type: "opening",
+      openId: call.params.openId,
+      address: second.address,
+      cwd: second.info.cwd,
+    });
+    expect(useStore.getState().activePane).toBe(2);
+    focusPane(1);
+    const { showPendingOpen } = await import("./rpc");
+    showPendingOpen(call.params.openId);
+    expect(useStore.getState().activePane).toBe(2);
+    expect(useStore.getState().panes[1].sessionId).toBe(first.info.id);
+    focusPane(1);
+    call.deferred.resolve(second);
+    for (
+      let i = 0;
+      i < 100 && useStore.getState().pendingOpens[call.params.openId];
+      i++
+    )
+      await Bun.sleep(1);
+    expect(useStore.getState().active).toBe(first.info.id);
+    expect(useStore.getState().panes[2].sessionId).toBe(second.info.id);
+    focusPane(2);
+    expect(useStore.getState().active).toBe(second.info.id);
+    // Selecting a session already visible focuses its pane instead of duplicating it.
+    await openChat(first.info.cwd, first.info.id);
+    expect(useStore.getState().activePane).toBe(1);
+    drafts.edit(second.address, (content) => ({
+      ...content,
+      text: "Keep this draft",
+    }));
+    closePane(2);
+    expect(Object.keys(useStore.getState().panes)).toEqual(["1"]);
+    expect(useStore.getState().snapshots[second.info.id]).toBeDefined();
+    expect(drafts.read(second.address).content.text).toBe("Keep this draft");
+    closePane(1);
+    expect(useStore.getState().panes[1]).toBeDefined();
+  });
   test("optional recovery transport failure cannot fail a successful open or erase its new draft", async () => {
     failRecovery = true;
     try {
