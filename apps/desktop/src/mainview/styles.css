@@ -1012,9 +1012,14 @@ details[open] > summary .tool-chevron,
 .tool-term.running .tool-term-dot {
   animation: tool-term-breathe 1.4s ease-in-out infinite;
 }
+/* Keep status pulses compositable while streaming output repaints. */
 @keyframes tool-term-breathe {
+  0%,
+  100% {
+    opacity: 1;
+  }
   50% {
-    box-shadow: 0 0 0 3px color-mix(in srgb, var(--tool-tone) 18%, transparent);
+    opacity: 0.35;
   }
 }
 /* A block caret that fades slowly in and out while the command runs. */
@@ -1029,12 +1034,13 @@ details[open] > summary .tool-chevron,
 }
 @keyframes tool-term-caret {
   0%,
-  35% {
-    background: color-mix(in srgb, var(--ds-accent) 72%, transparent);
+  35%,
+  100% {
+    opacity: 1;
   }
   60%,
   85% {
-    background: color-mix(in srgb, var(--ds-accent) 8%, transparent);
+    opacity: 0.11;
   }
 }
 .tool-term > summary {
