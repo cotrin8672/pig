@@ -202,13 +202,11 @@ function useUsagePopover() {
 function UsageDetails({
   entry,
   display,
-  now,
   mode,
   problem,
 }: {
   entry: ProviderUsage;
   display: UsageDisplay;
-  now: number;
   mode: string;
   problem?: string;
 }) {
@@ -281,7 +279,6 @@ function UsageDetails({
 function tooltip(
   entry: ProviderUsage,
   display: UsageDisplay,
-  now: number,
   mode: string,
   problem?: string,
 ) {
@@ -369,7 +366,7 @@ export function ProviderUsageView({
             const windows = ringWindows(entry);
             const balance = entry.data?.balances[0];
             const problem = entry.problem && problems[entry.problem];
-            const detail = tooltip(entry, display, now, mode, problem);
+            const detail = tooltip(entry, display, mode, problem);
             return (
               <li
                 key={entry.key}
@@ -424,7 +421,6 @@ export function ProviderUsageView({
             <UsageDetails
               entry={activeEntry}
               display={display}
-              now={now}
               mode={mode}
               problem={activeEntry.problem && problems[activeEntry.problem]}
             />
