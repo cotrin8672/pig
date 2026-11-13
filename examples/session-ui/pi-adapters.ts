@@ -49,8 +49,14 @@ function watch(
   render: () => void,
   events = false,
 ): () => void {
-  const unsubscribe = ctx.sources.subscribe(render); // API calls immediately, then on changes.
-  const offEvent = events ? ctx.sources.onEvent(() => render()) : () => {};
+  const unsubscribe = ctx.sources.subscribe(render);
+  // Raw command/lifecycle events can change availability without persistence.
+  // Streaming message bodies cannot change these saved-state views.
+  const offEvent = events
+    ? ctx.sources.onEvent((event) => {
+        if (event.type !== "message_update") render();
+      })
+    : () => {};
   return () => {
     unsubscribe();
     offEvent();

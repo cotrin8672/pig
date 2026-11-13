@@ -30,9 +30,13 @@ export function createAdapterSource(
   const changes = new Set<() => void>();
   const events = new Set<(event: SourceEvent) => void>();
   const live = new Map<string, ToolObservation>();
+  let observedLeaf = session.sessionManager.getLeafId();
+  let observedCount = session.sessionManager.getEntryCount();
   let savedLeaf: string | null | undefined;
   const saved = new Map<string, ToolObservation>();
   const refresh = () => {
+    observedLeaf = session.sessionManager.getLeafId();
+    observedCount = session.sessionManager.getEntryCount();
     for (const listener of changes) listener();
   };
   const unsubscribe = session.subscribe((event) => {
@@ -66,7 +70,14 @@ export function createAdapterSource(
       });
     }
     for (const listener of events) listener(event as SourceEvent);
-    refresh();
+    // Text deltas change neither persisted entries nor tool observations. Raw
+    // listeners still receive them, and writes made by their hooks still notify.
+    if (
+      event.type !== "message_update" ||
+      session.sessionManager.getLeafId() !== observedLeaf ||
+      session.sessionManager.getEntryCount() !== observedCount
+    )
+      refresh();
   });
   const backend: AdapterBackend = {
     session: {

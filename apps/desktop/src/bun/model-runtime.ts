@@ -10,6 +10,7 @@ import type { SessionAccounts } from "../shared/provider-accounts";
 import { withCodexImages } from "./codex-images";
 import { desktopConfigDir } from "./desktop-config";
 import { composeProviders } from "./model-composition";
+import { coalesceModelRefresh } from "./model-refresh-coalescer";
 import { readModelConfig } from "./model-settings";
 import { FileModelsStore } from "./models-store";
 import { AccountCredentials, providerAccounts } from "./provider-accounts";
@@ -50,6 +51,7 @@ export async function createModelRuntime(accounts: SessionAccounts = {}) {
     refreshOnCreate: false,
     allowModelNetwork: false,
   });
+  coalesceModelRefresh(runtime);
   accountCredentials.set(runtime, credentials);
   const generatedAt = getBuiltinModelDataGeneratedAt();
   const base = builtinProviders().map((builtin) => {
@@ -141,7 +143,7 @@ export async function applyRuntimeModelSettings(
       runtime.getRegisteredProviderConfig(provider.id)
     )
       continue;
-    runtime.registerNativeProvider(provider);
+    if (existing !== provider) runtime.registerNativeProvider(provider);
     previous.set(provider.id, provider);
   }
 }

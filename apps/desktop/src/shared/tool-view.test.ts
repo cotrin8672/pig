@@ -69,6 +69,21 @@ describe("tool-view", () => {
     ]);
   });
 
+  test("large exploration batches are grouped with linear work", () => {
+    let checks = 0;
+    const blocks = Array.from({ length: 2000 }, () => ({
+      type: "toolCall",
+      get name() {
+        checks++;
+        return "read";
+      },
+    }));
+    const runs = groupBlocks(blocks);
+    expect(runs).toHaveLength(1);
+    expect(runs[0].blocks).toEqual(blocks);
+    expect(checks).toBeLessThan(blocks.length * 6);
+  });
+
   test("finishedWork folds finished responses with work, keeps the final answer", () => {
     const records = [
       user(),

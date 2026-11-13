@@ -61,7 +61,9 @@ export function groupBlocks<B extends { type: string; name?: unknown }>(
     EXPLORE_TOOLS.has(block.name);
   blocks.forEach((block, index) => {
     const last = runs.at(-1);
-    if (last && explore(block) && last.blocks.every(explore))
+    // A run is homogeneous by construction; rescanning its growing prefix
+    // makes a long parallel exploration batch quadratic.
+    if (last && explore(block) && explore(last.blocks[0]))
       last.blocks.push(block);
     else runs.push({ start: index, blocks: [block] });
   });

@@ -23,6 +23,7 @@ test("source retains parent identity and observes committed changes even after c
         return entries;
       },
       getEntries: () => entries,
+      getEntryCount: () => entries.length,
     },
     subscribe(fn: typeof listener) {
       listener = fn;

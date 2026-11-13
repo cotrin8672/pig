@@ -72,6 +72,7 @@ import {
   runtimeAccounts,
 } from "./model-runtime";
 import { defaultEffort } from "./model-settings";
+import { traceOpen } from "./open-performance";
 import { resolveProjectTrust } from "./project-trust";
 import { providerAccounts } from "./provider-accounts";
 import { desktopResourceOptions } from "./resources";
@@ -494,6 +495,7 @@ export class SessionHost {
     return open.promise;
   }
   private async open(open: Opening): Promise<Snapshot> {
+    const timing = traceOpen(open.input.openId);
     let m: Managed | undefined;
     let historyPreview: { snapshot: Snapshot; leaf: string | null } | undefined;
     try {
@@ -523,11 +525,13 @@ export class SessionHost {
         open.state = { state: "ready", snapshot };
         return snapshot;
       }
+      timing.mark("resolve-file");
       // open() derives the directory from the file, which matches sessionDirFor.
       const manager = file
         ? SessionManager.open(file)
         : SessionManager.create(input.cwd, await sessionDirFor(input.cwd));
       controller.signal.throwIfAborted();
+      timing.mark("session-manager");
       const address = this.address(manager.getSessionId());
       this.failedHistory.delete(address.sessionId);
       const ui = createExtensionUIHost({
@@ -591,6 +595,7 @@ export class SessionHost {
       const preview = this.snapshot(m);
       historyPreview = { snapshot: preview, leaf: manager.getLeafId() };
       this.options.emit({ type: "snapshot", snapshot: preview });
+      timing.mark("history-preview");
       const managed = m;
       const factory: Parameters<typeof createAgentSessionRuntime>[0] = async (
         target,
@@ -607,6 +612,7 @@ export class SessionHost {
           desktopConfigDir,
           controller.signal,
         );
+        timing.mark("trust-check-or-user-wait");
         if (!trust.trusted)
           this.options.emitUI({
             type: "notify",
@@ -618,6 +624,7 @@ export class SessionHost {
         if (targetId !== managed.address.sessionId)
           await this.options.sessionAccounts?.write(targetId, managed.accounts);
         const models = await createModelRuntime(managed.accounts);
+        timing.mark("model-runtime");
         managed.models = models;
         await this.options.configureModels?.(models);
         controller.signal.throwIfAborted();
@@ -649,6 +656,7 @@ export class SessionHost {
             },
           });
         });
+        timing.mark("resource-services-and-queue");
         services.resourceLoader.reload = async () => {
           if (managed.runtime) this.invalidated.add(managed.runtime.session);
           await resetExtensionProviders(models);
@@ -691,6 +699,7 @@ export class SessionHost {
           facade.extendResources = (paths) => next.extendResources(paths);
         };
         const available = await models.getAvailable();
+        timing.mark("available-models");
         const context = target.sessionManager.buildSessionContext();
         const branch = target.sessionManager.getBranch();
         const enabled = (candidate: Model<Api>) =>
@@ -761,6 +770,7 @@ export class SessionHost {
               ? ["read", "powershell", "edit", "write"]
               : undefined,
         });
+        timing.mark("create-agent-session");
         return { ...result, services, diagnostics: services.diagnostics };
       };
       managed.runtime = await createAgentSessionRuntime(factory, {
@@ -807,11 +817,13 @@ export class SessionHost {
       });
       controller.signal.throwIfAborted();
       await this.bind(managed, managed.runtime.session);
+      timing.mark("bind-extensions-and-adapters");
       controller.signal.throwIfAborted();
       managed.phase = "ready";
       const snapshot = this.snapshot(managed);
       open.state = { state: "ready", snapshot };
       this.options.emit({ type: "ready", openId: input.openId, snapshot });
+      timing.mark("ready-publication");
       return snapshot;
     } catch (error) {
       const cancelled = open.controller.signal.aborted;
@@ -846,6 +858,8 @@ export class SessionHost {
         });
       }
       throw error;
+    } finally {
+      timing.finish(open.state.state);
     }
   }
   private async bind(m: Managed, session: AgentSession) {
