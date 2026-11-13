@@ -102,9 +102,9 @@ import { providerAccounts } from "./provider-accounts";
 import { agentDir, agentDirSource } from "./runtime-profile";
 import { validateSessionScope } from "./session-scope";
 import { loadSettings, saveSettings } from "./settings";
+import { createRuntimeDeltaEncoder } from "./snapshot-delta";
 import {
   packOpenState,
-  packRuntimeEvent,
   packRuntimeState,
   packSnapshot,
   packTranscript,
@@ -275,6 +275,7 @@ const rpc = BrowserView.defineRPC<RPCSchema>({
       cancelPrompt: (input) => sessionHost.cancelPrompt(input),
       getRecovery: (input) => sessionHost.getRecovery(input),
       syncDraft: (input) => sessionHost.syncDraft(input),
+      getSessionDraft: (input) => sessionHost.getSessionDraft(input),
       discardRecovery: (input) => sessionHost.discardRecovery(input),
       resolveExtensionUI: (input) => sessionHost.resolveExtensionUI(input),
       terminalCommand: (input) => sessionHost.terminalCommand(input),
@@ -638,6 +639,7 @@ const rpc = BrowserView.defineRPC<RPCSchema>({
     },
   },
 });
+const encodeRuntimeEvent = createRuntimeDeltaEncoder();
 const completions = new Map<
   string,
   { track: ReturnType<typeof createCompletionTracker>; running: boolean }
@@ -647,7 +649,7 @@ configureSessionHost(
     ui: (event) => rpc.send.extensionUIEvent(event),
     terminal: (event) => rpc.send.terminalEvent(event),
     runtime: (event) => {
-      rpc.send.runtimeEvent(packRuntimeEvent(event));
+      rpc.send.runtimeEvent(encodeRuntimeEvent(event));
       if (event.type === "closed") completions.delete(event.address.sessionId);
       if (event.type !== "snapshot") return;
       const snapshot = event.snapshot;

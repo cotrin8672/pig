@@ -2,6 +2,7 @@ import type { Snapshot, WireEvent } from "../shared/rpc-schema";
 import type { SessionAddress } from "../shared/runtime-contract";
 import type { Transcript } from "../shared/transcript";
 import { unpackTranscript } from "../shared/transcript-wire";
+import { shareTranscript } from "./transcript-sharing";
 
 export type ChatSnapshot = Snapshot;
 export const addressKey = (address: SessionAddress) =>
@@ -79,7 +80,7 @@ export function applyChatEvent(
     snapshotSeq: event.snapshotSeq,
     transcript: retainHistory(
       snapshot.transcript,
-      unpackTranscript(event.transcript),
+      shareTranscript(snapshot.transcript, unpackTranscript(event.transcript)),
     ),
     failure: event.failure,
     aborted: event.aborted,
@@ -105,7 +106,10 @@ export function newerSnapshot(
     ? {
         ...incoming,
         modelCatalog: incoming.modelCatalog ?? current.modelCatalog,
-        transcript: retainHistory(current.transcript, incoming.transcript),
+        transcript: retainHistory(
+          current.transcript,
+          shareTranscript(current.transcript, incoming.transcript),
+        ),
       }
     : incoming;
 }

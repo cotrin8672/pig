@@ -2,6 +2,7 @@ import { withDraftFiles } from "../shared/attachments";
 import { unfoldPastes } from "../shared/paste";
 import type {
   DraftContent,
+  DraftImagesRef,
   DraftOwner,
   DraftState,
   DraftSyncParams,
@@ -67,6 +68,10 @@ const equal = (a: DraftContent, b: DraftContent) =>
 export class DraftStore {
   private entries = new Map<string, EditorDraft>();
   private owners = new Map<string, SessionAddress>();
+  private remoteImages = new Map<
+    string,
+    { revision: number; images: DraftContent["images"] }
+  >();
   private tick = 0;
   getTick = () => this.tick;
   retained() {
@@ -126,9 +131,31 @@ export class DraftStore {
       dirty: true,
     });
   }
-  receive(address: SessionAddress, remote: DraftState) {
+  receive(
+    address: SessionAddress,
+    remote: DraftState,
+    imageRefs?: DraftImagesRef,
+  ): boolean {
     const draft = this.read(address);
-    if (draft.retired || remote.revision < draft.revision) return;
+    if (draft.retired || remote.revision < draft.revision) return true;
+    const key = addressKey(address);
+    if (imageRefs) {
+      const cached = this.remoteImages.get(key);
+      if (
+        remote.images.length ||
+        !cached ||
+        (cached.revision !== imageRefs.revision &&
+          cached.revision !== remote.revision) ||
+        cached.images.length !== imageRefs.ids.length ||
+        cached.images.some((image, index) => image.id !== imageRefs.ids[index])
+      )
+        return false;
+      remote = { ...remote, images: cached.images };
+    }
+    this.remoteImages.set(key, {
+      revision: remote.revision,
+      images: remote.images,
+    });
     const flight = this.flights.get(addressKey(address));
     const own =
       flight &&
@@ -169,6 +196,7 @@ export class DraftStore {
         dirty: false,
       });
     }
+    return true;
   }
   resolve(address: SessionAddress, choice: "local" | "extension") {
     const draft = this.read(address);
@@ -185,6 +213,7 @@ export class DraftStore {
     if (addressKey(previous) === addressKey(next)) return;
     const old = this.read(previous);
     if (old.transferred) return;
+    this.remoteImages.delete(addressKey(previous));
     const current = this.read(next);
     // A new epoch's startup editor event may beat the replaced publication.
     // Never overwrite that newer extension text with a clean old mirror.
@@ -215,6 +244,7 @@ export class DraftStore {
     });
   }
   retire(address: SessionAddress) {
+    this.remoteImages.delete(addressKey(address));
     const draft = this.read(address);
     this.put(address, { ...draft, retired: true });
   }
@@ -226,6 +256,7 @@ export class DraftStore {
   discard(address: SessionAddress, deleted = false) {
     const draft = this.read(address);
     if (!draft.retired && !deleted) return;
+    this.remoteImages.delete(addressKey(address));
     this.put(address, {
       ...draft,
       content: emptyContent(),

@@ -41,6 +41,10 @@ const retired = new Map<string, number>();
 const latest = new Map<string, WireEvent>();
 const terminalListeners = new Set<(event: TerminalHostEvent) => void>();
 export let runtimeRevision = 0;
+/** A newer wire publication is waiting for a missing-base recovery. */
+export function invalidateRuntimeRead() {
+  runtimeRevision++;
+}
 function retire(address: SessionAddress) {
   retired.set(
     address.sessionId,
@@ -59,7 +63,14 @@ export function liveAddress(address: SessionAddress) {
 }
 function register(address: SessionAddress) {
   if (!liveAddress(address)) return false;
-  const previous = useStore.getState().addresses[address.sessionId];
+  const state = useStore.getState();
+  const previous = state.addresses[address.sessionId];
+  if (
+    previous &&
+    sameAddress(previous, address) &&
+    state.hostId === address.hostId
+  )
+    return true;
   if (previous && !sameAddress(previous, address)) {
     latest.delete(addressKey(previous));
     useStore.setState((s) => ({
@@ -134,7 +145,7 @@ export function receiveSnapshot(incoming: Snapshot) {
   useStore.setState((s) => {
     const current = s.snapshots[incoming.info.id];
     const next = newerSnapshot(current, snapshot);
-    if (next === current) return {};
+    if (next === current) return s;
     const key = addressKey(next.address);
     const notices = s.extensionNotices[key];
     return {
@@ -159,10 +170,11 @@ export function receiveWire(event: WireEvent) {
     const snapshot = s.snapshots[event.address.sessionId];
     if (!snapshot || !sameAddress(snapshot.address, event.address)) {
       latest.set(key, event);
-      return {};
+      return s;
     }
     latest.delete(key);
     const next = applyChatEvent(snapshot, event);
+    if (next === snapshot) return s;
     const notices = s.extensionNotices[key];
     return {
       extensionNotices: notices
@@ -234,10 +246,10 @@ export function receiveRuntime(event: RuntimeEvent) {
       showNotice({ level: "error", message: event.message });
   }
 }
-export function receiveExtension(event: ExtensionUIEvent) {
+export function receiveExtension(event: ExtensionUIEvent): boolean {
   runtimeRevision++;
   const address = event.type === "request" ? event.request : event.address;
-  if (!register(address)) return;
+  if (!register(address)) return true;
   if (event.type === "request")
     useStore.setState((s) => ({
       pendingUI: addRequest(s.pendingUI, event.request),
@@ -253,7 +265,8 @@ export function receiveExtension(event: ExtensionUIEvent) {
         ),
       ),
     }));
-  if (event.type === "draft") drafts.receive(event.address, event.draft);
+  if (event.type === "draft")
+    return drafts.receive(event.address, event.draft, event.imageRefs);
   if (event.type === "status")
     useStore.setState((s) => ({
       extensionStatuses: {
@@ -292,6 +305,7 @@ export function receiveExtension(event: ExtensionUIEvent) {
         ],
       },
     }));
+  return true;
 }
 export function receiveRuntimeState(state: RuntimeViewState, since: number) {
   // An in-flight reconnect response cannot roll back newer live publications.

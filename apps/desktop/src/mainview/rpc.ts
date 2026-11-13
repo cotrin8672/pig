@@ -22,9 +22,11 @@ import {
   type Settings,
   type SettingsPatch,
 } from "../shared/settings";
+import { expandSnapshotDelta } from "../shared/snapshot-delta";
 import type { Message } from "../shared/transcript";
 import { transferEditorView } from "./ComposerEditor";
 import { addressKey, sameAddress } from "./chat-snapshot";
+import { createDraftImageRecovery } from "./draft-image-recovery";
 import { drafts } from "./draft-store";
 import { getT } from "./i18n";
 import { navigate, navigationRevision } from "./navigation";
@@ -37,6 +39,7 @@ import {
   takeOpeningOps,
 } from "./opening-sends";
 import {
+  invalidateRuntimeRead,
   liveAddress,
   receiveExtension,
   receiveRuntime,
@@ -51,6 +54,7 @@ import { changeSelection, selections } from "./selections";
 import { SendController } from "./send-controller";
 import { lane } from "./session-lane";
 import { visibleCompletion } from "./session-read";
+import { createSnapshotRecovery } from "./snapshot-recovery";
 import {
   readViewedNotices,
   receivePackageOp,
@@ -70,6 +74,19 @@ import {
   publishProvider,
   settleRead,
 } from "./ui-mutations";
+
+const recoverDraftImages = createDraftImageRecovery(
+  (address) => rpc.request.getSessionDraft(address),
+  (address, draft) => {
+    drafts.receive(address, draft);
+  },
+  liveAddress,
+);
+
+const recoverSnapshots = createSnapshotRecovery(
+  (address) => rpc.request.getSessionSnapshot(address),
+  liveAddress,
+);
 
 // Root event handlers below are installed before any session-opening RPC.
 let appearanceInFlight = false;
@@ -151,7 +168,39 @@ export const rpc = Electroview.defineRPC<RPCSchema>({
       packageOp: receivePackageOp,
       installed: (installed) =>
         useStore.setState({ installed, installedLoaded: true }),
-      runtimeEvent: (event) => {
+      runtimeEvent: function handleRuntimeEvent(event) {
+        if (event.type === "snapshotDelta") {
+          const address = event.snapshot.address;
+          if (
+            useStore.getState().hostId &&
+            useStore.getState().hostId !== address.hostId
+          ) {
+            void reconnectRuntime().catch(showError);
+            return;
+          }
+          if (!liveAddress(address)) return;
+          const current = useStore.getState().snapshots[address.sessionId];
+          if (
+            current &&
+            sameAddress(current.address, address) &&
+            current.snapshotSeq >= event.snapshot.snapshotSeq
+          )
+            return;
+          const snapshot = expandSnapshotDelta(event, current);
+          if (!snapshot) {
+            invalidateRuntimeRead();
+            void recoverSnapshots(
+              address,
+              event.snapshot.snapshotSeq,
+              (value) =>
+                handleRuntimeEvent({ type: "snapshot", snapshot: value }),
+            ).catch((error) => {
+              if (liveAddress(address)) showError(error);
+            });
+            return;
+          }
+          event = { type: "snapshot", snapshot };
+        }
         if (event.type === "closed" && event.discardDraft) {
           receiveRuntime(event);
           drafts.discard(event.address, true);
@@ -191,7 +240,18 @@ export const rpc = Electroview.defineRPC<RPCSchema>({
           event.type === "ready" ||
           event.type === "replaced" ||
           event.type === "closed" ||
-          (event.type === "snapshot" && !event.snapshot.transcript.running)
+          (event.type === "snapshot" &&
+            current &&
+            current !== before.snapshots[address.sessionId] &&
+            (!before.snapshots[address.sessionId] ||
+              (before.snapshots[address.sessionId].transcript.running &&
+                !current.transcript.running) ||
+              before.snapshots[address.sessionId].info.cwd !==
+                current.info.cwd ||
+              before.snapshots[address.sessionId].info.title !==
+                current.info.title ||
+              before.snapshots[address.sessionId].info.modified !==
+                current.info.modified))
         ) {
           const cwd =
             event.type === "closed" ? previousCwd : event.snapshot.info.cwd;
@@ -200,7 +260,14 @@ export const rpc = Electroview.defineRPC<RPCSchema>({
             void refreshSessions(previousCwd).catch(showError);
         }
       },
-      extensionUIEvent: receiveExtension,
+      extensionUIEvent: (event) => {
+        if (!receiveExtension(event) && event.type === "draft")
+          void recoverDraftImages(event.address, event.draft.revision).catch(
+            (error) => {
+              if (liveAddress(event.address)) showError(error);
+            },
+          );
+      },
       terminalEvent: receiveTerminal,
       sessionEvent: (event) => {
         receiveWire(event);

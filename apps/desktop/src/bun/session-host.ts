@@ -1558,6 +1558,10 @@ export class SessionHost {
         this.maybeReload(m);
       });
   }
+  getSessionDraft(address: SessionAddress) {
+    this.current(address, false);
+    return this.drafts.read(address);
+  }
   syncDraft(params: DraftSyncParams) {
     this.current(params, false);
     if (this.sessions.get(params.sessionId)?.transition)

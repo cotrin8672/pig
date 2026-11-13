@@ -1,4 +1,9 @@
-import type { DraftState, SessionAddress, UIAddress } from "./runtime-contract";
+import type {
+  DraftImagesRef,
+  DraftState,
+  SessionAddress,
+  UIAddress,
+} from "./runtime-contract";
 
 export type UIRequest = UIAddress & {
   parentUiId?: string;
@@ -46,7 +51,12 @@ export type ExtensionUIEvent =
       address: UIAddress;
       reason: "done" | "cancelled" | "timeout" | "failed";
     }
-  | { type: "draft"; address: SessionAddress; draft: DraftState }
+  | {
+      type: "draft";
+      address: SessionAddress;
+      draft: DraftState;
+      imageRefs?: DraftImagesRef;
+    }
   | { type: "status"; address: SessionAddress; status: ExtensionStatus }
   | {
       type: "notify";

@@ -3,9 +3,10 @@ import { parse } from "@babel/parser";
 import type { DesktopState } from "../shared/desktop-state";
 import type { Snapshot } from "../shared/rpc-schema";
 import type { RuntimeEvent } from "../shared/runtime-contract";
+import type { RuntimeWireEvent } from "../shared/snapshot-delta";
 import { emptyTranscript } from "../shared/transcript";
 import { createCompletionTracker } from "./notifications";
-import { packRuntimeEvent } from "./transcript-wire";
+import { createRuntimeDeltaEncoder } from "./snapshot-delta";
 
 test("desktop runtime delivery sends one transcript and clears completion only when needed", async () => {
   // Exercise the actual entrypoint callback without starting Electrobun or touching user state.
@@ -40,7 +41,7 @@ test("desktop runtime delivery sends one transcript and clears completion only w
   )
     throw new Error("Missing runtime callback");
 
-  const deliveries: RuntimeEvent[] = [];
+  const deliveries: RuntimeWireEvent[] = [];
   let legacyDeliveries = 0,
     clears = 0,
     completions = 0,
@@ -50,7 +51,7 @@ test("desktop runtime delivery sends one transcript and clears completion only w
   const scope = {
     rpc: {
       send: {
-        runtimeEvent: (event: RuntimeEvent) => deliveries.push(event),
+        runtimeEvent: (event: RuntimeWireEvent) => deliveries.push(event),
         sessionEvent: () => legacyDeliveries++,
         notification: () => notices++,
       },
@@ -69,7 +70,7 @@ test("desktop runtime delivery sends one transcript and clears completion only w
     },
     completions: trackers,
     createCompletionTracker,
-    packRuntimeEvent,
+    encodeRuntimeEvent: createRuntimeDeltaEncoder(),
     report: (error: unknown) => {
       throw error;
     },

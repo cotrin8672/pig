@@ -3,6 +3,7 @@ import {
   type ReactNode,
   useContext,
   useLayoutEffect,
+  useMemo,
   useState,
 } from "react";
 
@@ -25,14 +26,15 @@ export function DisclosureScope({
   children: ReactNode;
 }) {
   const parent = useContext(DisclosureContext);
+  const resolvedValues = values ?? parent.values;
+  const resolvedReveal = reveal ?? parent.reveal;
+  const scope = `${parent.scope}/${id}`;
+  const context = useMemo(
+    () => ({ values: resolvedValues, scope, reveal: resolvedReveal }),
+    [resolvedValues, scope, resolvedReveal],
+  );
   return (
-    <DisclosureContext.Provider
-      value={{
-        values: values ?? parent.values,
-        scope: `${parent.scope}/${id}`,
-        reveal: reveal ?? parent.reveal,
-      }}
-    >
+    <DisclosureContext.Provider value={context}>
       {children}
     </DisclosureContext.Provider>
   );

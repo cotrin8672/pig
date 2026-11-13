@@ -49,8 +49,14 @@ export class ComposerBridge {
       ? { ...params.content, images: current.images }
       : params.content;
     this.validate(content);
+    // Images reused by a CAS mirror are already owned immutable host data.
+    // Do not clone megabytes of them for a text-only edit.
+    const copied = structuredClone(
+      params.keepImages ? params.content : content,
+    );
     const next = {
-      ...structuredClone(content),
+      ...copied,
+      images: params.keepImages ? current.images : copied.images,
       revision: this.revision(current),
     };
     this.imageSizes.set(
@@ -198,7 +204,15 @@ export class ComposerBridge {
         sessionId: address.sessionId,
         epoch: address.epoch,
       },
-      draft: structuredClone(draft),
+      draft: structuredClone(keepImages ? { ...draft, images: [] } : draft),
+      ...(keepImages && draft.images.length
+        ? {
+            imageRefs: {
+              revision: draft.revision - 1,
+              ids: draft.images.map((image) => image.id),
+            },
+          }
+        : {}),
     });
   }
   private validate(content: DraftContent): void {

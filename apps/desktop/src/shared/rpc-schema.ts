@@ -21,13 +21,13 @@ import type {
   PromptAccepted,
   PromptParams,
   PromptReceipt,
-  RuntimeEvent,
   RuntimeRecoveryState,
   RuntimeViewState,
   SendKey,
   SessionAddress,
 } from "./runtime-contract";
 import type { Settings, SettingsPatch } from "./settings";
+import type { RuntimeWireEvent } from "./snapshot-delta";
 import type { TerminalClientCommand, TerminalHostEvent } from "./terminal-ui";
 import type { WireTranscript } from "./transcript-wire";
 
@@ -318,6 +318,10 @@ export type RPCSchema = {
       cancelPrompt: { params: SendKey; response: PromptReceipt };
       getRecovery: { params: SessionAddress; response: RuntimeRecoveryState };
       syncDraft: { params: DraftSyncParams; response: DraftSyncResult };
+      getSessionDraft: {
+        params: SessionAddress;
+        response: DraftSyncResult["draft"];
+      };
       discardRecovery: {
         params: { current: SessionAddress; retained: SessionAddress };
         // biome-ignore lint/suspicious/noConfusingVoidType: Electrobun convention.
@@ -458,7 +462,7 @@ export type RPCSchema = {
     };
     messages: {
       appUpdate: AppUpdateState;
-      runtimeEvent: RuntimeEvent;
+      runtimeEvent: RuntimeWireEvent;
       extensionUIEvent: ExtensionUIEvent;
       terminalEvent: TerminalHostEvent;
       packageOp: PackageOpStatus;

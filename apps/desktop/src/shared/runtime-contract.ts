@@ -58,6 +58,10 @@ export type DraftState = DraftContent & {
   revision: number;
   consumedRevision?: number;
 };
+export type DraftImagesRef = {
+  revision: number;
+  ids: string[];
+};
 export type DraftSyncParams = SessionAddress & {
   expectedRevision: number;
   content: DraftContent;

@@ -188,12 +188,28 @@ if (process.env.PIG_SESSION_REFRESH_CHILD !== "1") {
     runtimeEvent({ type: "ready", snapshot });
     await flush();
     expect(calls.map((call) => call.cwd)).toEqual(["one"]);
-    for (let i = 0; i < 100; i++)
+    calls[0].result.resolve([snapshot.info]);
+    await flush();
+    for (let i = 0; i < 100; i++) {
       runtimeEvent({
         type: "snapshot",
         snapshot: { ...snapshot, snapshotSeq: i + 2 },
       });
-    calls[0].result.resolve([snapshot.info]);
+      await flush();
+    }
+    expect(calls.map((call) => call.cwd)).toEqual(["one"]);
+    runtimeEvent({
+      type: "snapshot",
+      snapshot: {
+        ...snapshot,
+        snapshotSeq: 102,
+        transcript: { ...snapshot.transcript, running: true },
+      },
+    });
+    runtimeEvent({
+      type: "snapshot",
+      snapshot: { ...snapshot, snapshotSeq: 103 },
+    });
     await flush();
     expect(calls.map((call) => call.cwd)).toEqual(["one", "one"]);
     calls[1].result.resolve([snapshot.info]);
