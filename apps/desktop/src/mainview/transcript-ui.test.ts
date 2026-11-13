@@ -110,7 +110,7 @@ test.skipIf(!existsSync(edge) && !process.env.PIG_REQUIRE_UI_TESTS)(
         check(card.textContent.includes('1h 12m'),'usage countdown must be language-independent with spaced units');
         check(!card.textContent.includes('NaN'),'unknown reset/duration must not be invented');
         await render(<div style={{width}}><ProviderUsageView entries={usageFixtures} now={usageFixtureTime} display="used"/></div>);
-        check(document.querySelector('.provider-usage-card').textContent.includes('88%'),'usage preference must change the displayed percentage');
+        check([...document.querySelectorAll('.provider-usage-row')].some(r=>r.getAttribute('aria-label').includes('88%')),'usage preference must change the reported percentage');
         const lots=Array.from({length:30},(_,i)=>({...usageFixtures[0],key:'usage-'+i,label:'Account '+i}));
         await render(<div style={{width}}><ProviderUsageView entries={lots} now={usageFixtureTime}/></div>);
         const list=document.querySelector('.provider-usage-list');

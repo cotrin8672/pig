@@ -43,7 +43,7 @@
 .provider-usage-list {
   --scrollbar-inset: var(--radius-sm);
   display: grid;
-  grid-template-columns: 12px minmax(0, 1fr) 39px 31px minmax(40px, max-content);
+  grid-template-columns: 12px minmax(0, 1fr) 60px 60px;
   column-gap: 5px;
   max-height: min(35vh, 286px);
   overflow: auto;
@@ -61,8 +61,121 @@
   padding: 0 4px;
   border-radius: var(--radius-sm);
 }
-.provider-usage-row:hover {
+.provider-usage-row:hover,
+.provider-usage-row[data-active] {
   background: var(--ds-tile-hover);
+}
+.provider-usage-row:focus-visible {
+  outline: 1px solid var(--ds-focus);
+  outline-offset: -1px;
+  background: var(--ds-tile-hover);
+}
+
+/* Row details: glass popover in the top layer (see docs/ui-guidelines.md). */
+.usage-popover {
+  --scrollbar-inset: var(--radius-md);
+  position: fixed;
+  inset: auto;
+  width: min(248px, calc(100vw - 16px));
+  max-height: calc(100dvh - 16px);
+  margin: 0;
+  padding: 10px 12px 12px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  border: 1px solid var(--ds-border-strong);
+  border-radius: var(--radius-md);
+  background: var(--ds-bg-popover);
+  backdrop-filter: blur(20px);
+  box-shadow: var(--ds-shadow-dialog);
+  color: var(--ds-text-primary);
+  font-family: var(--font-sans);
+  font-size: var(--text-sm);
+  line-height: var(--leading-normal);
+  overflow-wrap: anywhere;
+}
+.usage-popover-heading {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.usage-popover-heading > svg {
+  flex: none;
+}
+.usage-popover-heading strong {
+  font-weight: var(--font-weight-semibold);
+}
+.usage-popover-window {
+  margin-top: 12px;
+}
+.usage-popover-figures {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 12px;
+  margin-top: 10px;
+  font-variant-numeric: tabular-nums;
+}
+.usage-popover-window .usage-popover-figures {
+  margin-top: 0;
+}
+.usage-popover-figures small {
+  color: var(--ds-text-muted);
+  font-size: var(--text-xs);
+}
+.usage-popover-figures strong {
+  font-weight: var(--font-weight-semibold);
+}
+.usage-popover-window[data-level="warning"] strong {
+  color: var(--ds-warning);
+}
+.usage-popover-window[data-level="critical"] strong {
+  color: var(--ds-error);
+}
+.usage-popover-track {
+  height: 4px;
+  margin-top: 6px;
+  overflow: hidden;
+  border-radius: var(--radius-full);
+  background: var(--ds-bg-chip);
+}
+.usage-popover-track > span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--ds-text-secondary);
+}
+.usage-popover-window[data-level="warning"] .usage-popover-track > span {
+  background: var(--ds-warning);
+}
+.usage-popover-window[data-level="critical"] .usage-popover-track > span {
+  background: var(--ds-error);
+}
+.usage-popover-reset {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  margin-top: 6px;
+  color: var(--ds-text-muted);
+  font-size: var(--text-xs);
+  font-variant-numeric: tabular-nums;
+}
+.usage-popover-reset time {
+  margin-left: auto;
+}
+.usage-popover-note {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  margin: 10px 0 0;
+  color: var(--ds-text-muted);
+  font-size: var(--text-xs);
+}
+.usage-popover-note > svg {
+  flex: none;
+  margin-top: 2px;
+}
+.usage-popover-note[data-problem] {
+  color: var(--ds-warning);
 }
 .provider-usage-name {
   min-width: 0;
@@ -74,10 +187,12 @@
 .provider-usage-row[data-stale] .provider-usage-name {
   color: var(--ds-text-muted);
 }
-.provider-usage-rings {
+/* Ring + its own reset, so short and long windows read apart without labels. */
+.provider-usage-window {
   display: flex;
   align-items: center;
   gap: 3px;
+  min-width: 0;
 }
 .provider-usage-ring {
   flex: none;
@@ -104,51 +219,51 @@
 .provider-usage-ring[data-level="critical"] .usage-ring-quota {
   stroke: var(--ds-error);
 }
+.provider-usage-value {
+  grid-column: 3 / -1;
+  justify-content: flex-end;
+}
 .provider-usage-value,
 .provider-usage-reset {
   display: inline-flex;
-  justify-content: flex-end;
   min-width: 0;
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
 .provider-usage-value[data-balance] {
   display: block;
-  grid-column: 4 / -1;
   overflow: hidden;
   text-align: right;
   text-overflow: ellipsis;
-}
-.provider-usage-value[data-level="warning"] {
-  color: var(--ds-warning);
-}
-.provider-usage-value[data-level="critical"] {
-  color: var(--ds-error);
 }
 .provider-usage-reset {
   color: var(--ds-text-muted);
   font-size: var(--text-3xs);
 }
+.provider-usage-reset[data-level="warning"] {
+  color: var(--ds-warning);
+}
+.provider-usage-reset[data-level="critical"] {
+  color: var(--ds-error);
+}
 .provider-usage-reset[data-date] {
   display: grid;
   grid-template-columns: 2ch 1ch 2ch;
+  justify-content: start;
   text-align: right;
 }
 .provider-usage-reset[data-date] > :last-child {
   text-align: left;
 }
-/* The app narrows its sidebar on small windows. Keep identity/quota readable;
-   exact reset dates remain in the row tooltip instead of adding horizontal scroll. */
-@container (max-width: 210px) {
+/* The app narrows its sidebar on small windows. Keep identity and rings readable;
+   resets remain in the row tooltip instead of adding horizontal scroll. */
+@container (max-width: 180px) {
   .provider-usage-list {
-    grid-template-columns: 12px minmax(0, 1fr) 39px 31px;
+    grid-template-columns: 12px minmax(0, 1fr) 18px 18px;
     column-gap: 4px;
   }
   .provider-usage-reset,
   .provider-usage-reset[data-date] {
     display: none;
-  }
-  .provider-usage-value[data-balance] {
-    grid-column: 3 / -1;
   }
 }

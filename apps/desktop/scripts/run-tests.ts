@@ -38,6 +38,7 @@ const ui = [
   "transcript-ui",
   "pane-updates-ui",
   "provider-usage-ui",
+  "provider-usage-hover-ui",
   "provider-accounts-ui",
   "render-workers-ui",
   "dynamic-theme-ui",

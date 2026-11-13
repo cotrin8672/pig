@@ -211,6 +211,7 @@ export const en = {
   usageRefresh: "Refresh provider usage",
   usageObserved: "Last successful observation; may not reflect other apps",
   usageLoading: "Loading usage",
+  usageResets: "Resets",
   usageAuth: "Sign in again to read usage",
   usagePermission: "Permission to view usage is required",
   usageRateLimit: "Usage check rate-limited; waiting before retry",
@@ -811,6 +812,7 @@ export const ja: Dictionary = {
   usageObserved:
     "最終取得時点の値です。他のアプリでの利用は未反映の場合があります",
   usageLoading: "使用量を取得中",
+  usageResets: "リセット",
   usageAuth: "使用量の取得には再ログインが必要です",
   usagePermission: "使用量を閲覧する権限が必要です",
   usageRateLimit: "使用量照会が制限されました。待機後に再取得します",

@@ -1,15 +1,24 @@
 import {
   ChevronDown,
   CircleAlert,
+  Clock3,
   LoaderCircle,
   RefreshCw,
 } from "lucide-react";
-import { useEffect, useState } from "react";
+import {
+  type FocusEvent,
+  type PointerEvent,
+  type ReactNode,
+  useCallback,
+  useEffect,
+  useId,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from "react";
 import {
   balanceText,
   clampPercent,
-  headlineWindow,
-  observationAge,
   type ProviderUsage,
   resetCountdown,
   sortUsage,
@@ -69,6 +78,206 @@ export function UsageRing({
     </svg>
   );
 }
+/** Shortest window first so ring order means the same on every row. */
+function ringWindows(entry: ProviderUsage) {
+  return [...(entry.data?.windows ?? [])]
+    .sort(
+      (a, b) =>
+        (a.durationMs ?? Number.POSITIVE_INFINITY) -
+        (b.durationMs ?? Number.POSITIVE_INFINITY),
+    )
+    .slice(0, 2);
+}
+/** Each ring carries its own reset; "2h 13m" vs "11/18" tells the windows apart. */
+function Reset({ window, now }: { window: UsageWindow; now: number }) {
+  const reset =
+    window.resetsAt !== undefined ? resetCountdown(window.resetsAt, now) : "—";
+  const [month, day] = reset.split("/");
+  return (
+    <span
+      className="provider-usage-reset"
+      data-date={!!day || undefined}
+      data-level={usageLevel(window.usedPercent)}
+    >
+      {day ? (
+        <>
+          <span>{month}</span>
+          <span>/</span>
+          <span>{day}</span>
+        </>
+      ) : (
+        reset
+      )}
+    </span>
+  );
+}
+/**
+ * One details popover per dock (docs/ui-guidelines.md 「情報量の多いホバー表示」):
+ * moving between rows swaps its content instead of stacking popovers. Top layer
+ * so the sidebar's overflow can't clip it; a short close delay lets the pointer
+ * cross into it. Like ActionsMenu, list scroll and window resize close it.
+ */
+function useUsagePopover() {
+  const id = useId();
+  const panel = useRef<HTMLDivElement>(null);
+  const anchor = useRef<HTMLElement | null>(null);
+  const timer = useRef<ReturnType<typeof setTimeout>>(undefined);
+  const [active, setActive] = useState<string>();
+  const close = useCallback(() => {
+    clearTimeout(timer.current);
+    anchor.current = null;
+    setActive(undefined);
+  }, []);
+  const open = (key: string, row: HTMLElement) => {
+    clearTimeout(timer.current);
+    anchor.current = row;
+    setActive(key);
+  };
+  const leave = () => {
+    clearTimeout(timer.current);
+    timer.current = setTimeout(close, 150);
+  };
+  useEffect(() => () => clearTimeout(timer.current), []);
+  useLayoutEffect(() => {
+    const popup = panel.current;
+    const row = anchor.current;
+    if (!active || !popup || !row) return;
+    const position = () => {
+      const box = row.getBoundingClientRect();
+      const { width, height } = popup.getBoundingClientRect();
+      const right = box.right + 8;
+      const left =
+        right + width <= innerWidth - 8 ? right : box.left - width - 8;
+      popup.style.left = `${Math.max(8, Math.min(left, innerWidth - width - 8))}px`;
+      popup.style.top = `${Math.max(8, Math.min(box.top, innerHeight - height - 8))}px`;
+    };
+    if (!popup.matches(":popover-open")) popup.showPopover();
+    position();
+    // Pointer popovers close on scroll like ActionsMenu; a keyboard-focused
+    // row scrolls itself into view, so its popover follows instead.
+    const scroll = () => (row.matches(":focus-visible") ? position() : close());
+    const dismiss = (event: KeyboardEvent) => {
+      if (event.key === "Escape") close();
+    };
+    const list = row.closest(".provider-usage-list");
+    list?.addEventListener("scroll", scroll);
+    window.addEventListener("resize", close);
+    document.addEventListener("keydown", dismiss);
+    return () => {
+      list?.removeEventListener("scroll", scroll);
+      window.removeEventListener("resize", close);
+      document.removeEventListener("keydown", dismiss);
+    };
+  }, [active, close]);
+  return {
+    active,
+    rowProps: (key: string) => ({
+      "aria-describedby": active === key ? id : undefined,
+      onPointerEnter: (event: PointerEvent<HTMLElement>) =>
+        open(key, event.currentTarget),
+      onPointerLeave: leave,
+      // Keyboard focus only: a mouse click must not pin the popover open.
+      onFocus: (event: FocusEvent<HTMLElement>) => {
+        if (event.currentTarget.matches(":focus-visible"))
+          open(key, event.currentTarget);
+      },
+      onBlur: leave,
+    }),
+    render: (content: ReactNode) =>
+      active && (
+        <div
+          ref={panel}
+          id={id}
+          role="tooltip"
+          popover="manual"
+          className="usage-popover"
+          onPointerEnter={() => clearTimeout(timer.current)}
+          onPointerLeave={leave}
+        >
+          {content}
+        </div>
+      ),
+  };
+}
+function UsageDetails({
+  entry,
+  display,
+  now,
+  mode,
+  problem,
+}: {
+  entry: ProviderUsage;
+  display: UsageDisplay;
+  now: number;
+  mode: string;
+  problem?: string;
+}) {
+  const t = useT();
+  return (
+    <>
+      <div className="usage-popover-heading">
+        <ProviderIcon provider={entry.provider} size={14} />
+        <strong>{entry.label}</strong>
+      </div>
+      {entry.status === "loading" && !entry.data && (
+        <p className="usage-popover-note">{t.usageLoading}</p>
+      )}
+      {problem && (
+        <p className="usage-popover-note" data-problem>
+          <CircleAlert size={12} aria-hidden="true" />
+          {problem}
+        </p>
+      )}
+      {ringWindows(entry)
+        .concat(entry.data?.windows.slice(2) ?? [])
+        .map((window) => {
+          const percent = usagePercent(window.usedPercent, display);
+          return (
+            <div
+              key={window.id}
+              className="usage-popover-window"
+              data-level={usageLevel(window.usedPercent)}
+            >
+              <div className="usage-popover-figures">
+                <span>{window.label}</span>
+                <span>
+                  <small>{mode}</small> <strong>{Math.round(percent)}%</strong>
+                </span>
+              </div>
+              <div className="usage-popover-track" aria-hidden="true">
+                <span style={{ width: `${clampPercent(percent)}%` }} />
+              </div>
+              {window.resetsAt !== undefined && (
+                <div className="usage-popover-reset">
+                  <Clock3 size={11} aria-hidden="true" />
+                  <span>{t.usageResets}</span>
+                  <time dateTime={new Date(window.resetsAt).toISOString()}>
+                    {new Date(window.resetsAt).toLocaleString(undefined, {
+                      month: "numeric",
+                      day: "numeric",
+                      hour: "2-digit",
+                      minute: "2-digit",
+                    })}
+                  </time>
+                </div>
+              )}
+            </div>
+          );
+        })}
+      {entry.data?.balances.map((balance) => (
+        <div className="usage-popover-figures" key={balance.label}>
+          <span>{balance.label}</span>
+          <strong>{balanceText(balance)}</strong>
+        </div>
+      ))}
+      {entry.data?.details?.map((detail) => (
+        <p className="usage-popover-note" key={detail}>
+          {detail}
+        </p>
+      ))}
+    </>
+  );
+}
 function tooltip(
   entry: ProviderUsage,
   display: UsageDisplay,
@@ -76,10 +285,7 @@ function tooltip(
   mode: string,
   problem?: string,
 ) {
-  const lines = [
-    entry.label,
-    `${entry.source}${entry.observedAt ? ` · ${observationAge(entry.observedAt, now)}` : ""}`,
-  ];
+  const lines = [entry.label];
   if (problem) lines.push(problem);
   for (const window of entry.data?.windows ?? [])
     lines.push(
@@ -106,6 +312,7 @@ export function ProviderUsageView({
   const t = useT();
   const [collapsed, setCollapsed] = useState(false);
   const [coolingDown, setCoolingDown] = useState(false);
+  const popover = useUsagePopover();
   useEffect(() => {
     if (!coolingDown || refreshing) return;
     const timer = setTimeout(
@@ -125,6 +332,7 @@ export function ProviderUsageView({
     unavailable: t.usageUnavailable,
   };
   const sorted = sortUsage(entries);
+  const activeEntry = sorted.find((entry) => entry.key === popover.active);
   return (
     <section className="provider-usage-card" aria-label={t.usageTitle}>
       <div className="provider-usage-heading">
@@ -158,15 +366,10 @@ export function ProviderUsageView({
       {!collapsed && (
         <ul className="provider-usage-list">
           {sorted.map((entry) => {
-            const window = headlineWindow(entry);
+            const windows = ringWindows(entry);
             const balance = entry.data?.balances[0];
             const problem = entry.problem && problems[entry.problem];
             const detail = tooltip(entry, display, now, mode, problem);
-            const reset =
-              window?.resetsAt !== undefined
-                ? resetCountdown(window.resetsAt, now)
-                : "—";
-            const [month, day] = reset.split("/");
             return (
               <li
                 key={entry.key}
@@ -177,55 +380,36 @@ export function ProviderUsageView({
                     now - entry.observedAt > 600_000) ||
                   undefined
                 }
-                title={detail}
+                data-active={popover.active === entry.key || undefined}
+                // biome-ignore lint/a11y/noNoninteractiveTabindex: rows reveal details on keyboard focus
+                tabIndex={0}
                 aria-label={detail}
+                {...popover.rowProps(entry.key)}
               >
                 <ProviderIcon provider={entry.provider} size={12} />
                 <span className="provider-usage-name">{entry.label}</span>
-                <span className="provider-usage-rings">
-                  {entry.data?.windows.slice(0, 2).map((w) => (
-                    <UsageRing
-                      key={w.id}
-                      window={w}
-                      now={now}
-                      display={display}
-                    />
-                  ))}
-                </span>
-                <span
-                  className="provider-usage-value"
-                  data-level={
-                    window ? usageLevel(window.usedPercent) : undefined
-                  }
-                  data-balance={(!window && !!balance) || undefined}
-                >
-                  {window ? (
-                    `${Math.round(usagePercent(window.usedPercent, display))}%`
-                  ) : balance ? (
-                    balanceText(balance)
-                  ) : entry.status === "loading" ? (
-                    <LoaderCircle
-                      size={11}
-                      className="spinner"
-                      aria-label={t.usageLoading}
-                    />
-                  ) : (
-                    <CircleAlert size={11} aria-label={problem} />
-                  )}
-                </span>
-                {window && (
+                {windows.length ? (
+                  windows.map((w) => (
+                    <span key={w.id} className="provider-usage-window">
+                      <UsageRing window={w} now={now} display={display} />
+                      <Reset window={w} now={now} />
+                    </span>
+                  ))
+                ) : (
                   <span
-                    className="provider-usage-reset"
-                    data-date={!!day || undefined}
+                    className="provider-usage-value"
+                    data-balance={!!balance || undefined}
                   >
-                    {day ? (
-                      <>
-                        <span>{month}</span>
-                        <span>/</span>
-                        <span>{day}</span>
-                      </>
+                    {balance ? (
+                      balanceText(balance)
+                    ) : entry.status === "loading" ? (
+                      <LoaderCircle
+                        size={11}
+                        className="spinner"
+                        aria-label={t.usageLoading}
+                      />
                     ) : (
-                      reset
+                      <CircleAlert size={11} aria-label={problem} />
                     )}
                   </span>
                 )}
@@ -234,6 +418,18 @@ export function ProviderUsageView({
           })}
         </ul>
       )}
+      {!collapsed &&
+        popover.render(
+          activeEntry && (
+            <UsageDetails
+              entry={activeEntry}
+              display={display}
+              now={now}
+              mode={mode}
+              problem={activeEntry.problem && problems[activeEntry.problem]}
+            />
+          ),
+        )}
     </section>
   );
 }

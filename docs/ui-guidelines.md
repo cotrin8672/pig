@@ -37,6 +37,20 @@ UIの追加・変更・レビュー時に適用する。スクリーンショッ
 - 既存実装の逸脱は、新規UIでも逸脱してよい根拠にはしない。
   共通ルールから外れる新しいデザインは、先にユーザーに確認する。
 
+### 情報量の多いホバー表示
+
+- 複数の値・日時を含む補足は、文字列だけのnative tooltipではなく、小さな半透明Popoverで
+  見出し・数値・補足を整理する。`--ds-bg-popover`・既存のblur／角丸／影を使う。
+- 一覧では文字だけでなく、アイコン・数値・行の余白を含む行全体をホバー範囲にする。
+  Popoverの表示で行や周囲の配置を変えない。
+- キーボードfocusでも同じ情報を表示し、Escapeで閉じる。Popoverへポインターを移す途中で
+  閉じず、サイドバーのoverflowで欠けないようtop layerを使う。
+- Popoverは一覧ごとに1つだけ持ち、行の移動では中身と位置を差し替える。行ごとにPopoverを
+  持って閉じる遅延の間に重ねない。クリックによるfocusで開いたままにせず（`:focus-visible`
+  のときだけfocusで開く）、ポインター起点のものは一覧のスクロール・リサイズで閉じる
+  （`ActionsMenu` と同じ）。面は他のPopoverと同じ `--ds-bg-popover`・`blur(20px)`・
+  `--ds-border-strong`・`--ds-shadow-dialog`。`provider-usage-hover-ui.test.ts` が実入力で検査する。
+
 ### 動的配色とカラーピッカー
 
 - 設定に保存するのは不透明なsRGBのseed色だけ。Material Color UtilitiesのTonalSpotから

@@ -45,7 +45,11 @@ test.skipIf(!existsSync(edge) && !process.env.PIG_REQUIRE_UI_TESTS)(
           check([...card.querySelectorAll('.provider-usage-row')].every(r=>r.getBoundingClientRect().height===22),'row height');
           check([...card.querySelectorAll('.provider-usage-ring')].every(r=>r.getBoundingClientRect().width===18&&r.getBoundingClientRect().height===18),'18px rings');
           check(card.textContent.includes('1h 12m'),'compact reset independent of language');
-          check(card.textContent.includes('12%'),'remaining is default');
+          const labels=()=>[...document.querySelectorAll('.provider-usage-row')].map(r=>r.getAttribute('aria-label')).join('|');
+          check(labels().includes('12%'),'remaining is default');
+          check(!/d%/.test(card.textContent),'percent lives in the tooltip, not the row');
+          const codex=[...card.querySelectorAll('.provider-usage-row')].find(r=>r.querySelector('.provider-usage-name').textContent==='OpenAI Work');
+          if(width>180)check([...codex.querySelectorAll('.provider-usage-reset')].map(r=>r.textContent).join('|')==='1h 12m|11/17','shortest window first, each ring with its own reset');
           check(card.querySelector('.provider-usage-toggle').textContent===(language==='en'?'Usage':'使用量'),'heading must not show display mode or summary');
           check(!card.querySelector('.provider-usage-heading small'),'heading must not show an age timer');
           const names=[...card.querySelectorAll('.provider-usage-name')].map(n=>n.textContent);
@@ -56,10 +60,10 @@ test.skipIf(!existsSync(edge) && !process.env.PIG_REQUIRE_UI_TESTS)(
           const alpha=ctx.getImageData(0,0,1,1).data[3];
           check(alpha>0&&alpha<255&&getComputedStyle(card).opacity==='1','translucent card, opaque content');
           render(usageFixtures,'used',width);
-          check(document.querySelector('.provider-usage-card').textContent.includes('88%'),'used preference');
+          check(labels().includes('88%'),'used preference');
           const stale=usageFixtures.map(e=>({...e,status:'error',problem:'network'}));
           render(stale,'used',width);
-          check(document.querySelector('.provider-usage-card').textContent.includes('88%'),'failed refresh retains last value');
+          check(labels().includes('88%'),'failed refresh retains last value');
           render(Array.from({length:40},(_,i)=>({...usageFixtures[0],key:'account-'+i})),'remaining',width);
           const list=document.querySelector('.provider-usage-list');
           check(list.scrollHeight>list.clientHeight,'accounts must scroll in dock');
@@ -87,7 +91,7 @@ test.skipIf(!existsSync(edge) && !process.env.PIG_REQUIRE_UI_TESTS)(
         for(const width of [156,210,240,320]){
           render(dateEntries,'remaining',width);
           const resets=[...document.querySelectorAll('.provider-usage-reset')];
-          if(width<=210){
+          if(width<=180){
             check(resets.every(r=>getComputedStyle(r).display==='none'),'date grid stays hidden in narrow dock');
             continue;
           }
