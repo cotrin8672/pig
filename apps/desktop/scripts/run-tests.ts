@@ -44,6 +44,7 @@ const ui = [
   "render-workers-ui",
   "dynamic-theme-ui",
   "search-ui",
+  "composer-layers-ui",
 ].map((name) => `src/mainview/${name}.test.ts`);
 
 export function testFiles(suite: TestSuite): string[] {

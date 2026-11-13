@@ -95,6 +95,10 @@ UIの追加・変更・レビュー時に適用する。スクリーンショッ
   アニメーションの位相と経過時間を維持する。Reactのキーは `liveToEntry` の対応を使って維持し、
   検索・操作用のrecord IDは保存済みIDへ更新する。
   `transcript-ui.test.ts` でbash／PowerShellの連続更新・保存時のDOM・開始時刻・経過時間を検査する。
+- Popoverを含む要素自身に `backdrop-filter` を付けない。その要素がbackdrop rootになり、内側のPopover（モデル
+  Picker・スラッシュ候補）はその外側の会話をぼかせず、背景がそのまま透ける。Composerのように、すりガラスは
+  `::before` などの層へ移し、親は `isolation: isolate` で重なりを闉じる。`filter`・`opacity`・`mask`・
+  `clip-path`・`mix-blend-mode` も同じ境界になる。`composer-layers-ui.test.ts` が実描画の画素で検査する。
 - 通常のCardに `--ds-bg-elevated-opaque` や不透明な `--ds-bg-secondary` を流用しない。
 - `background: transparent` だけで枠の区別を失わせることも、半透明Cardの代用にはしない。
 - 背景レイヤーを無目的に入れ子にして、不透明に近づけない。
@@ -203,6 +207,7 @@ UIの追加・変更・レビュー時に適用する。スクリーンショッ
   切り替え、検索結果0件、未接続・ロック状態でも伸縮させない。モデル一覧とアカウント列は
   それぞれ枠内でスクロールし、件数が多くても全項目へ到達できるようにする。
 - 会話の最下部へ戻る操作は、上へスクロールしている間だけComposerの上に重ねて表示する。
+  重なり順はComposerの下とし、開いたモデルPickerなどComposerのPopoverが常に上に来るようにする。
   表示の有無で会話やComposerを動かさず、クリック後は新しい返信への自動追従を再開する。
 
 ### Provider使用量の常設表示

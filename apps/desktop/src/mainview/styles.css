@@ -589,7 +589,8 @@ main > *,
   bottom: calc(var(--composer-height, 140px) + 12px);
   left: 50%;
   transform: translateX(-50%);
-  z-index: 11;
+  /* Below .composer-dock so composer popovers (model picker) cover it. */
+  z-index: 9;
   width: 36px;
   height: 36px;
   padding: 0;
@@ -1196,12 +1197,26 @@ details[open] > summary .tool-chevron,
 }
 .composer {
   position: relative;
+  isolation: isolate;
   width: min(100%, var(--chat-width, 768px));
-  background: var(--ds-bg-popover);
   border-radius: var(--ds-composer-radius);
   padding: 10px 12px;
   box-shadow: var(--ds-shadow-dialog);
+}
+/* The glass lives on a layer, not on .composer: an ancestor with
+   backdrop-filter becomes the backdrop root, and popovers inside the composer
+   (model picker, slash options) would no longer blur the chat behind them. */
+.composer::before {
+  content: "";
+  position: absolute;
+  inset: -1px; /* Covers the border box, as the composer background did. */
+  z-index: -1;
+  border-radius: inherit;
+  background: var(--ds-bg-popover);
+  /* Drawn here: this layer paints over the composer's own (transparent) border. */
+  box-shadow: inset 0 0 0 1px var(--ds-border-strong);
   backdrop-filter: blur(20px);
+  pointer-events: none;
 }
 .composer textarea {
   display: block;
@@ -2124,7 +2139,8 @@ input:not([type="range"]) {
   align-items: center;
 }
 .composer {
-  border: 1px solid var(--ds-border-strong);
+  /* Keeps the 1px layout; the visible line is drawn by .composer::before. */
+  border: 1px solid transparent;
 }
 .composer-hint {
   font-size: var(--text-sm);
