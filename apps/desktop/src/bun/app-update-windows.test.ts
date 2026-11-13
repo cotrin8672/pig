@@ -10,8 +10,75 @@ afterEach(async () => {
   );
 });
 
-// Real Windows extraction in temporary directories, without touching Scoop or scheduling tasks.
+// Real Windows helpers in temporary directories, without touching Scoop or scheduling tasks.
 const windowsTest = process.platform === "win32" ? test : test.skip;
+windowsTest("scheduled update worker starts PowerShell hidden", async () => {
+  const base = await mkdtemp(join(tmpdir(), "pig-update-test-"));
+  dirs.push(base);
+  const config = join(base, "config 日本語.json");
+  const capture = join(base, "action.json");
+  const runner = join(base, "launch.ps1");
+  const script = join(import.meta.dir, "../../scripts/app-update.ps1");
+  await writeFile(
+    config,
+    JSON.stringify({
+      method: "portable",
+      task: `pig-update-test-${crypto.randomUUID()}`,
+    }),
+  );
+  await writeFile(
+    runner,
+    `param([string]$Script, [string]$Config, [string]$Capture)
+$ErrorActionPreference = 'Stop'
+function New-ScheduledTaskAction {
+  param($Execute, $Argument, $WorkingDirectory)
+  [pscustomobject]@{ Execute = $Execute; Arguments = $Argument; WorkingDirectory = $WorkingDirectory }
+}
+function New-ScheduledTaskPrincipal { param($UserId, $LogonType, $RunLevel) }
+function New-ScheduledTaskSettingsSet {
+  param($ExecutionTimeLimit, [switch]$AllowStartIfOnBatteries, [switch]$DontStopIfGoingOnBatteries)
+}
+function Register-ScheduledTask {
+  param($TaskName, $Action, $Principal, $Settings, [switch]$Force)
+  $Action | Select-Object Execute, Arguments, WorkingDirectory | ConvertTo-Json | Set-Content -LiteralPath $Capture -Encoding UTF8
+}
+function Start-ScheduledTask { param($TaskName) }
+& $Script -Config $Config -Launch
+`,
+  );
+  const ps = join(
+    process.env.SystemRoot ?? "C:\\Windows",
+    "System32/WindowsPowerShell/v1.0/powershell.exe",
+  );
+  const child = Bun.spawn(
+    [
+      ps,
+      "-NoProfile",
+      "-NonInteractive",
+      "-ExecutionPolicy",
+      "Bypass",
+      "-File",
+      runner,
+      "-Script",
+      script,
+      "-Config",
+      config,
+      "-Capture",
+      capture,
+    ],
+    { stdout: "ignore", stderr: "pipe", windowsHide: true },
+  );
+  const stderr = await new Response(child.stderr).text();
+  expect({ code: await child.exited, stderr }).toEqual({ code: 0, stderr: "" });
+  const action = JSON.parse(
+    (await readFile(capture, "utf8")).replace(/^\uFEFF/, ""),
+  );
+  expect(action.Execute).toBe(ps);
+  expect(action.Arguments).toBe(
+    `-NoProfile -NonInteractive -WindowStyle Hidden -ExecutionPolicy Bypass -File "${script}" -Config "${config}"`,
+  );
+  expect(action.WorkingDirectory).toBe(base);
+});
 windowsTest(
   "Windows ZIP preparation validates hashes, traversal, duplicates and bundle provenance",
   async () => {

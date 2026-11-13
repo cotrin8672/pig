@@ -44,7 +44,7 @@ try {
     if ($Launch) {
         # Task Scheduler survives Electrobun's process-tree shutdown without elevation.
         $exe = Join-Path $env:SystemRoot 'System32/WindowsPowerShell/v1.0/powershell.exe'
-        $arguments = '-NoProfile -NonInteractive -ExecutionPolicy Bypass -File "{0}" -Config "{1}"' -f $PSCommandPath, $Config
+        $arguments = '-NoProfile -NonInteractive -WindowStyle Hidden -ExecutionPolicy Bypass -File "{0}" -Config "{1}"' -f $PSCommandPath, $Config
         $action = New-ScheduledTaskAction -Execute $exe -Argument $arguments -WorkingDirectory $work
         $principal = New-ScheduledTaskPrincipal -UserId ([Security.Principal.WindowsIdentity]::GetCurrent().Name) -LogonType Interactive -RunLevel Limited
         $settings = New-ScheduledTaskSettingsSet -ExecutionTimeLimit (New-TimeSpan -Minutes 15) -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries
@@ -54,7 +54,7 @@ try {
     }
     if ($Prepare) {
         if ($c.method -eq 'scoop') {
-            & $ps -NoProfile -NonInteractive -ExecutionPolicy Bypass -File $c.scoop update *> $log
+            & $ps -NoProfile -NonInteractive -WindowStyle Hidden -ExecutionPolicy Bypass -File $c.scoop update *> $log
             if ($LASTEXITCODE -ne 0) { throw "Scoop refresh failed. See $log" }
             Assert-ScoopManifest
         } elseif ($c.method -eq 'portable') {
@@ -114,7 +114,7 @@ try {
     Assert-NoRunningApp
     if ($c.method -eq 'scoop') {
         Assert-ScoopManifest
-        & $ps -NoProfile -NonInteractive -ExecutionPolicy Bypass -File $c.scoop update pig *> $log
+        & $ps -NoProfile -NonInteractive -WindowStyle Hidden -ExecutionPolicy Bypass -File $c.scoop update pig *> $log
         if ($LASTEXITCODE -ne 0) { throw "Scoop update failed. See $log" }
         $launchRoot = Join-Path (Split-Path -Parent $c.root) 'current'
         Assert-Bundle $launchRoot
