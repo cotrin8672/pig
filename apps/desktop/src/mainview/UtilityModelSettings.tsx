@@ -18,8 +18,11 @@ export function ModelSelect({
   value,
   onChange,
   emptyLabel,
+  setting,
 }: {
   label: string;
+  /** Search palette target id, see settings-search.ts. */
+  setting?: string;
   models: UtilityModelInfo[];
   value: Selection;
   onChange: (value: Selection) => void;
@@ -44,7 +47,7 @@ export function ModelSelect({
   );
   const groups = [...new Set(visible.map((model) => model.provider))];
   return (
-    <div className="settings-card utility-model-select">
+    <div className="settings-card utility-model-select" data-setting={setting}>
       <label htmlFor={id}>{label}</label>
       <div className="settings-search">
         <Search size={14} aria-hidden="true" />

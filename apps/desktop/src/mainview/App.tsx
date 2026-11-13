@@ -68,11 +68,13 @@ import {
   rpc,
   sends,
 } from "./rpc";
+import { SearchPalette } from "./SearchPalette";
 import { SessionPanel } from "./SessionPanel";
 import { Settings } from "./Settings";
 import { SidebarSessions } from "./SidebarSessions";
+import { revealTarget } from "./search-target";
 import { initShortcuts } from "./shortcuts";
-import { type LoginState, showError, useStore } from "./store";
+import { type LoginState, showError, showNotice, useStore } from "./store";
 import { ThinkingBlock, ToolBlock, ToolGroup, WorkToggle } from "./ToolBlock";
 import {
   isThreadAtBottom,
@@ -702,6 +704,43 @@ export const Chat = memo(function Chat({
       />
     );
   };
+  const jump = useStore((s) =>
+    s.jump?.sessionId === info.id ? s.jump : undefined,
+  );
+  // biome-ignore lint/correctness/useExhaustiveDependencies: Re-run as history pages, work folds and the transcript change.
+  useEffect(() => {
+    if (!jump || readOnly) return;
+    const finish = () =>
+      useStore.setState((s) =>
+        s.jump?.nonce === jump.nonce ? { jump: undefined } : {},
+      );
+    const index = transcript.records.findIndex(
+      (record) => record.entryId === jump.entryId,
+    );
+    if (index < 0) {
+      // Search hits can be older than the loaded page; fetch until found.
+      if (transcript.history?.before && !historyError) {
+        if (!loadingHistory) void loadEarlier();
+        return;
+      }
+      finish();
+      showNotice({ message: t.searchMessageMissing, level: "info" });
+      return;
+    }
+    const range = work.get(index);
+    if (range && !openWork[range.key] && index !== range.final) {
+      setOpenWork((open) => (view.work = { ...open, [range.key]: true }));
+      return;
+    }
+    const id = transcript.records[index].id;
+    view.follow = false;
+    return revealTarget(
+      () =>
+        thread.current?.querySelector(`[data-record-id="${CSS.escape(id)}"]`) ??
+        null,
+      finish,
+    );
+  }, [jump, readOnly, transcript, loadingHistory, historyError, openWork]);
   useLayoutEffect(() => {
     if (thread.current && !view.follow) thread.current.scrollTop = view.top;
   }, [view]);

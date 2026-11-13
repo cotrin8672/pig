@@ -89,6 +89,15 @@ export interface SessionInfo {
   title: string;
   modified: number;
 }
+/** A user/assistant message matched by the conversation search index. */
+export interface ConversationHit {
+  sessionId: string;
+  cwd: string;
+  entryId: string;
+  role: "user" | "assistant";
+  timestamp: number;
+  snippet: string;
+}
 export interface SessionTarget {
   cwd: string;
   id: string;
@@ -275,6 +284,11 @@ export type RPCSchema = {
       // biome-ignore lint/suspicious/noConfusingVoidType: Electrobun's parameterless RPC convention.
       listFontFamilies: { params: void; response: string[] };
       listSessions: { params: { cwd: string }; response: SessionInfo[] };
+      /** `refresh` rescans session files; `indexing` asks the caller to retry. */
+      searchConversations: {
+        params: { query: string; refresh?: boolean };
+        response: { hits: ConversationHit[]; indexing: boolean };
+      };
       renameSession: {
         params: SessionTarget & { name: string };
         response: SessionInfo;

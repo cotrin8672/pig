@@ -18,6 +18,7 @@ export function DefaultModelSettings() {
     <>
       <ModelSelect
         label={t["Default model"]}
+        setting="default-model"
         models={filterModels(models, disabledModels).filter(
           (model) =>
             !accountCatalogs ||

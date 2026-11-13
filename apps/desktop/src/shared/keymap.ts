@@ -3,6 +3,7 @@ export const defaultBindings = {
   "navigation.back": "Alt+ArrowLeft",
   "navigation.forward": "Alt+ArrowRight",
   "settings.open": "Ctrl+,",
+  "search.open": "Ctrl+K",
   "pane.splitRows": "Ctrl+Alt+H",
   "pane.splitColumns": "Ctrl+Alt+V",
   "pane.close": "Ctrl+Alt+W",

@@ -69,6 +69,11 @@ export type OpeningOp = { id: string } & (
   | { kind: "select"; selection: ModelSelection }
 );
 type UserMessage = Extract<Message, { role: "user" }>;
+export type SettingsCategory =
+  | "general"
+  | "appearance"
+  | "keyboard"
+  | "updates";
 export interface PendingOpen extends OpeningTarget {
   address?: SessionAddress;
   message?: string;
@@ -87,6 +92,11 @@ export const useStore = create<{
   panes: Record<number, { sessionId?: string; openId?: string }>;
   page: "chat" | "providers" | "extensions" | "settings";
   searchOpen: boolean;
+  settingsCategory: SettingsCategory;
+  /** Settings row (`data-setting`) to reveal once the settings page renders. */
+  settingsFocus?: string;
+  /** Message to reveal once its chat is shown; nonce re-triggers the same target. */
+  jump?: { sessionId: string; entryId: string; nonce: number };
   hostId?: string;
   addresses: Record<string, SessionAddress>;
   pendingUI: UIRequest[];
@@ -155,6 +165,7 @@ export const useStore = create<{
   capabilities: {},
   page: "chat",
   searchOpen: false,
+  settingsCategory: "general",
   installed: [],
   packageOps: {},
   notices: [],

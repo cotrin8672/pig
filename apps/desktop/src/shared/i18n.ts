@@ -578,6 +578,26 @@ export const en = {
   piDataAgentDir: "Agent directory",
   piDataSessions: "Chats",
   piDataModels: "Models",
+  "Search everything": "Search everything",
+  searchPlaceholder: "Search chats, messages, settings and actions",
+  searchResults: "Search results",
+  searchNoResults: "No results",
+  searchIndexing: "Indexing chats…",
+  searchHintMove: "Move",
+  searchHintOpen: "Open",
+  searchHintClose: "Close",
+  searchMessageMissing: "That message is not in the chat's current branch.",
+  searchKind: (
+    kind: "chat" | "project" | "page" | "action" | "setting" | "message",
+  ) =>
+    ({
+      chat: "Chat",
+      project: "Project",
+      page: "Page",
+      action: "Action",
+      setting: "Setting",
+      message: "Message",
+    })[kind],
   piDataState: (state: "missing" | "unreadable" | "invalid") =>
     ({
       missing: "not found",
@@ -1160,6 +1180,25 @@ export const ja: Dictionary = {
   piDataAgentDir: "エージェントディレクトリ",
   piDataSessions: "チャット",
   piDataModels: "モデル",
+  "Search everything": "すべてを検索",
+  searchPlaceholder: "チャット・メッセージ・設定・操作を検索",
+  searchResults: "検索結果",
+  searchNoResults: "見つかりません",
+  searchIndexing: "チャットを索引中…",
+  searchHintMove: "移動",
+  searchHintOpen: "開く",
+  searchHintClose: "閉じる",
+  searchMessageMissing:
+    "このメッセージはチャットの現在のブランチにありません。",
+  searchKind: (kind) =>
+    ({
+      chat: "チャット",
+      project: "プロジェクト",
+      page: "ページ",
+      action: "操作",
+      setting: "設定",
+      message: "メッセージ",
+    })[kind],
   piDataState: (state) =>
     ({
       missing: "見つかりません",

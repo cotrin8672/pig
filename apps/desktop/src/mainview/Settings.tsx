@@ -8,7 +8,7 @@ import {
   Settings2,
   X,
 } from "lucide-react";
-import { type ReactNode, useState } from "react";
+import { type ReactNode, useEffect, useState } from "react";
 import {
   type ActionId,
   actionIds,
@@ -26,7 +26,9 @@ import { FontSettings } from "./FontSettings";
 import { useT } from "./i18n";
 import { PiDataSettings } from "./PiDataSettings";
 import { updateAppearance, updateSettings } from "./rpc";
-import { useStore } from "./store";
+import { revealTarget } from "./search-target";
+import { actionLabels, settingsCategories } from "./settings-search";
+import { type SettingsCategory, useStore } from "./store";
 import "./settings.css";
 
 function SettingsSection({ children }: { children: ReactNode }) {
@@ -35,13 +37,16 @@ function SettingsSection({ children }: { children: ReactNode }) {
 
 function SettingsRow({
   label,
+  setting,
   children,
 }: {
   label: ReactNode;
+  /** Search palette target id, see settings-search.ts. */
+  setting?: string;
   children: ReactNode;
 }) {
   return (
-    <div className="settings-row">
+    <div className="settings-row" data-setting={setting}>
       <div className="settings-label">{label}</div>
       {children}
     </div>
@@ -51,13 +56,28 @@ function SettingsRow({
 export function Settings() {
   const t = useT();
   const settings = useStore((s) => s.settings);
-  const [category, setCategory] = useState("general");
-  const categories = [
-    { id: "general", label: t.General, icon: Settings2 },
-    { id: "appearance", label: t.Appearance, icon: Palette },
-    { id: "keyboard", label: t["Keyboard shortcuts"], icon: Keyboard },
-    { id: "updates", label: t.appUpdateTitle, icon: Info },
-  ];
+  const category = useStore((s) => s.settingsCategory);
+  const focus = useStore((s) => s.settingsFocus);
+  const setCategory = (settingsCategory: SettingsCategory) =>
+    useStore.setState({ settingsCategory });
+  useEffect(() => {
+    if (!focus) return;
+    return revealTarget(
+      () => document.querySelector(`[data-setting="${CSS.escape(focus)}"]`),
+      () => useStore.setState({ settingsFocus: undefined }),
+    );
+  }, [focus]);
+  const icons = {
+    general: Settings2,
+    appearance: Palette,
+    keyboard: Keyboard,
+    updates: Info,
+  };
+  const categories = settingsCategories.map(({ id, label }) => ({
+    id,
+    label: t[label],
+    icon: icons[id],
+  }));
   return (
     <ContentPage className="settings-page" title={t.Settings}>
       <div className="settings-layout">
@@ -103,6 +123,7 @@ export function Settings() {
           {category === "general" && (
             <SettingsSection>
               <SettingsRow
+                setting="language"
                 label={<label htmlFor="settings-language">{t.Language}</label>}
               >
                 <div className="settings-select">
@@ -122,6 +143,7 @@ export function Settings() {
                 </div>
               </SettingsRow>
               <SettingsRow
+                setting="agent-shell"
                 label={
                   <label htmlFor="settings-agent-shell">
                     {t["Agent shell"]}
@@ -145,6 +167,7 @@ export function Settings() {
                 </div>
               </SettingsRow>
               <SettingsRow
+                setting="block-images"
                 label={
                   <label htmlFor="settings-block-images">
                     {t["Block images"]}
@@ -161,6 +184,7 @@ export function Settings() {
                 />
               </SettingsRow>
               <SettingsRow
+                setting="context-display"
                 label={
                   <span id="context-display-label">{t["Context display"]}</span>
                 }
@@ -182,6 +206,7 @@ export function Settings() {
                 </fieldset>
               </SettingsRow>
               <SettingsRow
+                setting="usage-display"
                 label={<span id="usage-display-label">{t.usageDisplay}</span>}
               >
                 <fieldset
@@ -232,15 +257,9 @@ function KeyboardSettings() {
     other: ActionId;
   }>();
   const bindings = resolveBindings(settings.keybindings);
-  const labels = {
-    "appearance.toggleBackdrop": t["Toggle backdrop"],
-    "navigation.back": t.Back,
-    "navigation.forward": t.Forward,
-    "settings.open": t["Open settings"],
-    "composer.queue": t["Queue follow-up"],
-    "composer.steer": t["Steer response"],
-    "composer.newline": t["Insert newline"],
-  };
+  const labels = Object.fromEntries(
+    actionIds.map((action) => [action, t[actionLabels[action]]]),
+  ) as Record<ActionId, string>;
   function bind(action: ActionId, combo: string | null | undefined) {
     const keybindings = { ...useStore.getState().settings.keybindings };
     const current = resolveBindings(keybindings);
@@ -282,7 +301,11 @@ function KeyboardSettings() {
       </div>
       <SettingsSection>
         {filtered.map((action) => (
-          <SettingsRow key={action} label={labels[action]}>
+          <SettingsRow
+            key={action}
+            setting={`shortcut-${action}`}
+            label={labels[action]}
+          >
             <div className="settings-binding">
               <div className="settings-binding-controls">
                 <button
@@ -395,7 +418,7 @@ export function AppearanceSettings() {
   return (
     <>
       <SettingsSection>
-        <SettingsRow label={t.themeColor}>
+        <SettingsRow setting="theme-color" label={t.themeColor}>
           <ColorPicker
             label={t.themeColor}
             value={appearance.themeColor}
@@ -405,6 +428,7 @@ export function AppearanceSettings() {
           />
         </SettingsRow>
         <SettingsRow
+          setting="backdrop"
           label={<span id="backdrop-label">{t["Window backdrop"]}</span>}
         >
           <fieldset
@@ -434,6 +458,7 @@ export function AppearanceSettings() {
           </fieldset>
         </SettingsRow>
         <SettingsRow
+          setting="window-opacity"
           label={<label htmlFor="window-opacity">{t["Window opacity"]}</label>}
         >
           <div className="settings-opacity">

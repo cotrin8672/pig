@@ -20,7 +20,7 @@ export function PiDataSettings() {
   return (
     <>
       <h3 className="settings-group-title">{t.piDataTitle}</h3>
-      <div className="settings-card">
+      <div className="settings-card" data-setting="pi-data">
         {rows.map(([label, value]) => (
           <div key={label} className="settings-row">
             <div className="settings-label">{label}</div>

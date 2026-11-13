@@ -10,7 +10,7 @@ export function ChatRendererSettings() {
   const [busy, setBusy] = useState(false);
   return (
     <section className="settings-card" aria-label={t["Chat renderers"]}>
-      <div className="settings-row">
+      <div className="settings-row" data-setting="chat-renderers">
         <div className="settings-label">
           <strong>{t["Chat renderers"]}</strong>
           <p className="muted">

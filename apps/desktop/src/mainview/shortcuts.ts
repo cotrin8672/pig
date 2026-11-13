@@ -105,5 +105,8 @@ export function runAction(action: ActionId) {
     case "settings.open":
       navigate("settings");
       break;
+    case "search.open":
+      useStore.setState({ searchOpen: true });
+      break;
   }
 }

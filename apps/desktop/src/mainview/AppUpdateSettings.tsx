@@ -38,7 +38,7 @@ export function AppUpdateSettings() {
     }[state.status];
   return (
     <section className="settings-card" aria-label={t.appUpdateTitle}>
-      <div className="settings-row app-update">
+      <div className="settings-row app-update" data-setting="app-update">
         <div className="settings-label">
           <div>
             pig <span className="app-update-version">{state.version}</span>

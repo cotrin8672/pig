@@ -33,7 +33,11 @@ export function FontSettings() {
           ["codeFontFamily", t["Code font"]],
         ] as const
       ).map(([field, label]) => (
-        <div className="settings-row" key={field}>
+        <div
+          className="settings-row"
+          key={field}
+          data-setting={field === "fontFamily" ? "interface-font" : "code-font"}
+        >
           <div className="settings-label">{label}</div>
           <FontPicker
             label={label}

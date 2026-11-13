@@ -100,6 +100,8 @@ import {
 } from "./pi-service";
 import { providerAccounts } from "./provider-accounts";
 import { agentDir, agentDirSource } from "./runtime-profile";
+import { defaultSessionDir, SearchIndex } from "./search-index";
+import { sessionDirFor } from "./session-files";
 import { validateSessionScope } from "./session-scope";
 import { loadSettings, saveSettings } from "./settings";
 import { createRuntimeDeltaEncoder } from "./snapshot-delta";
@@ -183,6 +185,21 @@ async function resolveSession(input: SessionTarget) {
     throw new Error("Chat not found. Refresh the session list.");
   }
 }
+const searchIndex = new SearchIndex(join(desktopConfigDir, "search.sqlite"));
+/** Registered workspaces grouped by the directory their chats are stored in. */
+async function searchRoots() {
+  const roots = new Map<string, string[]>();
+  for (const cwd of new Set([generalCwd, ...projects])) {
+    const dir = (await sessionDirFor(cwd)) ?? defaultSessionDir(cwd, agentDir);
+    roots.set(dir, [...(roots.get(dir) ?? []), cwd]);
+  }
+  return [...roots].map(([dir, cwds]) => ({ dir, cwds }));
+}
+function refreshSearch() {
+  void searchIndex.refresh(searchRoots).catch(console.error);
+}
+// Warm the index after startup work has settled.
+setTimeout(refreshSearch, 5000);
 let windowFocused = true;
 async function openManagedSession(input: OpenSessionParams) {
   return packSnapshot(await openSession(input));
@@ -371,6 +388,14 @@ const rpc = BrowserView.defineRPC<RPCSchema>({
         await validateScope(cwd);
         return listSessions(cwd);
       },
+      searchConversations: ({ query, refresh }) => {
+        if (typeof query !== "string") throw new Error("Invalid search.");
+        if (refresh) refreshSearch();
+        return {
+          hits: searchIndex.search(query.slice(0, 200)),
+          indexing: searchIndex.indexing,
+        };
+      },
       markSessionRead: async (input) => {
         const info = await resolveSession(input);
         return desktopState.markSessionRead(info.id, input.completionId);
@@ -384,6 +409,7 @@ const rpc = BrowserView.defineRPC<RPCSchema>({
       deleteSession: async (input) => {
         const info = await resolveSession(input);
         await deleteSession(info);
+        searchIndex.forget(info.id);
         try {
           await desktopState.forgetSession(info.id);
         } catch (error) {
