@@ -91,6 +91,7 @@ export function finishedWork(
   records: readonly TranscriptRecord[],
   running: boolean,
   visible: (record: TranscriptRecord) => boolean,
+  from = 0,
 ): Map<number, WorkRange> {
   const result = new Map<number, WorkRange>();
   const close = (start: number, end: number) => {
@@ -121,12 +122,66 @@ export function finishedWork(
     const range = { key: records[shown[0]].id, first: shown[0], final, tools };
     for (let i = start; i <= end; i++) result.set(i, range);
   };
-  let start = 0;
-  records.forEach((record, index) => {
-    if (role(record) !== "user") return;
+  let start = from;
+  for (let index = from; index < records.length; index++) {
+    if (role(records[index]) !== "user") continue;
     if (index > start) close(start, index - 1);
     start = index + 1;
-  });
+  }
   if (!running && start < records.length) close(start, records.length - 1);
   return result;
+}
+
+/** Keep completed work ranges; only saved, unchanged records can form a reusable prefix. */
+export function createFinishedWorkIndex(
+  visible: (record: TranscriptRecord) => boolean,
+) {
+  const previous: (TranscriptRecord | undefined)[] = [];
+  let previousRevision: string | undefined;
+  let previousRunning = false;
+  let ranges = new Map<number, WorkRange>();
+  return (
+    records: readonly TranscriptRecord[],
+    running: boolean,
+    revision?: string,
+  ): ReadonlyMap<number, WorkRange> => {
+    let shared = 0;
+    if (revision !== undefined && revision === previousRevision)
+      while (
+        shared < records.length &&
+        shared < previous.length &&
+        !!records[shared].entryId &&
+        records[shared] === previous[shared]
+      )
+        shared++;
+    if (
+      shared === records.length &&
+      shared === previous.length &&
+      running === previousRunning
+    )
+      return ranges;
+    // A new user can finish the preceding response; restart at its user boundary.
+    let from = shared;
+    while (from > 0 && role(records[from - 1]) !== "user") from--;
+    const suffix = finishedWork(records, running, visible, from);
+    let changed = suffix.size > 0;
+    if (!changed)
+      for (const index of ranges.keys())
+        if (index >= from) {
+          changed = true;
+          break;
+        }
+    if (changed)
+      ranges = new Map([
+        ...[...ranges].filter(([index]) => index < from),
+        ...suffix,
+      ]);
+    // Do not retain mutable live entries, even if a caller later persists one in place.
+    previous.length = shared;
+    for (let index = shared; index < records.length; index++)
+      previous.push(records[index].entryId ? records[index] : undefined);
+    previousRevision = revision;
+    previousRunning = running;
+    return ranges;
+  };
 }

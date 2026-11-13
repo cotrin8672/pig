@@ -37,6 +37,7 @@ const integration = [
 const ui = [
   "transcript-ui",
   "pane-updates-ui",
+  "work-folding-ui",
   "provider-usage-ui",
   "provider-usage-hover-ui",
   "provider-accounts-ui",

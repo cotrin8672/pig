@@ -25,7 +25,7 @@ import {
 } from "react";
 import { useShallow } from "zustand/react/shallow";
 import appIcon from "../../assets/icon.svg";
-import { finishedWork, groupBlocks } from "../shared/tool-view";
+import { createFinishedWorkIndex, groupBlocks } from "../shared/tool-view";
 import { ChatHeader } from "./ChatHeader";
 import { ChatEmpty, ChatLayout } from "./ChatLayout";
 import { ChatOpening, OpeningComposer, OpeningMessages } from "./ChatOpening";
@@ -663,14 +663,21 @@ export const Chat = memo(function Chat({
   if (!transcript.running)
     for (const send of pending) idleSends.add(send.key.requestId);
   const starting = pending.some((send) => idleSends.has(send.key.requestId));
+  const [indexWork] = useState(() => createFinishedWorkIndex(isVisibleRecord));
   const work = useMemo(
     () =>
-      finishedWork(
+      indexWork(
         transcript.records,
         transcript.running && !starting,
-        isVisibleRecord,
+        transcript.history?.revision,
       ),
-    [transcript.records, transcript.running, starting],
+    [
+      indexWork,
+      transcript.records,
+      transcript.running,
+      starting,
+      transcript.history?.revision,
+    ],
   );
   const [indexFooters] = useState(createResponseFooterIndex);
   const footers = useMemo(
