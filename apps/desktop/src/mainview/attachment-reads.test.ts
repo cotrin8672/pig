@@ -56,17 +56,45 @@ test("pathless native clipboard images participate in pending sends and draft tr
   expect(f.drafts.read(next).content.images).toHaveLength(0);
 });
 
-test("empty clipboard and cancelled native reads do not leave attachments behind", async () => {
+test("empty clipboard fails visibly without a flashing placeholder or an empty send", async () => {
   const f = fixture();
   f.reads.startClipboard(a, async () => null);
-  expect((await f.reads.claim(a))?.images).toEqual([]);
+  expect(f.reads.read(a)[0].preview).toBe(false);
+  const claimed = f.reads.claim(a);
+  await expect(claimed).rejects.toThrow("No image could be read");
   expect(f.reads.pending(a)).toBe(0);
+  expect(f.drafts.read(a).content.images).toHaveLength(0);
+});
+
+test("cancelled native reads do not leave attachments behind", async () => {
+  const f = fixture();
   const pending = Promise.withResolvers<string | null>();
   f.reads.startClipboard(a, () => pending.promise);
   f.reads.cancel(f.reads.read(a)[0].id);
   pending.resolve("cG5n");
   await Promise.resolve();
   expect(f.drafts.read(a).content.images).toHaveLength(0);
+});
+
+test("empty, rejected and oversized clipboard probes notify without leaving attachments", async () => {
+  for (const load of [
+    async () => null,
+    async () => {
+      throw new Error("clipboard unavailable");
+    },
+    () => {
+      throw new Error("native probe failed");
+    },
+    async () => "a".repeat(4.5 * 1024 * 1024 + 1),
+  ]) {
+    const f = fixture();
+    f.reads.startClipboard(a, load);
+    expect(f.reads.read(a)[0].preview).toBe(false);
+    await Bun.sleep(0);
+    expect(f.reads.read(a)).toHaveLength(0);
+    expect(f.notices).toHaveLength(1);
+    expect(f.drafts.read(a).content.images).toHaveLength(0);
+  }
 });
 
 test("pending reads follow explicit epoch/fork transfers and preserve selection order across late loads", () => {
@@ -108,14 +136,10 @@ test("close/restart cancels the read visibly, and a removed image cannot return 
   expect(f.drafts.read(b).content.images).toHaveLength(0);
 });
 
-test("read failures leave an actionable error without keeping a pending read forever", () => {
+test("read failures notify without leaving a pending read or an inline error", () => {
   const f = fixture();
   f.start();
   f.readers[0].onerror?.call(f.readers[0], {} as ProgressEvent<FileReader>);
-  expect(f.reads.read(a)[0]).toMatchObject({
-    state: "error",
-    error: "Could not read image.",
-  });
-  f.reads.cancel(f.reads.read(a)[0].id);
   expect(f.reads.read(a)).toHaveLength(0);
+  expect(f.notices).toEqual(["image.png: Could not read image."]);
 });

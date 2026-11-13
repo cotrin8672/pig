@@ -77,16 +77,20 @@
   border-radius: 6px;
 }
 .composer-attachment.file {
+  width: 96px;
+}
+.composer-attachment.file,
+.composer-attachment.pending {
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
   gap: 4px;
-  width: 96px;
   padding: 6px;
   border: 1px solid var(--ds-border);
   border-radius: 6px;
 }
+.composer-attachment.pending span,
 .composer-attachment.file span {
   max-width: 100%;
   overflow: hidden;
@@ -108,6 +112,7 @@
 }
 
 .slash-options {
+  --scrollbar-inset: var(--radius-lg);
   position: absolute;
   bottom: calc(100% + 8px);
   left: 0;

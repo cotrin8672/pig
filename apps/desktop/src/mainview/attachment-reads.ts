@@ -19,8 +19,8 @@ type Read = {
   address: SessionAddress;
   name: string;
   kind: "image" | "file";
-  state: "pending" | "error" | "ready";
-  error?: string;
+  state: "pending" | "ready";
+  preview: boolean;
   reader: FileReader;
   claim?: Claim;
 };
@@ -157,19 +157,19 @@ export class AttachmentReads {
       kind,
       reader,
       state: "pending",
+      preview: true,
     };
     this.reads.set(read.id, read);
     const fail = (error: unknown) => {
       if (!this.reads.has(read.id) || read.state !== "pending") return;
-      read.state = "error";
-      read.error = error instanceof Error ? error.message : String(error);
+      this.reads.delete(read.id);
+      const message = `${read.name}: ${error instanceof Error ? error.message : String(error)}`;
       reader.onload = reader.onerror = reader.onabort = null;
       reader.abort();
       if (read.claim) {
         // The message fails as a whole and returns to the editor with this error.
-        this.reads.delete(read.id);
-        read.claim.reject(new Error(`${read.name}: ${read.error}`));
-      }
+        read.claim.reject(new Error(message));
+      } else this.notice(message);
       this.releaseReady(read.address);
       this.changed();
     };
@@ -211,26 +211,31 @@ export class AttachmentReads {
     const started = this.begin(address, new File([], "clipboard.png"), "image");
     if (!started) return;
     const { read, fail } = started;
+    // A native probe may contain no image. Track it for sends/transfers, but
+    // don't flash an attachment placeholder before we know there is one.
+    read.preview = false;
     this.changed();
-    void load().then((data) => {
-      if (!this.reads.has(read.id) || read.state !== "pending") return;
-      if (!data) {
-        this.deliver(read, { images: [] });
-        return;
-      }
-      if (data.length > maxImageBase64) {
-        fail(new Error("Each image must be at most 4.5 MiB of base64 data."));
-        return;
-      }
-      this.deliver(read, {
-        images: [
-          {
-            id: read.id,
-            image: { type: "image", mimeType: "image/png", data },
-          },
-        ],
-      });
-    }, fail);
+    void Promise.resolve()
+      .then(load)
+      .then((data) => {
+        if (!this.reads.has(read.id) || read.state !== "pending") return;
+        if (!data) {
+          fail(new Error("No image could be read from the clipboard."));
+          return;
+        }
+        if (data.length > maxImageBase64) {
+          fail(new Error("Each image must be at most 4.5 MiB of base64 data."));
+          return;
+        }
+        this.deliver(read, {
+          images: [
+            {
+              id: read.id,
+              image: { type: "image", mimeType: "image/png", data },
+            },
+          ],
+        });
+      }, fail);
   }
   /** Non-image files go to the agent as a stored path, like pi's TUI paste. */
   startFile(

@@ -88,9 +88,10 @@ export function Composer({ snapshot }: { snapshot: Snapshot }) {
   const key = addressKey(address);
   const keybindings = useStore((s) => s.settings.keybindings);
   const { models: available, disabledModels } = useStore((s) => s.bootstrap);
-  const models = filterModels(
-    snapshot.modelCatalog ?? available,
-    disabledModels,
+  const catalog = snapshot.modelCatalog ?? available;
+  const models = useMemo(
+    () => filterModels(catalog, disabledModels),
+    [catalog, disabledModels],
   );
   const slashAddress = useMemo(
     () => ({
@@ -110,6 +111,7 @@ export function Composer({ snapshot }: { snapshot: Snapshot }) {
   useSyncExternalStore(attachmentReads.subscribe, attachmentReads.getTick);
   const loads = attachmentReads.read(address);
   const loading = loads.some((load) => load.state === "pending");
+  const previews = loads.filter((load) => load.preview);
   const { text, images, pastes, files = [], annotations = [] } = draft.content;
   const [stopping, setStopping] = useState<string>();
   function stop() {
@@ -123,10 +125,13 @@ export function Composer({ snapshot }: { snapshot: Snapshot }) {
       });
   }
   const nextPaste = useRef(1);
-  const expanded = expandedDraft(draft.content);
+  const expanded = useMemo(() => expandedDraft(draft.content), [draft.content]);
   useSyncExternalStore(sends.subscribe, sends.getTick);
   // Sent but not started yet: the host has the message, the response has not begun.
-  const echoed = new Set(transcript.records.map((record) => record.requestId));
+  const echoed = useMemo(
+    () => new Set(transcript.records.map((record) => record.requestId)),
+    [transcript.records],
+  );
   const waiting =
     sendState?.state === "sending" ||
     sendState?.state === "checking" ||
@@ -431,7 +436,7 @@ export function Composer({ snapshot }: { snapshot: Snapshot }) {
             }))
           }
         />
-        {images.length + files.length + Number(loading) > 0 && (
+        {images.length + files.length + previews.length > 0 && (
           <div className="composer-attachments">
             {images.map(({ id, image }, index) => (
               <div className="composer-attachment" key={id}>
@@ -476,42 +481,27 @@ export function Composer({ snapshot }: { snapshot: Snapshot }) {
                 </div>
               );
             })}
-            {loads
-              .filter((load) => load.state === "pending")
-              .map((load) => (
-                <div
-                  className="composer-attachment file loading"
-                  key={load.id}
-                  title={load.name}
-                  aria-busy="true"
+            {previews.map((load) => (
+              <div
+                className={`composer-attachment pending ${load.kind === "file" ? "file" : ""}`}
+                key={load.id}
+                title={load.name}
+                aria-busy="true"
+              >
+                <LoaderCircle size={22} className="spinner" aria-hidden />
+                <span>{load.name}</span>
+                <button
+                  type="button"
+                  aria-label={`${t["Remove attachment"]}: ${load.name}`}
+                  title={t["Remove attachment"]}
+                  onClick={() => attachmentReads.cancel(load.id)}
                 >
-                  <LoaderCircle size={22} className="spinner" aria-hidden />
-                  <span>{load.name}</span>
-                  <button
-                    type="button"
-                    aria-label={`${t["Remove attachment"]}: ${load.name}`}
-                    title={t["Remove attachment"]}
-                    onClick={() => attachmentReads.cancel(load.id)}
-                  >
-                    <X size={14} />
-                  </button>
-                </div>
-              ))}
+                  <X size={14} />
+                </button>
+              </div>
+            ))}
           </div>
         )}
-        {loads
-          .filter((load) => load.state === "error")
-          .map((load) => (
-            <p className="composer-hint" key={load.id} role="alert">
-              {load.name}: {load.error}{" "}
-              <button
-                type="button"
-                onClick={() => attachmentReads.cancel(load.id)}
-              >
-                {t["Remove attachment"]}: {load.name}
-              </button>
-            </p>
-          ))}
         {options.length > 0 && (
           <div
             className="slash-options"

@@ -34,7 +34,13 @@ import {
 import { DesktopStateStore } from "./desktop-state";
 import { flushDraftsBeforeClose } from "./draft-close";
 import { listFontFamilies } from "./fonts";
-import { copyImage, initImageMenu, saveImage, showImageMenu } from "./images";
+import {
+  copyImage,
+  initImageMenu,
+  readClipboardImage,
+  saveImage,
+  showImageMenu,
+} from "./images";
 import {
   cancelAllLogins,
   cancelLogin,
@@ -206,7 +212,7 @@ const report = (error: unknown) => {
   console.error(error);
   rpc.send.error({ message: String(error) });
 };
-initImageMenu(report);
+initImageMenu(report, () => window.ptr);
 async function reloadPackages() {
   const failures: string[] = [];
   await Promise.all([
@@ -272,15 +278,9 @@ const rpc = BrowserView.defineRPC<RPCSchema>({
       reloadSession: (input) => sessionHost.reloadSession(input),
       invokeSessionAction: (input) => sessionHost.invokeSessionAction(input),
       reloadAdapterConfig: () => sessionHost.reloadAdapterConfig(),
-      readClipboardImage: () => {
-        const bytes = Utils.clipboardReadImage();
-        if (!bytes?.length) return null;
-        if (bytes.length > 3.375 * 1024 * 1024)
-          throw new Error("Each image must be at most 4.5 MiB of base64 data.");
-        return Buffer.from(bytes).toString("base64");
-      },
+      readClipboardImage,
       attachmentPreview: ({ path }) => attachmentPreview(path),
-      copyImage: ({ src }) => copyImage(src),
+      copyImage: ({ src }) => copyImage(src, window.ptr),
       saveImage: ({ src }) => saveImage(src),
       storeAttachment: ({ name, data }) => storeFile(name, data),
       appearance: () => appearance,
@@ -701,7 +701,7 @@ if ((await Updater.localInfo.channel()) === "dev") {
 }
 // Set both Win32 and Bun environments before WebView2 creates its first controller.
 setNativeEnvironment("WEBVIEW2_DEFAULT_BACKGROUND_COLOR", "00000000");
-const window = new BrowserWindow({
+const window: BrowserWindow = new BrowserWindow({
   transparent: true,
   title: "pig",
   titleBarStyle: "hiddenInset",

@@ -1,9 +1,15 @@
+import type { Pointer } from "bun:ffi";
 import { readFileSync } from "node:fs";
 import { writeFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 import { join } from "node:path";
 import { initSync, PhotonImage } from "@silvia-odwyer/photon";
 import { ContextMenu, Utils } from "electrobun/bun";
+import {
+  dibToBmp,
+  readWindowsClipboardImage,
+  writeWindowsClipboardImage,
+} from "./windows-clipboard";
 
 const maxRemoteBytes = 50 * 1024 * 1024;
 
@@ -40,25 +46,44 @@ async function loadImage(src: unknown) {
   return { mimeType, bytes };
 }
 
-export async function copyImage(src: unknown) {
-  const { mimeType, bytes } = await loadImage(src);
-  let png: Uint8Array = bytes;
-  if (mimeType !== "image/png") {
-    initSync({
-      module: readFileSync(
-        createRequire(import.meta.url).resolve(
-          "@silvia-odwyer/photon/photon_rs_bg.wasm",
-        ),
+export function encodePng(bytes: Uint8Array) {
+  initSync({
+    module: readFileSync(
+      createRequire(import.meta.url).resolve(
+        "@silvia-odwyer/photon/photon_rs_bg.wasm",
       ),
-    });
-    const image = PhotonImage.new_from_byteslice(bytes);
-    try {
-      png = image.get_bytes();
-    } finally {
-      image.free();
-    }
+    ),
+  });
+  const image = PhotonImage.new_from_byteslice(bytes);
+  try {
+    return image.get_bytes();
+  } finally {
+    image.free();
   }
-  Utils.clipboardWriteImage(png);
+}
+
+export async function copyImage(src: unknown, owner: Pointer | null = null) {
+  const { mimeType, bytes } = await loadImage(src);
+  const png = mimeType === "image/png" ? bytes : encodePng(bytes);
+  if (process.platform === "win32")
+    await writeWindowsClipboardImage(png, owner);
+  else Utils.clipboardWriteImage(png);
+}
+
+export async function readClipboardImage() {
+  let bytes: Uint8Array | null;
+  if (process.platform === "win32") {
+    const image = await readWindowsClipboardImage();
+    bytes = image
+      ? image.format === "png"
+        ? image.bytes
+        : encodePng(dibToBmp(image.bytes))
+      : null;
+  } else bytes = Utils.clipboardReadImage();
+  if (!bytes?.length) return null;
+  if (bytes.length > 3.375 * 1024 * 1024)
+    throw new Error("Each image must be at most 4.5 MiB of base64 data.");
+  return Buffer.from(bytes).toString("base64");
 }
 
 export async function saveImage(src: unknown) {
@@ -73,11 +98,14 @@ export async function saveImage(src: unknown) {
 }
 
 let menuImage: string | undefined;
-export function initImageMenu(report: (error: unknown) => void) {
+export function initImageMenu(
+  report: (error: unknown) => void,
+  owner: () => Pointer | null,
+) {
   ContextMenu.on("context-menu-clicked", (event) => {
     const { action } = (event as { data: { action: string } }).data;
     const src = menuImage;
-    if (action === "image-copy") void copyImage(src).catch(report);
+    if (action === "image-copy") void copyImage(src, owner()).catch(report);
     else if (action === "image-save") void saveImage(src).catch(report);
   });
 }
