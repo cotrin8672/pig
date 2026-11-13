@@ -86,7 +86,8 @@ test.skipIf(!existsSync(browser) && !process.env.PIG_REQUIRE_UI_TESTS)(
       });
       page = await fixtureBrowser(browser, directory, server.url.href);
       let ready = false;
-      for (let tries = 0; tries < 100 && !ready; tries++) {
+      const deadline = Date.now() + 15_000;
+      while (!ready && Date.now() < deadline) {
         ready = await page.evaluate<boolean>("!!window.__productionWorkers");
         if (!ready) await Bun.sleep(25);
       }

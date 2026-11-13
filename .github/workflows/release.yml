@@ -4,12 +4,13 @@ name: Release
 
 on:
   push:
-    branches: [main]
     tags: ['v*']
   workflow_dispatch:
+  schedule:
+    - cron: '0 19 * * *' # 04:00 JST; no native build on every main push.
 
 permissions:
-  contents: write
+  contents: read
 
 # Serialize publication, including the stable bucket commit.
 concurrency:
@@ -17,8 +18,35 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  changes:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      publish: ${{ steps.changes.outputs.publish }}
+    steps:
+      - name: Skip unchanged scheduled nightlies
+        id: changes
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          if [[ "$GITHUB_EVENT_NAME" == workflow_dispatch && "$GITHUB_REF" != refs/heads/main ]]; then
+            echo 'Manual nightlies must run on main'; exit 1
+          fi
+          publish=true
+          if [[ "$GITHUB_EVENT_NAME" == schedule ]]; then
+            published=$(gh release view nightly --json body,assets --jq 'select(any(.assets[]; .name == "pig-windows-x64.zip") and any(.assets[]; .name == "pig-windows-x64.zip.sha256")) | .body' 2>/dev/null || true)
+            if [[ "$published" == *"from commit $GITHUB_SHA."* ]]; then publish=false; fi
+          fi
+          echo "publish=$publish" >> "$GITHUB_OUTPUT"
   release:
+    needs: changes
+    if: needs.changes.outputs.publish == 'true'
     runs-on: windows-latest
+    timeout-minutes: 30
+    permissions:
+      contents: write
     defaults:
       run:
         shell: bash
@@ -28,8 +56,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          # Manual runs and queued main builds always build the latest main.
-          ref: ${{ github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v') && github.ref || 'main' }}
+          # Check and build the same event revision, even if main advances.
+          ref: ${{ github.sha }}
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
         with:
@@ -61,13 +89,11 @@ jobs:
       - uses: actions/cache@v4
         with:
           path: ~/.hutch
-          key: hutch-${{ runner.os }}-${{ hashFiles('apps/desktop/package.json', 'pnpm-lock.yaml') }}
-      - run: pnpm typecheck
+          key: hutch-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('pnpm-lock.yaml') }}
+          restore-keys: hutch-${{ runner.os }}-${{ runner.arch }}-
       - run: pnpm lint
+      - run: pnpm typecheck
       - run: pnpm test
-        env:
-          PIG_REQUIRE_UI_TESTS: '1'
-      - run: bun test apps/desktop/scripts/sdk-runtime-assets.test.ts apps/desktop/scripts/post-build.test.ts
       - name: Build portable app (shared stable profile)
         env:
           PIG_RELEASE_CHANNEL: ${{ steps.release.outputs.tag == 'nightly' && 'nightly' || 'stable' }}
@@ -81,6 +107,15 @@ jobs:
       - name: Package ZIP and checksum
         shell: pwsh
         run: ./.github/scripts/package.ps1 -OutputDirectory $env:RELEASE_DIR
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows-x64-${{ github.sha }}
+          path: |
+            ${{ env.RELEASE_DIR }}/pig-windows-x64.zip
+            ${{ env.RELEASE_DIR }}/pig-windows-x64.zip.sha256
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 7
       - name: Publish release
         env:
           TAG: ${{ steps.release.outputs.tag }}
@@ -91,11 +126,12 @@ jobs:
           if [[ "$TAG" == nightly ]]; then
             notes="Nightly $VERSION from commit $SHA. Built with the stable identifier and channel to share settings and projects. Unsigned Windows x64 portable build; requires WebView2."
             if ! gh release view nightly >/dev/null 2>&1; then
-              gh release create nightly --target "$SHA" --prerelease --latest=false --title 'pig nightly' --notes "$notes"
+              gh release create nightly --target "$SHA" --prerelease --latest=false --title 'pig nightly' --notes 'Nightly publication in progress.'
             fi
-            gh api --method PATCH "repos/$GH_REPO/git/refs/tags/nightly" -f sha="$SHA" -F force=true
-            gh release edit nightly --prerelease --latest=false --title 'pig nightly' --notes "$notes"
             gh release upload nightly "$RELEASE_DIR/pig-windows-x64.zip" "$RELEASE_DIR/pig-windows-x64.zip.sha256" --clobber
+            gh api --method PATCH "repos/$GH_REPO/git/refs/tags/nightly" -f sha="$SHA" -F force=true
+            # The skip marker is written last so interrupted uploads are retried.
+            gh release edit nightly --prerelease --latest=false --title 'pig nightly' --notes "$notes"
           else
             gh release create "$TAG" --verify-tag --latest --title "pig $VERSION" \
               --notes "Unsigned Windows x64 portable build; requires WebView2. Install with Scoop using the repository bucket." \

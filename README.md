@@ -41,10 +41,13 @@ cancelled. A failed update is reported on the next launch.
 
 ### Publish
 
-Push `main` to build CI and publish/replace the `nightly` prerelease. Manual
-`Release` workflow runs also build the latest `main`. The release body identifies
-nightlies as `0.1.0-nightly.<UTC date>.<short SHA>`; the internal app version stays
-at the configured base version, and the Electrobun channel stays `stable`.
+PRs and `main` pushes run fast CI, not native release builds. The `Release`
+workflow publishes/replaces the `nightly` prerelease daily at 19:00 UTC (04:00
+JST), skipping it when the published commit is unchanged. Run `Release` manually
+on `main` for an immediate nightly. Checks and packaging use the same event
+commit, never a moving branch tip. The release body identifies nightlies as
+`0.1.0-nightly.<UTC date>.<short SHA>`; the internal app version stays at the
+configured base version, and the Electrobun channel stays `stable`.
 
 For stable releases, keep the versions in `apps/desktop/package.json` and
 `apps/desktop/electrobun.config.ts` equal, commit and push `main`, then:
@@ -127,6 +130,35 @@ pnpm test
 pnpm --filter @pig/desktop smoke
 pnpm build
 ```
+
+### Checks and CI
+
+| Command | Scope | Automation |
+| --- | --- | --- |
+| `pnpm test` | Fast source tests, UI style rules, SDK packaging and build metadata tests | Every PR/main push; release validation |
+| `pnpm test:integration` | Real SDK startup, native processes, large storage/recovery fixtures | Daily and manual `Regression` workflow |
+| `pnpm test:ui` | Edge/Chromium drawing and input regressions; missing browser fails | Daily and manual `Regression` workflow |
+| `pnpm test:all` | All three maintained suites | Local full verification |
+
+CI also runs Lint, TypeScript and a Vite webview build. Superseded CI runs are
+cancelled. Native Electrobun packaging runs only for stable tags and scheduled
+or manual nightlies, after the same fast checks pass. A release deliberately
+rechecks its exact revision rather than assuming a previous main build covered
+it. It does **not** rerun the slow regression suites or wait for their daily run.
+Before releases or changes to SDK/storage/UI behavior, run the relevant suites
+locally or dispatch `Regression` against the intended revision. UI changes still
+require `pnpm test:ui`; separating CI is not permission to skip that validation.
+
+`apps/desktop/scripts/run-tests.ts` owns suite membership; new source tests are
+included in the fast suite by default. Existing heavy suites are explicitly
+listed, and a test checks that no source test is lost or assigned twice. The
+previously excluded `scripts/lazy-routes.test.ts` remains excluded: it describes
+an obsolete route-loading policy, not the current application contract.
+Regression suites run serially within each of two independent jobs to avoid
+SDK/Edge contention. The workflow runs daily at 18:00 UTC (03:00 JST), or manually
+on a selected branch/tag. CI, Regression and Release share the Hutch cache key;
+the generated project devkit is never cached. Release ZIP/checksum artifacts are
+also retained for seven days if publishing or the Scoop update fails.
 
 `pnpm build` writes an unsigned development bundle under
 `apps/desktop/build/dev-win-x64/`. Release automation builds the `stable` channel

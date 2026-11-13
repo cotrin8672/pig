@@ -449,7 +449,12 @@ test.skipIf(!existsSync(edge) && !process.env.PIG_REQUIRE_UI_TESTS)(
       check(document.querySelector(".tool-term.error .tool-term-time")?.textContent==="exit 3" && !document.querySelector(".tool-term-caret"),"failed shell must show its exit code without a caret");
       await render(<ToolBlock call={{id:"live",name:"bash",arguments:{command:"sleep 9"}}} state={{status:"running",result:{content:[{type:"text",text:"step 1"}]}}} live/>);
       const liveOutput=document.querySelector(".tool-term.running .tool-term-output"),caret=liveOutput?.querySelector(".tool-term-caret");
-      check(caret && liveOutput.textContent==="step 1" && getComputedStyle(caret).animationName==="tool-term-caret" && /^\\d\\.\\ds$/.test(document.querySelector(".tool-term-time").textContent),"running shell must blink a block caret after the log and count its elapsed time");
+      check(caret && liveOutput.textContent==="step 1","running shell must retain a block caret after the log");
+      const reducedMotion=matchMedia("(prefers-reduced-motion: reduce)").matches;
+      const animation=getComputedStyle(caret).animationName;
+      check(animation===(reducedMotion?"none":"tool-term-caret"),"running caret animation must respect reduced motion: "+JSON.stringify({reducedMotion,animation}));
+      const elapsed=document.querySelector(".tool-term-time").textContent;
+      check(/^\\d+(?:\\.\\d)?s$/.test(elapsed),"running shell must count its elapsed time: "+elapsed);
       const wideOutput=Array.from({length:80},(_,i)=>i+" "+"wide output ".repeat(150)).join("\\n");
       await render(<DisclosureScope id="multi-scroll" reveal={1}><ToolBlock call={{id:"multi-scroll",name:"extension",arguments:{}}} state={{status:"done"}} live={false} card={{title:"Scroll positions",body:[{type:"code",text:wideOutput},{type:"code",text:wideOutput}]}}/></DisclosureScope>);
       let scrollPreviews=document.querySelectorAll(".tool-code");

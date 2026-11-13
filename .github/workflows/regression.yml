@@ -1,0 +1,47 @@
+name: Regression
+
+on:
+  schedule:
+    - cron: '0 18 * * *' # 03:00 JST
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: regression-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  regression:
+    runs-on: windows-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        suite: [integration, ui]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.2
+      - run: pnpm install --frozen-lockfile
+      - uses: actions/cache@v4
+        with:
+          path: ~/.hutch
+          key: >-
+            hutch-${{ runner.os }}-${{ runner.arch }}-${{
+            hashFiles('pnpm-lock.yaml') }}
+          restore-keys: hutch-${{ runner.os }}-${{ runner.arch }}-
+      - run: pnpm --filter @pig/desktop prepare:electrobun
+      - name: Run ${{ matrix.suite }} regressions
+        run: pnpm test:${{ matrix.suite }}
+        env:
+          PI_OFFLINE: '1'

@@ -9,8 +9,10 @@
     "lint": "biome check . && pnpm lint:ui",
     "lint:ui": "bun apps/desktop/scripts/check-ui-styles.ts",
     "format": "biome check --write .",
-    "test": "bun test --parallel=4 apps/desktop/src apps/desktop/scripts/ui-style-rules.test.ts",
-    "test:ui": "bun apps/desktop/scripts/check-ui.ts"
+    "test": "bun apps/desktop/scripts/run-tests.ts unit",
+    "test:integration": "bun apps/desktop/scripts/run-tests.ts integration",
+    "test:ui": "bun apps/desktop/scripts/check-ui.ts",
+    "test:all": "pnpm test && pnpm test:integration && pnpm test:ui"
   },
   "devDependencies": {
     "@biomejs/biome": "2.4.8",

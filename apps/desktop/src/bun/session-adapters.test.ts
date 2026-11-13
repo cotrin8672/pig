@@ -51,6 +51,7 @@ test("session adapters attach, invoke, reload independently and reject stale own
     await writeFile(configFile,config);
     const host = new SessionHost({modelInfo,configFile,emit(){},emitTerminal(){},emitUI(e){if(e.type==="request" && e.request.kind==="project-trust") queueMicrotask(()=>host.resolveExtensionUI({...e.request,kind:"project-trust",value:"once"}));}});
     host.connectUI({clientId:"root"});
+    const heartbeat=setInterval(()=>host.heartbeatUI({clientId:"root"}),5000);heartbeat.unref();
     const chat = await host.openSession({cwd,openId:"first"});
     const originalBus=globalThis.__fixtureBus;
     const snapshot=()=>host.getSessionSnapshot(chat.address);
@@ -122,7 +123,7 @@ test("session adapters attach, invoke, reload independently and reject stale own
     expect(next.epoch).toBeGreaterThan(beforeReload.epoch);
     await expect(host.invokeSessionAction({...missing,generation:host.getSessionSnapshot(next).sessionUI.generation})).rejects.toThrow("STALE_SESSION_ADDRESS");
     await host.closeSession(next); await host.closeSession(second.address);
-    await host.dispose(); await disposeSessions();
+    clearInterval(heartbeat);await host.dispose(); await disposeSessions();
   `;
   try {
     const child = Bun.spawn([process.execPath, "--eval", script], {
@@ -170,6 +171,7 @@ test("official Pi todo and plan-mode project through user adapters with a real S
     const updates=new Set();
     const host=new SessionHost({modelInfo,configFile,emit(){for(const update of updates)update();},emitTerminal(){},emitUI(e){if(e.type==="request"&&e.request.kind==="project-trust")queueMicrotask(()=>host.resolveExtensionUI({...e.request,kind:"project-trust",value:"once"}));}});
     host.connectUI({clientId:"root"});
+    const heartbeat=setInterval(()=>host.heartbeatUI({clientId:"root"}),5000);heartbeat.unref();
     const chat=await host.openSession({cwd,openId:"official"});
     let address=chat.address;
     const snapshot=()=>host.getSessionSnapshot(address);
@@ -193,7 +195,7 @@ test("official Pi todo and plan-mode project through user adapters with a real S
     await host.invokeSessionAction({...address,generation:ui.generation,adapterId:mode.adapterId,viewId:mode.view.id,revision:mode.revision,commandId:toggle.command,actionId:toggle.id});
     await wait(()=>snapshot().sessionUI.views.some(v=>v.view.kind==="mode"&&v.view.value==="plan"));
     expect(host.session(chat.info.id).sessionManager.getEntries().some(e=>e.type==="custom"&&e.customType==="plan-mode"&&e.data.enabled)).toBe(true);
-    await host.dispose();await disposeSessions();
+    clearInterval(heartbeat);await host.dispose();await disposeSessions();
   `;
   try {
     const scriptFile = join(home, "official-check.ts");

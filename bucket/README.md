@@ -15,7 +15,9 @@ Neither relocates the AppData profile or uses Scoop `persist`.
   published release**. The first stable release job replaces it with the CI
   artifact's hash. Wait for the workflow's bucket commit before installing.
 - Nightly: fixed `nightly` prerelease tag, moved to the built `main` commit, with
-  assets replaced on every successful main build or manual Release run.
+  assets replaced by scheduled daily builds (19:00 UTC) or manual `Release`
+  runs on `main`. Scheduled runs skip unchanged commits; a main push runs fast
+  CI only.
   `version: "nightly"` intentionally omits a hash: Scoop updates re-download the
   rolling ZIP without integrity checking. The release body includes the base
   version, UTC date and short commit SHA.

@@ -10,7 +10,7 @@ UIの追加・変更・レビュー時に適用する。スクリーンショッ
 | --- | --- |
 | `pnpm lint` → `lint:ui` | Cardへの不透明な背景・全体opacity、許可トークン自体の不透明化、inline styleでの背景指定、個別のスクロールバー形状・native thin/color指定 |
 | `pnpm test:ui` | 実描画でのスクロールバーの端の非対称・見切れ、Cardの背景alphaと全体opacity、出力枠の左右の不整列、8行上限、サイドバーアイコン列の上下余白、ターミナル枠内の最低1pxの隙間 |
-| CI / Release | 同じLintとテストを実行。必須UIテストはブラウザ不在でもスキップせず失敗 |
+| CI / Release | 毎回は静的Lint・軽量テスト・Webビルド。重い実描画は毎日／手動の `Regression` に分離 |
 
 - 静的検査は `apps/desktop/scripts/ui-style-rules.ts`。CSS・セレクター・JSXをASTで解析する。
   `check-ui-styles.ts` が本番の `mainview` 配下を走査し、違反箇所をファイル・行番号付きで出力する。
@@ -18,6 +18,8 @@ UIの追加・変更・レビュー時に適用する。スクリーンショッ
   `session-panel` と `response-error` もCardとして検査する。任意の名前から役割を推測する検査ではない。
 - 背景は許可された半透明トークンを共有CSSから指定する。Cardのinline styleはレイアウト用途に限る。
   動的なstyleオブジェクトやspreadで検査を迂回しない。
+- UI変更時は、通常CIの成否とは別に `pnpm test:ui` を実行する。`Regression` のUIジョブも
+  同じ検査を実行し、ブラウザ不在はスキップせず失敗する。検査頻度の分離であって削除ではない。
 - 描画検査は `transcript-ui.test.ts`。スクリーンショットのthumbのピクセルと実要素の寸法を測る。
   スクリーンショット全体の一致だけで判定する方式ではない。
 - 新しいCard・スクロールUIは描画fixtureにも追加する。検査対象を外す・スキップする・

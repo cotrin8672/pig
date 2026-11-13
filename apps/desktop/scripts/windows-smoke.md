@@ -112,9 +112,12 @@ and transient animation coverage remain separate manual gates.
 The existing `lazy-routes.test.ts` still fails because it requires Providers,
 Settings and Extensions to be dynamically imported, while App.tsx currently
 imports them eagerly. This migration does not change that UI loading policy.
-CI adds the SDK packaging and post-build metadata suites explicitly, not that
-unrelated stale test. The normal source suite (690 tests), packaging/metadata
-suite (21 tests), typecheck and lint passed.
+The fast `pnpm test` suite includes SDK packaging and post-build metadata checks,
+not that unrelated stale test. Real SDK/native/storage regressions now run with
+`pnpm test:integration`, and Edge drawing/input regressions with `pnpm test:ui`;
+the daily/manual `Regression` workflow runs both. These checks do not launch the
+packaged native GUI. The original migration's source suite (690 tests),
+packaging/metadata suite (21 tests), typecheck and lint passed.
 
 Before publishing, manually check mixed 100%/150%/200% DPI monitor moves,
 Win+Arrow / Snap layouts, real focus switching, opacity 0/1, transient flashes,

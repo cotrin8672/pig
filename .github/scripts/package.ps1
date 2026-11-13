@@ -20,6 +20,8 @@ if ($version.identifier -ne 'dev.pig.desktop' -or $version.channel -ne 'stable')
 
 $zip = Join-Path $OutputDirectory 'pig-windows-x64.zip'
 Compress-Archive -Path "$stage/pig/*" -DestinationPath $zip -Force
+& 7z t $zip
+if ($LASTEXITCODE -ne 0) { throw 'Portable ZIP integrity check failed' }
 $hash = (Get-FileHash $zip -Algorithm SHA256).Hash.ToLowerInvariant()
 Set-Content -Path "$zip.sha256" -Value "$hash  pig-windows-x64.zip" -Encoding ascii
 Write-Output "Portable archive: $zip"

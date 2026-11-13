@@ -9,11 +9,20 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: >-
+    checks-${{ github.workflow }}-${{
+    github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 jobs:
   check:
     runs-on: windows-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
         with:
@@ -23,17 +32,16 @@ jobs:
         with:
           bun-version: 1.4.2
       - run: pnpm install --frozen-lockfile
-      # Cache Hutch's SDK/toolchains; regenerate the project devkit.
+      # Cache the shared SDK/toolchains, never the generated project devkit.
       - uses: actions/cache@v4
         with:
           path: ~/.hutch
-          key: hutch-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
-      - run: pnpm typecheck
+          key: >-
+            hutch-${{ runner.os }}-${{ runner.arch }}-${{
+            hashFiles('pnpm-lock.yaml') }}
+          restore-keys: hutch-${{ runner.os }}-${{ runner.arch }}-
       - run: pnpm lint
+      - run: pnpm typecheck
       - run: pnpm test
-        env:
-          PIG_REQUIRE_UI_TESTS: '1'
-      - run: >-
-          bun test apps/desktop/scripts/sdk-runtime-assets.test.ts
-          apps/desktop/scripts/post-build.test.ts
-      - run: pnpm build
+      - name: Build webview (native packaging belongs to Release)
+        run: pnpm --filter @pig/desktop exec vite build
