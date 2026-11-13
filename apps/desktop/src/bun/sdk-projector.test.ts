@@ -250,6 +250,128 @@ test("live updates reuse a saved page without scanning or projecting the branch 
   }
 });
 
+test("completed tool results are owned once; running results remain isolated snapshots", () => {
+  const manager = SessionManager.inMemory("fixture");
+  const call = fauxAssistantMessage("Tool");
+  call.content = [
+    { type: "toolCall", id: "tool", name: "read", arguments: {} },
+  ];
+  manager.appendMessage(call);
+  const projector = new SDKProjector(manager, 1);
+  const result = {
+    content: [{ type: "text" as const, text: "partial" }],
+    details: { lines: [1] },
+    extra: { extensionMetadata: true },
+  };
+  projector.event({
+    type: "tool_execution_update",
+    toolCallId: "tool",
+    toolName: "read",
+    args: {},
+    partialResult: result,
+  });
+  const partial = projector.snapshot();
+  result.content[0].text = "final";
+  expect(partial.tools.tool.result).toMatchObject({
+    content: [{ text: "partial" }],
+  });
+  const clone = spyOn(globalThis, "structuredClone");
+  try {
+    projector.event({
+      type: "tool_execution_end",
+      toolCallId: "tool",
+      toolName: "read",
+      result,
+      isError: false,
+    });
+    expect(clone).toHaveBeenCalledTimes(1);
+    const completed = projector.snapshot().tools.tool;
+    expect(completed.result).toEqual(result);
+    expect(completed.result).not.toBe(result);
+    for (let i = 0; i < 20; i++)
+      expect(projector.snapshot().tools.tool).toBe(completed);
+    expect(clone).toHaveBeenCalledTimes(1);
+    result.content[0].text = "mutated by extension";
+    result.details.lines.push(2);
+    expect(projector.snapshot().tools.tool.result).toEqual({
+      content: [{ type: "text", text: "final" }],
+      details: { lines: [1] },
+      extra: { extensionMetadata: true },
+    });
+    projector.event({
+      type: "tool_execution_start",
+      toolCallId: "tool",
+      toolName: "read",
+      args: {},
+    });
+    expect(projector.snapshot().tools.tool).toEqual({ status: "running" });
+    projector.event({
+      type: "tool_execution_end",
+      toolCallId: "tool",
+      toolName: "read",
+      result,
+      isError: true,
+    });
+    const replacement = projector.snapshot().tools.tool;
+    expect(replacement).not.toBe(completed);
+    expect(replacement.status).toBe("error");
+    expect(replacement.result).toEqual(result);
+    expect(completed.result).toMatchObject({ content: [{ text: "final" }] });
+  } finally {
+    clone.mockRestore();
+  }
+});
+
+test("completed copies share matching persisted payloads, never differing extension output", () => {
+  const manager = SessionManager.inMemory("fixture");
+  const projector = new SDKProjector(manager, 1);
+  const content = [{ type: "text" as const, text: "saved output" }];
+  const details = { lines: [1] };
+  projector.event({
+    type: "tool_execution_end",
+    toolCallId: "tool",
+    toolName: "read",
+    result: { content, details, extra: "extension metadata" },
+    isError: false,
+  });
+  manager.appendMessage({
+    role: "toolResult",
+    toolCallId: "tool",
+    toolName: "read",
+    content,
+    details,
+    isError: false,
+    timestamp: 0,
+  });
+  const completed = projector.snapshot().tools.tool;
+  expect(completed.result).toEqual({
+    content,
+    details,
+    extra: "extension metadata",
+  });
+  expect((completed.result as { content: unknown }).content).toBe(content);
+  expect((completed.result as { details: unknown }).details).toBe(details);
+  manager.appendMessage(fauxAssistantMessage("Next"));
+  expect(projector.snapshot().tools.tool).toBe(completed);
+  for (const result of [
+    { content: [{ type: "text" as const, text: "different" }], details },
+    { content, details: { lines: [2] } },
+  ]) {
+    projector.event({
+      type: "tool_execution_end",
+      toolCallId: "tool",
+      toolName: "read",
+      result,
+      isError: true,
+    });
+    manager.appendMessage(fauxAssistantMessage("Append"));
+    const next = projector.snapshot().tools.tool;
+    expect(next.status).toBe("error");
+    expect(next.result).toEqual(result);
+    expect(next).not.toBe(completed);
+  }
+});
+
 test("cached history invalidates on rewind/reset and preserves final tool results", () => {
   const manager = SessionManager.inMemory("fixture");
   const root = manager.appendMessage({

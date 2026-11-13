@@ -281,7 +281,8 @@ export class SDKProjector {
     if (event.type === "tool_execution_end")
       this.tools[event.toolCallId] = {
         status: event.isError ? "error" : "done",
-        result: event.result,
+        // Own the completed payload; SDK/extension objects may still be mutated.
+        result: structuredClone(event.result),
       };
     if (event.type === "compaction_end" && event.errorMessage)
       this.fail(event.errorMessage);
@@ -372,6 +373,39 @@ export class SDKProjector {
       },
       start,
     );
+    // Release owned copies once persistence has the same payload. Do this only
+    // when projecting a page, not on every streaming snapshot.
+    for (const [id, saved] of Object.entries(state.tools)) {
+      const tool = this.tools[id];
+      const result = tool?.result;
+      const canonical = saved.result as { content: unknown; details?: unknown };
+      if (
+        !tool ||
+        tool.status === "running" ||
+        !result ||
+        typeof result !== "object" ||
+        Array.isArray(result) ||
+        !("content" in result) ||
+        (result.content === canonical.content &&
+          (result as { details?: unknown }).details === canonical.details) ||
+        !Bun.deepEquals(result.content, canonical.content) ||
+        !Bun.deepEquals(
+          (result as { details?: unknown }).details,
+          canonical.details,
+        )
+      )
+        continue;
+      this.tools[id] = {
+        ...tool,
+        result: {
+          ...result,
+          content: canonical.content,
+          ...(canonical.details !== undefined
+            ? { details: canonical.details }
+            : {}),
+        },
+      };
+    }
     state.history = {
       revision: this.historyRevision,
       before: start > 0 ? branch[start].id : undefined,
@@ -419,7 +453,11 @@ export class SDKProjector {
         for (const block of record.message.content)
           if (block.type === "toolCall") calls.add(block.id);
     for (const id of calls)
-      if (this.tools[id]) state.tools[id] = structuredClone(this.tools[id]);
+      if (this.tools[id])
+        state.tools[id] =
+          this.tools[id].status === "running"
+            ? structuredClone(this.tools[id])
+            : this.tools[id];
     state.liveToEntry = { ...this.aliases };
     state.current = this.live?.id ?? null;
     state.running = this.running;

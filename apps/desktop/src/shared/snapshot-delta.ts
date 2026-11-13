@@ -1,6 +1,10 @@
 import type { Snapshot } from "./rpc-schema";
 import type { RuntimeEvent, SessionAddress } from "./runtime-contract";
-import type { Transcript, TranscriptRecord } from "./transcript";
+import {
+  recordPayload,
+  type Transcript,
+  type TranscriptRecord,
+} from "./transcript";
 import { unpackTranscript, type WireTranscript } from "./transcript-wire";
 
 export type RecordPayloadRef = {
@@ -63,7 +67,7 @@ export function expandSnapshotDelta(
     )
       return undefined;
     const { payloadRef: _ref, ...envelope } = record;
-    records.push({ ...old, ...envelope } as TranscriptRecord);
+    records.push({ ...envelope, ...recordPayload(old) } as TranscriptRecord);
   }
   try {
     const transcript: Transcript = unpackTranscript({

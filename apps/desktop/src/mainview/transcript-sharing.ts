@@ -1,4 +1,8 @@
-import type { Transcript, TranscriptRecord } from "../shared/transcript";
+import {
+  recordPayload,
+  type Transcript,
+  type TranscriptRecord,
+} from "../shared/transcript";
 
 function shallowEqual(a: object, b: object) {
   const left = a as Record<string, unknown>;
@@ -10,10 +14,8 @@ function shallowEqual(a: object, b: object) {
   );
 }
 
-function sameEntry(a: TranscriptRecord, b: TranscriptRecord) {
-  if (!a.entryId || a.entryId !== b.entryId || a.kind !== b.kind) return false;
-  // Persisted payloads are immutable within one history revision. Compare all
-  // envelope fields: request IDs and ordering can still change after commit.
+function sameEnvelope(a: TranscriptRecord, b: TranscriptRecord) {
+  // Reuse the whole record only when every envelope field is unchanged.
   const {
     message: _am,
     data: _ad,
@@ -46,8 +48,16 @@ export function shareTranscript(
   let changed = false;
   const records = incoming.records.map((record) => {
     const old = previous.get(record.id);
-    if (!old || !sameEntry(old, record)) return record;
-    changed ||= old !== record;
+    if (
+      !old?.entryId ||
+      old.entryId !== record.entryId ||
+      old.kind !== record.kind
+    )
+      return record;
+    const shared = sameEnvelope(old, record)
+      ? old
+      : ({ ...record, ...recordPayload(old) } as TranscriptRecord);
+    changed ||= shared !== record;
     if (
       old.kind === "message" &&
       old.message.role === "toolResult" &&
@@ -87,7 +97,7 @@ export function shareTranscript(
         changed ||= tools[id] !== state;
       }
     }
-    return old;
+    return shared;
   });
   return changed ? { ...incoming, records, tools } : incoming;
 }

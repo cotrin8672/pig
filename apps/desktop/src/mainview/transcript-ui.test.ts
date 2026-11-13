@@ -309,20 +309,39 @@ test.skipIf(!existsSync(edge) && !process.env.PIG_REQUIRE_UI_TESTS)(
       for(let i=0;i<40;i++){
         const call={type:"toolCall",id:"perf-call-"+i,name:i%2?"read":"bash",arguments:i%2?{path:"fixture.ts"}:{command:"echo fixture"}};
         const turn=assistant("perf-step-"+i,perfRecords.length,[call]);turn.entryId=turn.id;perfRecords.push(turn);
-        const result=record("perf-result-"+i,perfRecords.length,{role:"toolResult",toolCallId:call.id,toolName:call.name,content:[{type:"text",text:"output line\\n".repeat(8)}],isError:false,timestamp:i});result.entryId=result.id;perfRecords.push(result);
+        const result=record("perf-result-"+i,perfRecords.length,{role:"toolResult",toolCallId:call.id,toolName:call.name,content:[{type:"text",text:"output line\\n".repeat(i===0?20:8)}],isError:false,timestamp:i});result.entryId=result.id;perfRecords.push(result);
         perfTools[call.id]={status:"done",result:{content:result.message.content}};
       }
       perfRecords.push(assistant("perf-live",perfRecords.length,[{type:"text",text:"Live"}]));
       let perfSnapshot={...base,transcript:{...transcript(perfRecords),tools:perfTools,running:true,current:"perf-live"}};
       await show(perfSnapshot);await pause(150);toolRenders=0;
-      const perfStarted=performance.now();
-      for(let i=0;i<6;i++){
-        const incoming=structuredClone(perfSnapshot);incoming.snapshotSeq++;
-        incoming.transcript.records.at(-1).message.content[0].text+=" token";
-        perfSnapshot=newerSnapshot(perfSnapshot,incoming);await show(perfSnapshot);
+      {
+        const savedOutput=document.querySelector('.tool-term-output');
+        check(savedOutput,'saved tool output must be expanded');
+        savedOutput.scrollTop=24;
+        const savedTop=savedOutput.scrollTop,savedRange=document.createRange();savedRange.selectNodeContents(savedOutput);
+        const savedSelection=window.getSelection();savedSelection.removeAllRanges();savedSelection.addRange(savedRange);
+        const selectedOutput=savedSelection.toString();
+        check(savedTop>0 && selectedOutput===savedOutput.textContent,'saved output fixture must scroll and be completely selectable');
+        const perfStarted=performance.now();
+        for(let i=0;i<6;i++){
+          const incoming=structuredClone(perfSnapshot);incoming.snapshotSeq++;
+          incoming.transcript.records.at(-1).message.content[0].text+=" token";
+          if(i>=3){
+            const appended=assistant('perf-appended-'+i,incoming.transcript.records.length-1,[{type:'text',text:'Next saved step '+i}]);appended.entryId=appended.id;
+            incoming.transcript.records.splice(-1,0,appended);
+            incoming.transcript.records.forEach((record,index)=>{record.branchId=appended.id;record.order=index;});
+          }
+          perfSnapshot=newerSnapshot(perfSnapshot,incoming);await show(perfSnapshot);
+          check(toolRenders===0,'streaming and history appends must not rerender unchanged tools');
+          check(savedOutput.isConnected && savedOutput===document.querySelector('.tool-term-output') && savedOutput.closest('details').open,'history append must preserve expanded tool DOM');
+          check(savedOutput.scrollTop===savedTop && savedSelection.toString()===selectedOutput,'history append must preserve tool scrolling and native selection/copy text');
+          check(perfSnapshot.transcript.records[1].branchId===incoming.transcript.records[1].branchId,'payload sharing must not suppress current branch metadata');
+        }
+        metrics.streamingReplay={savedTools:40,updates:6,unchangedToolRenders:toolRenders,historyAppends:3,ms:performance.now()-perfStarted};
+        check(toolRenders===0,"IPC clones must not rerender unchanged saved tools: "+JSON.stringify(metrics.streamingReplay));
+        savedSelection.removeAllRanges();
       }
-      metrics.streamingReplay={savedTools:40,updates:6,unchangedToolRenders:toolRenders,ms:performance.now()-perfStarted};
-      check(toolRenders===0,"IPC clones must not rerender unchanged saved tools: "+JSON.stringify(metrics.streamingReplay));
       const groupedCalls=perfRecords.filter(record=>record.message?.role==="assistant").flatMap(record=>record.message.content).filter(block=>block.type==="toolCall" && block.name==="read");
       const groupedTurn=assistant("perf-group",1,groupedCalls);groupedTurn.entryId=groupedTurn.id;
       perfSnapshot={...perfSnapshot,transcript:{...perfSnapshot.transcript,records:[user(0),groupedTurn,...perfRecords.filter(record=>record.message?.role==="toolResult" && groupedCalls.some(call=>call.id===record.message.toolCallId)),perfRecords.at(-1)]}};

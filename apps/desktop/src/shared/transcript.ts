@@ -29,6 +29,18 @@ export type TranscriptRecord = {
   | { kind: "custom-entry"; customType: string; data: unknown }
   | { kind: "session-entry"; entryType: string; data: unknown }
 );
+/** Persisted bodies are immutable within a history revision; envelopes are not. */
+export function recordPayload(record: TranscriptRecord) {
+  return record.kind === "message"
+    ? {
+        message: record.message,
+        ...(Object.hasOwn(record, "details")
+          ? { details: record.details }
+          : {}),
+      }
+    : { data: record.data };
+}
+
 export interface Transcript {
   /** Cursor is bound to the selected branch, not to a changing live leaf. */
   history?: { revision: string; before?: string };

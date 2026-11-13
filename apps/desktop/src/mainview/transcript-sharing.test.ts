@@ -77,13 +77,86 @@ test("sharing does not hide envelope changes or cross branch revisions", () => {
   ]) {
     const incoming = throughIPC(current);
     Object.assign(incoming.records[0], patch);
-    expect(shareTranscript(current, incoming).records[0]).toBe(
-      incoming.records[0],
-    );
+    const shared = shareTranscript(current, incoming).records[0];
+    expect(shared).toEqual(incoming.records[0]);
+    expect(shared).not.toBe(current.records[0]);
+    if (shared.kind !== "message" || current.records[0].kind !== "message")
+      throw new Error("Missing message");
+    expect(shared.message).toBe(current.records[0].message);
   }
   for (const history of [undefined, { revision: "replacement" }]) {
     const incoming = { ...throughIPC(current), history };
     expect(shareTranscript(current, incoming)).toBe(incoming);
+  }
+});
+
+test("envelope changes retain immutable payloads and canonical tool state", () => {
+  const current = fixture();
+  for (const patch of [
+    { requestId: "receipt" },
+    { order: 10 },
+    { parentId: "new" },
+    { branchId: "new" },
+    { rendererKey: "extension" },
+  ]) {
+    const incoming = throughIPC(current);
+    for (const record of incoming.records) Object.assign(record, patch);
+    const next = shareTranscript(current, incoming);
+    expect(next).toEqual(incoming);
+    for (let i = 0; i < 2; i++) {
+      expect(next.records[i]).not.toBe(current.records[i]);
+      expect(next.records[i]).toMatchObject(patch);
+      const record = next.records[i];
+      const old = current.records[i];
+      if (record.kind !== "message" || old.kind !== "message")
+        throw new Error("Missing message");
+      expect(record.message).toBe(old.message);
+    }
+    expect(next.tools.tool).toBe(current.tools.tool);
+    expect(next.records[2]).toBe(incoming.records[2]);
+  }
+  const withRequest = throughIPC(current);
+  withRequest.records[1].requestId = "removed";
+  const next = shareTranscript(withRequest, throughIPC(current));
+  expect(next.records[1]).not.toHaveProperty("requestId");
+  expect(next).toEqual(current);
+});
+
+test("custom and session payloads survive metadata changes without retaining old envelopes", () => {
+  const current = fixture();
+  current.records = [
+    {
+      id: "custom",
+      entryId: "custom",
+      parentId: null,
+      branchId: "branch",
+      order: 0,
+      kind: "custom-entry",
+      customType: "extension",
+      data: { large: [1, 2] },
+    },
+    {
+      id: "session",
+      entryId: "session",
+      parentId: "custom",
+      branchId: "branch",
+      order: 1,
+      kind: "session-entry",
+      entryType: "compaction",
+      data: { summary: "saved" },
+    },
+  ];
+  const incoming = throughIPC(current);
+  for (const record of incoming.records) record.branchId = "new";
+  const next = shareTranscript(current, incoming);
+  expect(next).toEqual(incoming);
+  for (let i = 0; i < 2; i++) {
+    const record = next.records[i];
+    const old = current.records[i];
+    if (record.kind === "message" || old.kind === "message")
+      throw new Error("Unexpected message");
+    expect(record.data).toBe(old.data);
+    expect(record.branchId).toBe("new");
   }
 });
 

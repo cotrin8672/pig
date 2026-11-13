@@ -1,12 +1,14 @@
 import { expect, test } from "bun:test";
 import { fauxAssistantMessage } from "@earendil-works/pi-ai";
-import { hydrateChatSnapshot } from "../mainview/chat-snapshot";
+import { hydrateChatSnapshot, newerSnapshot } from "../mainview/chat-snapshot";
 import type { Snapshot } from "../shared/rpc-schema";
 import {
   expandSnapshotDelta,
   type SnapshotDeltaEvent,
 } from "../shared/snapshot-delta";
 import { emptyTranscript } from "../shared/transcript";
+import { SessionManager } from "./sdk";
+import { SDKProjector } from "./sdk-projector";
 import { createRuntimeDeltaEncoder } from "./snapshot-delta";
 import { packSnapshot } from "./transcript-wire";
 
@@ -94,6 +96,87 @@ test("live packets omit immutable payloads but preserve every envelope, tool res
       current.transcript.records[1].message,
   );
 });
+test("SDK history append through delta transport retains tool identities and updates envelopes", () => {
+  const manager = SessionManager.inMemory("fixture");
+  manager.appendMessage({ role: "user", content: "Read files", timestamp: 0 });
+  const projector = new SDKProjector(manager, 1);
+  for (let i = 0; i < 40; i++) {
+    const call = fauxAssistantMessage("Read");
+    call.content = [
+      { type: "toolCall", id: `tool-${i}`, name: "read", arguments: {} },
+    ];
+    manager.appendMessage(call);
+    const result = {
+      content: [{ type: "text" as const, text: "large output\n".repeat(1000) }],
+      details: { lines: 1000 },
+      extra: "extension metadata",
+    };
+    projector.event({
+      type: "tool_execution_end",
+      toolCallId: `tool-${i}`,
+      toolName: "read",
+      result,
+      isError: false,
+    });
+    manager.appendMessage({
+      role: "toolResult",
+      toolCallId: `tool-${i}`,
+      toolName: "read",
+      ...result,
+      isError: false,
+      timestamp: i,
+    });
+  }
+  const encode = createRuntimeDeltaEncoder();
+  const initial = { ...fixture(), transcript: projector.snapshot() };
+  const ready = clone(encode({ type: "ready", snapshot: initial }));
+  if (ready.type !== "ready") throw new Error("Missing ready snapshot");
+  let current = hydrateChatSnapshot(ready.snapshot);
+  for (let i = 0; i < 3; i++) {
+    const leaf = manager.appendMessage(fauxAssistantMessage(`Append ${i}`));
+    const snapshot = {
+      ...initial,
+      snapshotSeq: i + 2,
+      transcript: projector.snapshot(),
+    };
+    const wire = clone(encode({ type: "snapshot", snapshot }));
+    if (wire.type !== "snapshotDelta") throw new Error("Expected delta");
+    const expanded = expandSnapshotDelta(wire, current);
+    if (!expanded) throw new Error("Missing delta base");
+    const next = newerSnapshot(current, expanded);
+    expect(next).toEqual(hydrateChatSnapshot(clone(packSnapshot(snapshot))));
+    expect(next.transcript.history?.revision).toBe(
+      current.transcript.history?.revision,
+    );
+    for (let j = 0; j < initial.transcript.records.length; j++) {
+      const record = next.transcript.records[j];
+      const old = current.transcript.records[j];
+      expect(record.branchId).toBe(leaf);
+      expect(record).not.toBe(old);
+      if (record.kind === "message" && old.kind === "message")
+        expect(record.message).toBe(old.message);
+    }
+    for (const id of Object.keys(current.transcript.tools))
+      expect(next.transcript.tools[id]).toBe(current.transcript.tools[id]);
+    current = next;
+  }
+});
+
+test("delta reconstruction drops removed envelope fields but retains payloads", () => {
+  const encode = createRuntimeDeltaEncoder();
+  const initial = fixture();
+  initial.transcript.records[1].requestId = "old request";
+  encode({ type: "ready", snapshot: initial });
+  const current = hydrateChatSnapshot(clone(packSnapshot(initial)));
+  const next = fixture();
+  next.snapshotSeq = 2;
+  const wire = clone(encode({ type: "snapshot", snapshot: next }));
+  if (wire.type !== "snapshotDelta") throw new Error("Expected delta");
+  const expanded = expandSnapshotDelta(wire, current);
+  expect(expanded?.transcript.records[1]).not.toHaveProperty("requestId");
+  expect(expanded).toEqual(hydrateChatSnapshot(clone(packSnapshot(next))));
+});
+
 test("missing/foreign/revision bases request a full snapshot, never a partial transcript", () => {
   const encode = createRuntimeDeltaEncoder();
   const initial = fixture();

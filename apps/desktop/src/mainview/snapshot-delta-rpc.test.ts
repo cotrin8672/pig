@@ -56,6 +56,101 @@ if (process.env.PIG_SNAPSHOT_DELTA_CHILD !== "1") {
   }));
   await import("./rpc");
   const { useStore } = await import("./store");
+  test("RPC deltas preserve completed tools across history appends and apply changed output", () => {
+    const encode = createRuntimeDeltaEncoder();
+    const content = [{ type: "text" as const, text: "saved output" }];
+    const base: Snapshot = {
+      address: { hostId: "delta-rpc", sessionId: "identity", epoch: 1 },
+      snapshotSeq: 1,
+      info: { id: "identity", cwd: "fixture", title: "Chat", modified: 1 },
+      effort: "off",
+      effortLevels: [],
+      transcript: {
+        ...emptyTranscript(),
+        history: { revision: "branch" },
+        records: [
+          {
+            id: "result",
+            entryId: "result",
+            parentId: null,
+            branchId: "result",
+            order: 0,
+            kind: "message",
+            message: {
+              role: "toolResult",
+              toolCallId: "tool",
+              toolName: "read",
+              content,
+              isError: false,
+              timestamp: 0,
+            },
+          },
+        ],
+        tools: { tool: { status: "done", result: { content } } },
+      },
+    };
+    const deliver = (snapshot: Snapshot, type: "ready" | "snapshot") =>
+      receive(JSON.parse(JSON.stringify(encode({ type, snapshot }))));
+    deliver(base, "ready");
+    const current = useStore.getState().snapshots.identity;
+    const appended: Snapshot = {
+      ...base,
+      snapshotSeq: 2,
+      transcript: {
+        ...base.transcript,
+        records: [
+          { ...base.transcript.records[0], branchId: "next" },
+          {
+            id: "next",
+            entryId: "next",
+            parentId: "result",
+            branchId: "next",
+            order: 1,
+            kind: "message",
+            message: { role: "user", content: "Next", timestamp: 1 },
+          },
+        ],
+      },
+    };
+    deliver(appended, "snapshot");
+    const next = useStore.getState().snapshots.identity;
+    expect(next.transcript.tools.tool).toBe(current.transcript.tools.tool);
+    expect(next.transcript.records[0]).toMatchObject({ branchId: "next" });
+    const old = current.transcript.records[0],
+      record = next.transcript.records[0];
+    if (old.kind !== "message" || record.kind !== "message")
+      throw new Error("Missing message");
+    expect(record.message).toBe(old.message);
+    deliver(
+      {
+        ...appended,
+        snapshotSeq: 3,
+        transcript: {
+          ...appended.transcript,
+          tools: {
+            tool: {
+              status: "error",
+              result: {
+                content: [{ type: "text", text: "different extension output" }],
+              },
+            },
+          },
+        },
+      },
+      "snapshot",
+    );
+    const changed = useStore.getState().snapshots.identity.transcript;
+    expect(changed.tools.tool).not.toBe(next.transcript.tools.tool);
+    expect(changed.tools.tool).toMatchObject({
+      status: "error",
+      result: { content: [{ text: "different extension output" }] },
+    });
+    expect(changed.records[0]).toBe(next.transcript.records[0]);
+    receive({ type: "closed", address: base.address, reason: "close" });
+    expect(reads).toHaveLength(0);
+    expect(sends).toBe(0);
+  });
+
   test("a lost delta retains current history until full recovery and never resends/reopens", async () => {
     const encode = createRuntimeDeltaEncoder();
     const base: Snapshot = {
