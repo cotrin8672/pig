@@ -5,7 +5,7 @@ import {
 } from "./scripts/sdk-runtime-assets";
 
 export default {
-  app: { name: "pig", identifier: "dev.pig.desktop", version: "0.5.0" },
+  app: { name: "pig", identifier: "dev.pig.desktop", version: "0.6.0" },
   build: {
     mainProcess: "bun",
     bun: { entrypoint: "src/bun/index.ts", external: SDK_RUNTIME_EXTERNALS },
