@@ -1,7 +1,13 @@
 import { toggleBackdrop } from "../shared/appearance";
-import { actionIds, matchesCombo, resolveBindings } from "../shared/keymap";
+import {
+  type ActionId,
+  actionIds,
+  matchesCombo,
+  resolveBindings,
+} from "../shared/keymap";
 import { adapterBinding } from "./adapter-keymap";
 import { navigate } from "./navigation";
+import { closePane, createPane, movePaneFocus } from "./pane-state";
 import { rpc, updateAppearance } from "./rpc";
 import { showError, useStore } from "./store";
 import { isTerminalKeyboardEvent } from "./terminal-ui";
@@ -51,22 +57,53 @@ export function initShortcuts() {
       return;
     }
     if (!action) return;
+    if (
+      action.startsWith("pane.") &&
+      (state.page !== "chat" || context === null || state.searchOpen)
+    )
+      return;
     event.preventDefault();
-    switch (action) {
-      case "appearance.toggleBackdrop":
-        updateAppearance(toggleBackdrop);
-        break;
-      case "navigation.back":
-        history.back();
-        break;
-      case "navigation.forward":
-        history.forward();
-        break;
-      case "settings.open":
-        navigate("settings");
-        break;
-    }
+    runAction(action);
   };
   window.addEventListener("keydown", keydown);
   return () => window.removeEventListener("keydown", keydown);
+}
+
+/** App-level actions, shared by shortcuts and the search palette. */
+export function runAction(action: ActionId) {
+  switch (action) {
+    case "pane.splitRows":
+      createPane("rows");
+      break;
+    case "pane.splitColumns":
+      createPane("columns");
+      break;
+    case "pane.close":
+      closePane();
+      break;
+    case "pane.left":
+      movePaneFocus("left");
+      break;
+    case "pane.right":
+      movePaneFocus("right");
+      break;
+    case "pane.up":
+      movePaneFocus("up");
+      break;
+    case "pane.down":
+      movePaneFocus("down");
+      break;
+    case "appearance.toggleBackdrop":
+      updateAppearance(toggleBackdrop);
+      break;
+    case "navigation.back":
+      history.back();
+      break;
+    case "navigation.forward":
+      history.forward();
+      break;
+    case "settings.open":
+      navigate("settings");
+      break;
+  }
 }

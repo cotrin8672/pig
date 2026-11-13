@@ -2,6 +2,13 @@ import type { ResponseErrorKind } from "./response-error";
 import type { Settings } from "./settings";
 
 export const en = {
+  paneSplitRows: "Split pane top/bottom",
+  paneSplitColumns: "Split pane left/right",
+  paneClose: "Close pane (keep session)",
+  paneLeft: "Focus pane to the left",
+  paneRight: "Focus pane to the right",
+  paneUp: "Focus pane above",
+  paneDown: "Focus pane below",
   accountName: "Account name",
   addAccount: "Add account",
   addAccountTo: (name: string) => `Add account to ${name}`,
@@ -580,6 +587,13 @@ export const en = {
 };
 type Dictionary = { [K in keyof typeof en]: (typeof en)[K] };
 export const ja: Dictionary = {
+  paneSplitRows: "Paneを上下に分割",
+  paneSplitColumns: "Paneを左右に分割",
+  paneClose: "Paneを閉じる（セッションは残す）",
+  paneLeft: "左のPaneへ移動",
+  paneRight: "右のPaneへ移動",
+  paneUp: "上のPaneへ移動",
+  paneDown: "下のPaneへ移動",
   accountName: "アカウント名",
   addAccount: "アカウントを追加",
   addAccountTo: (name: string) => `${name} にアカウントを追加`,

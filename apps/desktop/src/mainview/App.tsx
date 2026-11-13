@@ -14,6 +14,7 @@ import {
 } from "lucide-react";
 import {
   Fragment,
+  memo,
   useCallback,
   useEffect,
   useLayoutEffect,
@@ -51,6 +52,7 @@ import "./model-dividers.css";
 import { MainViewport } from "./MainViewport";
 import { Notifications } from "./Notifications";
 import { initNavigation, navigate } from "./navigation";
+import { PaneWorkspace } from "./PaneWorkspace";
 import { ProviderIcon } from "./ProviderIcon";
 import { Providers } from "./Providers";
 import { ProviderUsage } from "./ProviderUsage";
@@ -88,6 +90,10 @@ function isWindowDragTarget(target: EventTarget) {
     !!target.closest(".electrobun-webkit-app-region-drag")
   );
 }
+function renderPaneChat(snapshot: ChatSnapshot) {
+  return <Chat key={addressKey(snapshot.address)} snapshot={snapshot} />;
+}
+
 export function App() {
   const t = useT();
   const state = useStore(useShallow(selectAppView));
@@ -246,41 +252,46 @@ export function App() {
           <Extensions />
         ) : state.page === "settings" ? (
           <Settings />
-        ) : openingView ? (
-          openingSnapshot ? (
-            <Chat
-              key={addressKey(openingSnapshot.address)}
-              snapshot={openingSnapshot}
-            />
-          ) : (
-            <ChatOpening />
-          )
-        ) : active ? (
-          <Chat key={addressKey(active.address)} snapshot={active} />
         ) : (
-          <div className="welcome">
-            <h1>{t["What shall we build?"]}</h1>
-            <p className="muted">
-              {connected
-                ? t["Start a chat, or add a project folder."]
-                : t["Connect a provider to start building with pi."]}
-            </p>
-            <button
-              className="primary"
-              type="button"
-              onClick={() =>
-                connected
-                  ? void openChat(state.generalCwd)
-                  : navigate("providers")
-              }
-            >
-              {connected ? <Plus size={16} /> : <Settings2 size={16} />}{" "}
-              {connected ? t["New chat"] : t["Connect a provider"]}
-            </button>
-          </div>
+          <PaneWorkspace renderChat={renderPaneChat}>
+            {openingView ? (
+              openingSnapshot ? (
+                <Chat
+                  key={addressKey(openingSnapshot.address)}
+                  snapshot={openingSnapshot}
+                />
+              ) : (
+                <ChatOpening />
+              )
+            ) : active ? (
+              <Chat key={addressKey(active.address)} snapshot={active} />
+            ) : (
+              <div className="welcome">
+                <h1>{t["What shall we build?"]}</h1>
+                <p className="muted">
+                  {connected
+                    ? t["Start a chat, or add a project folder."]
+                    : t["Connect a provider to start building with pi."]}
+                </p>
+                <button
+                  className="primary"
+                  type="button"
+                  onClick={() =>
+                    connected
+                      ? void openChat(state.generalCwd)
+                      : navigate("providers")
+                  }
+                >
+                  {connected ? <Plus size={16} /> : <Settings2 size={16} />}{" "}
+                  {connected ? t["New chat"] : t["Connect a provider"]}
+                </button>
+              </div>
+            )}
+          </PaneWorkspace>
         )}
       </MainViewport>
       <UIRequestBroker />
+      <SearchPalette />
       <WindowTitlebar
         maximized={state.maximized}
         onAction={(action) => rpc.send.windowControl({ action })}
@@ -545,7 +556,11 @@ function OAuthLoginDialog({ login }: { login: LoginState }) {
   );
 }
 
-export function Chat({ snapshot }: { snapshot: ChatSnapshot }) {
+export const Chat = memo(function Chat({
+  snapshot,
+}: {
+  snapshot: ChatSnapshot;
+}) {
   const t = useT();
   const { info, transcript } = snapshot;
   // Persistence replaces live IDs; keep their React keys so tool clocks survive.
@@ -572,7 +587,9 @@ export function Chat({ snapshot }: { snapshot: ChatSnapshot }) {
       s.openingAddress &&
       sameAddress(s.openingAddress, snapshot.address),
   );
-  const openMessage = useStore((s) => s.openMessage);
+  const openMessage = useStore((s) =>
+    readOnly && opening ? s.openMessage : undefined,
+  );
   const rewind = useStore((s) => s.rewinds[info.id]);
   const rewound = rewind
     ? transcript.records.findIndex(
@@ -970,4 +987,4 @@ export function Chat({ snapshot }: { snapshot: ChatSnapshot }) {
       )}
     </ChatLayout>
   );
-}
+});

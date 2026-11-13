@@ -130,6 +130,14 @@ function replace(previous: SessionAddress, next: SessionAddress) {
     return {
       snapshots,
       active: s.active === previous.sessionId ? next.sessionId : s.active,
+      panes: Object.fromEntries(
+        Object.entries(s.panes).map(([id, pane]) => [
+          id,
+          pane.sessionId === previous.sessionId
+            ? { ...pane, sessionId: next.sessionId }
+            : pane,
+        ]),
+      ),
     };
   });
 }

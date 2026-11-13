@@ -1,0 +1,70 @@
+.pane-workspace {
+  position: relative;
+  height: 100%;
+  min-height: 0;
+  min-width: 0;
+}
+.pane-view {
+  position: absolute;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  container-type: size;
+}
+.pane-content {
+  flex: 1;
+  position: relative;
+  min-height: 0;
+  min-width: 0;
+}
+.pane-content .chat-empty {
+  padding-top: clamp(16px, 18cqh, 180px);
+}
+.pane-preview-divider {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  position: absolute;
+  z-index: 20;
+  touch-action: none;
+  user-select: none;
+}
+.pane-preview-divider[data-axis="rows"] {
+  height: 8px;
+  transform: translateY(-50%);
+  cursor: row-resize;
+}
+.pane-preview-divider[data-axis="columns"] {
+  width: 8px;
+  transform: translateX(-50%);
+  cursor: col-resize;
+}
+.pane-preview-divider::after {
+  content: "";
+  position: absolute;
+  background: var(--ds-border-strong);
+  pointer-events: none;
+}
+.pane-preview-divider[data-axis="rows"]::after {
+  top: 50%;
+  width: 100%;
+  height: 1px;
+}
+.pane-preview-divider[data-axis="columns"]::after {
+  left: 50%;
+  width: 1px;
+  height: 100%;
+}
+.pane-preview-divider:is(
+    :hover,
+    :focus-visible,
+    [data-dragging="true"]
+  )::after {
+  background: var(--ds-accent);
+}
+.pane-preview-divider:focus-visible {
+  outline: 1px solid var(--ds-focus);
+  outline-offset: -1px;
+}

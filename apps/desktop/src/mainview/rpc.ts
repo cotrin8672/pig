@@ -38,6 +38,7 @@ import {
   restoreOpeningSends,
   takeOpeningOps,
 } from "./opening-sends";
+import { selectPaneSession } from "./pane-selection";
 import {
   invalidateRuntimeRead,
   liveAddress,
@@ -691,6 +692,7 @@ function showOpening(openId: string, push: boolean) {
     previous.openingViewRevision === navigationRevision
       ? previous.openId
       : undefined;
+  useStore.setState(selectPaneSession(previous, pending.id, openId));
   if (push) navigate("chat", pending.id ?? null);
   if (push)
     openingReturns.set(openId, {
@@ -712,6 +714,7 @@ function showOpening(openId: string, push: boolean) {
     openingAddress: pending.address,
     openMessage: pending.message,
     openingViewRevision: navigationRevision,
+    ...selectPaneSession(useStore.getState(), pending.id, openId),
   });
 }
 /** Selects a chat that is still starting, e.g. from its placeholder row. */
@@ -783,7 +786,11 @@ export async function openChat(
   ) {
     clearOpeningView();
     if (push) navigate("chat", current.info.id);
-    else useStore.setState({ active: current.info.id });
+    else
+      useStore.setState((state) => ({
+        active: current.info.id,
+        ...selectPaneSession(state, current.info.id),
+      }));
     return current;
   }
   const openId = crypto.randomUUID();
@@ -987,6 +994,7 @@ async function openSnapshot(
       openingAddress: undefined,
       openingViewRevision: undefined,
       openingTarget: undefined,
+      ...selectPaneSession(useStore.getState(), undefined, openId),
     });
   }
   const revision = navigationRevision;
@@ -1017,6 +1025,16 @@ async function openSnapshot(
       transferred = { cwd: draftKey, text };
     }
     receiveSnapshot(snapshot);
+    useStore.setState((state) => ({
+      panes: Object.fromEntries(
+        Object.entries(state.panes).map(([id, pane]) => [
+          id,
+          pane.openId === openId
+            ? { sessionId: snapshot.info.id, openId }
+            : pane,
+        ]),
+      ),
+    }));
     // Each call enqueues synchronously, so the session lane keeps click order.
     for (const op of takeOpeningOps(openId)) {
       if (op.kind === "select") {
@@ -1080,7 +1098,16 @@ async function openSnapshot(
       const newChatDrafts = { ...state.newChatDrafts };
       if (transferred && newChatDrafts[transferred.cwd] === transferred.text)
         delete newChatDrafts[transferred.cwd];
-      return { pendingOpens, newChatDrafts };
+      return {
+        pendingOpens,
+        newChatDrafts,
+        panes: Object.fromEntries(
+          Object.entries(state.panes).map(([id, pane]) => [
+            id,
+            pane.openId === openId ? { sessionId: pane.sessionId } : pane,
+          ]),
+        ),
+      };
     });
   }
 }

@@ -32,6 +32,7 @@ import {
   NOTICE_HISTORY_LIMIT,
   type NoticeRecord,
 } from "./notification-history";
+import type { PaneNode } from "./pane-layout";
 import { isViewedNotice } from "./session-read";
 import { loadSidebarCache, saveSidebarCache } from "./sidebar-cache";
 
@@ -81,7 +82,11 @@ export const useStore = create<{
   sessions: Record<string, SessionInfo[]>;
   snapshots: Record<string, ChatSnapshot>;
   active?: string;
+  paneTree: PaneNode;
+  activePane: number;
+  panes: Record<number, { sessionId?: string; openId?: string }>;
   page: "chat" | "providers" | "extensions" | "settings";
+  searchOpen: boolean;
   hostId?: string;
   addresses: Record<string, SessionAddress>;
   pendingUI: UIRequest[];
@@ -139,6 +144,9 @@ export const useStore = create<{
   installedLoaded: false,
   sessions: launchCache?.sessions ?? {},
   snapshots: {},
+  paneTree: { type: "pane", id: 1 },
+  activePane: 1,
+  panes: { 1: {} },
   addresses: {},
   pendingUI: [],
   terminals: {},
@@ -146,6 +154,7 @@ export const useStore = create<{
   extensionNotices: {},
   capabilities: {},
   page: "chat",
+  searchOpen: false,
   installed: [],
   packageOps: {},
   notices: [],

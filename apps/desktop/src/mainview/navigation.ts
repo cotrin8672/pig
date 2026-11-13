@@ -1,3 +1,4 @@
+import { selectPaneSession } from "./pane-selection";
 import { useStore } from "./store";
 
 type Page = ReturnType<typeof useStore.getState>["page"];
@@ -27,7 +28,13 @@ export function navigate(
   const current = historyEntry(history.state);
   if (current.page !== page || current.sessionKey !== sessionKey)
     history.pushState(entry, "");
-  useStore.setState({ page, active: sessionKey ?? undefined });
+  useStore.setState((state) => ({
+    page,
+    active: sessionKey ?? undefined,
+    ...(page === "chat"
+      ? selectPaneSession(state, sessionKey ?? undefined)
+      : {}),
+  }));
 }
 export function initNavigation() {
   const state = useStore.getState();

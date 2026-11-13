@@ -9,7 +9,13 @@ import "../src/mainview/styles.css";
  * Every story runs inside the real window shell over a wallpaper, so glass and
  * translucent surfaces are judged against the acrylic they ship on.
  */
-function GlassStage({ children }: { children: ReactNode }) {
+function GlassStage({
+  children,
+  windowPreview,
+}: {
+  children: ReactNode;
+  windowPreview?: boolean;
+}) {
   return (
     <div className="glass-stage">
       <div className="glass-wallpaper" aria-hidden="true" />
@@ -17,9 +23,13 @@ function GlassStage({ children }: { children: ReactNode }) {
         className="app-shell glass-shell"
         style={{ "--window-opacity": 0.78 } as CSSProperties}
       >
-        <div className="glass-scroll">
-          <div className="transcript">{children}</div>
-        </div>
+        {windowPreview ? (
+          children
+        ) : (
+          <div className="glass-scroll">
+            <div className="transcript">{children}</div>
+          </div>
+        )}
       </div>
     </div>
   );
@@ -29,8 +39,8 @@ export default {
   parameters: { layout: "fullscreen" },
   decorators: [
     (Story, { parameters }) => (
-      <GlassStage>
-        {parameters.gallery ? (
+      <GlassStage windowPreview={parameters.windowPreview}>
+        {parameters.gallery || parameters.windowPreview ? (
           <Story />
         ) : (
           <StoryTurn role={parameters.role}>
