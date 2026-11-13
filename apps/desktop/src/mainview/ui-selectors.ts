@@ -127,6 +127,7 @@ export function selectSessionStatus(s: State, id: string) {
       );
     }),
     s.bootstrap.desktop.sessions[id],
+    s.snapshots[id]?.failure,
   );
 }
 

@@ -139,6 +139,41 @@ test("project and row share waiting priority, count each session once, and rejec
   expect(selectProjectActivity(state, "project")).toEqual([undefined, false]);
 });
 
+test("snapshot failures turn row and project red before completion and after read, then clear on restart", () => {
+  const state = fixture();
+  state.snapshots.b.transcript.running = true;
+  expect(selectSessionStatus(state, "b")).toBe("running");
+  state.snapshots.b.failure = "WebSocket closed 1012";
+  expect(selectSessionStatus(state, "b")).toBe("failed");
+  expect(selectProjectActivity(state, "project")).toEqual([
+    undefined,
+    false,
+    "failed",
+    false,
+  ]);
+  state.snapshots.b.transcript.running = false;
+  state.bootstrap = {
+    ...state.bootstrap,
+    desktop: {
+      sessions: {
+        b: {
+          completion: { id: "failed", outcome: "error" },
+          readCompletionId: "failed",
+        },
+      },
+    },
+  };
+  expect(selectSessionStatus(state, "b")).toBe("failed");
+  state.pendingUI = [request()];
+  expect(selectSessionStatus(state, "b")).toBe("waiting");
+  state.pendingUI = [];
+  state.snapshots.b.failure = undefined;
+  state.snapshots.b.transcript.running = true;
+  expect(selectSessionStatus(state, "b")).toBe("running");
+  state.snapshots.b.transcript.running = false;
+  expect(selectSessionStatus(state, "b")).toBeUndefined();
+});
+
 test("broker readiness changes when a startup preview becomes live, but not for its tokens", () => {
   const state = fixture();
   state.pendingUI = [request()];

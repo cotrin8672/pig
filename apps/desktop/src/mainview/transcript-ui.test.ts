@@ -127,6 +127,28 @@ test.skipIf(!existsSync(edge) && !process.env.PIG_REQUIRE_UI_TESTS)(
       function StoredChat({id}){const snapshot=useStore(state=>state.snapshots[id]);return <Chat snapshot={snapshot}/>;}
       const show=async snapshot=>{flushSync(()=>useStore.setState(state=>({snapshots:{...state.snapshots,[snapshot.info.id]:snapshot},settings:{...state.settings,language:"en"}})));await render(<StoredChat key={snapshot.info.id+":"+snapshot.address.epoch} id={snapshot.info.id}/>);};
       let snapshot;
+      const beforeStatus=useStore.getState();
+      const statusSnapshot={...base,ready:true,transcript:{...transcript([]),running:true}};
+      flushSync(()=>useStore.setState({settings:{...beforeStatus.settings,language:'en'},sessions:{fixture:[base.info]},snapshots:{chat:statusSnapshot},pendingUI:[],pendingOpens:{},bootstrap:{...beforeStatus.bootstrap,desktop:{sessions:{}}}}));
+      await render(<SessionList cwd="fixture"/>);
+      const statusRow=document.querySelector('.thread');
+      const statusBounds=statusRow.getBoundingClientRect();
+      check(!!statusRow.querySelector('.session-dot.running'),'running chat must start with a working dot');
+      const checkFailedDot=()=>{
+        const dot=statusRow.querySelector('.session-dot.failed');
+        check(dot,'snapshot failure must replace the running dot');
+        dot.style.color='var(--ds-error)';
+        const style=getComputedStyle(dot);
+        check(style.backgroundColor===style.color && style.animationName==='none','failed dot must use the error color without the running animation');
+        check(dot.getAttribute('aria-label')==='Failed','failed dot must not claim to be unread');
+        const bounds=statusRow.getBoundingClientRect();
+        check(bounds.x===statusBounds.x && bounds.y===statusBounds.y && bounds.width===statusBounds.width && bounds.height===statusBounds.height,'failure must not move or resize the chat row');
+      };
+      flushSync(()=>useStore.setState({snapshots:{chat:{...statusSnapshot,failure:'WebSocket closed 1012'}}}));await wait();checkFailedDot();
+      flushSync(()=>useStore.setState({snapshots:{chat:{...statusSnapshot,failure:'WebSocket closed 1012',transcript:transcript([])}},bootstrap:{...beforeStatus.bootstrap,desktop:{sessions:{chat:{completion:{id:'failed',outcome:'error'},readCompletionId:'failed'}}}}}));await wait();checkFailedDot();
+      flushSync(()=>useStore.setState({snapshots:{chat:statusSnapshot}}));await wait();
+      check(!!statusRow.querySelector('.session-dot.running'),'restarting the chat must restore the working dot');
+      await render(null);flushSync(()=>useStore.setState(beforeStatus,true));
       metrics.stage="titlebar-clipping";
       metrics.titlebarClipping=[];
       for(const collapsed of [false,true]){
