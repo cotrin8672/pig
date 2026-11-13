@@ -1,0 +1,273 @@
+/* biome-ignore-all lint/style/noDescendingSpecificity: Every mini-terminal has its own mt- root; selectors across proposals do not compete. */
+/*
+  Mini-terminal proposals. Every surface is an alpha tint over the acrylic
+  window (no opaque fills, no element opacity). Shared rules with the built-in
+  .tool-term: 22px body indent, 1px inner gap inside rings, 8-line log.
+*/
+
+.mt-term,
+.mt-well,
+.mt-rail {
+  --mt-tone: var(--ds-accent);
+  margin: 4px 0 4px 22px;
+  min-width: 0;
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+}
+.mt-done {
+  --mt-tone: var(--ds-success);
+}
+.mt-error {
+  --mt-tone: var(--ds-error);
+}
+
+/* rings get a 1px inner gap so the log never touches them */
+.mt-term {
+  padding: 1px;
+  overflow: hidden;
+  border-radius: var(--radius-sm);
+}
+
+/* command row (also the open/close control) */
+.pp-specimen :is(.mt-head, .mt-well-head, .mt-rail-head) {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-width: 0;
+  padding: 7px 10px;
+  color: var(--ds-text-secondary);
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+}
+.pp-specimen :is(.mt-head, .mt-rail-head):hover {
+  background: #ffffff0d;
+}
+.mt-prompt {
+  flex: none;
+  color: var(--ds-accent);
+  user-select: none;
+}
+.mt-command {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  color: var(--ds-text-primary);
+}
+.mt-meta {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 6px;
+  color: var(--ds-text-faint);
+  font-size: var(--text-xs);
+  font-variant-numeric: tabular-nums;
+}
+.mt-error .mt-meta {
+  color: var(--ds-error);
+}
+.mt-chevron {
+  flex: none;
+  color: var(--ds-text-faint);
+  transition: transform var(--motion-duration-fast);
+}
+.mt-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 1px 6px;
+  border-radius: var(--radius-2xs);
+  background: color-mix(in srgb, var(--mt-tone) 14%, transparent);
+  color: var(--mt-tone);
+  font-size: var(--text-xs);
+}
+
+/* the log: same 8-line height as .tool-term-output, scrolls inside */
+pre.mt-log {
+  --scrollbar-inset: var(--radius-sm);
+  margin: 0;
+  padding: 6px 10px;
+  max-height: calc(8lh + 12px + var(--scrollbar-size));
+  overflow: auto;
+  line-height: 1.5;
+  white-space: pre;
+  color: var(--ds-text-muted);
+  font-size: var(--text-sm);
+  background: none;
+}
+.mt-log .ok {
+  color: color-mix(in srgb, var(--ds-success) 78%, var(--ds-text-secondary));
+}
+.mt-log .bad {
+  color: var(--ds-error);
+}
+.mt-empty {
+  color: var(--ds-text-faint);
+}
+.mt-cursor {
+  display: inline-block;
+  width: 0.6em;
+  height: 1.1em;
+  vertical-align: text-bottom;
+  background: color-mix(in srgb, var(--ds-accent) 70%, transparent);
+  animation: mt-blink 1s steps(1) infinite;
+}
+@keyframes mt-blink {
+  50% {
+    background: transparent;
+  }
+}
+
+/* 1. frosted: one blurred pane, top highlight, hairline divider */
+.mt-frosted {
+  background: #ffffff0a;
+  backdrop-filter: blur(14px) saturate(140%);
+  box-shadow:
+    inset 0 1px 0 #ffffff1c,
+    inset 0 0 0 1px #dbe7ff14;
+}
+.mt-frosted .mt-log {
+  border-top: 1px solid #ffffff12;
+}
+.mt-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--mt-tone);
+  box-shadow: 0 0 6px color-mix(in srgb, var(--mt-tone) 70%, transparent);
+}
+.mt-running .mt-dot {
+  animation: mt-breathe 1.4s ease-in-out infinite;
+}
+@keyframes mt-breathe {
+  50% {
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--mt-tone) 18%, transparent);
+  }
+}
+
+/* 2. tinted: the glass itself carries the state colour */
+.mt-tinted {
+  background: color-mix(in srgb, var(--mt-tone) 7%, #ffffff05);
+  box-shadow: inset 0 0 0 1px
+    color-mix(in srgb, var(--mt-tone) 24%, transparent);
+}
+.mt-tinted .mt-log {
+  background: #0000001f;
+  border-radius: 0 0 calc(var(--radius-sm) - 1px) calc(var(--radius-sm) - 1px);
+}
+
+/* 3. well: no outer box; only the log sinks into a darker layer */
+.pp-specimen .mt-well-head {
+  padding: 2px 0 6px;
+}
+.mt-well-head .mt-meta svg {
+  color: var(--mt-tone);
+}
+.mt-well-head:hover .mt-command {
+  text-decoration: underline;
+  text-decoration-color: #ffffff33;
+}
+.mt-well-frame {
+  padding: 1px;
+  border-radius: var(--radius-sm);
+  background: #0000002e;
+  box-shadow:
+    inset 0 1px 3px #0000004d,
+    inset 0 0 0 1px #ffffff0a,
+    0 1px 0 #ffffff0f;
+}
+.mt-error .mt-well-frame {
+  box-shadow:
+    inset 0 1px 3px #0000004d,
+    inset 0 0 0 1px color-mix(in srgb, var(--ds-error) 26%, transparent),
+    0 1px 0 #ffffff0f;
+}
+
+/* 4. mini window: title bar, command and log as three shades of one glass */
+.mt-window {
+  background: #ffffff08;
+  backdrop-filter: blur(14px) saturate(140%);
+  box-shadow:
+    inset 0 0 0 1px #dbe7ff17,
+    0 4px 14px #0000001f;
+}
+.mt-titlebar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 4px 10px;
+  background: #ffffff0a;
+  border-radius: calc(var(--radius-sm) - 1px) calc(var(--radius-sm) - 1px) 0 0;
+  font-size: var(--text-xs);
+}
+.mt-shell {
+  color: var(--ds-text-faint);
+  letter-spacing: 0.04em;
+}
+.mt-window .mt-meta {
+  color: var(--ds-text-faint);
+}
+.mt-window-command {
+  border-bottom: 1px solid #ffffff0d;
+}
+.mt-window .mt-log {
+  background: #00000017;
+}
+
+/* 5. rail: no box, a state rail and a tint that fades into the window */
+.mt-rail {
+  border-left: 2px solid color-mix(in srgb, var(--mt-tone) 70%, transparent);
+  background: linear-gradient(
+    90deg,
+    color-mix(in srgb, var(--mt-tone) 8%, transparent),
+    transparent 75%
+  );
+}
+.mt-running.mt-rail {
+  animation: mt-rail 1.6s ease-in-out infinite;
+}
+@keyframes mt-rail {
+  50% {
+    border-left-color: color-mix(in srgb, var(--mt-tone) 25%, transparent);
+  }
+}
+.mt-rail .mt-log {
+  padding-top: 0;
+}
+
+/* 6. one pane: the command is the log's first line */
+.mt-onepane {
+  background: #00000026;
+  backdrop-filter: blur(10px);
+  box-shadow: inset 0 0 0 1px #ffffff14;
+}
+.mt-onepane .mt-log {
+  padding-top: 8px;
+}
+.mt-onepane-line {
+  display: flex;
+  gap: 0;
+  align-items: baseline;
+  margin-bottom: 2px;
+  color: var(--ds-text-primary);
+}
+.mt-onepane-meta {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: auto;
+  padding-left: 16px;
+  color: var(--ds-text-faint);
+  font-size: var(--text-xs);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mt-cursor,
+  .mt-running .mt-dot,
+  .mt-running.mt-rail {
+    animation: none;
+  }
+}

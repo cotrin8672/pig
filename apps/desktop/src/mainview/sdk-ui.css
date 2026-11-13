@@ -1,4 +1,5 @@
 .sdk-request {
+  --scrollbar-inset: var(--radius-md);
   /* global `* { margin: 0 }` reset pins showModal dialogs to the top-left */
   margin: auto;
   width: min(680px, calc(100vw - 48px));
@@ -48,25 +49,122 @@
 .sdk-request code {
   font-size: var(--text-sm);
 }
-.sdk-request details {
-  font-size: var(--text-sm);
+/* Project trust: project first, then exactly what will be loaded. */
+.trust-request {
+  display: grid;
+  gap: 16px;
+  padding: 22px 24px 20px;
+}
+.trust-request p,
+.trust-request ul {
+  margin: 0;
+}
+.trust-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+.trust-badge {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  border-radius: var(--radius-sm);
+  background: var(--ds-tile-hover);
+  color: var(--ds-warning);
+}
+.trust-head-text {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+.trust-head-text h2 {
+  margin: 0;
+  font-size: var(--text-lg);
+}
+.trust-head-text code {
+  color: var(--ds-text-muted);
+  overflow-wrap: anywhere;
+}
+.trust-body {
   color: var(--ds-text-secondary);
+  font-size: var(--text-md);
+  line-height: 1.6;
 }
-.sdk-request summary {
-  cursor: pointer;
+.trust-files {
+  --scrollbar-inset: var(--radius-sm);
+  list-style: none;
+  /* ~6.5 rows (line + 10px padding + 1px divider) so overflow reads as scrollable. */
+  max-height: calc(6.5 * (1lh + 11px) + 8px);
+  overflow: auto;
+  padding: 4px 12px;
+  border-radius: var(--radius-sm);
+  background: var(--ds-tile);
+  box-shadow: var(--ds-elevation-stroke);
+  font-size: var(--text-sm);
 }
-.sdk-request details ul {
-  margin: 8px 0 0;
-}
-.sdk-check {
+.trust-files li {
   display: flex;
   align-items: center;
   gap: 8px;
-  margin-top: 16px;
-  font-size: var(--text-sm);
+  min-width: 0;
+  padding: 5px 0;
 }
-.sdk-request .sdk-check input {
-  width: auto;
+.trust-files li + li {
+  border-top: 1px solid var(--ds-tile-hover);
+}
+.trust-files li > svg {
+  flex: none;
+  color: var(--ds-text-muted);
+}
+.trust-files code {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.trust-kind {
+  flex: none;
+  margin-left: auto;
+  padding: 1px 6px;
+  border-radius: var(--radius-3xs);
+  background: var(--ds-bg-chip);
+  color: var(--ds-text-muted);
+  font-size: var(--text-xs);
+}
+.sdk-request .trust-actions {
+  align-items: center;
+  margin-top: 4px;
+}
+.trust-remember {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-right: auto;
+  font-size: var(--text-sm);
+  color: var(--ds-text-secondary);
+  cursor: pointer;
+}
+.trust-remember input[type="checkbox"] {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: 0;
+  padding: 0;
+  opacity: 0;
+  flex: none;
+}
+.trust-remember input:checked + .model-switch {
+  background: var(--ds-accent);
+}
+.trust-remember input:checked + .model-switch::after {
+  transform: translateX(11px);
+}
+.trust-remember:has(input:focus-visible) .model-switch {
+  outline: 1px solid var(--ds-focus);
+  outline-offset: 2px;
 }
 .ui-waiting {
   padding: 8px 12px;

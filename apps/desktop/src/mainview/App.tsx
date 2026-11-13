@@ -48,6 +48,7 @@ import { modelDividers } from "./model-dividers";
 import { NotificationCenter } from "./NotificationCenter";
 import { OptimisticMessages } from "./OptimisticMessages";
 import "./model-dividers.css";
+import { MainViewport } from "./MainViewport";
 import { Notifications } from "./Notifications";
 import { initNavigation, navigate } from "./navigation";
 import { ProviderIcon } from "./ProviderIcon";
@@ -229,7 +230,7 @@ export function App() {
           </>
         )}
       </aside>
-      <main aria-busy={!state.initialized}>
+      <MainViewport busy={!state.initialized}>
         {!state.initialized ? (
           startupFailed && (
             <div className="welcome" role="alert">
@@ -278,7 +279,7 @@ export function App() {
             </button>
           </div>
         )}
-      </main>
+      </MainViewport>
       <UIRequestBroker />
       <WindowTitlebar
         maximized={state.maximized}

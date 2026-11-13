@@ -430,6 +430,5 @@
 .provider-utility-panel {
   min-height: 0;
   overflow-y: auto;
-  scrollbar-width: thin;
   padding: 2px;
 }

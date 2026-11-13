@@ -5,6 +5,7 @@ import type { UIReply, UIRequest } from "../shared/extension-ui";
 import { addressKey, sameAddress } from "./chat-snapshot";
 import { useT } from "./i18n";
 import { navigationRevision } from "./navigation";
+import { ProjectTrustPrompt } from "./ProjectTrustPrompt";
 import { cancelOpening, rpc } from "./rpc";
 import {
   liveAddress,
@@ -212,11 +213,18 @@ function NativeRequest({
     );
     return () => clearTimeout(timer);
   }, [request]);
+  const errorAlert = error && (
+    <p role="alert" className="error">
+      {error}
+    </p>
+  );
   return (
     <dialog
       ref={dialog}
-      className="sdk-request"
-      aria-label={request.title}
+      className={`sdk-request${request.kind === "project-trust" ? " trust-request" : ""}`}
+      aria-label={
+        request.kind === "project-trust" ? t.trustTitle : request.title
+      }
       aria-modal={modal}
       onCancel={(event) => {
         event.preventDefault();
@@ -230,141 +238,108 @@ function NativeRequest({
         }
       }}
     >
-      <h2>{request.kind === "project-trust" ? t.trustTitle : request.title}</h2>
-      {request.expiresAt && (
-        <p className="muted">
-          Expires {new Date(request.expiresAt).toLocaleTimeString()}
-        </p>
-      )}
-      {request.kind === "confirm" && <p>{request.message}</p>}
-      {request.kind === "project-trust" && (
+      {request.kind === "project-trust" ? (
+        <ProjectTrustPrompt
+          cwd={request.cwd}
+          resources={request.resources}
+          remember={remember}
+          onRemember={setRemember}
+          submitting={submitting}
+          error={errorAlert}
+          onCancel={cancel}
+          onSafe={() =>
+            void reply({ ...request, kind: "project-trust", value: "safe" })
+          }
+          onAccept={() =>
+            void reply({
+              ...request,
+              kind: "project-trust",
+              value: remember ? "persist" : "once",
+            })
+          }
+        />
+      ) : (
         <>
-          <p>{t.trustBody}</p>
-          <p>
-            <code>{request.cwd}</code>
-          </p>
-          <details>
-            <summary>{t.trustFiles(request.resources.length)}</summary>
-            <ul>
-              {request.resources.map((resource) => (
-                <li key={`${resource.kind}:${resource.path}`}>
-                  <strong>{resource.kind}</strong> {resource.path}
-                </li>
+          <h2>{request.title}</h2>
+          {request.expiresAt && (
+            <p className="muted">
+              Expires {new Date(request.expiresAt).toLocaleTimeString()}
+            </p>
+          )}
+          {request.kind === "confirm" && <p>{request.message}</p>}
+          {request.kind === "select" && (
+            <div className="sdk-options">
+              {request.options.map((option) => (
+                <button
+                  type="button"
+                  key={option}
+                  disabled={submitting}
+                  onClick={() =>
+                    void reply({ ...request, kind: "select", value: option })
+                  }
+                >
+                  {option}
+                </button>
               ))}
-            </ul>
-          </details>
-          <label className="sdk-check">
-            <input
-              type="checkbox"
-              checked={remember}
-              onChange={(event) => setRemember(event.target.checked)}
-            />
-            {t.trustRemember}
-          </label>
+            </div>
+          )}
+          {(request.kind === "input" || request.kind === "editor") && (
+            <form
+              onSubmit={(event) => {
+                event.preventDefault();
+                void reply({ ...request, kind: request.kind, value });
+              }}
+            >
+              {request.kind === "editor" ? (
+                <textarea
+                  aria-label={request.title}
+                  value={value}
+                  onChange={(event) => setValue(event.target.value)}
+                  rows={12}
+                />
+              ) : (
+                <input
+                  aria-label={request.title}
+                  placeholder={request.placeholder}
+                  value={value}
+                  onChange={(event) => setValue(event.target.value)}
+                />
+              )}
+              <button type="submit" disabled={submitting}>
+                Submit
+              </button>
+            </form>
+          )}
+          {errorAlert}
+          <div className="dialog-actions">
+            <button type="button" onClick={cancel}>
+              {t.cancel}
+            </button>
+            {request.kind === "confirm" && (
+              <>
+                <button
+                  type="button"
+                  disabled={submitting}
+                  onClick={() =>
+                    void reply({ ...request, kind: "confirm", value: false })
+                  }
+                >
+                  No
+                </button>
+                <button
+                  type="button"
+                  disabled={submitting}
+                  onClick={() =>
+                    void reply({ ...request, kind: "confirm", value: true })
+                  }
+                >
+                  Yes
+                </button>
+              </>
+            )}
+          </div>
         </>
       )}
-      {request.kind === "select" && (
-        <div className="sdk-options">
-          {request.options.map((option) => (
-            <button
-              type="button"
-              key={option}
-              disabled={submitting}
-              onClick={() =>
-                void reply({ ...request, kind: "select", value: option })
-              }
-            >
-              {option}
-            </button>
-          ))}
-        </div>
-      )}
-      {(request.kind === "input" || request.kind === "editor") && (
-        <form
-          onSubmit={(event) => {
-            event.preventDefault();
-            void reply({ ...request, kind: request.kind, value });
-          }}
-        >
-          {request.kind === "editor" ? (
-            <textarea
-              aria-label={request.title}
-              value={value}
-              onChange={(event) => setValue(event.target.value)}
-              rows={12}
-            />
-          ) : (
-            <input
-              aria-label={request.title}
-              placeholder={request.placeholder}
-              value={value}
-              onChange={(event) => setValue(event.target.value)}
-            />
-          )}
-          <button type="submit" disabled={submitting}>
-            Submit
-          </button>
-        </form>
-      )}
-      {error && (
-        <p role="alert" className="error">
-          {error}
-        </p>
-      )}
-      <div className="dialog-actions">
-        <button type="button" onClick={cancel}>
-          {t.cancel}
-        </button>
-        {request.kind === "confirm" && (
-          <>
-            <button
-              type="button"
-              disabled={submitting}
-              onClick={() =>
-                void reply({ ...request, kind: "confirm", value: false })
-              }
-            >
-              No
-            </button>
-            <button
-              type="button"
-              disabled={submitting}
-              onClick={() =>
-                void reply({ ...request, kind: "confirm", value: true })
-              }
-            >
-              Yes
-            </button>
-          </>
-        )}
-        {request.kind === "project-trust" && (
-          <>
-            <button
-              type="button"
-              disabled={submitting}
-              onClick={() =>
-                void reply({ ...request, kind: "project-trust", value: "safe" })
-              }
-            >
-              {t.trustOpenSafe}
-            </button>
-            <button
-              type="button"
-              className="primary"
-              disabled={submitting}
-              onClick={() =>
-                void reply({
-                  ...request,
-                  kind: "project-trust",
-                  value: remember ? "persist" : "once",
-                })
-              }
-            >
-              {t.trustAccept}
-            </button>
-          </>
-        )}
-      </div>
     </dialog>
   );
 }

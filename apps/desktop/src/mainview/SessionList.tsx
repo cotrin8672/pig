@@ -1,7 +1,9 @@
 import {
   Archive,
   Check,
+  ChevronUp,
   Link2,
+  MoreHorizontal,
   Pencil,
   Pin,
   PinOff,
@@ -34,6 +36,9 @@ import {
   selectStartingChats,
 } from "./ui-selectors";
 
+/** Unpinned chats shown before the list is expanded; pinned chats always show. */
+export const RECENT_CHAT_LIMIT = 5;
+
 export const SessionList = memo(function SessionList({
   cwd,
   expanded = true,
@@ -49,7 +54,9 @@ export const SessionList = memo(function SessionList({
     useShallow((s) => selectStartingChats(s, cwd, t["New chat"])),
   );
   const desktop = useStore((s) => s.bootstrap.desktop);
+  const activeId = useStore((s) => (s.page === "chat" ? s.active : undefined));
   const [archived, setArchived] = useState(false);
+  const [showAll, setShowAll] = useState(false);
   if (!expanded) return null;
   const sessions = mergeLiveSessions(cwd, listed, live, deleting);
   const startingRows: { openId: string; title: string }[] = [];
@@ -73,14 +80,39 @@ export const SessionList = memo(function SessionList({
         Number(!!desktop.sessions[b.id]?.pinned) -
           Number(!!desktop.sessions[a.id]?.pinned) || b.modified - a.modified,
     );
+  // Pinned chats and the open chat always stay; other rows fill the recent slots.
+  let recentSlots = RECENT_CHAT_LIMIT - startingRows.length;
+  const shown = visible.filter((session) => {
+    if (desktop.sessions[session.id]?.pinned || session.id === activeId)
+      return true;
+    return recentSlots-- > 0;
+  });
+  const rows = showAll ? visible : shown;
+  const canToggle = shown.length < visible.length;
   return (
     <>
       {startingRows.map((row) => (
         <StartingRow key={row.openId} {...row} />
       ))}
-      {visible.map((session) => (
+      {rows.map((session) => (
         <SessionRow key={session.id} session={session} cwd={cwd} />
       ))}
+      {canToggle && (
+        <button
+          type="button"
+          className="thread more-chats"
+          aria-expanded={showAll}
+          aria-label={showAll ? t["Show fewer chats"] : t["Show older chats"]}
+          title={showAll ? t["Show fewer chats"] : t["Show older chats"]}
+          onClick={() => setShowAll(!showAll)}
+        >
+          {showAll ? (
+            <ChevronUp size={14} aria-hidden="true" />
+          ) : (
+            <MoreHorizontal size={14} aria-hidden="true" />
+          )}
+        </button>
+      )}
       {(archivedCount > 0 || archived) && (
         <button
           type="button"

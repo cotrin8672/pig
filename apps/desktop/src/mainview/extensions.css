@@ -230,8 +230,8 @@
 }
 .package-actions button.primary.package-uninstall {
   background: var(--ds-error);
-  color: var(--ds-bg-primary);
-  --confirm-ring: var(--ds-bg-primary);
+  color: var(--ds-on-error);
+  --confirm-ring: var(--ds-on-error);
 }
 .package-actions button.primary.package-uninstall:hover:not(:disabled) {
   background: color-mix(in srgb, var(--ds-error) 80%, white);

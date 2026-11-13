@@ -1193,7 +1193,7 @@ export const lsProposals = {
 
 /* ---------------- bash / powershell ---------------- */
 
-function shell(tool: Tool) {
+export function shell(tool: Tool) {
   const { output: raw, exitCode } = shellOutcome(output(tool));
   const plain = terminalText(raw).trimEnd();
   const seconds = (

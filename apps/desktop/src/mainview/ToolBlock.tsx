@@ -17,6 +17,7 @@ import {
   memo,
   type ReactNode,
   useContext,
+  useEffect,
   useLayoutEffect,
   useState,
   useSyncExternalStore,
@@ -190,6 +191,44 @@ function Row({
   );
 }
 
+/** "2.1s" while short, whole seconds and minutes once the run is long. */
+export function shellDuration(seconds: number) {
+  if (seconds < 10) return `${(Math.floor(seconds * 10) / 10).toFixed(1)}s`;
+  const whole = Math.floor(seconds);
+  if (whole < 60) return `${whole}s`;
+  const minutes = Math.floor(whole / 60);
+  return minutes < 60
+    ? `${minutes}m ${whole % 60}s`
+    : `${Math.floor(minutes / 60)}h ${minutes % 60}m`;
+}
+
+/** Only this span re-renders while the command runs, not the output. */
+function ShellElapsed() {
+  const [started] = useState(() => Date.now());
+  const [now, setNow] = useState(started);
+  useEffect(() => {
+    const timer = setInterval(() => setNow(Date.now()), 100);
+    return () => clearInterval(timer);
+  }, []);
+  return (
+    <span className="tool-term-time">
+      {shellDuration((now - started) / 1000)}
+    </span>
+  );
+}
+
+/** The SDK shell tools report their run time in `structuredContent`; history does not keep it. */
+function wallTime(result: unknown) {
+  const seconds =
+    result && typeof result === "object" && "structuredContent" in result
+      ? (result.structuredContent as { wall_time_seconds?: unknown } | null)
+          ?.wall_time_seconds
+      : undefined;
+  return typeof seconds === "number" && Number.isFinite(seconds)
+    ? seconds
+    : undefined;
+}
+
 function Shell({
   command,
   state,
@@ -205,6 +244,9 @@ function Shell({
   const { output, exitCode } = shellOutcome(resultText(state?.result));
   const text = terminalText(output).trimEnd();
   const lines = text ? text.split("\n") : [];
+  const seconds = wallTime(state?.result);
+  const statusLabel =
+    status === "running" ? t.Running : status === "done" ? "exit 0" : t.Failed;
   return (
     <Details
       className={`tool-term ${status}`}
@@ -216,17 +258,27 @@ function Shell({
             <CodeText text={command} language={language} />
           </code>
           <span className="tool-meta">
-            {status === "running" ? (
-              <LoaderCircle size={12} className="spinner" />
-            ) : (
-              <span className={`tool-badge ${status}`}>
-                {status === "done"
-                  ? "exit 0"
-                  : exitCode === undefined
-                    ? t.Failed
-                    : `exit ${exitCode}`}
-              </span>
-            )}
+            <span className="tool-term-status">
+              <i
+                className="tool-term-dot"
+                role="img"
+                aria-label={statusLabel}
+                title={statusLabel}
+              />
+              {status === "running" ? (
+                <ShellElapsed />
+              ) : status === "error" ? (
+                <span className="tool-term-time">
+                  {exitCode === undefined ? t.Failed : `exit ${exitCode}`}
+                </span>
+              ) : (
+                seconds !== undefined && (
+                  <span className="tool-term-time">
+                    {shellDuration(seconds)}
+                  </span>
+                )
+              )}
+            </span>
             <Chevron />
           </span>
         </summary>
@@ -237,10 +289,12 @@ function Shell({
     >
       {() => (
         <pre className="tool-term-output">
-          {lines.length === 0 ? (
-            t["No output"]
+          {lines.length > 0 && <TerminalOutput text={output.trimEnd()} />}
+          {/* Empty, so copying and the output text stay exactly the log. */}
+          {status === "running" ? (
+            <span className="tool-term-caret" aria-hidden="true" />
           ) : (
-            <TerminalOutput text={output.trimEnd()} />
+            lines.length === 0 && t["No output"]
           )}
         </pre>
       )}
@@ -471,72 +525,81 @@ export function BuiltinTool({
   }
 }
 
-/** Two or more consecutive read/grep/find/ls calls, collapsed into one row. */
-export const ToolGroup = memo(function ToolGroup({
-  calls,
-  tools,
-  live,
-  cards,
-  target,
-}: {
+type ToolGroupProps = {
   calls: ToolCall[];
   tools: Transcript["tools"];
   live: boolean;
   cards?: Record<string, ToolCard>;
   target?: { toolCallId: string; serial: number };
-}) {
-  const t = useT();
-  const tones = calls.map((call) => tone(tools[call.id], live));
-  const running = tones.includes("running");
-  const failed = tones.includes("error");
-  const count = (...names: string[]) =>
-    calls.filter((call) => names.includes(call.name)).length;
-  return (
-    <Details
-      name={`group:${calls[0]?.id}`}
-      className={`tool-row tool-group ${running ? "running" : failed ? "error" : "done"}`}
-      summary={
-        <summary>
-          <Layers size={ICON} />
-          <span className="tool-verb">{t.Explored}</span>
-          <span className="tool-target">
-            {t.exploreSummary(
-              count("read"),
-              count("grep", "find"),
-              count("ls"),
-            )}
-          </span>
-          <span className="tool-meta">
-            {running && <LoaderCircle size={12} className="spinner" />}
-            {!running && failed && (
-              <span className="tool-failed">{t.Failed}</span>
-            )}
-            <Chevron />
-          </span>
-        </summary>
-      }
-    >
-      {() => (
-        <div className="tool-group-body">
-          {calls.map((call) => (
-            <DisclosureScope
-              key={call.id}
-              id={`call:${call.id}`}
-              reveal={target?.toolCallId === call.id ? target.serial : 0}
-            >
-              <ToolBlock
-                call={call}
-                state={tools[call.id]}
-                live={live}
-                card={cards?.[call.id]}
-              />
-            </DisclosureScope>
-          ))}
-        </div>
-      )}
-    </Details>
-  );
-});
+};
+
+/** Two or more consecutive read/grep/find/ls calls, collapsed into one row. */
+export const ToolGroup = memo(
+  function ToolGroup({ calls, tools, live, cards, target }: ToolGroupProps) {
+    const t = useT();
+    const tones = calls.map((call) => tone(tools[call.id], live));
+    const running = tones.includes("running");
+    const failed = tones.includes("error");
+    const count = (...names: string[]) =>
+      calls.filter((call) => names.includes(call.name)).length;
+    return (
+      <Details
+        name={`group:${calls[0]?.id}`}
+        className={`tool-row tool-group ${running ? "running" : failed ? "error" : "done"}`}
+        summary={
+          <summary>
+            <Layers size={ICON} />
+            <span className="tool-verb">{t.Explored}</span>
+            <span className="tool-target">
+              {t.exploreSummary(
+                count("read"),
+                count("grep", "find"),
+                count("ls"),
+              )}
+            </span>
+            <span className="tool-meta">
+              {running && <LoaderCircle size={12} className="spinner" />}
+              {!running && failed && (
+                <span className="tool-failed">{t.Failed}</span>
+              )}
+              <Chevron />
+            </span>
+          </summary>
+        }
+      >
+        {() => (
+          <div className="tool-group-body">
+            {calls.map((call) => (
+              <DisclosureScope
+                key={call.id}
+                id={`call:${call.id}`}
+                reveal={target?.toolCallId === call.id ? target.serial : 0}
+              >
+                <ToolBlock
+                  call={call}
+                  state={tools[call.id]}
+                  live={live}
+                  card={cards?.[call.id]}
+                />
+              </DisclosureScope>
+            ))}
+          </div>
+        )}
+      </Details>
+    );
+  },
+  (previous, next) =>
+    previous.live === next.live &&
+    previous.target?.toolCallId === next.target?.toolCallId &&
+    previous.target?.serial === next.target?.serial &&
+    previous.calls.length === next.calls.length &&
+    previous.calls.every(
+      (call, index) =>
+        call === next.calls[index] &&
+        previous.tools[call.id] === next.tools[call.id] &&
+        previous.cards?.[call.id] === next.cards?.[call.id],
+    ),
+);
 
 export const ThinkingBlock = memo(function ThinkingBlock(
   data: ChatRenderData["thinking"],

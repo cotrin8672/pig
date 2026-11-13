@@ -4,10 +4,10 @@
   max-width: 94vw;
   max-height: 90vh;
   padding: 16px;
-  color: #f1edf5;
-  background: #1e2430;
-  border: 1px solid #667080;
-  border-radius: 12px;
+  color: var(--ds-text-primary);
+  background: var(--ds-bg-inset);
+  border: 1px solid var(--ds-border-strong);
+  border-radius: var(--radius-md);
   overflow: hidden;
 }
 .terminal-dialog[open] {
@@ -30,11 +30,11 @@
   color: inherit;
   background: transparent;
   border: 1px solid transparent;
-  border-radius: 4px;
+  border-radius: var(--radius-3xs);
   cursor: pointer;
 }
 .terminal-dialog > header button:focus-visible {
-  outline: 2px solid #abcdef;
+  outline: 2px solid var(--ds-focus);
 }
 .terminal-dialog .terminal-viewport {
   flex: 1;
@@ -47,5 +47,5 @@
 }
 .terminal-dialog [role="alert"] {
   margin: 0;
-  color: #ffb3b3;
+  color: var(--ds-error);
 }

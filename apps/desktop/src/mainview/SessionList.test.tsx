@@ -130,3 +130,51 @@ test("collapsed lists mount no rows, while project headings expose a background 
     Object.assign(state, previous);
   }
 });
+
+test("long lists show pinned chats, the open chat and five recent chats behind a more button", () => {
+  const state = useStore.getInitialState();
+  const previous = { ...state };
+  const sessions = Array.from({ length: 12 }, (_, index) => ({
+    id: `s${index}`,
+    cwd: "many",
+    title: `Chat ${index}`,
+    modified: 100 - index,
+  }));
+  Object.assign(state, {
+    settings: { ...state.settings, language: "ja" },
+    bootstrap: {
+      ...state.bootstrap,
+      desktop: { sessions: { s10: { pinned: true } } },
+    },
+    sessions: { many: sessions },
+    snapshots: {},
+    pendingUI: [],
+    pendingOpens: {},
+    page: "chat",
+    active: "s8",
+    opening: false,
+  });
+  try {
+    const html = renderToStaticMarkup(<SessionList cwd="many" />);
+    const titles = [...html.matchAll(/class="thread-title">([^<]+)</g)].map(
+      (match) => match[1],
+    );
+    expect(titles).toEqual([
+      "Chat 10",
+      "Chat 0",
+      "Chat 1",
+      "Chat 2",
+      "Chat 3",
+      "Chat 4",
+      "Chat 8",
+    ]);
+    expect(html).toContain(`aria-label="${ja["Show older chats"]}"`);
+    expect(html).toContain('aria-expanded="false"');
+  } finally {
+    Object.assign(state, previous);
+  }
+});
+
+test("short lists have no more button", () => {
+  expect(render()).not.toContain("more-chats");
+});
