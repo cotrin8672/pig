@@ -12,6 +12,7 @@ import type { ExtensionUIEvent, UIReply } from "./extension-ui";
 import type { ModelOverride } from "./model-overrides";
 import type { ProjectFlags } from "./projects";
 import type { AccountTarget, ProviderAccount } from "./provider-accounts";
+import type { ProviderUsage } from "./provider-usage";
 import type {
   DraftSyncParams,
   DraftSyncResult,
@@ -266,6 +267,10 @@ export type RPCSchema = {
       // biome-ignore lint/suspicious/noConfusingVoidType: Electrobun's parameterless RPC convention.
       settings: { params: void; response: Settings };
       // biome-ignore lint/suspicious/noConfusingVoidType: Electrobun's parameterless RPC convention.
+      providerUsage: { params: void; response: ProviderUsage[] };
+      // biome-ignore lint/suspicious/noConfusingVoidType: Electrobun's parameterless RPC convention.
+      refreshProviderUsage: { params: void; response: void };
+      // biome-ignore lint/suspicious/noConfusingVoidType: Electrobun's parameterless RPC convention.
       listFontFamilies: { params: void; response: string[] };
       listSessions: { params: { cwd: string }; response: SessionInfo[] };
       renameSession: {
@@ -427,6 +432,7 @@ export type RPCSchema = {
       addProject: void;
       setAppearance: Appearance;
       setSettings: SettingsPatch;
+      usageActive: { active: boolean };
       windowControl: { action: "minimize" | "toggleMaximize" | "close" };
       startLogin: AccountTarget & {
         method: AuthMethod;
@@ -462,6 +468,7 @@ export type RPCSchema = {
       desktopState: DesktopState;
       appearance: Appearance;
       settings: Settings;
+      providerUsage: ProviderUsage[];
       windowState: { maximized: boolean };
       appearanceError: { message: string };
       agentEvent: {

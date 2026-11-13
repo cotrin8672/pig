@@ -1,0 +1,343 @@
+/* Preview-only styles for the usage meter; colours and radii come from tokens.css. */
+.transcript:has(.usage-root) {
+  max-width: none;
+}
+.usage-root {
+  display: grid;
+  gap: 32px;
+}
+.usage-root > section > h2 {
+  margin-bottom: 4px;
+  font-size: var(--text-lg);
+  font-weight: var(--font-weight-semibold);
+}
+.usage-root > section > p {
+  margin: 0 0 14px;
+  color: var(--ds-text-muted);
+  font-size: var(--text-sm);
+}
+.usage-split {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 32px;
+  align-items: flex-end;
+}
+
+/* Popover: same surface as the notification panel. */
+.usage-panel {
+  display: flex;
+  flex-direction: column;
+  width: min(340px, calc(100vw - 36px));
+  max-height: 520px;
+  padding: 8px;
+  border: 1px solid var(--ds-border-strong);
+  border-radius: 10px;
+  background: var(--ds-bg-popover);
+  backdrop-filter: blur(20px);
+  box-shadow: var(--ds-shadow-dialog);
+  color: var(--ds-text-primary);
+}
+.usage-panel[data-compact] {
+  width: 300px;
+  max-height: none;
+  padding: 4px;
+}
+.usage-panel-heading {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 4px 8px 6px;
+}
+.usage-panel-heading strong {
+  flex: 1;
+  font-size: 13px;
+}
+.usage-updated {
+  color: var(--ds-text-muted);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+.usage-icon-button {
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  justify-content: center;
+  color: var(--ds-text-secondary);
+}
+.usage-list {
+  --scrollbar-inset: var(--radius-sm);
+  display: grid;
+  gap: 6px;
+  min-height: 0;
+  overflow-y: auto;
+}
+.usage-panel-more {
+  margin-top: 6px;
+  justify-content: center;
+  height: 28px;
+  color: var(--ds-text-secondary);
+  font-size: 12px;
+}
+
+/* Card: translucent tile layered over the popover/page, never an opaque plate. */
+.usage-card {
+  display: grid;
+  gap: 8px;
+  padding: 10px;
+  box-shadow: var(--ds-elevation-stroke);
+  border-radius: var(--radius-md, 8px);
+  background: var(--ds-tile);
+}
+.usage-card-heading {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  font-size: 12px;
+}
+.usage-card-heading > svg {
+  flex: none;
+}
+.usage-card-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  font-weight: 500;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.usage-card-name small {
+  margin-left: 6px;
+  color: var(--ds-text-muted);
+  font-weight: 400;
+}
+.usage-plan {
+  flex: none;
+  padding: 0 5px;
+  border-radius: 4px;
+  background: var(--ds-bg-chip);
+  color: var(--ds-text-muted);
+  font-size: 10px;
+}
+.usage-level-dot,
+.usage-sidebar-dot {
+  flex: none;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+}
+[data-level="warn"].usage-level-dot,
+[data-level="warn"].usage-sidebar-dot {
+  background: var(--ds-warning);
+}
+[data-level="critical"].usage-level-dot,
+[data-level="critical"].usage-sidebar-dot {
+  background: var(--ds-error);
+}
+
+/* label | bar | value, with the reset note under the bar so columns line up across rows. */
+.usage-metrics {
+  display: grid;
+  grid-template-columns: 76px minmax(0, 1fr) auto;
+  column-gap: 10px;
+  row-gap: 6px;
+  font-size: 11px;
+}
+.usage-metric {
+  display: contents;
+}
+.usage-metric-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--ds-text-secondary);
+  white-space: nowrap;
+}
+.usage-metric-value,
+.usage-amount {
+  justify-self: end;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.usage-metric-note {
+  grid-column: 2 / -1;
+  margin-top: -4px;
+  color: var(--ds-text-muted);
+  font-size: 10px;
+}
+.usage-metric[data-wide] .usage-amount {
+  grid-column: 2 / -1;
+}
+.usage-amount {
+  font-size: 13px;
+  font-weight: 600;
+}
+.usage-amount[data-spend] {
+  color: var(--ds-text-secondary);
+  font-weight: 400;
+}
+.usage-metric-value[data-level="warn"],
+.usage-amount[data-level="warn"] {
+  color: var(--ds-warning);
+}
+.usage-metric-value[data-level="critical"],
+.usage-amount[data-level="critical"] {
+  color: var(--ds-error);
+}
+.usage-bar {
+  align-self: center;
+  height: 4px;
+  overflow: hidden;
+  border-radius: var(--radius-full);
+  background: var(--ds-bg-chip);
+}
+.usage-bar > span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--ds-text-secondary);
+}
+.usage-bar[data-level="warn"] > span {
+  background: var(--ds-warning);
+}
+.usage-bar[data-level="critical"] > span {
+  background: var(--ds-error);
+}
+.usage-state {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  color: var(--ds-text-muted);
+  font-size: 11px;
+}
+.usage-state[data-level="critical"] > svg {
+  color: var(--ds-error);
+}
+.usage-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  height: auto;
+  padding: 0;
+  background: transparent;
+  color: var(--ds-accent, var(--ds-text-primary));
+  font-size: 11px;
+}
+.usage-card-footer {
+  display: flex;
+  gap: 10px;
+  color: var(--ds-text-muted);
+  font-size: 10px;
+}
+.usage-card-footer [data-private] {
+  color: var(--ds-warning);
+}
+
+/* Sidebar stage: a slice of the real sidebar with its footer. */
+.usage-sidebar-stage {
+  width: 260px;
+}
+.usage-sidebar {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  height: 640px;
+  padding: 12px;
+  border-radius: var(--radius-lg);
+}
+.usage-sidebar-spacer {
+  flex: 1;
+}
+.usage-sidebar .sidebar-footer {
+  padding-bottom: 0;
+}
+.usage-sidebar-dot {
+  position: absolute;
+  top: 5px;
+  right: 5px;
+}
+.usage-sidebar-popover {
+  position: absolute;
+  bottom: calc(12px + 32px + 8px);
+  left: 12px;
+  z-index: 2;
+}
+
+/* Composer stage: the popover opens upward; the toolbar row keeps its height. */
+.usage-composer-stage {
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  width: min(100%, 640px);
+  height: 380px;
+}
+.usage-composer-popover {
+  align-self: flex-start;
+  margin-bottom: 8px;
+}
+.usage-composer {
+  width: 100%;
+}
+.usage-composer-text {
+  height: 32px;
+  padding: 4px;
+  color: var(--ds-placeholder-ink);
+}
+.usage-ring-trigger {
+  height: 24px;
+  padding: 0 6px;
+}
+.usage-ring-trigger[aria-expanded="true"] {
+  background: var(--ds-bg-active);
+}
+.usage-current {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 58px;
+  color: var(--ds-text-secondary);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+.usage-current[data-level="warn"] {
+  color: var(--ds-warning);
+}
+.usage-current[data-level="critical"] {
+  color: var(--ds-error);
+}
+.usage-stop {
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  justify-content: center;
+  border-radius: 50%;
+  background: var(--ds-text-primary);
+  color: var(--ds-bg-primary, #111);
+}
+
+/* Detailed page. */
+.usage-page {
+  padding: 24px;
+  border: 1px solid #ffffff12;
+  border-radius: var(--radius-lg);
+}
+.usage-page-heading {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+.usage-page-heading > div {
+  flex: 1;
+}
+.usage-page h1 {
+  margin-bottom: 4px;
+  font-size: var(--text-xl);
+}
+.usage-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 10px;
+  align-items: start;
+}

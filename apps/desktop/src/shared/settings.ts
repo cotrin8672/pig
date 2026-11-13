@@ -8,6 +8,7 @@ export interface UtilityModelSelection {
 export interface Settings {
   language: "en" | "ja";
   contextDisplay: "remaining" | "used";
+  usageDisplay: "remaining" | "used";
   shell: "git-bash" | "powershell";
   blockImages: boolean;
   fontFamily: string;
@@ -20,6 +21,7 @@ export type SettingsPatch = Partial<Settings>;
 export const defaultSettings: Settings = {
   language: "en",
   contextDisplay: "remaining",
+  usageDisplay: "remaining",
   shell: "git-bash",
   blockImages: false,
   fontFamily: "",
@@ -50,13 +52,16 @@ export function validateSettings(value: unknown): Settings {
   const language = input.language === undefined ? "en" : input.language;
   const contextDisplay =
     input.contextDisplay === undefined ? "remaining" : input.contextDisplay;
+  const usageDisplay =
+    input.usageDisplay === undefined ? "remaining" : input.usageDisplay;
   const shell = input.shell ?? "git-bash";
   const blockImages = input.blockImages ?? false;
   if (
     !["en", "ja"].includes(language) ||
     !["git-bash", "powershell"].includes(shell) ||
     typeof blockImages !== "boolean" ||
-    !["remaining", "used"].includes(contextDisplay)
+    !["remaining", "used"].includes(contextDisplay) ||
+    !["remaining", "used"].includes(usageDisplay)
   )
     throw new Error("Invalid settings.");
   const keybindings: KeyOverrides = {};
@@ -83,6 +88,7 @@ export function validateSettings(value: unknown): Settings {
   return {
     language,
     contextDisplay,
+    usageDisplay,
     shell,
     blockImages,
     fontFamily: validateFontFamily(input.fontFamily),

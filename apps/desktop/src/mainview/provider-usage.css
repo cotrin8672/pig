@@ -1,0 +1,145 @@
+.provider-usage-card {
+  flex: none;
+  min-width: 0;
+  container-type: inline-size;
+  margin-top: 8px;
+  padding: 4px;
+  border-radius: var(--radius-md);
+  background: var(--ds-tile);
+  box-shadow: var(--ds-elevation-stroke);
+  font-size: var(--text-xs);
+}
+.provider-usage-heading {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  height: 22px;
+  padding-left: 4px;
+}
+.provider-usage-toggle {
+  flex: 1;
+  min-width: 0;
+  justify-content: flex-start;
+  gap: 4px;
+  height: 20px;
+  padding: 0;
+  color: var(--ds-text-secondary);
+  font-size: var(--text-xs);
+}
+.provider-usage-toggle > svg {
+  flex: none;
+}
+.provider-usage-toggle[aria-expanded="false"] > svg {
+  transform: rotate(-90deg);
+}
+.provider-usage-refresh {
+  flex: none;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  color: var(--ds-text-muted);
+}
+.provider-usage-list {
+  --scrollbar-inset: var(--radius-sm);
+  display: grid;
+  grid-template-columns: 12px minmax(0, 1fr) 39px 31px minmax(40px, max-content);
+  column-gap: 5px;
+  max-height: min(35vh, 286px);
+  overflow: auto;
+  margin: 0;
+  padding: 0;
+  border-radius: var(--radius-sm);
+  list-style: none;
+}
+.provider-usage-row {
+  display: grid;
+  grid-column: 1 / -1;
+  grid-template-columns: subgrid;
+  align-items: center;
+  height: 22px;
+  padding: 0 4px;
+  border-radius: var(--radius-sm);
+}
+.provider-usage-row:hover {
+  background: var(--ds-tile-hover);
+}
+.provider-usage-name {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--ds-text-secondary);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.provider-usage-row[data-stale] .provider-usage-name {
+  color: var(--ds-text-muted);
+}
+.provider-usage-rings {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+}
+.provider-usage-ring {
+  flex: none;
+  fill: none;
+}
+.usage-ring-track {
+  stroke: var(--ds-bg-chip);
+  stroke-width: 1.5;
+}
+.usage-ring-track[data-inner] {
+  stroke-width: 2.3;
+}
+.usage-ring-time {
+  stroke: var(--ds-text-muted);
+  stroke-width: 1.5;
+}
+.usage-ring-quota {
+  stroke: var(--ds-text-secondary);
+  stroke-width: 2.3;
+}
+.provider-usage-ring[data-level="warning"] .usage-ring-quota {
+  stroke: var(--ds-warning);
+}
+.provider-usage-ring[data-level="critical"] .usage-ring-quota {
+  stroke: var(--ds-error);
+}
+.provider-usage-value,
+.provider-usage-reset {
+  display: inline-flex;
+  justify-content: flex-end;
+  min-width: 0;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.provider-usage-value[data-balance] {
+  display: block;
+  grid-column: 4 / -1;
+  overflow: hidden;
+  text-align: right;
+  text-overflow: ellipsis;
+}
+.provider-usage-value[data-level="warning"] {
+  color: var(--ds-warning);
+}
+.provider-usage-value[data-level="critical"] {
+  color: var(--ds-error);
+}
+.provider-usage-reset {
+  color: var(--ds-text-muted);
+  font-size: var(--text-3xs);
+}
+/* The app narrows its sidebar on small windows. Keep identity/quota readable;
+   exact reset dates remain in the row tooltip instead of adding horizontal scroll. */
+@container (max-width: 210px) {
+  .provider-usage-list {
+    grid-template-columns: 12px minmax(0, 1fr) 39px 31px;
+    column-gap: 4px;
+  }
+  .provider-usage-reset {
+    display: none;
+  }
+  .provider-usage-value[data-balance] {
+    grid-column: 3 / -1;
+  }
+}

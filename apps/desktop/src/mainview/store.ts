@@ -5,6 +5,7 @@ import { defaultAppearance } from "../shared/appearance";
 import type { ExtensionStatus, UIRequest } from "../shared/extension-ui";
 import { dictionary } from "../shared/i18n";
 import type { AccountTarget } from "../shared/provider-accounts";
+import type { ProviderUsage } from "../shared/provider-usage";
 import type {
   Appearance,
   AuthMethod,
@@ -73,6 +74,7 @@ export interface PendingOpen extends OpeningTarget {
 }
 export const useStore = create<{
   bootstrap: Bootstrap;
+  providerUsage: ProviderUsage[];
   initialized: boolean;
   appUpdate?: AppUpdateState;
   installedLoaded: boolean;
@@ -132,6 +134,7 @@ export const useStore = create<{
     desktop: launchCache?.desktop ?? { sessions: {} },
   },
   initialized: false,
+  providerUsage: [],
   cachedSidebar: !!launchCache,
   installedLoaded: false,
   sessions: launchCache?.sessions ?? {},

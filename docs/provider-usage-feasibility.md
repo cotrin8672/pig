@@ -3,6 +3,11 @@
 調査日: **2026-11-11**  
 対象: pigの現在のソースと、インストール済み `@earendil-works/pi-ai` / `pi-coding-agent` **1.5.2**。Web情報は調査時点の公式資料・公式ソースを優先した。
 
+> **2026-11-12追記:** [実装前の再調査](provider-usage-implementation-study.md) を優先する。
+> Codex app-serverにはpig所有トークンを渡すexperimental modeがあり、CLIの別ログインは必須ではない。
+> Radiusは正式な残高・予算operationを確認できた。MiniMaxのAPI残高と数値解釈の世代差、
+> 非公開APIを使う他ハーネス／メーターの実態も追記した。本書は初回調査として残す。
+
 ## 結論
 
 **一覧画面は十分に現実的。ただし、全社共通の「あと何回使えるか」を正確に取得することはできない。**

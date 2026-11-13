@@ -109,6 +109,9 @@ import {
   packSnapshot,
   packTranscript,
 } from "./transcript-wire";
+import { discoverUsageTargets, receiveUsageObservation } from "./usage/host";
+import { setUsageObserver } from "./usage/observation";
+import { UsageService } from "./usage/service";
 
 await prepareDesktopConfig(Utils.paths.userData);
 // Paths only (never values): GUI env can differ from the user's shell.
@@ -231,6 +234,10 @@ async function reloadPackages() {
   ]);
   return failures;
 }
+const usageService = new UsageService(discoverUsageTargets, (entries) =>
+  rpc.send.providerUsage(entries),
+);
+setUsageObserver((event) => receiveUsageObservation(usageService, event));
 const rpc = BrowserView.defineRPC<RPCSchema>({
   maxRequestTime: 600_000,
   handlers: {
@@ -285,6 +292,8 @@ const rpc = BrowserView.defineRPC<RPCSchema>({
       storeAttachment: ({ name, data }) => storeFile(name, data),
       appearance: () => appearance,
       settings: () => settings,
+      providerUsage: () => usageService.snapshot(),
+      refreshProviderUsage: () => usageService.refresh(true),
       listFontFamilies,
       bootstrap: async () => {
         for (const message of modelErrors.splice(0)) report(message);
@@ -425,14 +434,17 @@ const rpc = BrowserView.defineRPC<RPCSchema>({
       },
       renameProviderAccount: ({ provider, accountId, label }) =>
         renameProviderAccount(provider, accountId, label),
-      removeProviderAccount: ({ provider, accountId }) =>
-        removeProviderAccount(provider, accountId),
+      removeProviderAccount: async ({ provider, accountId }) => {
+        await removeProviderAccount(provider, accountId);
+        usageService.invalidate(provider);
+      },
       accountModels: ({ provider, accountId }) =>
         accountModels(provider, accountId),
       logout: async ({ provider, accountId }) => {
         if (typeof provider !== "string" || !runtime.getProvider(provider))
           throw new Error("Invalid provider.");
         await logoutProvider(provider, accountId);
+        usageService.invalidate(provider);
       },
       refreshProviderModels: ({ provider }) => refreshProviderModels(provider),
       setModel: (input) => setSessionModel(input),
@@ -505,6 +517,9 @@ const rpc = BrowserView.defineRPC<RPCSchema>({
       setEffort: (input) => setSessionEffort(input),
     },
     messages: {
+      usageActive: ({ active }) => {
+        if (typeof active === "boolean") usageService.setActive(active);
+      },
       checkAppUpdate: () => {
         void appUpdater.check().catch(report);
       },
@@ -570,7 +585,10 @@ const rpc = BrowserView.defineRPC<RPCSchema>({
           provider,
           method,
           loginId,
-          (frame) => rpc.send.loginFrame(frame),
+          (frame) => {
+            rpc.send.loginFrame(frame);
+            if (frame.kind === "success") usageService.invalidate(provider);
+          },
           (url) => Utils.openExternal(url),
           accountId,
           addAccount,
@@ -737,6 +755,8 @@ window.webview.on("dom-ready", () => {
 });
 console.log("[window] pig started");
 function dispose() {
+  setUsageObserver(undefined);
+  usageService.dispose();
   cancelAllLogins();
   void disposeSessions().catch(console.error);
 }

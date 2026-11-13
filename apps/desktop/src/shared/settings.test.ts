@@ -20,6 +20,8 @@ test("settings defaults and patches validate enums and normalize overrides", () 
     [],
     { language: "fr" },
     { contextDisplay: "total" },
+    { usageDisplay: "total" },
+    { usageDisplay: null },
     { shell: "cmd" },
     { blockImages: "true" },
     { keybindings: [] },
@@ -48,6 +50,7 @@ test("utility selections validate independently, preserve settings, and clear", 
   } as const;
   expect(validateSettings(old)).toEqual({
     ...old,
+    usageDisplay: "remaining",
     shell: "git-bash",
     blockImages: false,
     fontFamily: "",
@@ -66,6 +69,7 @@ test("utility selections validate independently, preserve settings, and clear", 
   });
   expect(selected).toEqual({
     ...old,
+    usageDisplay: "remaining",
     shell: "git-bash",
     blockImages: false,
     fontFamily: "",

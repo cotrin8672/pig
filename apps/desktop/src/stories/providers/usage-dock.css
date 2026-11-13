@@ -1,0 +1,271 @@
+/* Compact always-on usage dock. Tokens only; rows are fixed-height. */
+.ud {
+  flex: none;
+  margin: 8px 0 0;
+  padding: 4px 4px 6px;
+  box-shadow: var(--ds-elevation-stroke);
+  border-radius: var(--radius-md, 8px);
+  background: var(--ds-tile);
+  font-size: 11px;
+}
+.ud-heading {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  height: 22px;
+  padding: 0 2px 0 4px;
+}
+.ud-toggle {
+  flex: 1;
+  min-width: 0;
+  height: 20px;
+  justify-content: flex-start;
+  gap: 4px;
+  padding: 0;
+  background: transparent;
+  color: var(--ds-text-muted);
+  font-size: 11px;
+  font-weight: 500;
+}
+.ud-chevron {
+  flex: none;
+  transition: transform var(--motion-duration-fast) var(--motion-ease-out);
+}
+.ud-toggle[aria-expanded="false"] .ud-chevron {
+  transform: rotate(-90deg);
+}
+.ud-summary {
+  overflow: hidden;
+  margin-left: 4px;
+  color: var(--ds-text-secondary);
+  font-variant-numeric: tabular-nums;
+  font-weight: 400;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ud-updated {
+  color: var(--ds-text-muted);
+  font-size: 10px;
+}
+.ud-refresh {
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  justify-content: center;
+  background: transparent;
+  color: var(--ds-text-muted);
+}
+.ud-refresh:hover {
+  color: var(--ds-text-primary);
+}
+
+/* icon | name | bars | value | reset — columns line up across all rows. */
+.ud-list {
+  display: grid;
+  grid-template-columns: 12px minmax(0, 1fr) 30px 32px 50px;
+  column-gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.ud-row {
+  display: grid;
+  grid-column: 1 / -1;
+  grid-template-columns: subgrid;
+  align-items: center;
+  height: 20px;
+  padding: 0 4px;
+  border-radius: 4px;
+  cursor: default;
+}
+.ud-row:hover {
+  background: var(--ds-bg-hover);
+}
+.ud-row > svg {
+  flex: none;
+}
+.ud-name {
+  overflow: hidden;
+  color: var(--ds-text-secondary);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ud-bars {
+  display: grid;
+  gap: 2px;
+}
+.ud-bar {
+  position: relative;
+  height: 3px;
+  overflow: hidden;
+  border-radius: var(--radius-full);
+  background: var(--ds-bg-chip);
+}
+.ud-bar-quota,
+.ud-bar-time {
+  position: absolute;
+  inset: 0 auto 0 0;
+  border-radius: inherit;
+}
+.ud-bar-quota {
+  background: var(--ds-text-secondary);
+}
+.ud-bar[data-level="warn"] .ud-bar-quota {
+  background: var(--ds-warning);
+}
+.ud-bar[data-level="critical"] .ud-bar-quota {
+  background: var(--ds-error);
+}
+
+/* nested: 5px track; faint fill = time left, 3px inner line = quota. Two windows = 12px. */
+.ud-bars[data-variant="nested"] .ud-bar {
+  height: 5px;
+}
+.ud-bar-time {
+  background: color-mix(in srgb, var(--ds-text-primary) 30%, transparent);
+}
+.ud-bars[data-variant="nested"] .ud-bar-quota {
+  inset: 1px auto 1px 1px;
+  max-width: calc(100% - 2px);
+}
+
+/* tick: 3px quota line, 1px tick at the time-left position, slightly taller than the line. */
+.ud-bars[data-variant="tick"] {
+  gap: 4px;
+}
+.ud-bars[data-variant="tick"] .ud-bar {
+  overflow: visible;
+}
+.ud-bar-tick {
+  position: absolute;
+  top: -2px;
+  bottom: -2px;
+  width: 1px;
+  translate: -50% 0;
+  border-radius: 1px;
+  background: var(--ds-text-primary);
+}
+
+/* ring: one 13px double ring per window, side by side. */
+.ud-bars[data-variant="ring"] {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+}
+.ud-ring {
+  flex: none;
+  width: var(--ud-ring, 13px);
+  height: var(--ud-ring, 13px);
+  fill: none;
+}
+.ud-ring-track {
+  stroke: var(--ds-bg-chip);
+  stroke-width: 1.5;
+}
+.ud-ring-track[data-inner] {
+  stroke-width: 2;
+}
+.ud-ring-time {
+  stroke: color-mix(in srgb, var(--ds-text-primary) 45%, transparent);
+  stroke-width: 1.5;
+}
+.ud-ring-quota {
+  stroke: var(--ds-text-secondary);
+  stroke-width: 2;
+}
+.ud-ring[data-level="warn"] .ud-ring-quota {
+  stroke: var(--ds-warning);
+}
+.ud-ring[data-level="critical"] .ud-ring-quota {
+  stroke: var(--ds-error);
+}
+.ud-value {
+  display: inline-flex;
+  justify-content: flex-end;
+  color: var(--ds-text-primary);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.ud-value[data-wide] {
+  grid-column: 4 / -1;
+}
+.ud-value[data-muted],
+.ud-reset {
+  color: var(--ds-text-muted);
+}
+.ud-value[data-level="warn"],
+.ud-summary[data-level="warn"] {
+  color: var(--ds-warning);
+}
+.ud-value[data-level="critical"],
+.ud-summary[data-level="critical"] {
+  color: var(--ds-error);
+}
+.ud-reset {
+  display: inline-flex;
+  justify-content: flex-end;
+  overflow: hidden;
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* Story-only sidebar slice. */
+.ud-sidebar {
+  height: 760px;
+}
+.ud-threads {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  padding: 0 4px;
+}
+.ud-thread {
+  height: 28px;
+  overflow: hidden;
+  color: var(--ds-text-secondary);
+  font-size: 12px;
+  line-height: 28px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ud-stage {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 40px;
+  align-items: flex-start;
+}
+.ud-settings {
+  max-width: 520px;
+  margin-bottom: 16px;
+}
+
+.ud-ideas {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, 240px);
+  gap: 24px;
+}
+.ud-ideas figure {
+  margin: 0;
+}
+.ud-ideas figcaption {
+  display: grid;
+  gap: 2px;
+  min-height: 44px;
+  margin-bottom: 6px;
+  font-size: 11px;
+}
+.ud-ideas figcaption span {
+  color: var(--ds-text-muted);
+}
+
+/* Ring sizes: the bar column fits two rings, rows grow only when the ring needs it. */
+.ud[data-variant="ring"] .ud-list {
+  grid-template-columns: 12px minmax(0, 1fr) max(
+      30px,
+      calc(var(--ud-ring) * 2 + 3px)
+    ) 32px 50px;
+}
+.ud[data-variant="ring"] .ud-row {
+  height: max(20px, calc(var(--ud-ring) + 4px));
+}

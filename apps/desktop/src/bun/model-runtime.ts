@@ -16,6 +16,7 @@ import { FileModelsStore } from "./models-store";
 import { AccountCredentials, providerAccounts } from "./provider-accounts";
 import { withPersonalizedCatalog, withRemoteCatalog } from "./remote-catalog";
 import { AuthStorage, ModelRuntime } from "./sdk";
+import { withUsageObservation } from "./usage/observation";
 
 const defaultCredentials = AuthStorage.create();
 const owned = new Set<SDKModelRuntime>();
@@ -55,7 +56,10 @@ export async function createModelRuntime(accounts: SessionAccounts = {}) {
   accountCredentials.set(runtime, credentials);
   const generatedAt = getBuiltinModelDataGeneratedAt();
   const base = builtinProviders().map((builtin) => {
-    const provider = withCodexImages(builtin);
+    const provider = withUsageObservation(
+      withCodexImages(builtin),
+      () => credentials.selection()[builtin.id],
+    );
     if (provider.id === "radius") return provider;
     return provider.id === "openrouter"
       ? withPersonalizedCatalog(

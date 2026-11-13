@@ -25,6 +25,7 @@ test("missing and corrupt settings default without overwriting; valid saves roun
     await writeFile(file, JSON.stringify(old));
     expect(await loadSettings(file)).toEqual({
       ...old,
+      usageDisplay: "remaining",
       shell: "git-bash",
       blockImages: false,
       fontFamily: "",
@@ -35,6 +36,7 @@ test("missing and corrupt settings default without overwriting; valid saves roun
     const next = patchSettings(defaultSettings, {
       language: "ja",
       contextDisplay: "used",
+      usageDisplay: "used",
       shell: "powershell",
       blockImages: true,
       fontFamily: "游ゴシック",

@@ -51,6 +51,7 @@ import { Notifications } from "./Notifications";
 import { initNavigation, navigate } from "./navigation";
 import { ProviderIcon } from "./ProviderIcon";
 import { Providers } from "./Providers";
+import { ProviderUsage } from "./ProviderUsage";
 
 import { ResponseError } from "./ResponseError";
 import { ResponseFooter } from "./ResponseFooter";
@@ -185,6 +186,7 @@ export function App() {
         {state.sidebarReady && (
           <>
             <SidebarSessions />
+            <ProviderUsage />
             <div className="sidebar-footer">
               <button
                 type="button"

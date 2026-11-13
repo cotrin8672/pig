@@ -209,6 +209,7 @@ export const rpc = Electroview.defineRPC<RPCSchema>({
       },
       appearance: receiveAppearance,
       settings: receiveSettings,
+      providerUsage: (providerUsage) => useStore.setState({ providerUsage }),
       windowState: ({ maximized }) => useStore.setState({ maximized }),
       appearanceError: ({ message }) => showError(message),
       projects: (projects) => {

@@ -180,6 +180,25 @@ export function Settings() {
                   ))}
                 </fieldset>
               </SettingsRow>
+              <SettingsRow
+                label={<span id="usage-display-label">{t.usageDisplay}</span>}
+              >
+                <fieldset
+                  className="segmented-control"
+                  aria-labelledby="usage-display-label"
+                >
+                  {(["remaining", "used"] as const).map((mode) => (
+                    <button
+                      key={mode}
+                      type="button"
+                      aria-pressed={settings.usageDisplay === mode}
+                      onClick={() => updateSettings({ usageDisplay: mode })}
+                    >
+                      {mode === "remaining" ? t.Remaining : t.Used}
+                    </button>
+                  ))}
+                </fieldset>
+              </SettingsRow>
             </SettingsSection>
           )}
           {category === "appearance" && (
