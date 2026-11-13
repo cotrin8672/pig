@@ -1,4 +1,4 @@
-import type { Root, RootContent } from "hast";
+import type { Element, Root, RootContent } from "hast";
 import type { ParsedMarkdown } from "./markdown-engine";
 
 type Cached = {
@@ -129,6 +129,31 @@ export async function prepareMarkdown(
   });
 }
 
+function appendMarkdownText(
+  node: RootContent,
+  end: number,
+  text: string,
+): Element | undefined {
+  if (node.type !== "element" || node.position?.end.offset !== end)
+    return undefined;
+  let index = node.children.length - 1;
+  while (index >= 0 && node.children[index].type !== "element") index--;
+  const child = node.children[index];
+  const appended = child && appendMarkdownText(child, end, text);
+  if (appended)
+    return {
+      ...node,
+      children: node.children.map((child, i) =>
+        i === index ? appended : child,
+      ),
+    };
+  if (!/^(?:p|h[1-6]|li)$/.test(node.tagName)) return undefined;
+  return {
+    ...node,
+    children: [...node.children, { type: "text", value: text }],
+  };
+}
+
 /** Keep complete, unchanged blocks mounted while a newer parse is pending.
  * Changed/unparsed source remains visible as escaped text, never stale content. */
 export function retainedMarkdown(
@@ -146,32 +171,20 @@ export function retainedMarkdown(
   if (text === previous.text) return { tree: previous.tree, tail: "" };
   const appending = prefix === previous.text.length;
   const last = previous.tree.children.at(-1);
-  // Keep the same paragraph/inline DOM when a streamed suffix is still on its
-  // current line; never push it outside the paragraph into a new visual line.
-  if (
-    appending &&
-    last?.type === "element" &&
-    last.tagName === "p" &&
-    last.position?.end.offset === prefix &&
-    !text.slice(prefix).includes("\n")
-  ) {
+  // Append within the current text block, including nested list/quote prose,
+  // rather than temporarily moving the suffix onto a separate visual line.
+  const appended =
+    appending && last && !/[\r\n]/.test(text.slice(prefix))
+      ? appendMarkdownText(last, prefix, text.slice(prefix))
+      : undefined;
+  if (appended)
     return {
       tree: {
         ...previous.tree,
-        children: [
-          ...previous.tree.children.slice(0, -1),
-          {
-            ...last,
-            children: [
-              ...last.children,
-              { type: "text", value: text.slice(prefix) },
-            ],
-          },
-        ],
+        children: [...previous.tree.children.slice(0, -1), appended],
       },
       tail: "",
     };
-  }
   // A changed fenced-code body can be updated without reparsing Markdown.
   // Keep the existing pre/code components (and their selected/highlighted DOM).
   let suffix = 0;
@@ -251,6 +264,15 @@ export function retainedMarkdown(
   let end = 0;
   for (const node of previous.tree.children) {
     const offset = node.position?.end.offset;
+    // HAST inserts unpositioned newlines between blocks; they do not mark a change.
+    if (
+      offset === undefined &&
+      node.type === "text" &&
+      /^\s*$/.test(node.value)
+    ) {
+      children.push(node);
+      continue;
+    }
     if (offset === undefined || offset > prefix) break;
     children.push(node);
     end = offset;

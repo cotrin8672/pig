@@ -226,11 +226,82 @@ test.skipIf(!existsSync(edge) && !process.env.PIG_REQUIRE_UI_TESTS)(
         spacingThread.style.removeProperty("width");
         if(changed){window.__scrollbarCapture=true;await until(()=>typeof window.__scrollbarCapture==="string","missing response spacing screenshot");window.__responseSpacingScreenshot=window.__scrollbarCapture;delete window.__scrollbarCapture;}
       }
+      metrics.stage="markdown-tables";
+      metrics.markdownTables=[];
+      const tableText=[
+        'Pushed commits to origin/main:',
+        '',
+        '| commit | 内容 |',
+        '| --- | --- |',
+        '| \u00601f80947\u0060 | \u0060common/\u0060 に SIMD を切り出し + ワークスペース化 (root \u0060Project.toml\u0060 / \u0060Manifest.toml\u0060 / \u0060README.md\u0060、SingleLLE・PhCR を \u0060using common\u0060 に) |',
+        '| \u00604073682\u0060 | PhCR の基礎部分のみ: \u0060solve_cw.jl\u0060, \u0060solve_cw_mi.jl\u0060, \u0060main_cw_mi.jl\u0060, \u0060plot_cw_mi.jl\u0060, \u0060README.md\u0060 |',
+        '| \u0060471770b\u0060 | \u0060DualPumpLLE/\u0060 |',
+        '| \u00609606039\u0060 | \u0060SegmentedPhCR/\u0060 |',
+      ].join('\\n');
+      const tableScale=document.documentElement.style.getPropertyValue('--font-scale');
+      for(const width of [280,740])for(const scale of [1,1.25]){
+        document.documentElement.style.setProperty('--font-scale',String(scale));
+        await render(<article className="message assistant" style={{width}}><div className="prose table-fixture"><Markdown text={tableText}/></div></article>);
+        await until(()=>document.querySelector('.markdown-table-scroll td code'),'Markdown table must finish rendering');
+        const host=document.querySelector('.table-fixture'),scroller=host.querySelector('.markdown-table-scroll'),table=scroller.querySelector('table');
+        check(host.scrollWidth<=width && scroller.getBoundingClientRect().width<=width,'tables must not widen the conversation');
+        check(scroller.scrollWidth<=scroller.clientWidth+1,'ordinary two-column tables must fit even in portrait layouts');
+        for(const node of table.querySelectorAll('th,td code')){
+          const range=document.createRange();range.selectNodeContents(node);
+          const tops=[...range.getClientRects()].map(rect=>Math.round(rect.top));
+          check(new Set(tops).size===1,'short headers and identifiers must stay on one line: '+node.textContent);
+        }
+        const cell=table.querySelector('td'),style=getComputedStyle(cell),header=getComputedStyle(table.querySelector('th'));
+        check(style.borderRightWidth==='1px' && style.borderBottomWidth==='1px' && !['transparent','rgba(0, 0, 0, 0)'].includes(style.borderBottomColor),'row and column separators must be visible, not transparent default borders');
+        check(header.backgroundColor!=='rgba(0, 0, 0, 0)' && getComputedStyle(table.rows[2]).backgroundColor!=='rgba(0, 0, 0, 0)','headers and alternate rows need translucent contrast');
+        check(getComputedStyle(cell).verticalAlign==='top','wrapped descriptions must align with their identifier');
+        if(width===280) check(table.rows[1].cells[1].getBoundingClientRect().height>2*parseFloat(style.lineHeight),'descriptions must wrap naturally instead of forcing horizontal scrolling');
+        if(scale===1){window.__scrollbarCapture=true;await until(()=>typeof window.__scrollbarCapture==='string','missing table screenshot');window[width===280?'__portraitTableScreenshot':'__wideTableScreenshot']=window.__scrollbarCapture;delete window.__scrollbarCapture;}
+        metrics.markdownTables.push({width,scale,height:table.getBoundingClientRect().height});
+      }
+      const wideTable=['| commit | path | result |','| --- | --- | --- |','| '+String.fromCharCode(96)+'a'.repeat(80)+String.fromCharCode(96)+' | src/output.ts | Last column |'].join('\\n');
+      await render(<article className="message" style={{width:280}}><div className="prose table-fixture"><Markdown text={wideTable}/></div></article>);
+      await until(()=>document.querySelector('.markdown-table-scroll td')?.textContent==='a'.repeat(80),'wide table must finish rendering');
+      const wideScroller=document.querySelector('.markdown-table-scroll');
+      check(wideScroller.scrollWidth>wideScroller.clientWidth && document.querySelector('.table-fixture').scrollWidth<=280,'unbreakable wide tables must scroll inside their own frame');
+      wideScroller.scrollLeft=wideScroller.scrollWidth;await wait();
+      check(wideScroller.querySelector('tr:last-child td:last-child').getBoundingClientRect().right<=wideScroller.getBoundingClientRect().right,'last table column must remain reachable');
+      if(tableScale)document.documentElement.style.setProperty('--font-scale',tableScale);else document.documentElement.style.removeProperty('--font-scale');
       await render(<Markdown text={'~~~javascript\\nconst fixed = 1;\\n~~~\\n\\nBefore'}/>);
       await until(()=>document.querySelector("code"),"initial Markdown must finish through its worker");
       const streamingCode=document.querySelector(".syntax-token")?.closest("code")??document.querySelector("code");
       await render(<Markdown text={'~~~javascript\\nconst fixed = 1;\\n~~~\\n\\nAfter'}/>);
       check(streamingCode===document.querySelector("code"),"streaming Markdown must preserve unchanged code DOM, not remount its highlighter");
+      // Check the pending commit itself, before the worker can conceal a layout flash.
+      metrics.retainedMarkdown=[];
+      for(const initial of [
+        '## **Stable** heading',
+        '## Streaming list\\n\\n- **Stable** item',
+        '## Streaming nested list\\n\\n- Parent\\n  - **Stable** item',
+        '> **Stable** quote'
+      ]){
+        const makeNode=text=><article className="message"><div className="prose markdown-stability" style={{width:800}}><Markdown text={text}/></div></article>;
+        await render(makeNode(initial));
+        await until(()=>!document.querySelector('.markdown-pending-source'),"initial Markdown must finish before measuring pending geometry");
+        const host=document.querySelector('.markdown-stability'),stable=host.querySelector('strong')??host.querySelector('h2');
+        const height=host.getBoundingClientRect().height;
+        const range=document.createRange();range.selectNodeContents(stable);
+        const selection=window.getSelection();selection.removeAllRanges();selection.addRange(range);
+        const selected=selection.toString();
+        let latest;
+        for(const suffix of [' appended',' appended again',' appended again finally']){
+          latest=initial+suffix;
+          flushSync(()=>root.render(makeNode(latest)));
+          check(stable.isConnected && (host.querySelector('strong')??host.querySelector('h2'))===stable && selection.toString()===selected,'pending Markdown must keep formatted DOM and selection, including after paragraph separators: '+JSON.stringify({initial,suffix,connected:stable.isConnected,same:(host.querySelector('strong')??host.querySelector('h2'))===stable,selected,actual:selection.toString(),html:host.innerHTML}));
+          check(!host.querySelector('.markdown-pending-source') && host.textContent.includes(suffix),'pending Markdown must append the latest text within its existing block');
+          check(Math.abs(host.getBoundingClientRect().height-height)<0.01,'pending heading/list/quote text must not jump onto a temporary extra line');
+        }
+        selection.removeAllRanges();
+        await prepareMarkdown(latest);await wait();
+        check(host.textContent.includes('appended again finally'),'older worker results must not restore stale Markdown');
+        check(Math.abs(host.getBoundingClientRect().height-height)<0.01 && stable.isConnected,'worker completion must retain Markdown geometry and unchanged formatting');
+        metrics.retainedMarkdown.push({initial,height});
+      }
       // Replay IPC clones: immutable saved tools must not rerender on every token.
       let toolRenders=0;
       installChatRenderers([{id:"perf-tools",kind:"tool",component:({DefaultRenderer})=>{toolRenders++;return <DefaultRenderer/>;}}]);
@@ -1043,6 +1114,7 @@ test.skipIf(!existsSync(edge) && !process.env.PIG_REQUIRE_UI_TESTS)(
         ["horizontal-stable-gutter",'<pre class="audit-scroller" data-axis="x" style="scrollbar-gutter:stable;white-space:pre"></pre>'],
         ["edit",'<div class="tool-body"><pre class="tool-diff audit-scroller"></pre></div>'],
         ["markdown",'<div class="prose"><pre class="audit-scroller"></pre></div>'],
+        ["markdown-table",'<div class="prose"><div class="markdown-table-scroll audit-scroller" data-axis="x"></div></div>'],
         ["read",'<div class="tool-body"><div class="message-content literal"><pre class="audit-scroller"></pre></div></div>'],
         ["sidebar",'<div class="project-list audit-scroller"></div>'],
         ["conversation",'<main><div class="chat-shell"><div class="thread-scroll audit-scroller" data-axis="y"></div></div></main>'],
@@ -1376,6 +1448,8 @@ test.skipIf(!existsSync(edge) && !process.env.PIG_REQUIRE_UI_TESTS)(
           );
         }
         for (const [variable, filename] of [
+          ["__portraitTableScreenshot", "pig-markdown-table-portrait.png"],
+          ["__wideTableScreenshot", "pig-markdown-table-wide.png"],
           ["__responseSpacingScreenshot", "pig-response-spacing.png"],
           ["__jumpButtonScreenshot", "pig-scroll-to-bottom.png"],
           ["__modelPickerScreenshot", "pig-model-picker.png"],

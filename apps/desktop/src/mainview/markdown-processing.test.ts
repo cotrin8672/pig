@@ -76,6 +76,45 @@ test("the immediate plain-prose path preserves paragraph/soft-break geometry exa
   ])
     expect(plainMarkdown(text)).toBeUndefined();
 });
+test("pending prose appends stay inside their heading, list item or paragraph", () => {
+  for (const initial of [
+    "## 調査結果",
+    "## 調査結果\n\n- **原因**はMarkdownです。",
+    "## 調査結果\n\n1. 最初の項目\n2. 次の項目",
+    "## 調査結果\n\n- 親の項目\n  - 子の項目",
+    "## 調査結果\n\n- 最初の段落\n\n  次の段落",
+    "> **原因**はMarkdownです。",
+    "## 調査結果\n\n本文です。",
+  ]) {
+    const previous = { text: initial, tree: parseMarkdown(initial).tree };
+    const text = `${initial}追記です。`;
+    const pending = retainedMarkdown(text, previous);
+    expect(pending.tail).toBe("");
+    expect(renderTree(pending.tree)).toBe(baseline(text));
+    if (previous.tree.children.length > 1)
+      expect(pending.tree?.children[0]).toBe(previous.tree.children[0]);
+  }
+});
+test("pending changes retain complete blocks across synthetic paragraph separators", () => {
+  const initial = "## Heading\n\n- **Stable** item\n\nOld paragraph";
+  const previous = { text: initial, tree: parseMarkdown(initial).tree };
+  const pending = retainedMarkdown(initial.replace("Old", "New"), previous);
+  expect(renderTree(pending.tree)).toContain(
+    "<li><strong>Stable</strong> item</li>",
+  );
+  expect(pending.tree?.children[2]).toBe(previous.tree.children[2]);
+  expect(pending.tail).toBe("\n\nNew paragraph");
+  const appended = retainedMarkdown(`${initial}\n\nNew paragraph`, previous);
+  expect(renderTree(appended.tree)).toBe(baseline(initial));
+  expect(appended.tail).toBe("\n\nNew paragraph");
+  const unknown: Root = {
+    type: "root",
+    children: [{ type: "text", value: "unmapped source" }],
+  };
+  expect(
+    retainedMarkdown("old new", { text: "old", tree: unknown }).tree,
+  ).toBeUndefined();
+});
 test("pending code-body updates preserve the pre/code tree and latest source, not a stale body", () => {
   const initial =
     "Before\n\n~~~ts\nconst stable = 1;\nconst growing\n~~~\n\nAfter";

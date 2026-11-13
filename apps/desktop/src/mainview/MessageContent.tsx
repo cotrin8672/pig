@@ -75,6 +75,11 @@ const RenderedMarkdown = memo(function RenderedMarkdown({
 // Stable component types preserve code/image DOM, highlight work and selection
 // while streaming. Inline component functions remount every Markdown update.
 export const markdownComponents: Components = {
+  table: ({ children }) => (
+    <div className="markdown-table-scroll">
+      <table>{children}</table>
+    </div>
+  ),
   code: ({ className, children }) => (
     <code className={className}>
       {typeof children === "string" ? (
