@@ -31,6 +31,8 @@ jobs:
       - run: pnpm typecheck
       - run: pnpm lint
       - run: pnpm test
+        env:
+          PIG_REQUIRE_UI_TESTS: '1'
       - run: >-
           bun test apps/desktop/scripts/sdk-runtime-assets.test.ts
           apps/desktop/scripts/post-build.test.ts

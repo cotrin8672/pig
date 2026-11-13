@@ -6,9 +6,11 @@
     "dev": "pnpm --filter @pig/desktop dev",
     "build": "pnpm --filter @pig/desktop build",
     "typecheck": "pnpm --filter @pig/desktop typecheck",
-    "lint": "biome check .",
+    "lint": "biome check . && pnpm lint:ui",
+    "lint:ui": "bun apps/desktop/scripts/check-ui-styles.ts",
     "format": "biome check --write .",
-    "test": "bun test --parallel=4 apps/desktop/src"
+    "test": "bun test --parallel=4 apps/desktop/src apps/desktop/scripts/ui-style-rules.test.ts",
+    "test:ui": "bun apps/desktop/scripts/check-ui.ts"
   },
   "devDependencies": {
     "@biomejs/biome": "2.4.8",

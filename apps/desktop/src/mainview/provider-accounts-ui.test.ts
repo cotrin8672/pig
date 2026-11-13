@@ -1,14 +1,21 @@
 import { expect, test } from "bun:test";
 import { existsSync } from "node:fs";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { fileURLToPath, pathToFileURL } from "node:url";
+import { fileURLToPath } from "node:url";
+import {
+  fixtureBrowser,
+  removeFixtureDirectory,
+} from "../../scripts/ui-browser";
 
-const edge = "C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe";
-test.skipIf(!existsSync(edge))(
+const edge =
+  process.env.PIG_UI_BROWSER ??
+  "C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe";
+test.skipIf(!existsSync(edge) && !process.env.PIG_REQUIRE_UI_TESTS)(
   "provider/account UI in Edge: nested rows, immediate sign-in, inline rename and account-aware picker",
   async () => {
+    if (!existsSync(edge)) throw new Error("Required UI browser is missing");
     const dir = await mkdtemp(join(tmpdir(), "pig-provider-ui-"));
     try {
       const source = (name: string) =>
@@ -144,41 +151,42 @@ test.skipIf(!existsSync(edge))(
         join(dir, "index.html"),
         '<div id="root"></div><pre id="report"></pre><script type="module" src="./fixture.js"></script>',
       );
-      const child = Bun.spawn(
-        [
-          edge,
-          "--headless=new",
-          "--disable-gpu",
-          "--no-first-run",
-          "--allow-file-access-from-files",
-          `--user-data-dir=${join(dir, "profile")}`,
-          "--virtual-time-budget=15000",
-          "--dump-dom",
-          pathToFileURL(join(dir, "index.html")).href,
-        ],
-        { stdout: "pipe", stderr: "pipe" },
-      );
-      const [code, stdout, stderr] = await Promise.all([
-        child.exited,
-        new Response(child.stdout).text(),
-        new Response(child.stderr).text(),
-      ]);
-      const content = stdout
-        .match(/<pre id="report">(.*?)<\/pre>/s)?.[1]
-        ?.replaceAll("&quot;", '"')
-        .replaceAll("&amp;", "&")
-        .replaceAll("&lt;", "<")
-        .replaceAll("&gt;", ">");
-      expect(code, stderr).toBe(0);
-      expect(content, stdout.slice(-3000) + stderr.slice(-500)).toBeTruthy();
-      expect(JSON.parse(content ?? "{}")).toMatchObject({ ok: true });
-    } finally {
-      await rm(dir, {
-        recursive: true,
-        force: true,
-        maxRetries: 5,
-        retryDelay: 200,
+      const server = Bun.serve({
+        hostname: "127.0.0.1",
+        port: 0,
+        fetch(request) {
+          const path = new URL(request.url).pathname;
+          if (path === "/" || path === "/fixture.js")
+            return new Response(
+              Bun.file(join(dir, path === "/" ? "index.html" : "fixture.js")),
+            );
+          return new Response("Not found", { status: 404 });
+        },
       });
+      try {
+        const browser = await fixtureBrowser(edge, dir, server.url.href);
+        try {
+          let content = "";
+          for (let attempt = 0; attempt < 600; attempt++) {
+            content = await browser.evaluate<string>(
+              'document.getElementById("report")?.textContent ?? ""',
+            );
+            if (content) break;
+            await Bun.sleep(25);
+          }
+          expect(
+            content,
+            "Provider/account fixture did not finish",
+          ).toBeTruthy();
+          expect(JSON.parse(content || "{}")).toMatchObject({ ok: true });
+        } finally {
+          await browser.close();
+        }
+      } finally {
+        server.stop(true);
+      }
+    } finally {
+      await removeFixtureDirectory(dir);
     }
   },
   60_000,
