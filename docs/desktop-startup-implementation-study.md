@@ -1,5 +1,9 @@
 # 起動高速化：実装方針の成立性と段階的な設計
 
+後続の[候補別A/B計測](desktop-startup-ab-results.md)で、SDK artifact境界・bootstrap・UI分割と初回待ちを比較した。
+単純な`React.lazy`＋`Suspense`による初回約300msの待ちも観測しており、遅延境界の実装方式を区別する必要がある。
+以下の所有権・配布・failure契約は、性能の比較実験だけで解決済みとはしない。
+
 ## 判定
 
 **「起動シェルの分離」「初期UI bundleの削減」「shell metadataとcatalogの分離」は妥当。ただし、そのままimportを書き換えて一括実装するのは危険。配布物の読込境界と、サービスの寿命・状態所有者を先に決める必要がある。**

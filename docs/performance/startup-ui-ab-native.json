@@ -1,0 +1,3322 @@
+{
+  "scope": "Real App and RPC controller in headless Edge over HTTP; synthetic 40-model/2-account payload, no Electrobun native startup or real network/credentials. Source changes are experimental build transforms, not production-ready implementations.",
+  "samples": 7,
+  "environment": {
+    "bun": "1.4.2",
+    "cpuRate": 1,
+    "cpuProfileCaptured": false,
+    "sourceRevision": "91deb0c9790233b3ce97014447e060371fe51252",
+    "browserVersion": "Edg/157.0.4341.42; V8 15.7.11.4",
+    "cpu": "AMD Ryzen 7 5700X 8-Core Processor             ",
+    "logicalCpus": 16
+  },
+  "summary": {
+    "baseline": {
+      "initialJsBytes": 1496591,
+      "initialModuleCount": 583,
+      "initialFeatures": [
+        "katex/dist/katex.mjs",
+        "C:/Users/gummy/ghq/github.com/cotrin8672/pig/apps/desktop/src/mainview/Extensions.tsx",
+        "C:/Users/gummy/ghq/github.com/cotrin8672/pig/apps/desktop/src/mainview/Providers.tsx",
+        "C:/Users/gummy/ghq/github.com/cotrin8672/pig/apps/desktop/src/mainview/Settings.tsx",
+        "@xterm/xterm/lib/xterm.js?commonjs-module",
+        "@xterm/xterm/lib/xterm.js",
+        "@xterm/xterm/lib/xterm.js?commonjs-es-import",
+        "katex/dist/katex.min.css"
+      ],
+      "fcpMs": {
+        "median": 220,
+        "min": 184,
+        "max": 260
+      },
+      "shellFrameMs": {
+        "median": 218.6,
+        "min": 183.7,
+        "max": 254.8
+      },
+      "readyFrameMs": {
+        "median": 232.6,
+        "min": 198,
+        "max": 266.8
+      },
+      "settingsFirstMs": {
+        "median": 32.7,
+        "min": 19.3,
+        "max": 45.8
+      },
+      "settingsWarmMs": {
+        "median": 32.6,
+        "min": 28,
+        "max": 33.7
+      },
+      "providersFirstMs": {
+        "median": 35.6,
+        "min": 32.9,
+        "max": 42
+      },
+      "extensionsFirstMs": {
+        "median": 33.5,
+        "min": 32.1,
+        "max": 45
+      },
+      "terminalFirstMs": {
+        "median": 48.3,
+        "min": 48,
+        "max": 50
+      },
+      "mathWorkerFirstMs": {
+        "median": 144,
+        "min": 125.2,
+        "max": 167.4
+      },
+      "mathFallbackFirstMs": {
+        "median": 43.6,
+        "min": 33.9,
+        "max": 48.1
+      },
+      "heapUsed": {
+        "median": 6764105,
+        "min": 6736208,
+        "max": 6786097
+      },
+      "scriptDurationMs": {
+        "median": 50.1,
+        "min": 46.7,
+        "max": 52.9
+      },
+      "taskDurationMs": {
+        "median": 96,
+        "min": 89.4,
+        "max": 100.8
+      },
+      "layoutDurationMs": {
+        "median": 16,
+        "min": 12.9,
+        "max": 17.4
+      },
+      "themeCostMs": {
+        "median": 6.3,
+        "min": 5,
+        "max": 8.4
+      },
+      "htmlResponseEndMs": {
+        "median": 99.6,
+        "min": 59.9,
+        "max": 116.3
+      },
+      "mainScriptResponseEndMs": {
+        "median": 112.7,
+        "min": 73.7,
+        "max": 150.6
+      },
+      "readyAfterHtmlMs": {
+        "median": 136.1,
+        "min": 126,
+        "max": 157.6
+      },
+      "fcpAfterHtmlMs": {
+        "median": 124.4,
+        "min": 116.9,
+        "max": 150.8
+      }
+    },
+    "pages": {
+      "initialJsBytes": 1443186,
+      "initialModuleCount": 556,
+      "initialFeatures": [
+        "katex/dist/katex.mjs",
+        "@xterm/xterm/lib/xterm.js?commonjs-module",
+        "@xterm/xterm/lib/xterm.js",
+        "@xterm/xterm/lib/xterm.js?commonjs-es-import",
+        "katex/dist/katex.min.css"
+      ],
+      "fcpMs": {
+        "median": 200,
+        "min": 128,
+        "max": 252
+      },
+      "shellFrameMs": {
+        "median": 200.1,
+        "min": 125.7,
+        "max": 246.5
+      },
+      "readyFrameMs": {
+        "median": 214.9,
+        "min": 140.7,
+        "max": 261.2
+      },
+      "settingsFirstMs": {
+        "median": 333.3,
+        "min": 325.2,
+        "max": 342.4
+      },
+      "settingsWarmMs": {
+        "median": 32.6,
+        "min": 31.6,
+        "max": 33
+      },
+      "providersFirstMs": {
+        "median": 332.7,
+        "min": 331.8,
+        "max": 333.6
+      },
+      "extensionsFirstMs": {
+        "median": 332.2,
+        "min": 331.7,
+        "max": 332.7
+      },
+      "terminalFirstMs": {
+        "median": 49.1,
+        "min": 48.6,
+        "max": 49.7
+      },
+      "mathWorkerFirstMs": {
+        "median": 138.9,
+        "min": 134.4,
+        "max": 150.6
+      },
+      "mathFallbackFirstMs": {
+        "median": 44.9,
+        "min": 39.3,
+        "max": 47.3
+      },
+      "heapUsed": {
+        "median": 6687704,
+        "min": 6649866,
+        "max": 6695498
+      },
+      "scriptDurationMs": {
+        "median": 50.1,
+        "min": 43.8,
+        "max": 68.2
+      },
+      "taskDurationMs": {
+        "median": 98.4,
+        "min": 87.4,
+        "max": 124.8
+      },
+      "layoutDurationMs": {
+        "median": 16.7,
+        "min": 14.7,
+        "max": 19.2
+      },
+      "themeCostMs": {
+        "median": 6.3,
+        "min": 5.4,
+        "max": 9.5
+      },
+      "htmlResponseEndMs": {
+        "median": 71.8,
+        "min": 11.8,
+        "max": 126.2
+      },
+      "mainScriptResponseEndMs": {
+        "median": 87.2,
+        "min": 29.3,
+        "max": 137.9
+      },
+      "readyAfterHtmlMs": {
+        "median": 143.1,
+        "min": 128.7,
+        "max": 189
+      },
+      "fcpAfterHtmlMs": {
+        "median": 128.2,
+        "min": 116,
+        "max": 180.2
+      }
+    },
+    "terminal": {
+      "initialJsBytes": 1199488,
+      "initialModuleCount": 574,
+      "initialFeatures": [
+        "katex/dist/katex.mjs",
+        "C:/Users/gummy/ghq/github.com/cotrin8672/pig/apps/desktop/src/mainview/Extensions.tsx",
+        "C:/Users/gummy/ghq/github.com/cotrin8672/pig/apps/desktop/src/mainview/Providers.tsx",
+        "C:/Users/gummy/ghq/github.com/cotrin8672/pig/apps/desktop/src/mainview/Settings.tsx",
+        "katex/dist/katex.min.css"
+      ],
+      "fcpMs": {
+        "median": 212,
+        "min": 180,
+        "max": 228
+      },
+      "shellFrameMs": {
+        "median": 212,
+        "min": 175.4,
+        "max": 228.1
+      },
+      "readyFrameMs": {
+        "median": 226.4,
+        "min": 187.9,
+        "max": 242.1
+      },
+      "settingsFirstMs": {
+        "median": 30,
+        "min": 26,
+        "max": 39.4
+      },
+      "settingsWarmMs": {
+        "median": 32.6,
+        "min": 31.4,
+        "max": 42.1
+      },
+      "providersFirstMs": {
+        "median": 37.3,
+        "min": 34.7,
+        "max": 49.6
+      },
+      "extensionsFirstMs": {
+        "median": 32.3,
+        "min": 31.8,
+        "max": 43.5
+      },
+      "terminalFirstMs": {
+        "median": 349.2,
+        "min": 348.3,
+        "max": 365.4
+      },
+      "mathWorkerFirstMs": {
+        "median": 142.1,
+        "min": 131.7,
+        "max": 213.9
+      },
+      "mathFallbackFirstMs": {
+        "median": 44,
+        "min": 35.6,
+        "max": 47.1
+      },
+      "heapUsed": {
+        "median": 5749414,
+        "min": 5709547,
+        "max": 5804031
+      },
+      "scriptDurationMs": {
+        "median": 40,
+        "min": 37.7,
+        "max": 45.4
+      },
+      "taskDurationMs": {
+        "median": 87.3,
+        "min": 79.9,
+        "max": 94.9
+      },
+      "layoutDurationMs": {
+        "median": 15,
+        "min": 12.7,
+        "max": 17.3
+      },
+      "themeCostMs": {
+        "median": 6.6,
+        "min": 6.1,
+        "max": 7.9
+      },
+      "htmlResponseEndMs": {
+        "median": 99.4,
+        "min": 60.4,
+        "max": 127.3
+      },
+      "mainScriptResponseEndMs": {
+        "median": 113.4,
+        "min": 76.6,
+        "max": 139
+      },
+      "readyAfterHtmlMs": {
+        "median": 117.3,
+        "min": 113.9,
+        "max": 130
+      },
+      "fcpAfterHtmlMs": {
+        "median": 112.6,
+        "min": 100.3,
+        "max": 126.5
+      }
+    },
+    "markdown": {
+      "initialJsBytes": 1171315,
+      "initialModuleCount": 508,
+      "initialFeatures": [
+        "C:/Users/gummy/ghq/github.com/cotrin8672/pig/apps/desktop/src/mainview/Extensions.tsx",
+        "C:/Users/gummy/ghq/github.com/cotrin8672/pig/apps/desktop/src/mainview/Providers.tsx",
+        "C:/Users/gummy/ghq/github.com/cotrin8672/pig/apps/desktop/src/mainview/Settings.tsx",
+        "@xterm/xterm/lib/xterm.js?commonjs-module",
+        "@xterm/xterm/lib/xterm.js",
+        "@xterm/xterm/lib/xterm.js?commonjs-es-import",
+        "katex/dist/katex.min.css"
+      ],
+      "fcpMs": {
+        "median": 212,
+        "min": 176,
+        "max": 260
+      },
+      "shellFrameMs": {
+        "median": 206.6,
+        "min": 175,
+        "max": 252.2
+      },
+      "readyFrameMs": {
+        "median": 222.2,
+        "min": 189.4,
+        "max": 267.7
+      },
+      "settingsFirstMs": {
+        "median": 33.2,
+        "min": 23.4,
+        "max": 47.4
+      },
+      "settingsWarmMs": {
+        "median": 33.2,
+        "min": 32.1,
+        "max": 43.7
+      },
+      "providersFirstMs": {
+        "median": 34.2,
+        "min": 32.5,
+        "max": 43.8
+      },
+      "extensionsFirstMs": {
+        "median": 32.1,
+        "min": 18.8,
+        "max": 33
+      },
+      "terminalFirstMs": {
+        "median": 49.7,
+        "min": 48.5,
+        "max": 50.3
+      },
+      "mathWorkerFirstMs": {
+        "median": 134.6,
+        "min": 124.1,
+        "max": 152.6
+      },
+      "mathFallbackFirstMs": {
+        "median": 328.8,
+        "min": 320.7,
+        "max": 336.9
+      },
+      "heapUsed": {
+        "median": 4816570,
+        "min": 4782989,
+        "max": 5046366
+      },
+      "scriptDurationMs": {
+        "median": 47.1,
+        "min": 41.3,
+        "max": 53.9
+      },
+      "taskDurationMs": {
+        "median": 93.2,
+        "min": 84.2,
+        "max": 106.5
+      },
+      "layoutDurationMs": {
+        "median": 16.2,
+        "min": 13.1,
+        "max": 18.5
+      },
+      "themeCostMs": {
+        "median": 7,
+        "min": 5.4,
+        "max": 8.2
+      },
+      "htmlResponseEndMs": {
+        "median": 103.8,
+        "min": 77.4,
+        "max": 132.2
+      },
+      "mainScriptResponseEndMs": {
+        "median": 114.9,
+        "min": 90.5,
+        "max": 145.1
+      },
+      "readyAfterHtmlMs": {
+        "median": 118.4,
+        "min": 106,
+        "max": 136.6
+      },
+      "fcpAfterHtmlMs": {
+        "median": 108.2,
+        "min": 95.4,
+        "max": 128.9
+      }
+    },
+    "all": {
+      "initialJsBytes": 820955,
+      "initialModuleCount": 472,
+      "initialFeatures": ["katex/dist/katex.min.css"],
+      "fcpMs": {
+        "median": 192,
+        "min": 160,
+        "max": 1428
+      },
+      "shellFrameMs": {
+        "median": 189.8,
+        "min": 153.9,
+        "max": 1428.4
+      },
+      "readyFrameMs": {
+        "median": 204.5,
+        "min": 169.9,
+        "max": 1442
+      },
+      "settingsFirstMs": {
+        "median": 336.3,
+        "min": 329.6,
+        "max": 342.2
+      },
+      "settingsWarmMs": {
+        "median": 33,
+        "min": 32,
+        "max": 33.2
+      },
+      "providersFirstMs": {
+        "median": 332.7,
+        "min": 331.3,
+        "max": 333.5
+      },
+      "extensionsFirstMs": {
+        "median": 332.3,
+        "min": 332.3,
+        "max": 333.7
+      },
+      "terminalFirstMs": {
+        "median": 349.6,
+        "min": 347.9,
+        "max": 365.3
+      },
+      "mathWorkerFirstMs": {
+        "median": 143.8,
+        "min": 129.3,
+        "max": 182.5
+      },
+      "mathFallbackFirstMs": {
+        "median": 331.1,
+        "min": 326.3,
+        "max": 336.4
+      },
+      "heapUsed": {
+        "median": 4581736,
+        "min": 4554845,
+        "max": 4754884
+      },
+      "scriptDurationMs": {
+        "median": 34.8,
+        "min": 32.8,
+        "max": 54
+      },
+      "taskDurationMs": {
+        "median": 78.3,
+        "min": 71.7,
+        "max": 108.6
+      },
+      "layoutDurationMs": {
+        "median": 16.5,
+        "min": 12.6,
+        "max": 18.4
+      },
+      "themeCostMs": {
+        "median": 6.7,
+        "min": 5.2,
+        "max": 11.5
+      },
+      "htmlResponseEndMs": {
+        "median": 97.7,
+        "min": 72.1,
+        "max": 1353.2
+      },
+      "mainScriptResponseEndMs": {
+        "median": 109.6,
+        "min": 85.1,
+        "max": 1363.5
+      },
+      "readyAfterHtmlMs": {
+        "median": 96.5,
+        "min": 88.8,
+        "max": 134.5
+      },
+      "fcpAfterHtmlMs": {
+        "median": 90.7,
+        "min": 74.8,
+        "max": 119.9
+      }
+    },
+    "pages-managed": {
+      "initialJsBytes": 1443283,
+      "initialModuleCount": 557,
+      "initialFeatures": [
+        "katex/dist/katex.mjs",
+        "@xterm/xterm/lib/xterm.js?commonjs-module",
+        "@xterm/xterm/lib/xterm.js",
+        "@xterm/xterm/lib/xterm.js?commonjs-es-import",
+        "katex/dist/katex.min.css"
+      ],
+      "fcpMs": {
+        "median": 216,
+        "min": 204,
+        "max": 1432
+      },
+      "shellFrameMs": {
+        "median": 214.9,
+        "min": 202.1,
+        "max": 1431.4
+      },
+      "readyFrameMs": {
+        "median": 227.1,
+        "min": 215.8,
+        "max": 1446.9
+      },
+      "settingsFirstMs": {
+        "median": 47.9,
+        "min": 31.6,
+        "max": 56.6
+      },
+      "settingsWarmMs": {
+        "median": 30.6,
+        "min": 28,
+        "max": 37.2
+      },
+      "providersFirstMs": {
+        "median": 38.8,
+        "min": 32.4,
+        "max": 48.3
+      },
+      "extensionsFirstMs": {
+        "median": 32.9,
+        "min": 32.3,
+        "max": 41.6
+      },
+      "terminalFirstMs": {
+        "median": 49.3,
+        "min": 48.6,
+        "max": 50.4
+      },
+      "mathWorkerFirstMs": {
+        "median": 134.4,
+        "min": 122.1,
+        "max": 164.9
+      },
+      "mathFallbackFirstMs": {
+        "median": 43.1,
+        "min": 36.6,
+        "max": 48.8
+      },
+      "heapUsed": {
+        "median": 6685657,
+        "min": 6656926,
+        "max": 6723755
+      },
+      "scriptDurationMs": {
+        "median": 48,
+        "min": 41.9,
+        "max": 57
+      },
+      "taskDurationMs": {
+        "median": 93.7,
+        "min": 83.8,
+        "max": 102.5
+      },
+      "layoutDurationMs": {
+        "median": 15.7,
+        "min": 13.2,
+        "max": 16.9
+      },
+      "themeCostMs": {
+        "median": 6.1,
+        "min": 5.2,
+        "max": 7.5
+      },
+      "htmlResponseEndMs": {
+        "median": 96.4,
+        "min": 79.3,
+        "max": 1317.1
+      },
+      "mainScriptResponseEndMs": {
+        "median": 106.7,
+        "min": 91.6,
+        "max": 1330.9
+      },
+      "readyAfterHtmlMs": {
+        "median": 129.8,
+        "min": 116.8,
+        "max": 147.8
+      },
+      "fcpAfterHtmlMs": {
+        "median": 114.9,
+        "min": 110.5,
+        "max": 136.7
+      }
+    },
+    "terminal-managed": {
+      "initialJsBytes": 1199652,
+      "initialModuleCount": 575,
+      "initialFeatures": [
+        "katex/dist/katex.mjs",
+        "C:/Users/gummy/ghq/github.com/cotrin8672/pig/apps/desktop/src/mainview/Extensions.tsx",
+        "C:/Users/gummy/ghq/github.com/cotrin8672/pig/apps/desktop/src/mainview/Providers.tsx",
+        "C:/Users/gummy/ghq/github.com/cotrin8672/pig/apps/desktop/src/mainview/Settings.tsx",
+        "katex/dist/katex.min.css"
+      ],
+      "fcpMs": {
+        "median": 216,
+        "min": 164,
+        "max": 252
+      },
+      "shellFrameMs": {
+        "median": 207.7,
+        "min": 165.1,
+        "max": 247.6
+      },
+      "readyFrameMs": {
+        "median": 221.4,
+        "min": 181,
+        "max": 264.3
+      },
+      "settingsFirstMs": {
+        "median": 32.1,
+        "min": 27.4,
+        "max": 39.2
+      },
+      "settingsWarmMs": {
+        "median": 32.6,
+        "min": 31.8,
+        "max": 34
+      },
+      "providersFirstMs": {
+        "median": 40,
+        "min": 35.2,
+        "max": 44.1
+      },
+      "extensionsFirstMs": {
+        "median": 32.9,
+        "min": 31.8,
+        "max": 34
+      },
+      "terminalFirstMs": {
+        "median": 66,
+        "min": 65.4,
+        "max": 81.5
+      },
+      "mathWorkerFirstMs": {
+        "median": 149.8,
+        "min": 129.6,
+        "max": 180.7
+      },
+      "mathFallbackFirstMs": {
+        "median": 47,
+        "min": 42.7,
+        "max": 50.5
+      },
+      "heapUsed": {
+        "median": 5748571,
+        "min": 5696999,
+        "max": 5777275
+      },
+      "scriptDurationMs": {
+        "median": 39.6,
+        "min": 35.8,
+        "max": 45.2
+      },
+      "taskDurationMs": {
+        "median": 81,
+        "min": 76.9,
+        "max": 100
+      },
+      "layoutDurationMs": {
+        "median": 15.1,
+        "min": 13.2,
+        "max": 21.5
+      },
+      "themeCostMs": {
+        "median": 6.8,
+        "min": 5.5,
+        "max": 8.3
+      },
+      "htmlResponseEndMs": {
+        "median": 111.2,
+        "min": 69.2,
+        "max": 134
+      },
+      "mainScriptResponseEndMs": {
+        "median": 123.1,
+        "min": 80.2,
+        "max": 146
+      },
+      "readyAfterHtmlMs": {
+        "median": 112.9,
+        "min": 106.6,
+        "max": 135.9
+      },
+      "fcpAfterHtmlMs": {
+        "median": 110,
+        "min": 94.8,
+        "max": 123.6
+      }
+    },
+    "all-managed": {
+      "initialJsBytes": 820930,
+      "initialModuleCount": 473,
+      "initialFeatures": ["katex/dist/katex.min.css"],
+      "fcpMs": {
+        "median": 208,
+        "min": 116,
+        "max": 360
+      },
+      "shellFrameMs": {
+        "median": 201,
+        "min": 112.6,
+        "max": 348.7
+      },
+      "readyFrameMs": {
+        "median": 219,
+        "min": 126.2,
+        "max": 363.8
+      },
+      "settingsFirstMs": {
+        "median": 41.2,
+        "min": 29,
+        "max": 49.6
+      },
+      "settingsWarmMs": {
+        "median": 32.3,
+        "min": 28.6,
+        "max": 33.6
+      },
+      "providersFirstMs": {
+        "median": 37.4,
+        "min": 30.3,
+        "max": 47.8
+      },
+      "extensionsFirstMs": {
+        "median": 33,
+        "min": 32.1,
+        "max": 33.4
+      },
+      "terminalFirstMs": {
+        "median": 65.8,
+        "min": 65,
+        "max": 66.4
+      },
+      "mathWorkerFirstMs": {
+        "median": 132.9,
+        "min": 122.5,
+        "max": 182.6
+      },
+      "mathFallbackFirstMs": {
+        "median": 57.8,
+        "min": 39.1,
+        "max": 65
+      },
+      "heapUsed": {
+        "median": 4576184,
+        "min": 4556780,
+        "max": 4744711
+      },
+      "scriptDurationMs": {
+        "median": 36.2,
+        "min": 29.7,
+        "max": 43.7
+      },
+      "taskDurationMs": {
+        "median": 79.8,
+        "min": 73.9,
+        "max": 95.3
+      },
+      "layoutDurationMs": {
+        "median": 15.7,
+        "min": 15.1,
+        "max": 19.8
+      },
+      "themeCostMs": {
+        "median": 6.2,
+        "min": 5.3,
+        "max": 8
+      },
+      "htmlResponseEndMs": {
+        "median": 120.5,
+        "min": 15.4,
+        "max": 267.6
+      },
+      "mainScriptResponseEndMs": {
+        "median": 132.3,
+        "min": 30,
+        "max": 280.9
+      },
+      "readyAfterHtmlMs": {
+        "median": 103.8,
+        "min": 94.5,
+        "max": 117.4
+      },
+      "fcpAfterHtmlMs": {
+        "median": 95.1,
+        "min": 80.2,
+        "max": 128
+      }
+    }
+  },
+  "raw": [
+    {
+      "variant": "baseline",
+      "sample": 1,
+      "themeMs": [8.399999976158142],
+      "errors": [],
+      "shellFrameMs": 218.60000002384186,
+      "readyFrameMs": 232.60000002384186,
+      "themeCostMs": 8.399999976158142,
+      "fcpMs": 220,
+      "heapUsed": 6760792,
+      "htmlResponseEndMs": 96.5,
+      "mainScriptResponseEndMs": 110.60000002384186,
+      "scriptDurationMs": 52.212,
+      "taskDurationMs": 96.041,
+      "layoutDurationMs": 14.69,
+      "cdpHeapUsed": 5242948,
+      "readyAfterHtmlMs": 136.10000002384186,
+      "fcpAfterHtmlMs": 123.5,
+      "settingsFirstMs": 32.700000047683716,
+      "settingsWarmMs": 32.60000002384186,
+      "providersFirstMs": 32.89999997615814,
+      "providersWarmMs": 32.60000002384186,
+      "extensionsFirstMs": 33.5,
+      "extensionsWarmMs": 30.5,
+      "terminalFirstMs": 48,
+      "mathWorkerFirstMs": 132.89999997615814,
+      "mathFallbackFirstMs": 46.5,
+      "markdownWorkerStats": {
+        "posted": 1,
+        "completed": 1,
+        "cancelled": 0,
+        "pending": 0,
+        "running": false,
+        "failed": false
+      },
+      "initialJsBytes": 1496591,
+      "initialModuleCount": 583,
+      "startupTransferBytes": 1683849,
+      "startupFiles": [
+        "/",
+        "/assets/index-BvpQh2aO.css",
+        "/assets/index-CLjvw_Ad.js"
+      ]
+    },
+    {
+      "variant": "pages",
+      "sample": 1,
+      "themeMs": [5.899999976158142],
+      "errors": [],
+      "shellFrameMs": 172.10000002384186,
+      "readyFrameMs": 185.19999992847443,
+      "themeCostMs": 5.899999976158142,
+      "fcpMs": 184,
+      "heapUsed": 6676568,
+      "htmlResponseEndMs": 31.299999952316284,
+      "mainScriptResponseEndMs": 49.199999928474426,
+      "scriptDurationMs": 47.403,
+      "taskDurationMs": 95.818,
+      "layoutDurationMs": 15.128,
+      "cdpHeapUsed": 5212096,
+      "readyAfterHtmlMs": 153.89999997615814,
+      "fcpAfterHtmlMs": 152.70000004768372,
+      "settingsFirstMs": 342.39999997615814,
+      "settingsWarmMs": 33,
+      "providersFirstMs": 332.6999999284744,
+      "providersWarmMs": 28.5,
+      "extensionsFirstMs": 331.7000000476837,
+      "extensionsWarmMs": 32.800000071525574,
+      "terminalFirstMs": 48.60000002384186,
+      "mathWorkerFirstMs": 148,
+      "mathFallbackFirstMs": 47.300000071525574,
+      "markdownWorkerStats": {
+        "posted": 1,
+        "completed": 1,
+        "cancelled": 0,
+        "pending": 0,
+        "running": false,
+        "failed": false
+      },
+      "initialJsBytes": 1443186,
+      "initialModuleCount": 556,
+      "startupTransferBytes": 1612067,
+      "startupFiles": [
+        "/",
+        "/assets/index-DIK01mH3.css",
+        "/assets/index-DQ9K9LXa.js"
+      ]
+    },
+    {
+      "variant": "terminal",
+      "sample": 1,
+      "themeMs": [6.100000023841858],
+      "errors": [],
+      "shellFrameMs": 175.39999997615814,
+      "readyFrameMs": 187.89999997615814,
+      "themeCostMs": 6.100000023841858,
+      "fcpMs": 180,
+      "heapUsed": 5749414,
+      "htmlResponseEndMs": 60.39999997615814,
+      "mainScriptResponseEndMs": 76.60000002384186,
+      "scriptDurationMs": 40.672,
+      "taskDurationMs": 89.51299999999999,
+      "layoutDurationMs": 14.73,
+      "cdpHeapUsed": 4532996,
+      "readyAfterHtmlMs": 127.5,
+      "fcpAfterHtmlMs": 119.60000002384186,
+      "settingsFirstMs": 39.39999997615814,
+      "settingsWarmMs": 32.300000071525574,
+      "providersFirstMs": 36.5,
+      "providersWarmMs": 31.800000071525574,
+      "extensionsFirstMs": 43.5,
+      "extensionsWarmMs": 32.800000071525574,
+      "terminalFirstMs": 349.2000000476837,
+      "mathWorkerFirstMs": 136.29999995231628,
+      "mathFallbackFirstMs": 45.89999997615814,
+      "markdownWorkerStats": {
+        "posted": 1,
+        "completed": 1,
+        "cancelled": 0,
+        "pending": 0,
+        "running": false,
+        "failed": false
+      },
+      "initialJsBytes": 1199488,
+      "initialModuleCount": 574,
+      "startupTransferBytes": 1381675,
+      "startupFiles": [
+        "/",
+        "/assets/index-S7GJCcCt.css",
+        "/assets/index-BzmzWrje.js"
+      ]
+    },
+    {
+      "variant": "markdown",
+      "sample": 1,
+      "themeMs": [7],
+      "errors": [],
+      "shellFrameMs": 175,
+      "readyFrameMs": 189.39999997615814,
+      "themeCostMs": 7,
+      "fcpMs": 176,
+      "heapUsed": 4782989,
+      "htmlResponseEndMs": 77.39999997615814,
+      "mainScriptResponseEndMs": 90.5,
+      "scriptDurationMs": 41.333,
+      "taskDurationMs": 85.522,
+      "layoutDurationMs": 14.507000000000001,
+      "cdpHeapUsed": 3587564,
+      "readyAfterHtmlMs": 112,
+      "fcpAfterHtmlMs": 98.60000002384186,
+      "settingsFirstMs": 23.40000009536743,
+      "settingsWarmMs": 32.300000071525574,
+      "providersFirstMs": 43.799999952316284,
+      "providersWarmMs": 26.899999976158142,
+      "extensionsFirstMs": 32.10000002384186,
+      "extensionsWarmMs": 32.40000009536743,
+      "terminalFirstMs": 50,
+      "mathWorkerFirstMs": 139.70000004768372,
+      "mathFallbackFirstMs": 336.89999997615814,
+      "markdownWorkerStats": {
+        "posted": 1,
+        "completed": 1,
+        "cancelled": 0,
+        "pending": 0,
+        "running": false,
+        "failed": false
+      },
+      "initialJsBytes": 1171315,
+      "initialModuleCount": 508,
+      "startupTransferBytes": 1358573,
+      "startupFiles": [
+        "/",
+        "/assets/index-BH6Cj6Of.js",
+        "/assets/index-BvpQh2aO.css"
+      ]
+    },
+    {
+      "variant": "all",
+      "sample": 1,
+      "themeMs": [8.5],
+      "errors": [],
+      "shellFrameMs": 181.5,
+      "readyFrameMs": 197.79999995231628,
+      "themeCostMs": 8.5,
+      "fcpMs": 192,
+      "heapUsed": 4754884,
+      "htmlResponseEndMs": 76.09999990463257,
+      "mainScriptResponseEndMs": 90.09999990463257,
+      "scriptDurationMs": 46.524,
+      "taskDurationMs": 97.981,
+      "layoutDurationMs": 18.37,
+      "cdpHeapUsed": 3914124,
+      "readyAfterHtmlMs": 121.70000004768372,
+      "fcpAfterHtmlMs": 115.90000009536743,
+      "settingsFirstMs": 342.2000000476837,
+      "settingsWarmMs": 32,
+      "providersFirstMs": 333,
+      "providersWarmMs": 32.5,
+      "extensionsFirstMs": 332.2999999523163,
+      "extensionsWarmMs": 31.899999976158142,
+      "terminalFirstMs": 365.2999999523163,
+      "mathWorkerFirstMs": 182.5,
+      "mathFallbackFirstMs": 331.09999990463257,
+      "markdownWorkerStats": {
+        "posted": 1,
+        "completed": 1,
+        "cancelled": 0,
+        "pending": 0,
+        "running": false,
+        "failed": false
+      },
+      "initialJsBytes": 820955,
+      "initialModuleCount": 472,
+      "startupTransferBytes": 984765,
+      "startupFiles": [
+        "/",
+        "/assets/index-CIBgsebc.css",
+        "/assets/index-BZoNF3ap.js"
+      ]
+    },
+    {
+      "variant": "pages-managed",
+      "sample": 1,
+      "themeMs": [5.399999976158142],
+      "errors": [],
+      "shellFrameMs": 237.40000009536743,
+      "readyFrameMs": 252.30000007152557,
+      "themeCostMs": 5.399999976158142,
+      "fcpMs": 244,
+      "heapUsed": 6707738,
+      "htmlResponseEndMs": 108.5,
+      "mainScriptResponseEndMs": 118.90000009536743,
+      "scriptDurationMs": 56.269,
+      "taskDurationMs": 99.738,
+      "layoutDurationMs": 16.461,
+      "cdpHeapUsed": 5243168,
+      "readyAfterHtmlMs": 143.80000007152557,
+      "fcpAfterHtmlMs": 135.5,
+      "settingsFirstMs": 51.90000009536743,
+      "settingsWarmMs": 28,
+      "providersFirstMs": 39.39999997615814,
+      "providersWarmMs": 26.5,
+      "extensionsFirstMs": 32.5,
+      "extensionsWarmMs": 32.60000002384186,
+      "terminalFirstMs": 49.300000071525574,
+      "mathWorkerFirstMs": 150.5,
+      "mathFallbackFirstMs": 45.89999997615814,
+      "markdownWorkerStats": {
+        "posted": 1,
+        "completed": 1,
+        "cancelled": 0,
+        "pending": 0,
+        "running": false,
+        "failed": false
+      },
+      "initialJsBytes": 1443283,
+      "initialModuleCount": 557,
+      "startupTransferBytes": 1612164,
+      "startupFiles": [
+        "/",
+        "/assets/index-DIK01mH3.css",
+        "/assets/index-HIS8I6A4.js"
+      ]
+    },
+    {
+      "variant": "terminal-managed",
+      "sample": 1,
+      "themeMs": [6.799999952316284],
+      "errors": [],
+      "shellFrameMs": 207.69999992847443,
+      "readyFrameMs": 221.39999997615814,
+      "themeCostMs": 6.799999952316284,
+      "fcpMs": 208,
+      "heapUsed": 5777275,
+      "htmlResponseEndMs": 94.29999995231628,
+      "mainScriptResponseEndMs": 110.39999997615814,
+      "scriptDurationMs": 42.891,
+      "taskDurationMs": 87.336,
+      "layoutDurationMs": 15.138,
+      "cdpHeapUsed": 4560684,
+      "readyAfterHtmlMs": 127.10000002384186,
+      "fcpAfterHtmlMs": 113.70000004768372,
+      "settingsFirstMs": 28.59999990463257,
+      "settingsWarmMs": 31.899999976158142,
+      "providersFirstMs": 44.10000002384186,
+      "providersWarmMs": 30.799999952316284,
+      "extensionsFirstMs": 33.10000002384186,
+      "extensionsWarmMs": 31.59999990463257,
+      "terminalFirstMs": 66.20000004768372,
+      "mathWorkerFirstMs": 137.5,
+      "mathFallbackFirstMs": 43.700000047683716,
+      "markdownWorkerStats": {
+        "posted": 1,
+        "completed": 1,
+        "cancelled": 0,
+        "pending": 0,
+        "running": false,
+        "failed": false
+      },
+      "initialJsBytes": 1199652,
+      "initialModuleCount": 575,
+      "startupTransferBytes": 1381839,
+      "startupFiles": [
+        "/",
+        "/assets/index-S7GJCcCt.css",
+        "/assets/index-hCfeD0jl.js"
+      ]
+    },
+    {
+      "variant": "all-managed",
+      "sample": 1,
+      "themeMs": [6.300000071525574],
+      "errors": [],
+      "shellFrameMs": 112.60000002384186,
+      "readyFrameMs": 126.19999992847443,
+      "themeCostMs": 6.300000071525574,
+      "fcpMs": 116,
+      "heapUsed": 4571151,
+      "htmlResponseEndMs": 15.399999976158142,
+      "mainScriptResponseEndMs": 30,
+      "scriptDurationMs": 41.151,
+      "taskDurationMs": 91.905,
+      "layoutDurationMs": 15.049999999999999,
+      "cdpHeapUsed": 3730380,
+      "readyAfterHtmlMs": 110.79999995231628,
+      "fcpAfterHtmlMs": 100.60000002384186,
+      "settingsFirstMs": 49.60000002384186,
+      "settingsWarmMs": 31.399999976158142,
+      "providersFirstMs": 40.299999952316284,
+      "providersWarmMs": 32.89999997615814,
+      "extensionsFirstMs": 33.10000002384186,
+      "extensionsWarmMs": 34,
+      "terminalFirstMs": 66.39999997615814,
+      "mathWorkerFirstMs": 182.60000002384186,
+      "mathFallbackFirstMs": 46.89999997615814,
+      "markdownWorkerStats": {
+        "posted": 1,
+        "completed": 1,
+        "cancelled": 0,
+        "pending": 0,
+        "running": false,
+        "failed": false
+      },
+      "initialJsBytes": 820930,
+      "initialModuleCount": 473,
+      "startupTransferBytes": 984740,
+      "startupFiles": [
+        "/",
+        "/assets/index-CIBgsebc.css",
+        "/assets/index-DkY_TbYi.js"
+      ]
+    },
+    {
+      "variant": "pages",
+      "sample": 2,
+      "themeMs": [6.300000071525574],
+      "errors": [],
+      "shellFrameMs": 125.69999992847443,
+      "readyFrameMs": 140.69999992847443,
+      "themeCostMs": 6.300000071525574,
+      "fcpMs": 128,
+      "heapUsed": 6691462,
+      "htmlResponseEndMs": 12,
+      "mainScriptResponseEndMs": 29.299999952316284,
+      "scriptDurationMs": 43.797999999999995,
+      "taskDurationMs": 87.38600000000001,
+      "layoutDurationMs": 14.7,
+      "cdpHeapUsed": 5226952,
+      "readyAfterHtmlMs": 128.69999992847443,
+      "fcpAfterHtmlMs": 116,
+      "settingsFirstMs": 329.8000000715256,
+      "settingsWarmMs": 32.800000071525574,
+      "providersFirstMs": 332.6999999284744,
+      "providersWarmMs": 32.299999952316284,
+      "extensionsFirstMs": 331.89999997615814,
+      "extensionsWarmMs": 33.299999952316284,
+      "terminalFirstMs": 48.699999928474426,
+      "mathWorkerFirstMs": 138,
+      "mathFallbackFirstMs": 43,
+      "markdownWorkerStats": {
+        "posted": 1,
+        "completed": 1,
+        "cancelled": 0,
+        "pending": 0,
+        "running": false,
+        "failed": false
+      },
+      "initialJsBytes": 1443186,
+      "initialModuleCount": 556,
+      "startupTransferBytes": 1612067,
+      "startupFiles": [
+        "/",
+        "/assets/index-DIK01mH3.css",
+        "/assets/index-DQ9K9LXa.js"
+      ]
+    },
+    {
+      "variant": "terminal",
+      "sample": 2,
+      "themeMs": [7.899999976158142],
+      "errors": [],
+      "shellFrameMs": 211.89999997615814,
+      "readyFrameMs": 227.79999995231628,
+      "themeCostMs": 7.899999976158142,
+      "fcpMs": 212,
+      "heapUsed": 5746419,
+      "htmlResponseEndMs": 99.39999997615814,
+      "mainScriptResponseEndMs": 113.39999997615814,
+      "scriptDurationMs": 43.996,
+      "taskDurationMs": 94.94900000000001,
+      "layoutDurationMs": 17.326999999999998,
+      "cdpHeapUsed": 4530032,
+      "readyAfterHtmlMs": 128.39999997615814,
+      "fcpAfterHtmlMs": 112.60000002384186,
+      "settingsFirstMs": 26,
+      "settingsWarmMs": 32.5,
+      "providersFirstMs": 37.300000071525574,
+      "providersWarmMs": 33.800000071525574,
+      "extensionsFirstMs": 33.10000002384186,
+      "extensionsWarmMs": 33,
+      "terminalFirstMs": 349,
+      "mathWorkerFirstMs": 142.10000002384186,
+      "mathFallbackFirstMs": 35.60000002384186,
+      "markdownWorkerStats": {
+        "posted": 1,
+        "completed": 1,
+        "cancelled": 0,
+        "pending": 0,
+        "running": false,
+        "failed": false
+      },
+      "initialJsBytes": 1199488,
+      "initialModuleCount": 574,
+      "startupTransferBytes": 1381675,
+      "startupFiles": [
+        "/",
+        "/assets/index-BzmzWrje.js",
+        "/assets/index-S7GJCcCt.css"
+      ]
+    },
+    {
+      "variant": "markdown",
+      "sample": 2,
+      "themeMs": [5.399999976158142],
+      "errors": [],
+      "shellFrameMs": 196.20000004768372,
+      "readyFrameMs": 210.70000004768372,
+      "themeCostMs": 5.399999976158142,
+      "fcpMs": 196,
+      "heapUsed": 4809093,
+      "htmlResponseEndMs": 100.60000002384186,
+      "mainScriptResponseEndMs": 111,
+      "scriptDurationMs": 45.148,
+      "taskDurationMs": 84.15599999999999,
+      "layoutDurationMs": 14.524000000000001,
+      "cdpHeapUsed": 3613656,
+      "readyAfterHtmlMs": 110.10000002384186,
+      "fcpAfterHtmlMs": 95.39999997615814,
+      "settingsFirstMs": 34,
+      "settingsWarmMs": 33.199999928474426,
+      "providersFirstMs": 32.5,
+      "providersWarmMs": 43.299999952316284,
+      "extensionsFirstMs": 18.799999952316284,
+      "extensionsWarmMs": 32.299999952316284,
+      "terminalFirstMs": 50.199999928474426,
+      "mathWorkerFirstMs": 138,
+      "mathFallbackFirstMs": 320.7000000476837,
+      "markdownWorkerStats": {
+        "posted": 1,
+        "completed": 1,
+        "cancelled": 0,
+        "pending": 0,
+        "running": false,
+        "failed": false
+      },
+      "initialJsBytes": 1171315,
+      "initialModuleCount": 508,
+      "startupTransferBytes": 1358573,
+      "startupFiles": [
+        "/",
+        "/assets/index-BH6Cj6Of.js",
+        "/assets/index-BvpQh2aO.css"
+      ]
+    },
+    {
+      "variant": "all",
+      "sample": 2,
+      "themeMs": [5.200000047683716],
+      "errors": [],
+      "shellFrameMs": 153.89999997615814,
+      "readyFrameMs": 169.89999997615814,
+      "themeCostMs": 5.200000047683716,
+      "fcpMs": 160,
+      "heapUsed": 4575849,
+      "htmlResponseEndMs": 73.39999997615814,
+      "mainScriptResponseEndMs": 85.10000002384186,
+      "scriptDurationMs": 32.754,
+      "taskDurationMs": 78.286,
+      "layoutDurationMs": 17.558,
+      "cdpHeapUsed": 3735088,
+      "readyAfterHtmlMs": 96.5,
+      "fcpAfterHtmlMs": 86.60000002384186,
+      "settingsFirstMs": 337.2999999523163,
+      "settingsWarmMs": 33.09999990463257,
+      "providersFirstMs": 332,
+      "providersWarmMs": 32.89999997615814,
+      "extensionsFirstMs": 332.60000002384186,
+      "extensionsWarmMs": 32.59999990463257,
+      "terminalFirstMs": 347.89999997615814,
+      "mathWorkerFirstMs": 153.20000004768372,
+      "mathFallbackFirstMs": 326.2999999523163,
+      "markdownWorkerStats": {
+        "posted": 1,
+        "completed": 1,
+        "cancelled": 0,
+        "pending": 0,
+        "running": false,
+        "failed": false
+      },
+      "initialJsBytes": 820955,
+      "initialModuleCount": 472,
+      "startupTransferBytes": 984765,
+      "startupFiles": [
+        "/",
+        "/assets/index-CIBgsebc.css",
+        "/assets/index-BZoNF3ap.js"
+      ]
+    },
+    {
+      "variant": "pages-managed",
+      "sample": 2,
+      "themeMs": [5.799999952316284],
+      "errors": [],
+      "shellFrameMs": 210.5,
+      "readyFrameMs": 221.69999992847443,
+      "themeCostMs": 5.799999952316284,
+      "fcpMs": 208,
+      "heapUsed": 6685657,
+      "htmlResponseEndMs": 96.39999997615814,
+      "mainScriptResponseEndMs": 106.69999992847443,
+      "scriptDurationMs": 47.995000000000005,
+      "taskDurationMs": 88.157,
+      "layoutDurationMs": 13.197000000000001,
+      "cdpHeapUsed": 5221088,
+      "readyAfterHtmlMs": 125.29999995231628,
+      "fcpAfterHtmlMs": 111.60000002384186,
+      "settingsFirstMs": 46.699999928474426,
+      "settingsWarmMs": 30.600000023841858,
+      "providersFirstMs": 48.299999952316284,
+      "providersWarmMs": 33.10000002384186,
+      "extensionsFirstMs": 32.89999997615814,
+      "extensionsWarmMs": 33.300000071525574,
+      "terminalFirstMs": 48.89999997615814,
+      "mathWorkerFirstMs": 123.19999992847443,
+      "mathFallbackFirstMs": 39.60000002384186,
+      "markdownWorkerStats": {
+        "posted": 1,
+        "completed": 1,
+        "cancelled": 0,
+        "pending": 0,
+        "running": false,
+        "failed": false
+      },
+      "initialJsBytes": 1443283,
+      "initialModuleCount": 557,
+      "startupTransferBytes": 1612164,
+      "startupFiles": [
+        "/",
+        "/assets/index-HIS8I6A4.js",
+        "/assets/index-DIK01mH3.css"
+      ]
+    },
+    {
+      "variant": "terminal-managed",
+      "sample": 2,
+      "themeMs": [6.300000071525574],
+      "errors": [],
+      "shellFrameMs": 165.10000002384186,
+      "readyFrameMs": 181,
+      "themeCostMs": 6.300000071525574,
+      "fcpMs": 164,
+      "heapUsed": 5747438,
+      "htmlResponseEndMs": 69.20000004768372,
+      "mainScriptResponseEndMs": 80.20000004768372,
+      "scriptDurationMs": 39.593,
+      "taskDurationMs": 80.25,
+      "layoutDurationMs": 13.237,
+      "cdpHeapUsed": 4530836,
+      "readyAfterHtmlMs": 111.79999995231628,
+      "fcpAfterHtmlMs": 94.79999995231628,
+      "settingsFirstMs": 37.5,
+      "settingsWarmMs": 32.60000002384186,
+      "providersFirstMs": 36.300000071525574,
+      "providersWarmMs": 32,
+      "extensionsFirstMs": 32.89999997615814,
+      "extensionsWarmMs": 31.100000023841858,
+      "terminalFirstMs": 65.69999992847443,
+      "mathWorkerFirstMs": 133.20000004768372,
+      "mathFallbackFirstMs": 47.89999997615814,
+      "markdownWorkerStats": {
+        "posted": 1,
+        "completed": 1,
+        "cancelled": 0,
+        "pending": 0,
+        "running": false,
+        "failed": false
+      },
+      "initialJsBytes": 1199652,
+      "initialModuleCount": 575,
+      "startupTransferBytes": 1381839,
+      "startupFiles": [
+        "/",
+        "/assets/index-S7GJCcCt.css",
+        "/assets/index-hCfeD0jl.js"
+      ]
+    },
+    {
+      "variant": "all-managed",
+      "sample": 2,
+      "themeMs": [8],
+      "errors": [],
+      "shellFrameMs": 200.90000009536743,
+      "readyFrameMs": 219,
+      "themeCostMs": 8,
+      "fcpMs": 200,
+      "heapUsed": 4744711,
+      "htmlResponseEndMs": 101.60000002384186,
+      "mainScriptResponseEndMs": 112.90000009536743,
+      "scriptDurationMs": 43.684,
+      "taskDurationMs": 95.348,
+      "layoutDurationMs": 19.819,
+      "cdpHeapUsed": 3903952,
+      "readyAfterHtmlMs": 117.39999997615814,
+      "fcpAfterHtmlMs": 98.39999997615814,
+      "settingsFirstMs": 29,
+      "settingsWarmMs": 28.59999990463257,
+      "providersFirstMs": 47.799999952316284,
+      "providersWarmMs": 31,
+      "extensionsFirstMs": 32.09999990463257,
+      "extensionsWarmMs": 31.700000047683716,
+      "terminalFirstMs": 65.80000007152557,
+      "mathWorkerFirstMs": 128.79999995231628,
+      "mathFallbackFirstMs": 39.10000002384186,
+      "markdownWorkerStats": {
+        "posted": 1,
+        "completed": 1,
+        "cancelled": 0,
+        "pending": 0,
+        "running": false,
+        "failed": false
+      },
+      "initialJsBytes": 820930,
+      "initialModuleCount": 473,
+      "startupTransferBytes": 984740,
+      "startupFiles": [
+        "/",
+        "/assets/index-DkY_TbYi.js",
+        "/assets/index-CIBgsebc.css"
+      ]
+    },
+    {
+      "variant": "baseline",
+      "sample": 2,
+      "themeMs": [5.399999976158142],
+      "errors": [],
+      "shellFrameMs": 214.70000004768372,
+      "readyFrameMs": 229.10000002384186,
+      "themeCostMs": 5.399999976158142,
+      "fcpMs": 220,
+      "heapUsed": 6785857,
+      "htmlResponseEndMs": 103.10000002384186,
+      "mainScriptResponseEndMs": 113.70000004768372,
+      "scriptDurationMs": 46.669000000000004,
+      "taskDurationMs": 89.357,
+      "layoutDurationMs": 16.02,
+      "cdpHeapUsed": 5268012,
+      "readyAfterHtmlMs": 126,
+      "fcpAfterHtmlMs": 116.89999997615814,
+      "settingsFirstMs": 27.90000009536743,
+      "settingsWarmMs": 31.899999976158142,
+      "providersFirstMs": 42,
+      "providersWarmMs": 24.700000047683716,
+      "extensionsFirstMs": 32.5,
+      "extensionsWarmMs": 33.60000002384186,
+      "terminalFirstMs": 50,
+      "mathWorkerFirstMs": 125.19999992847443,
+      "mathFallbackFirstMs": 36.799999952316284,
+      "markdownWorkerStats": {
+        "posted": 1,
+        "completed": 1,
+        "cancelled": 0,
+        "pending": 0,
+        "running": false,
+        "failed": false
+      },
+      "initialJsBytes": 1496591,
+      "initialModuleCount": 583,
+      "startupTransferBytes": 1683849,
+      "startupFiles": [
+        "/",
+        "/assets/index-CLjvw_Ad.js",
+        "/assets/index-BvpQh2aO.css"
+      ]
+    },
+    {
+      "variant": "terminal",
+      "sample": 3,
+      "themeMs": [6.300000071525574],
+      "errors": [],
+      "shellFrameMs": 180.60000002384186,
+      "readyFrameMs": 195.30000007152557,
+      "themeCostMs": 6.300000071525574,
+      "fcpMs": 180,
+      "heapUsed": 5757279,
+      "htmlResponseEndMs": 78,
+      "mainScriptResponseEndMs": 91.10000002384186,
+      "scriptDurationMs": 37.661,
+      "taskDurationMs": 87.258,
+      "layoutDurationMs": 16.157,
+      "cdpHeapUsed": 4540816,
+      "readyAfterHtmlMs": 117.30000007152557,
+      "fcpAfterHtmlMs": 102,
+      "settingsFirstMs": 36.60000002384186,
+      "settingsWarmMs": 42.09999990463257,
+      "providersFirstMs": 36.59999990463257,
+      "providersWarmMs": 30.799999952316284,
+      "extensionsFirstMs": 32.10000002384186,
+      "extensionsWarmMs": 33.200000047683716,
+      "terminalFirstMs": 349.1999999284744,
+      "mathWorkerFirstMs": 131.70000004768372,
+      "mathFallbackFirstMs": 47.10000002384186,
+      "markdownWorkerStats": {
+        "posted": 1,
+        "completed": 1,
+        "cancelled": 0,
+        "pending": 0,
+        "running": false,
+        "failed": false
+      },
+      "initialJsBytes": 1199488,
+      "initialModuleCount": 574,
+      "startupTransferBytes": 1381675,
+      "startupFiles": [
+        "/",
+        "/assets/index-BzmzWrje.js",
+        "/assets/index-S7GJCcCt.css"
+      ]
+    },
+    {
+      "variant": "markdown",
+      "sample": 3,
+      "themeMs": [5.5],
+      "errors": [],
+      "shellFrameMs": 225.79999995231628,
+      "readyFrameMs": 238.19999992847443,
+      "themeCostMs": 5.5,
+      "fcpMs": 228,
+      "heapUsed": 4838838,
+      "htmlResponseEndMs": 132.19999992847443,
+      "mainScriptResponseEndMs": 142.69999992847443,
+      "scriptDurationMs": 42.011,
+      "taskDurationMs": 84.18599999999999,
+      "layoutDurationMs": 13.117,
+      "cdpHeapUsed": 3643436,
+      "readyAfterHtmlMs": 106,
+      "fcpAfterHtmlMs": 95.80000007152557,
+      "settingsFirstMs": 47.39999997615814,
+      "settingsWarmMs": 33.89999997615814,
+      "providersFirstMs": 34.199999928474426,
+      "providersWarmMs": 32.800000071525574,
+      "extensionsFirstMs": 33,
+      "extensionsWarmMs": 33.300000071525574,
+      "terminalFirstMs": 50.300000071525574,
+      "mathWorkerFirstMs": 133.70000004768372,
+      "mathFallbackFirstMs": 330.3000000715256,
+      "markdownWorkerStats": {
+        "posted": 1,
+        "completed": 1,
+        "cancelled": 0,
+        "pending": 0,
+        "running": false,
+        "failed": false
+      },
+      "initialJsBytes": 1171315,
+      "initialModuleCount": 508,
+      "startupTransferBytes": 1358573,
+      "startupFiles": [
+        "/",
+        "/assets/index-BH6Cj6Of.js",
+        "/assets/index-BvpQh2aO.css"
+      ]
+    },
+    {
+      "variant": "all",
+      "sample": 3,
+      "themeMs": [11.5],
+      "errors": [],
+      "shellFrameMs": 190.89999997615814,
+      "readyFrameMs": 206.60000002384186,
+      "themeCostMs": 11.5,
+      "fcpMs": 192,
+      "heapUsed": 4632792,
+      "htmlResponseEndMs": 72.10000002384186,
+      "mainScriptResponseEndMs": 87.39999997615814,
+      "scriptDurationMs": 53.99,
+      "taskDurationMs": 108.60000000000001,
+      "layoutDurationMs": 18.068,
+      "cdpHeapUsed": 3792032,
+      "readyAfterHtmlMs": 134.5,
+      "fcpAfterHtmlMs": 119.89999997615814,
+      "settingsFirstMs": 336.2999999523163,
+      "settingsWarmMs": 33,
+      "providersFirstMs": 332,
+      "providersWarmMs": 33.299999952316284,
+      "extensionsFirstMs": 333.6999999284744,
+      "extensionsWarmMs": 32.300000071525574,
+      "terminalFirstMs": 349.59999990463257,
+      "mathWorkerFirstMs": 136.89999997615814,
+      "mathFallbackFirstMs": 327.2999999523163,
+      "markdownWorkerStats": {
+        "posted": 1,
+        "completed": 1,
+        "cancelled": 0,
+        "pending": 0,
+        "running": false,
+        "failed": false
+      },
+      "initialJsBytes": 820955,
+      "initialModuleCount": 472,
+      "startupTransferBytes": 984765,
+      "startupFiles": [
+        "/",
+        "/assets/index-CIBgsebc.css",
+        "/assets/index-BZoNF3ap.js"
+      ]
+    },
+    {
+      "variant": "pages-managed",
+      "sample": 3,
+      "themeMs": [5.200000047683716],
+      "errors": [],
+      "shellFrameMs": 232.40000009536743,
+      "readyFrameMs": 246.30000007152557,
+      "themeCostMs": 5.200000047683716,
+      "fcpMs": 240,
+      "heapUsed": 6723755,
+      "htmlResponseEndMs": 129.5,
+      "mainScriptResponseEndMs": 141.10000002384186,
+      "scriptDurationMs": 41.903999999999996,
+      "taskDurationMs": 83.83699999999999,
+      "layoutDurationMs": 15.668999999999999,
+      "cdpHeapUsed": 5259184,
+      "readyAfterHtmlMs": 116.80000007152557,
+      "fcpAfterHtmlMs": 110.5,
+      "settingsFirstMs": 31.600000023841858,
+      "settingsWarmMs": 29.799999952316284,
+      "providersFirstMs": 36.89999997615814,
+      "providersWarmMs": 33.09999990463257,
+      "extensionsFirstMs": 32.300000071525574,
+      "extensionsWarmMs": 32.700000047683716,
+      "terminalFirstMs": 48.60000002384186,
+      "mathWorkerFirstMs": 141,
+      "mathFallbackFirstMs": 36.59999990463257,
+      "markdownWorkerStats": {
+        "posted": 1,
+        "completed": 1,
+        "cancelled": 0,
+        "pending": 0,
+        "running": false,
+        "failed": false
+      },
+      "initialJsBytes": 1443283,
+      "initialModuleCount": 557,
+      "startupTransferBytes": 1612164,
+      "startupFiles": [
+        "/",
+        "/assets/index-HIS8I6A4.js",
+        "/assets/index-DIK01mH3.css"
+      ]
+    },
+    {
+      "variant": "terminal-managed",
+      "sample": 3,
+      "themeMs": [5.5],
+      "errors": [],
+      "shellFrameMs": 206,
+      "readyFrameMs": 219.80000007152557,
+      "themeCostMs": 5.5,
+      "fcpMs": 216,
+      "heapUsed": 5750055,
+      "htmlResponseEndMs": 111.20000004768372,
+      "mainScriptResponseEndMs": 123.10000002384186,
+      "scriptDurationMs": 35.809,
+      "taskDurationMs": 76.944,
+      "layoutDurationMs": 14.895,
+      "cdpHeapUsed": 4533452,
+      "readyAfterHtmlMs": 108.60000002384186,
+      "fcpAfterHtmlMs": 104.79999995231628,
+      "settingsFirstMs": 36.699999928474426,
+      "settingsWarmMs": 32.60000002384186,
+      "providersFirstMs": 41,
+      "providersWarmMs": 32.299999952316284,
+      "extensionsFirstMs": 33.5,
+      "extensionsWarmMs": 32.200000047683716,
+      "terminalFirstMs": 66,
+      "mathWorkerFirstMs": 153.79999995231628,
+      "mathFallbackFirstMs": 42.699999928474426,
+      "markdownWorkerStats": {
+        "posted": 1,
+        "completed": 1,
+        "cancelled": 0,
+        "pending": 0,
+        "running": false,
+        "failed": false
+      },
+      "initialJsBytes": 1199652,
+      "initialModuleCount": 575,
+      "startupTransferBytes": 1381839,
+      "startupFiles": [
+        "/",
+        "/assets/index-S7GJCcCt.css",
+        "/assets/index-hCfeD0jl.js"
+      ]
+    },
+    {
+      "variant": "all-managed",
+      "sample": 3,
+      "themeMs": [5.899999976158142],
+      "errors": [],
+      "shellFrameMs": 174.79999995231628,
+      "readyFrameMs": 189.39999997615814,
+      "themeCostMs": 5.899999976158142,
+      "fcpMs": 180,
+      "heapUsed": 4576184,
+      "htmlResponseEndMs": 84.89999997615814,
+      "mainScriptResponseEndMs": 97.5,
+      "scriptDurationMs": 37.622,
+      "taskDurationMs": 84.709,
+      "layoutDurationMs": 16.347,
+      "cdpHeapUsed": 3735448,
+      "readyAfterHtmlMs": 104.5,
+      "fcpAfterHtmlMs": 95.10000002384186,
+      "settingsFirstMs": 41.200000047683716,
+      "settingsWarmMs": 32.300000071525574,
+      "providersFirstMs": 37.39999997615814,
+      "providersWarmMs": 33.799999952316284,
+      "extensionsFirstMs": 33.39999997615814,
+      "extensionsWarmMs": 27.200000047683716,
+      "terminalFirstMs": 66.19999992847443,
+      "mathWorkerFirstMs": 155.70000004768372,
+      "mathFallbackFirstMs": 41.89999997615814,
+      "markdownWorkerStats": {
+        "posted": 1,
+        "completed": 1,
+        "cancelled": 0,
+        "pending": 0,
+        "running": false,
+        "failed": false
+      },
+      "initialJsBytes": 820930,
+      "initialModuleCount": 473,
+      "startupTransferBytes": 984740,
+      "startupFiles": [
+        "/",
+        "/assets/index-CIBgsebc.css",
+        "/assets/index-DkY_TbYi.js"
+      ]
+    },
+    {
+      "variant": "baseline",
+      "sample": 3,
+      "themeMs": [6.299999952316284],
+      "errors": [],
+      "shellFrameMs": 200.39999997615814,
+      "readyFrameMs": 215.89999997615814,
+      "themeCostMs": 6.299999952316284,
+      "fcpMs": 208,
+      "heapUsed": 6736208,
+      "htmlResponseEndMs": 83,
+      "mainScriptResponseEndMs": 96.59999990463257,
+      "scriptDurationMs": 49.334,
+      "taskDurationMs": 95.946,
+      "layoutDurationMs": 17.445,
+      "cdpHeapUsed": 5218328,
+      "readyAfterHtmlMs": 132.89999997615814,
+      "fcpAfterHtmlMs": 125,
+      "settingsFirstMs": 33,
+      "settingsWarmMs": 32.5,
+      "providersFirstMs": 33,
+      "providersWarmMs": 32.10000002384186,
+      "extensionsFirstMs": 34.5,
+      "extensionsWarmMs": 32.5,
+      "terminalFirstMs": 49.39999997615814,
+      "mathWorkerFirstMs": 151,
+      "mathFallbackFirstMs": 46.300000071525574,
+      "markdownWorkerStats": {
+        "posted": 1,
+        "completed": 1,
+        "cancelled": 0,
+        "pending": 0,
+        "running": false,
+        "failed": false
+      },
+      "initialJsBytes": 1496591,
+      "initialModuleCount": 583,
+      "startupTransferBytes": 1683849,
+      "startupFiles": [
+        "/",
+        "/assets/index-CLjvw_Ad.js",
+        "/assets/index-BvpQh2aO.css"
+      ]
+    },
+    {
+      "variant": "pages",
+      "sample": 3,
+      "themeMs": [9.5],
+      "errors": [],
+      "shellFrameMs": 184.5,
+      "readyFrameMs": 200.79999995231628,
+      "themeCostMs": 9.5,
+      "fcpMs": 192,
+      "heapUsed": 6695498,
+      "htmlResponseEndMs": 11.799999952316284,
+      "mainScriptResponseEndMs": 47.299999952316284,
+      "scriptDurationMs": 68.173,
+      "taskDurationMs": 124.791,
+      "layoutDurationMs": 18.423,
+      "cdpHeapUsed": 5231024,
+      "readyAfterHtmlMs": 189,
+      "fcpAfterHtmlMs": 180.20000004768372,
+      "settingsFirstMs": 341.39999997615814,
+      "settingsWarmMs": 32.199999928474426,
+      "providersFirstMs": 333,
+      "providersWarmMs": 33.10000002384186,
+      "extensionsFirstMs": 332.6999999284744,
+      "extensionsWarmMs": 32.299999952316284,
+      "terminalFirstMs": 49.10000002384186,
+      "mathWorkerFirstMs": 134.39999997615814,
+      "mathFallbackFirstMs": 45.59999990463257,
+      "markdownWorkerStats": {
+        "posted": 1,
+        "completed": 1,
+        "cancelled": 0,
+        "pending": 0,
+        "running": false,
+        "failed": false
+      },
+      "initialJsBytes": 1443186,
+      "initialModuleCount": 556,
+      "startupTransferBytes": 1612067,
+      "startupFiles": [
+        "/",
+        "/assets/index-DIK01mH3.css",
+        "/assets/index-DQ9K9LXa.js"
+      ]
+    },
+    {
+      "variant": "markdown",
+      "sample": 4,
+      "themeMs": [6.299999952316284],
+      "errors": [],
+      "shellFrameMs": 232.60000002384186,
+      "readyFrameMs": 246.70000004768372,
+      "themeCostMs": 6.299999952316284,
+      "fcpMs": 240,
+      "heapUsed": 4815345,
+      "htmlResponseEndMs": 113.89999997615814,
+      "mainScriptResponseEndMs": 142.30000007152557,
+      "scriptDurationMs": 48.235,
+      "taskDurationMs": 93.652,
+      "layoutDurationMs": 16.740000000000002,
+      "cdpHeapUsed": 3619944,
+      "readyAfterHtmlMs": 132.80000007152557,
+      "fcpAfterHtmlMs": 126.10000002384186,
+      "settingsFirstMs": 33.200000047683716,
+      "settingsWarmMs": 43.699999928474426,
+      "providersFirstMs": 35,
+      "providersWarmMs": 32.39999997615814,
+      "extensionsFirstMs": 32.39999997615814,
+      "extensionsWarmMs": 32.800000071525574,
+      "terminalFirstMs": 49.199999928474426,
+      "mathWorkerFirstMs": 129.09999990463257,
+      "mathFallbackFirstMs": 334,
+      "markdownWorkerStats": {
+        "posted": 1,
+        "completed": 1,
+        "cancelled": 0,
+        "pending": 0,
+        "running": false,
+        "failed": false
+      },
+      "initialJsBytes": 1171315,
+      "initialModuleCount": 508,
+      "startupTransferBytes": 1358573,
+      "startupFiles": [
+        "/",
+        "/assets/index-BH6Cj6Of.js",
+        "/assets/index-BvpQh2aO.css"
+      ]
+    },
+    {
+      "variant": "all",
+      "sample": 4,
+      "themeMs": [6.700000047683716],
+      "errors": [],
+      "shellFrameMs": 185.79999995231628,
+      "readyFrameMs": 201,
+      "themeCostMs": 6.700000047683716,
+      "fcpMs": 192,
+      "heapUsed": 4554845,
+      "htmlResponseEndMs": 97.69999992847443,
+      "mainScriptResponseEndMs": 109.60000002384186,
+      "scriptDurationMs": 38.436,
+      "taskDurationMs": 85.43900000000001,
+      "layoutDurationMs": 16.474,
+      "cdpHeapUsed": 3714072,
+      "readyAfterHtmlMs": 103.30000007152557,
+      "fcpAfterHtmlMs": 94.30000007152557,
+      "settingsFirstMs": 329.60000002384186,
+      "settingsWarmMs": 32,
+      "providersFirstMs": 332.7000000476837,
+      "providersWarmMs": 32.10000002384186,
+      "extensionsFirstMs": 332.89999997615814,
+      "extensionsWarmMs": 33.89999997615814,
+      "terminalFirstMs": 349.60000002384186,
+      "mathWorkerFirstMs": 143.69999992847443,
+      "mathFallbackFirstMs": 336.40000009536743,
+      "markdownWorkerStats": {
+        "posted": 1,
+        "completed": 1,
+        "cancelled": 0,
+        "pending": 0,
+        "running": false,
+        "failed": false
+      },
+      "initialJsBytes": 820955,
+      "initialModuleCount": 472,
+      "startupTransferBytes": 984765,
+      "startupFiles": [
+        "/",
+        "/assets/index-BZoNF3ap.js",
+        "/assets/index-CIBgsebc.css"
+      ]
+    },
+    {
+      "variant": "pages-managed",
+      "sample": 4,
+      "themeMs": [7.099999904632568],
+      "errors": [],
+      "shellFrameMs": 214.89999997615814,
+      "readyFrameMs": 227.10000002384186,
+      "themeCostMs": 7.099999904632568,
+      "fcpMs": 216,
+      "heapUsed": 6663971,
+      "htmlResponseEndMs": 79.29999995231628,
+      "mainScriptResponseEndMs": 91.60000002384186,
+      "scriptDurationMs": 56.969,
+      "taskDurationMs": 102.502,
+      "layoutDurationMs": 13.774,
+      "cdpHeapUsed": 5199400,
+      "readyAfterHtmlMs": 147.80000007152557,
+      "fcpAfterHtmlMs": 136.70000004768372,
+      "settingsFirstMs": 47.89999997615814,
+      "settingsWarmMs": 30.299999952316284,
+      "providersFirstMs": 32.39999997615814,
+      "providersWarmMs": 32.800000071525574,
+      "extensionsFirstMs": 33.10000002384186,
+      "extensionsWarmMs": 32.699999928474426,
+      "terminalFirstMs": 49.39999997615814,
+      "mathWorkerFirstMs": 122.10000002384186,
+      "mathFallbackFirstMs": 41.40000009536743,
+      "markdownWorkerStats": {
+        "posted": 1,
+        "completed": 1,
+        "cancelled": 0,
+        "pending": 0,
+        "running": false,
+        "failed": false
+      },
+      "initialJsBytes": 1443283,
+      "initialModuleCount": 557,
+      "startupTransferBytes": 1612164,
+      "startupFiles": [
+        "/",
+        "/assets/index-DIK01mH3.css",
+        "/assets/index-HIS8I6A4.js"
+      ]
+    },
+    {
+      "variant": "terminal-managed",
+      "sample": 4,
+      "themeMs": [6.399999976158142],
+      "errors": [],
+      "shellFrameMs": 235,
+      "readyFrameMs": 246.90000009536743,
+      "themeCostMs": 6.399999976158142,
+      "fcpMs": 244,
+      "heapUsed": 5696999,
+      "htmlResponseEndMs": 134,
+      "mainScriptResponseEndMs": 146,
+      "scriptDurationMs": 39.473,
+      "taskDurationMs": 81.00200000000001,
+      "layoutDurationMs": 13.351,
+      "cdpHeapUsed": 4480324,
+      "readyAfterHtmlMs": 112.90000009536743,
+      "fcpAfterHtmlMs": 110,
+      "settingsFirstMs": 32.10000002384186,
+      "settingsWarmMs": 34,
+      "providersFirstMs": 42.39999997615814,
+      "providersWarmMs": 34.5,
+      "extensionsFirstMs": 32.5,
+      "extensionsWarmMs": 32.699999928474426,
+      "terminalFirstMs": 65.5,
+      "mathWorkerFirstMs": 129.60000002384186,
+      "mathFallbackFirstMs": 50.5,
+      "markdownWorkerStats": {
+        "posted": 1,
+        "completed": 1,
+        "cancelled": 0,
+        "pending": 0,
+        "running": false,
+        "failed": false
+      },
+      "initialJsBytes": 1199652,
+      "initialModuleCount": 575,
+      "startupTransferBytes": 1381839,
+      "startupFiles": [
+        "/",
+        "/assets/index-S7GJCcCt.css",
+        "/assets/index-hCfeD0jl.js"
+      ]
+    },
+    {
+      "variant": "all-managed",
+      "sample": 4,
+      "themeMs": [5.300000071525574],
+      "errors": [],
+      "shellFrameMs": 207.60000002384186,
+      "readyFrameMs": 222.29999995231628,
+      "themeCostMs": 5.300000071525574,
+      "fcpMs": 208,
+      "heapUsed": 4563596,
+      "htmlResponseEndMs": 127.79999995231628,
+      "mainScriptResponseEndMs": 141.10000002384186,
+      "scriptDurationMs": 29.735999999999997,
+      "taskDurationMs": 73.877,
+      "layoutDurationMs": 15.207,
+      "cdpHeapUsed": 3722860,
+      "readyAfterHtmlMs": 94.5,
+      "fcpAfterHtmlMs": 80.20000004768372,
+      "settingsFirstMs": 43.700000047683716,
+      "settingsWarmMs": 32.89999997615814,
+      "providersFirstMs": 30.300000071525574,
+      "providersWarmMs": 31.5,
+      "extensionsFirstMs": 33.299999952316284,
+      "extensionsWarmMs": 32.699999928474426,
+      "terminalFirstMs": 65.79999995231628,
+      "mathWorkerFirstMs": 122.5,
+      "mathFallbackFirstMs": 57.800000071525574,
+      "markdownWorkerStats": {
+        "posted": 1,
+        "completed": 1,
+        "cancelled": 0,
+        "pending": 0,
+        "running": false,
+        "failed": false
+      },
+      "initialJsBytes": 820930,
+      "initialModuleCount": 473,
+      "startupTransferBytes": 984740,
+      "startupFiles": [
+        "/",
+        "/assets/index-CIBgsebc.css",
+        "/assets/index-DkY_TbYi.js"
+      ]
+    },
+    {
+      "variant": "baseline",
+      "sample": 4,
+      "themeMs": [5],
+      "errors": [],
+      "shellFrameMs": 254.79999995231628,
+      "readyFrameMs": 266.7999999523163,
+      "themeCostMs": 5,
+      "fcpMs": 260,
+      "heapUsed": 6786097,
+      "htmlResponseEndMs": 109.19999992847443,
+      "mainScriptResponseEndMs": 150.59999990463257,
+      "scriptDurationMs": 49.584,
+      "taskDurationMs": 92.637,
+      "layoutDurationMs": 12.938,
+      "cdpHeapUsed": 5268228,
+      "readyAfterHtmlMs": 157.60000002384186,
+      "fcpAfterHtmlMs": 150.80000007152557,
+      "settingsFirstMs": 45.800000071525574,
+      "settingsWarmMs": 32.60000002384186,
+      "providersFirstMs": 34.5,
+      "providersWarmMs": 30.600000023841858,
+      "extensionsFirstMs": 33.89999997615814,
+      "extensionsWarmMs": 34.10000002384186,
+      "terminalFirstMs": 48.299999952316284,
+      "mathWorkerFirstMs": 148.5,
+      "mathFallbackFirstMs": 48.09999990463257,
+      "markdownWorkerStats": {
+        "posted": 1,
+        "completed": 1,
+        "cancelled": 0,
+        "pending": 0,
+        "running": false,
+        "failed": false
+      },
+      "initialJsBytes": 1496591,
+      "initialModuleCount": 583,
+      "startupTransferBytes": 1683849,
+      "startupFiles": [
+        "/",
+        "/assets/index-BvpQh2aO.css",
+        "/assets/index-CLjvw_Ad.js"
+      ]
+    },
+    {
+      "variant": "pages",
+      "sample": 4,
+      "themeMs": [5.799999952316284],
+      "errors": [],
+      "shellFrameMs": 236.70000004768372,
+      "readyFrameMs": 252.20000004768372,
+      "themeCostMs": 5.799999952316284,
+      "fcpMs": 240,
+      "heapUsed": 6687704,
+      "htmlResponseEndMs": 117.20000004768372,
+      "mainScriptResponseEndMs": 129.20000004768372,
+      "scriptDurationMs": 47.846,
+      "taskDurationMs": 100.333,
+      "layoutDurationMs": 16.469,
+      "cdpHeapUsed": 5223232,
+      "readyAfterHtmlMs": 135,
+      "fcpAfterHtmlMs": 122.79999995231628,
+      "settingsFirstMs": 335.10000002384186,
+      "settingsWarmMs": 32.60000002384186,
+      "providersFirstMs": 331.8000000715256,
+      "providersWarmMs": 32.200000047683716,
+      "extensionsFirstMs": 332.7000000476837,
+      "extensionsWarmMs": 32.10000002384186,
+      "terminalFirstMs": 49.5,
+      "mathWorkerFirstMs": 150.59999990463257,
+      "mathFallbackFirstMs": 45.89999997615814,
+      "markdownWorkerStats": {
+        "posted": 1,
+        "completed": 1,
+        "cancelled": 0,
+        "pending": 0,
+        "running": false,
+        "failed": false
+      },
+      "initialJsBytes": 1443186,
+      "initialModuleCount": 556,
+      "startupTransferBytes": 1612067,
+      "startupFiles": [
+        "/",
+        "/assets/index-DQ9K9LXa.js",
+        "/assets/index-DIK01mH3.css"
+      ]
+    },
+    {
+      "variant": "terminal",
+      "sample": 4,
+      "themeMs": [6.600000023841858],
+      "errors": [],
+      "shellFrameMs": 228.10000002384186,
+      "readyFrameMs": 242.10000002384186,
+      "themeCostMs": 6.600000023841858,
+      "fcpMs": 228,
+      "heapUsed": 5747403,
+      "htmlResponseEndMs": 127.30000007152557,
+      "mainScriptResponseEndMs": 139,
+      "scriptDurationMs": 39.791,
+      "taskDurationMs": 86.12400000000001,
+      "layoutDurationMs": 14.571000000000002,
+      "cdpHeapUsed": 4530940,
+      "readyAfterHtmlMs": 114.79999995231628,
+      "fcpAfterHtmlMs": 100.69999992847443,
+      "settingsFirstMs": 38.39999997615814,
+      "settingsWarmMs": 32.60000002384186,
+      "providersFirstMs": 49.60000002384186,
+      "providersWarmMs": 31.899999976158142,
+      "extensionsFirstMs": 33.299999952316284,
+      "extensionsWarmMs": 29.5,
+      "terminalFirstMs": 348.2999999523163,
+      "mathWorkerFirstMs": 135,
+      "mathFallbackFirstMs": 44,
+      "markdownWorkerStats": {
+        "posted": 1,
+        "completed": 1,
+        "cancelled": 0,
+        "pending": 0,
+        "running": false,
+        "failed": false
+      },
+      "initialJsBytes": 1199488,
+      "initialModuleCount": 574,
+      "startupTransferBytes": 1381675,
+      "startupFiles": [
+        "/",
+        "/assets/index-BzmzWrje.js",
+        "/assets/index-S7GJCcCt.css"
+      ]
+    },
+    {
+      "variant": "all",
+      "sample": 5,
+      "themeMs": [7.099999904632568],
+      "errors": [],
+      "shellFrameMs": 189.79999995231628,
+      "readyFrameMs": 204.5,
+      "themeCostMs": 7.099999904632568,
+      "fcpMs": 200,
+      "heapUsed": 4554881,
+      "htmlResponseEndMs": 109.29999995231628,
+      "mainScriptResponseEndMs": 121,
+      "scriptDurationMs": 34.764,
+      "taskDurationMs": 75.934,
+      "layoutDurationMs": 16.242,
+      "cdpHeapUsed": 3714084,
+      "readyAfterHtmlMs": 95.20000004768372,
+      "fcpAfterHtmlMs": 90.70000004768372,
+      "settingsFirstMs": 331.39999997615814,
+      "settingsWarmMs": 32.699999928474426,
+      "providersFirstMs": 333.5,
+      "providersWarmMs": 33.89999997615814,
+      "extensionsFirstMs": 332.2999999523163,
+      "extensionsWarmMs": 33.299999952316284,
+      "terminalFirstMs": 350.7000000476837,
+      "mathWorkerFirstMs": 129.29999995231628,
+      "mathFallbackFirstMs": 334.39999997615814,
+      "markdownWorkerStats": {
+        "posted": 1,
+        "completed": 1,
+        "cancelled": 0,
+        "pending": 0,
+        "running": false,
+        "failed": false
+      },
+      "initialJsBytes": 820955,
+      "initialModuleCount": 472,
+      "startupTransferBytes": 984765,
+      "startupFiles": [
+        "/",
+        "/assets/index-CIBgsebc.css",
+        "/assets/index-BZoNF3ap.js"
+      ]
+    },
+    {
+      "variant": "pages-managed",
+      "sample": 5,
+      "themeMs": [6.299999952316284],
+      "errors": [],
+      "shellFrameMs": 202.10000002384186,
+      "readyFrameMs": 215.79999995231628,
+      "themeCostMs": 6.299999952316284,
+      "fcpMs": 204,
+      "heapUsed": 6658003,
+      "htmlResponseEndMs": 89.89999997615814,
+      "mainScriptResponseEndMs": 101.60000002384186,
+      "scriptDurationMs": 45.392,
+      "taskDurationMs": 92.655,
+      "layoutDurationMs": 15.748000000000001,
+      "cdpHeapUsed": 5193432,
+      "readyAfterHtmlMs": 125.89999997615814,
+      "fcpAfterHtmlMs": 114.10000002384186,
+      "settingsFirstMs": 42.89999997615814,
+      "settingsWarmMs": 31.90000009536743,
+      "providersFirstMs": 38.799999952316284,
+      "providersWarmMs": 33,
+      "extensionsFirstMs": 41.59999990463257,
+      "extensionsWarmMs": 32.40000009536743,
+      "terminalFirstMs": 49,
+      "mathWorkerFirstMs": 164.89999997615814,
+      "mathFallbackFirstMs": 43.10000002384186,
+      "markdownWorkerStats": {
+        "posted": 1,
+        "completed": 1,
+        "cancelled": 0,
+        "pending": 0,
+        "running": false,
+        "failed": false
+      },
+      "initialJsBytes": 1443283,
+      "initialModuleCount": 557,
+      "startupTransferBytes": 1612164,
+      "startupFiles": [
+        "/",
+        "/assets/index-DIK01mH3.css",
+        "/assets/index-HIS8I6A4.js"
+      ]
+    },
+    {
+      "variant": "terminal-managed",
+      "sample": 5,
+      "themeMs": [6.899999976158142],
+      "errors": [],
+      "shellFrameMs": 186,
+      "readyFrameMs": 200,
+      "themeCostMs": 6.899999976158142,
+      "fcpMs": 192,
+      "heapUsed": 5748571,
+      "htmlResponseEndMs": 93.39999997615814,
+      "mainScriptResponseEndMs": 105,
+      "scriptDurationMs": 37.442,
+      "taskDurationMs": 79.77199999999999,
+      "layoutDurationMs": 15.883999999999999,
+      "cdpHeapUsed": 4531940,
+      "readyAfterHtmlMs": 106.60000002384186,
+      "fcpAfterHtmlMs": 98.60000002384186,
+      "settingsFirstMs": 27.399999976158142,
+      "settingsWarmMs": 32.700000047683716,
+      "providersFirstMs": 35.199999928474426,
+      "providersWarmMs": 34,
+      "extensionsFirstMs": 32.299999952316284,
+      "extensionsWarmMs": 32.39999997615814,
+      "terminalFirstMs": 65.39999997615814,
+      "mathWorkerFirstMs": 152.70000004768372,
+      "mathFallbackFirstMs": 43.299999952316284,
+      "markdownWorkerStats": {
+        "posted": 1,
+        "completed": 1,
+        "cancelled": 0,
+        "pending": 0,
+        "running": false,
+        "failed": false
+      },
+      "initialJsBytes": 1199652,
+      "initialModuleCount": 575,
+      "startupTransferBytes": 1381839,
+      "startupFiles": [
+        "/",
+        "/assets/index-hCfeD0jl.js",
+        "/assets/index-S7GJCcCt.css"
+      ]
+    },
+    {
+      "variant": "all-managed",
+      "sample": 5,
+      "themeMs": [5.600000023841858],
+      "errors": [],
+      "shellFrameMs": 201,
+      "readyFrameMs": 218.60000002384186,
+      "themeCostMs": 5.600000023841858,
+      "fcpMs": 208,
+      "heapUsed": 4589755,
+      "htmlResponseEndMs": 120.5,
+      "mainScriptResponseEndMs": 132.29999995231628,
+      "scriptDurationMs": 35.204,
+      "taskDurationMs": 79.47500000000001,
+      "layoutDurationMs": 18.914,
+      "cdpHeapUsed": 3749008,
+      "readyAfterHtmlMs": 98.10000002384186,
+      "fcpAfterHtmlMs": 87.5,
+      "settingsFirstMs": 44.59999990463257,
+      "settingsWarmMs": 28.699999928474426,
+      "providersFirstMs": 39.800000071525574,
+      "providersWarmMs": 26.100000023841858,
+      "extensionsFirstMs": 32.60000002384186,
+      "extensionsWarmMs": 31.899999976158142,
+      "terminalFirstMs": 65.79999995231628,
+      "mathWorkerFirstMs": 136.59999990463257,
+      "mathFallbackFirstMs": 60.799999952316284,
+      "markdownWorkerStats": {
+        "posted": 1,
+        "completed": 1,
+        "cancelled": 0,
+        "pending": 0,
+        "running": false,
+        "failed": false
+      },
+      "initialJsBytes": 820930,
+      "initialModuleCount": 473,
+      "startupTransferBytes": 984740,
+      "startupFiles": [
+        "/",
+        "/assets/index-CIBgsebc.css",
+        "/assets/index-DkY_TbYi.js"
+      ]
+    },
+    {
+      "variant": "baseline",
+      "sample": 5,
+      "themeMs": [5.600000023841858],
+      "errors": [],
+      "shellFrameMs": 238.89999997615814,
+      "readyFrameMs": 253,
+      "themeCostMs": 5.600000023841858,
+      "fcpMs": 244,
+      "heapUsed": 6772721,
+      "htmlResponseEndMs": 116.29999995231628,
+      "mainScriptResponseEndMs": 128.5,
+      "scriptDurationMs": 51.379,
+      "taskDurationMs": 98.04,
+      "layoutDurationMs": 16.544,
+      "cdpHeapUsed": 5254864,
+      "readyAfterHtmlMs": 136.70000004768372,
+      "fcpAfterHtmlMs": 127.70000004768372,
+      "settingsFirstMs": 33.200000047683716,
+      "settingsWarmMs": 28,
+      "providersFirstMs": 37.40000009536743,
+      "providersWarmMs": 32.89999997615814,
+      "extensionsFirstMs": 45,
+      "extensionsWarmMs": 40.10000002384186,
+      "terminalFirstMs": 48.10000002384186,
+      "mathWorkerFirstMs": 129.40000009536743,
+      "mathFallbackFirstMs": 33.89999997615814,
+      "markdownWorkerStats": {
+        "posted": 1,
+        "completed": 1,
+        "cancelled": 0,
+        "pending": 0,
+        "running": false,
+        "failed": false
+      },
+      "initialJsBytes": 1496591,
+      "initialModuleCount": 583,
+      "startupTransferBytes": 1683849,
+      "startupFiles": [
+        "/",
+        "/assets/index-CLjvw_Ad.js",
+        "/assets/index-BvpQh2aO.css"
+      ]
+    },
+    {
+      "variant": "pages",
+      "sample": 5,
+      "themeMs": [7.799999952316284],
+      "errors": [],
+      "shellFrameMs": 234.29999995231628,
+      "readyFrameMs": 251.29999995231628,
+      "themeCostMs": 7.799999952316284,
+      "fcpMs": 236,
+      "heapUsed": 6649866,
+      "htmlResponseEndMs": 93.10000002384186,
+      "mainScriptResponseEndMs": 105.29999995231628,
+      "scriptDurationMs": 59.82,
+      "taskDurationMs": 110.899,
+      "layoutDurationMs": 19.182000000000002,
+      "cdpHeapUsed": 5185392,
+      "readyAfterHtmlMs": 158.19999992847443,
+      "fcpAfterHtmlMs": 142.89999997615814,
+      "settingsFirstMs": 333.3000000715256,
+      "settingsWarmMs": 32.200000047683716,
+      "providersFirstMs": 331.7999999523163,
+      "providersWarmMs": 32.39999997615814,
+      "extensionsFirstMs": 332.39999997615814,
+      "extensionsWarmMs": 31.600000023841858,
+      "terminalFirstMs": 49.699999928474426,
+      "mathWorkerFirstMs": 136,
+      "mathFallbackFirstMs": 44.89999997615814,
+      "markdownWorkerStats": {
+        "posted": 1,
+        "completed": 1,
+        "cancelled": 0,
+        "pending": 0,
+        "running": false,
+        "failed": false
+      },
+      "initialJsBytes": 1443186,
+      "initialModuleCount": 556,
+      "startupTransferBytes": 1612067,
+      "startupFiles": [
+        "/",
+        "/assets/index-DIK01mH3.css",
+        "/assets/index-DQ9K9LXa.js"
+      ]
+    },
+    {
+      "variant": "terminal",
+      "sample": 5,
+      "themeMs": [6.600000023841858],
+      "errors": [],
+      "shellFrameMs": 212,
+      "readyFrameMs": 226.39999997615814,
+      "themeCostMs": 6.600000023841858,
+      "fcpMs": 224,
+      "heapUsed": 5759723,
+      "htmlResponseEndMs": 111.10000002384186,
+      "mainScriptResponseEndMs": 123.39999997615814,
+      "scriptDurationMs": 39.983,
+      "taskDurationMs": 83.67099999999999,
+      "layoutDurationMs": 15.003,
+      "cdpHeapUsed": 4543304,
+      "readyAfterHtmlMs": 115.29999995231628,
+      "fcpAfterHtmlMs": 112.89999997615814,
+      "settingsFirstMs": 27.300000071525574,
+      "settingsWarmMs": 32.59999990463257,
+      "providersFirstMs": 34.699999928474426,
+      "providersWarmMs": 33.5,
+      "extensionsFirstMs": 31.800000071525574,
+      "extensionsWarmMs": 33.700000047683716,
+      "terminalFirstMs": 349.39999997615814,
+      "mathWorkerFirstMs": 155.80000007152557,
+      "mathFallbackFirstMs": 47.10000002384186,
+      "markdownWorkerStats": {
+        "posted": 1,
+        "completed": 1,
+        "cancelled": 0,
+        "pending": 0,
+        "running": false,
+        "failed": false
+      },
+      "initialJsBytes": 1199488,
+      "initialModuleCount": 574,
+      "startupTransferBytes": 1381675,
+      "startupFiles": [
+        "/",
+        "/assets/index-BzmzWrje.js",
+        "/assets/index-S7GJCcCt.css"
+      ]
+    },
+    {
+      "variant": "markdown",
+      "sample": 5,
+      "themeMs": [8.200000047683716],
+      "errors": [],
+      "shellFrameMs": 252.19999992847443,
+      "readyFrameMs": 267.6999999284744,
+      "themeCostMs": 8.200000047683716,
+      "fcpMs": 260,
+      "heapUsed": 5046366,
+      "htmlResponseEndMs": 131.09999990463257,
+      "mainScriptResponseEndMs": 145.09999990463257,
+      "scriptDurationMs": 53.836,
+      "taskDurationMs": 106.499,
+      "layoutDurationMs": 17.732999999999997,
+      "cdpHeapUsed": 3850964,
+      "readyAfterHtmlMs": 136.60000002384186,
+      "fcpAfterHtmlMs": 128.90000009536743,
+      "settingsFirstMs": 24.800000071525574,
+      "settingsWarmMs": 32.700000047683716,
+      "providersFirstMs": 33.89999997615814,
+      "providersWarmMs": 32.700000047683716,
+      "extensionsFirstMs": 32.200000047683716,
+      "extensionsWarmMs": 32,
+      "terminalFirstMs": 49.699999928474426,
+      "mathWorkerFirstMs": 124.10000002384186,
+      "mathFallbackFirstMs": 322.90000009536743,
+      "markdownWorkerStats": {
+        "posted": 1,
+        "completed": 1,
+        "cancelled": 0,
+        "pending": 0,
+        "running": false,
+        "failed": false
+      },
+      "initialJsBytes": 1171315,
+      "initialModuleCount": 508,
+      "startupTransferBytes": 1358573,
+      "startupFiles": [
+        "/",
+        "/assets/index-BH6Cj6Of.js",
+        "/assets/index-BvpQh2aO.css"
+      ]
+    },
+    {
+      "variant": "pages-managed",
+      "sample": 6,
+      "themeMs": [6.100000023841858],
+      "errors": [],
+      "shellFrameMs": 210.10000002384186,
+      "readyFrameMs": 223.80000007152557,
+      "themeCostMs": 6.100000023841858,
+      "fcpMs": 208,
+      "heapUsed": 6693035,
+      "htmlResponseEndMs": 82.30000007152557,
+      "mainScriptResponseEndMs": 101,
+      "scriptDurationMs": 49.245999999999995,
+      "taskDurationMs": 99.64099999999999,
+      "layoutDurationMs": 15.359,
+      "cdpHeapUsed": 5228428,
+      "readyAfterHtmlMs": 141.5,
+      "fcpAfterHtmlMs": 125.69999992847443,
+      "settingsFirstMs": 56.59999990463257,
+      "settingsWarmMs": 32.300000071525574,
+      "providersFirstMs": 34.5,
+      "providersWarmMs": 33.300000071525574,
+      "extensionsFirstMs": 32.800000071525574,
+      "extensionsWarmMs": 32.10000002384186,
+      "terminalFirstMs": 49.60000002384186,
+      "mathWorkerFirstMs": 131.09999990463257,
+      "mathFallbackFirstMs": 48.799999952316284,
+      "markdownWorkerStats": {
+        "posted": 1,
+        "completed": 1,
+        "cancelled": 0,
+        "pending": 0,
+        "running": false,
+        "failed": false
+      },
+      "initialJsBytes": 1443283,
+      "initialModuleCount": 557,
+      "startupTransferBytes": 1612164,
+      "startupFiles": [
+        "/",
+        "/assets/index-DIK01mH3.css",
+        "/assets/index-HIS8I6A4.js"
+      ]
+    },
+    {
+      "variant": "terminal-managed",
+      "sample": 6,
+      "themeMs": [7.199999928474426],
+      "errors": [],
+      "shellFrameMs": 247.60000002384186,
+      "readyFrameMs": 264.3000000715256,
+      "themeCostMs": 7.199999928474426,
+      "fcpMs": 252,
+      "heapUsed": 5767450,
+      "htmlResponseEndMs": 128.39999997615814,
+      "mainScriptResponseEndMs": 140.5,
+      "scriptDurationMs": 45.183,
+      "taskDurationMs": 97.148,
+      "layoutDurationMs": 19.182000000000002,
+      "cdpHeapUsed": 4550860,
+      "readyAfterHtmlMs": 135.90000009536743,
+      "fcpAfterHtmlMs": 123.60000002384186,
+      "settingsFirstMs": 27.799999952316284,
+      "settingsWarmMs": 33,
+      "providersFirstMs": 35.200000047683716,
+      "providersWarmMs": 32.60000002384186,
+      "extensionsFirstMs": 34,
+      "extensionsWarmMs": 32.40000009536743,
+      "terminalFirstMs": 66.39999997615814,
+      "mathWorkerFirstMs": 149.79999995231628,
+      "mathFallbackFirstMs": 47,
+      "markdownWorkerStats": {
+        "posted": 1,
+        "completed": 1,
+        "cancelled": 0,
+        "pending": 0,
+        "running": false,
+        "failed": false
+      },
+      "initialJsBytes": 1199652,
+      "initialModuleCount": 575,
+      "startupTransferBytes": 1381839,
+      "startupFiles": [
+        "/",
+        "/assets/index-S7GJCcCt.css",
+        "/assets/index-hCfeD0jl.js"
+      ]
+    },
+    {
+      "variant": "all-managed",
+      "sample": 6,
+      "themeMs": [6.200000047683716],
+      "errors": [],
+      "shellFrameMs": 238.29999995231628,
+      "readyFrameMs": 251.79999995231628,
+      "themeCostMs": 6.200000047683716,
+      "fcpMs": 276,
+      "heapUsed": 4592372,
+      "htmlResponseEndMs": 148,
+      "mainScriptResponseEndMs": 160.89999997615814,
+      "scriptDurationMs": 36.196,
+      "taskDurationMs": 78.664,
+      "layoutDurationMs": 15.110999999999999,
+      "cdpHeapUsed": 3751600,
+      "readyAfterHtmlMs": 103.79999995231628,
+      "fcpAfterHtmlMs": 128,
+      "settingsFirstMs": 39.700000047683716,
+      "settingsWarmMs": 33.60000002384186,
+      "providersFirstMs": 32.199999928474426,
+      "providersWarmMs": 33.300000071525574,
+      "extensionsFirstMs": 33,
+      "extensionsWarmMs": 32.800000071525574,
+      "terminalFirstMs": 65,
+      "mathWorkerFirstMs": 131.40000009536743,
+      "mathFallbackFirstMs": 64.10000002384186,
+      "markdownWorkerStats": {
+        "posted": 1,
+        "completed": 1,
+        "cancelled": 0,
+        "pending": 0,
+        "running": false,
+        "failed": false
+      },
+      "initialJsBytes": 820930,
+      "initialModuleCount": 473,
+      "startupTransferBytes": 984740,
+      "startupFiles": [
+        "/",
+        "/assets/index-DkY_TbYi.js",
+        "/assets/index-CIBgsebc.css"
+      ]
+    },
+    {
+      "variant": "baseline",
+      "sample": 6,
+      "themeMs": [7.400000095367432],
+      "errors": [],
+      "shellFrameMs": 183.69999992847443,
+      "readyFrameMs": 198,
+      "themeCostMs": 7.400000095367432,
+      "fcpMs": 184,
+      "heapUsed": 6764105,
+      "htmlResponseEndMs": 59.89999997615814,
+      "mainScriptResponseEndMs": 73.69999992847443,
+      "scriptDurationMs": 52.925,
+      "taskDurationMs": 100.774,
+      "layoutDurationMs": 15.504,
+      "cdpHeapUsed": 5246248,
+      "readyAfterHtmlMs": 138.10000002384186,
+      "fcpAfterHtmlMs": 124.10000002384186,
+      "settingsFirstMs": 19.299999952316284,
+      "settingsWarmMs": 33.5,
+      "providersFirstMs": 35.59999990463257,
+      "providersWarmMs": 27.200000047683716,
+      "extensionsFirstMs": 32.10000002384186,
+      "extensionsWarmMs": 32.39999997615814,
+      "terminalFirstMs": 50,
+      "mathWorkerFirstMs": 167.39999997615814,
+      "mathFallbackFirstMs": 43.60000002384186,
+      "markdownWorkerStats": {
+        "posted": 1,
+        "completed": 1,
+        "cancelled": 0,
+        "pending": 0,
+        "running": false,
+        "failed": false
+      },
+      "initialJsBytes": 1496591,
+      "initialModuleCount": 583,
+      "startupTransferBytes": 1683849,
+      "startupFiles": [
+        "/",
+        "/assets/index-CLjvw_Ad.js",
+        "/assets/index-BvpQh2aO.css"
+      ]
+    },
+    {
+      "variant": "pages",
+      "sample": 6,
+      "themeMs": [5.399999976158142],
+      "errors": [],
+      "shellFrameMs": 246.5,
+      "readyFrameMs": 261.2000000476837,
+      "themeCostMs": 5.399999976158142,
+      "fcpMs": 252,
+      "heapUsed": 6692206,
+      "htmlResponseEndMs": 126.20000004768372,
+      "mainScriptResponseEndMs": 137.89999997615814,
+      "scriptDurationMs": 52.392,
+      "taskDurationMs": 97.665,
+      "layoutDurationMs": 16.716,
+      "cdpHeapUsed": 5227732,
+      "readyAfterHtmlMs": 135,
+      "fcpAfterHtmlMs": 125.79999995231628,
+      "settingsFirstMs": 330.89999997615814,
+      "settingsWarmMs": 31.600000023841858,
+      "providersFirstMs": 333.60000002384186,
+      "providersWarmMs": 33.199999928474426,
+      "extensionsFirstMs": 332.1999999284744,
+      "extensionsWarmMs": 31.799999952316284,
+      "terminalFirstMs": 49.39999997615814,
+      "mathWorkerFirstMs": 142.39999997615814,
+      "mathFallbackFirstMs": 39.300000071525574,
+      "markdownWorkerStats": {
+        "posted": 1,
+        "completed": 1,
+        "cancelled": 0,
+        "pending": 0,
+        "running": false,
+        "failed": false
+      },
+      "initialJsBytes": 1443186,
+      "initialModuleCount": 556,
+      "startupTransferBytes": 1612067,
+      "startupFiles": [
+        "/",
+        "/assets/index-DIK01mH3.css",
+        "/assets/index-DQ9K9LXa.js"
+      ]
+    },
+    {
+      "variant": "terminal",
+      "sample": 6,
+      "themeMs": [6.5],
+      "errors": [],
+      "shellFrameMs": 212.60000002384186,
+      "readyFrameMs": 225.60000002384186,
+      "themeCostMs": 6.5,
+      "fcpMs": 212,
+      "heapUsed": 5709547,
+      "htmlResponseEndMs": 111.70000004768372,
+      "mainScriptResponseEndMs": 121.5,
+      "scriptDurationMs": 38.559999999999995,
+      "taskDurationMs": 79.868,
+      "layoutDurationMs": 12.74,
+      "cdpHeapUsed": 4493120,
+      "readyAfterHtmlMs": 113.89999997615814,
+      "fcpAfterHtmlMs": 100.29999995231628,
+      "settingsFirstMs": 30,
+      "settingsWarmMs": 32.700000047683716,
+      "providersFirstMs": 43.5,
+      "providersWarmMs": 33.200000047683716,
+      "extensionsFirstMs": 32.299999952316284,
+      "extensionsWarmMs": 32,
+      "terminalFirstMs": 365.39999997615814,
+      "mathWorkerFirstMs": 181,
+      "mathFallbackFirstMs": 40.700000047683716,
+      "markdownWorkerStats": {
+        "posted": 1,
+        "completed": 1,
+        "cancelled": 0,
+        "pending": 0,
+        "running": false,
+        "failed": false
+      },
+      "initialJsBytes": 1199488,
+      "initialModuleCount": 574,
+      "startupTransferBytes": 1381675,
+      "startupFiles": [
+        "/",
+        "/assets/index-S7GJCcCt.css",
+        "/assets/index-BzmzWrje.js"
+      ]
+    },
+    {
+      "variant": "markdown",
+      "sample": 6,
+      "themeMs": [7.399999976158142],
+      "errors": [],
+      "shellFrameMs": 206.60000002384186,
+      "readyFrameMs": 222.20000004768372,
+      "themeCostMs": 7.399999976158142,
+      "fcpMs": 212,
+      "heapUsed": 4816570,
+      "htmlResponseEndMs": 103.80000007152557,
+      "mainScriptResponseEndMs": 114.90000009536743,
+      "scriptDurationMs": 47.067,
+      "taskDurationMs": 93.22900000000001,
+      "layoutDurationMs": 16.240000000000002,
+      "cdpHeapUsed": 3621168,
+      "readyAfterHtmlMs": 118.39999997615814,
+      "fcpAfterHtmlMs": 108.19999992847443,
+      "settingsFirstMs": 44.799999952316284,
+      "settingsWarmMs": 32.09999990463257,
+      "providersFirstMs": 36,
+      "providersWarmMs": 29.800000071525574,
+      "extensionsFirstMs": 31,
+      "extensionsWarmMs": 33.299999952316284,
+      "terminalFirstMs": 48.5,
+      "mathWorkerFirstMs": 152.60000002384186,
+      "mathFallbackFirstMs": 327.7000000476837,
+      "markdownWorkerStats": {
+        "posted": 1,
+        "completed": 1,
+        "cancelled": 0,
+        "pending": 0,
+        "running": false,
+        "failed": false
+      },
+      "initialJsBytes": 1171315,
+      "initialModuleCount": 508,
+      "startupTransferBytes": 1358573,
+      "startupFiles": [
+        "/",
+        "/assets/index-BvpQh2aO.css",
+        "/assets/index-BH6Cj6Of.js"
+      ]
+    },
+    {
+      "variant": "all",
+      "sample": 6,
+      "themeMs": [5.299999952316284],
+      "errors": [],
+      "shellFrameMs": 192.89999997615814,
+      "readyFrameMs": 204.5,
+      "themeCostMs": 5.299999952316284,
+      "fcpMs": 192,
+      "heapUsed": 4581736,
+      "htmlResponseEndMs": 108.59999990463257,
+      "mainScriptResponseEndMs": 119.89999997615814,
+      "scriptDurationMs": 33.172,
+      "taskDurationMs": 77.443,
+      "layoutDurationMs": 14.037,
+      "cdpHeapUsed": 3740976,
+      "readyAfterHtmlMs": 95.90000009536743,
+      "fcpAfterHtmlMs": 83.40000009536743,
+      "settingsFirstMs": 333.89999997615814,
+      "settingsWarmMs": 33.200000047683716,
+      "providersFirstMs": 331.3000000715256,
+      "providersWarmMs": 32,
+      "extensionsFirstMs": 332.3000000715256,
+      "extensionsWarmMs": 35.39999997615814,
+      "terminalFirstMs": 348.89999997615814,
+      "mathWorkerFirstMs": 143.80000007152557,
+      "mathFallbackFirstMs": 335.89999997615814,
+      "markdownWorkerStats": {
+        "posted": 1,
+        "completed": 1,
+        "cancelled": 0,
+        "pending": 0,
+        "running": false,
+        "failed": false
+      },
+      "initialJsBytes": 820955,
+      "initialModuleCount": 472,
+      "startupTransferBytes": 984765,
+      "startupFiles": [
+        "/",
+        "/assets/index-CIBgsebc.css",
+        "/assets/index-BZoNF3ap.js"
+      ]
+    },
+    {
+      "variant": "terminal-managed",
+      "sample": 7,
+      "themeMs": [8.300000071525574],
+      "errors": [],
+      "shellFrameMs": 235.20000004768372,
+      "readyFrameMs": 254.30000007152557,
+      "themeCostMs": 8.300000071525574,
+      "fcpMs": 236,
+      "heapUsed": 5699982,
+      "htmlResponseEndMs": 118.5,
+      "mainScriptResponseEndMs": 131.89999997615814,
+      "scriptDurationMs": 44.886,
+      "taskDurationMs": 99.983,
+      "layoutDurationMs": 21.486,
+      "cdpHeapUsed": 4483392,
+      "readyAfterHtmlMs": 135.80000007152557,
+      "fcpAfterHtmlMs": 117.5,
+      "settingsFirstMs": 39.199999928474426,
+      "settingsWarmMs": 31.800000071525574,
+      "providersFirstMs": 40,
+      "providersWarmMs": 32.5,
+      "extensionsFirstMs": 31.800000071525574,
+      "extensionsWarmMs": 32.10000002384186,
+      "terminalFirstMs": 81.5,
+      "mathWorkerFirstMs": 180.69999992847443,
+      "mathFallbackFirstMs": 47.10000002384186,
+      "markdownWorkerStats": {
+        "posted": 1,
+        "completed": 1,
+        "cancelled": 0,
+        "pending": 0,
+        "running": false,
+        "failed": false
+      },
+      "initialJsBytes": 1199652,
+      "initialModuleCount": 575,
+      "startupTransferBytes": 1381839,
+      "startupFiles": [
+        "/",
+        "/assets/index-hCfeD0jl.js",
+        "/assets/index-S7GJCcCt.css"
+      ]
+    },
+    {
+      "variant": "all-managed",
+      "sample": 7,
+      "themeMs": [6.699999928474426],
+      "errors": [],
+      "shellFrameMs": 348.6999999284744,
+      "readyFrameMs": 363.7999999523163,
+      "themeCostMs": 6.699999928474426,
+      "fcpMs": 360,
+      "heapUsed": 4556780,
+      "htmlResponseEndMs": 267.60000002384186,
+      "mainScriptResponseEndMs": 280.89999997615814,
+      "scriptDurationMs": 35.14,
+      "taskDurationMs": 79.751,
+      "layoutDurationMs": 15.73,
+      "cdpHeapUsed": 3716044,
+      "readyAfterHtmlMs": 96.19999992847443,
+      "fcpAfterHtmlMs": 92.39999997615814,
+      "settingsFirstMs": 37.800000071525574,
+      "settingsWarmMs": 33,
+      "providersFirstMs": 32.60000002384186,
+      "providersWarmMs": 33.299999952316284,
+      "extensionsFirstMs": 32.89999997615814,
+      "extensionsWarmMs": 32.700000047683716,
+      "terminalFirstMs": 66.30000007152557,
+      "mathWorkerFirstMs": 132.89999997615814,
+      "mathFallbackFirstMs": 65,
+      "markdownWorkerStats": {
+        "posted": 1,
+        "completed": 1,
+        "cancelled": 0,
+        "pending": 0,
+        "running": false,
+        "failed": false
+      },
+      "initialJsBytes": 820930,
+      "initialModuleCount": 473,
+      "startupTransferBytes": 984740,
+      "startupFiles": [
+        "/",
+        "/assets/index-DkY_TbYi.js",
+        "/assets/index-CIBgsebc.css"
+      ]
+    },
+    {
+      "variant": "baseline",
+      "sample": 7,
+      "themeMs": [6.800000071525574],
+      "errors": [],
+      "shellFrameMs": 220.90000009536743,
+      "readyFrameMs": 234.70000004768372,
+      "themeCostMs": 6.800000071525574,
+      "fcpMs": 224,
+      "heapUsed": 6762301,
+      "htmlResponseEndMs": 99.60000002384186,
+      "mainScriptResponseEndMs": 112.70000004768372,
+      "scriptDurationMs": 50.074,
+      "taskDurationMs": 99.93299999999999,
+      "layoutDurationMs": 16.025000000000002,
+      "cdpHeapUsed": 5244456,
+      "readyAfterHtmlMs": 135.10000002384186,
+      "fcpAfterHtmlMs": 124.39999997615814,
+      "settingsFirstMs": 27.899999976158142,
+      "settingsWarmMs": 33.700000047683716,
+      "providersFirstMs": 36.10000002384186,
+      "providersWarmMs": 32,
+      "extensionsFirstMs": 33.200000047683716,
+      "extensionsWarmMs": 33.799999952316284,
+      "terminalFirstMs": 48.299999952316284,
+      "mathWorkerFirstMs": 144,
+      "mathFallbackFirstMs": 35.799999952316284,
+      "markdownWorkerStats": {
+        "posted": 1,
+        "completed": 1,
+        "cancelled": 0,
+        "pending": 0,
+        "running": false,
+        "failed": false
+      },
+      "initialJsBytes": 1496591,
+      "initialModuleCount": 583,
+      "startupTransferBytes": 1683849,
+      "startupFiles": [
+        "/",
+        "/assets/index-CLjvw_Ad.js",
+        "/assets/index-BvpQh2aO.css"
+      ]
+    },
+    {
+      "variant": "pages",
+      "sample": 7,
+      "themeMs": [6.399999976158142],
+      "errors": [],
+      "shellFrameMs": 200.10000002384186,
+      "readyFrameMs": 214.89999997615814,
+      "themeCostMs": 6.399999976158142,
+      "fcpMs": 200,
+      "heapUsed": 6687552,
+      "htmlResponseEndMs": 71.80000007152557,
+      "mainScriptResponseEndMs": 87.20000004768372,
+      "scriptDurationMs": 50.13,
+      "taskDurationMs": 98.356,
+      "layoutDurationMs": 16.729,
+      "cdpHeapUsed": 5223080,
+      "readyAfterHtmlMs": 143.09999990463257,
+      "fcpAfterHtmlMs": 128.19999992847443,
+      "settingsFirstMs": 325.2000000476837,
+      "settingsWarmMs": 32.799999952316284,
+      "providersFirstMs": 332.60000002384186,
+      "providersWarmMs": 32.299999952316284,
+      "extensionsFirstMs": 331.7999999523163,
+      "extensionsWarmMs": 33.200000047683716,
+      "terminalFirstMs": 48.60000002384186,
+      "mathWorkerFirstMs": 138.89999997615814,
+      "mathFallbackFirstMs": 41.60000002384186,
+      "markdownWorkerStats": {
+        "posted": 1,
+        "completed": 1,
+        "cancelled": 0,
+        "pending": 0,
+        "running": false,
+        "failed": false
+      },
+      "initialJsBytes": 1443186,
+      "initialModuleCount": 556,
+      "startupTransferBytes": 1612067,
+      "startupFiles": [
+        "/",
+        "/assets/index-DIK01mH3.css",
+        "/assets/index-DQ9K9LXa.js"
+      ]
+    },
+    {
+      "variant": "terminal",
+      "sample": 7,
+      "themeMs": [6.899999976158142],
+      "errors": [],
+      "shellFrameMs": 214.10000002384186,
+      "readyFrameMs": 227.5,
+      "themeCostMs": 6.899999976158142,
+      "fcpMs": 224,
+      "heapUsed": 5804031,
+      "htmlResponseEndMs": 97.5,
+      "mainScriptResponseEndMs": 111.80000007152557,
+      "scriptDurationMs": 45.428999999999995,
+      "taskDurationMs": 94.765,
+      "layoutDurationMs": 15.383000000000001,
+      "cdpHeapUsed": 4587584,
+      "readyAfterHtmlMs": 130,
+      "fcpAfterHtmlMs": 126.5,
+      "settingsFirstMs": 27.399999976158142,
+      "settingsWarmMs": 31.399999976158142,
+      "providersFirstMs": 40.200000047683716,
+      "providersWarmMs": 32.700000047683716,
+      "extensionsFirstMs": 32.10000002384186,
+      "extensionsWarmMs": 32.199999928474426,
+      "terminalFirstMs": 362.5,
+      "mathWorkerFirstMs": 213.89999997615814,
+      "mathFallbackFirstMs": 39.800000071525574,
+      "markdownWorkerStats": {
+        "posted": 1,
+        "completed": 1,
+        "cancelled": 0,
+        "pending": 0,
+        "running": false,
+        "failed": false
+      },
+      "initialJsBytes": 1199488,
+      "initialModuleCount": 574,
+      "startupTransferBytes": 1381675,
+      "startupFiles": [
+        "/",
+        "/assets/index-S7GJCcCt.css",
+        "/assets/index-BzmzWrje.js"
+      ]
+    },
+    {
+      "variant": "markdown",
+      "sample": 7,
+      "themeMs": [7],
+      "errors": [],
+      "shellFrameMs": 195,
+      "readyFrameMs": 213,
+      "themeCostMs": 7,
+      "fcpMs": 200,
+      "heapUsed": 4839161,
+      "htmlResponseEndMs": 80.89999997615814,
+      "mainScriptResponseEndMs": 92.89999997615814,
+      "scriptDurationMs": 53.870000000000005,
+      "taskDurationMs": 104.89,
+      "layoutDurationMs": 18.471,
+      "cdpHeapUsed": 3643724,
+      "readyAfterHtmlMs": 132.10000002384186,
+      "fcpAfterHtmlMs": 119.10000002384186,
+      "settingsFirstMs": 26.300000071525574,
+      "settingsWarmMs": 33.39999997615814,
+      "providersFirstMs": 32.800000071525574,
+      "providersWarmMs": 31.800000071525574,
+      "extensionsFirstMs": 31.799999952316284,
+      "extensionsWarmMs": 32.799999952316284,
+      "terminalFirstMs": 49.39999997615814,
+      "mathWorkerFirstMs": 134.59999990463257,
+      "mathFallbackFirstMs": 328.8000000715256,
+      "markdownWorkerStats": {
+        "posted": 1,
+        "completed": 1,
+        "cancelled": 0,
+        "pending": 0,
+        "running": false,
+        "failed": false
+      },
+      "initialJsBytes": 1171315,
+      "initialModuleCount": 508,
+      "startupTransferBytes": 1358573,
+      "startupFiles": [
+        "/",
+        "/assets/index-BvpQh2aO.css",
+        "/assets/index-BH6Cj6Of.js"
+      ]
+    },
+    {
+      "variant": "all",
+      "sample": 7,
+      "themeMs": [6.600000023841858],
+      "errors": [],
+      "shellFrameMs": 1428.3999999761581,
+      "readyFrameMs": 1442,
+      "themeCostMs": 6.600000023841858,
+      "fcpMs": 1428,
+      "heapUsed": 4594033,
+      "htmlResponseEndMs": 1353.2000000476837,
+      "mainScriptResponseEndMs": 1363.5,
+      "scriptDurationMs": 32.967000000000006,
+      "taskDurationMs": 71.665,
+      "layoutDurationMs": 12.63,
+      "cdpHeapUsed": 3753260,
+      "readyAfterHtmlMs": 88.79999995231628,
+      "fcpAfterHtmlMs": 74.79999995231628,
+      "settingsFirstMs": 340.59999990463257,
+      "settingsWarmMs": 33.200000047683716,
+      "providersFirstMs": 333.2000000476837,
+      "providersWarmMs": 33.09999990463257,
+      "extensionsFirstMs": 332.2999999523163,
+      "extensionsWarmMs": 33.39999997615814,
+      "terminalFirstMs": 349.39999997615814,
+      "mathWorkerFirstMs": 182.29999995231628,
+      "mathFallbackFirstMs": 330.7000000476837,
+      "markdownWorkerStats": {
+        "posted": 1,
+        "completed": 1,
+        "cancelled": 0,
+        "pending": 0,
+        "running": false,
+        "failed": false
+      },
+      "initialJsBytes": 820955,
+      "initialModuleCount": 472,
+      "startupTransferBytes": 984765,
+      "startupFiles": [
+        "/",
+        "/assets/index-BZoNF3ap.js",
+        "/assets/index-CIBgsebc.css"
+      ]
+    },
+    {
+      "variant": "pages-managed",
+      "sample": 7,
+      "themeMs": [7.5],
+      "errors": [],
+      "shellFrameMs": 1431.3999999761581,
+      "readyFrameMs": 1446.8999999761581,
+      "themeCostMs": 7.5,
+      "fcpMs": 1432,
+      "heapUsed": 6656926,
+      "htmlResponseEndMs": 1317.1000000238419,
+      "mainScriptResponseEndMs": 1330.8999999761581,
+      "scriptDurationMs": 45.315,
+      "taskDurationMs": 93.7,
+      "layoutDurationMs": 16.883,
+      "cdpHeapUsed": 5192356,
+      "readyAfterHtmlMs": 129.79999995231628,
+      "fcpAfterHtmlMs": 114.89999997615814,
+      "settingsFirstMs": 48.39999997615814,
+      "settingsWarmMs": 37.200000047683716,
+      "providersFirstMs": 38.89999997615814,
+      "providersWarmMs": 32,
+      "extensionsFirstMs": 33.300000071525574,
+      "extensionsWarmMs": 32.60000002384186,
+      "terminalFirstMs": 50.39999997615814,
+      "mathWorkerFirstMs": 134.40000009536743,
+      "mathFallbackFirstMs": 45.5,
+      "markdownWorkerStats": {
+        "posted": 1,
+        "completed": 1,
+        "cancelled": 0,
+        "pending": 0,
+        "running": false,
+        "failed": false
+      },
+      "initialJsBytes": 1443283,
+      "initialModuleCount": 557,
+      "startupTransferBytes": 1612164,
+      "startupFiles": [
+        "/",
+        "/assets/index-HIS8I6A4.js",
+        "/assets/index-DIK01mH3.css"
+      ]
+    }
+  ]
+}

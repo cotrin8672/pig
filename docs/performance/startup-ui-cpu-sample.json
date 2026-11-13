@@ -1,0 +1,314 @@
+{
+  "scope": "Real App and RPC controller in headless Edge over HTTP; synthetic 40-model/2-account payload, no Electrobun native startup or real network/credentials. Source changes are experimental build transforms, not production-ready implementations.",
+  "samples": 1,
+  "environment": {
+    "bun": "1.4.2",
+    "cpuRate": 1,
+    "cpuProfileCaptured": true,
+    "sourceRevision": "91deb0c9790233b3ce97014447e060371fe51252",
+    "browserVersion": "Edg/157.0.4341.42; V8 15.7.11.4",
+    "cpu": "AMD Ryzen 7 5700X 8-Core Processor             ",
+    "logicalCpus": 16
+  },
+  "summary": {
+    "baseline": {
+      "initialJsBytes": 1496591,
+      "initialModuleCount": 583,
+      "initialFeatures": [
+        "katex/dist/katex.mjs",
+        "C:/Users/gummy/ghq/github.com/cotrin8672/pig/apps/desktop/src/mainview/Extensions.tsx",
+        "C:/Users/gummy/ghq/github.com/cotrin8672/pig/apps/desktop/src/mainview/Providers.tsx",
+        "C:/Users/gummy/ghq/github.com/cotrin8672/pig/apps/desktop/src/mainview/Settings.tsx",
+        "@xterm/xterm/lib/xterm.js?commonjs-module",
+        "@xterm/xterm/lib/xterm.js",
+        "@xterm/xterm/lib/xterm.js?commonjs-es-import",
+        "katex/dist/katex.min.css"
+      ],
+      "fcpMs": {
+        "median": 208,
+        "min": 208,
+        "max": 208
+      },
+      "shellFrameMs": {
+        "median": 196.9,
+        "min": 196.9,
+        "max": 196.9
+      },
+      "readyFrameMs": {
+        "median": 211.3,
+        "min": 211.3,
+        "max": 211.3
+      },
+      "settingsFirstMs": {
+        "median": 23.5,
+        "min": 23.5,
+        "max": 23.5
+      },
+      "settingsWarmMs": {
+        "median": 31,
+        "min": 31,
+        "max": 31
+      },
+      "providersFirstMs": {
+        "median": 34.2,
+        "min": 34.2,
+        "max": 34.2
+      },
+      "extensionsFirstMs": {
+        "median": 33.2,
+        "min": 33.2,
+        "max": 33.2
+      },
+      "terminalFirstMs": {
+        "median": 48.3,
+        "min": 48.3,
+        "max": 48.3
+      },
+      "mathWorkerFirstMs": {
+        "median": 153.2,
+        "min": 153.2,
+        "max": 153.2
+      },
+      "mathFallbackFirstMs": {
+        "median": 42.7,
+        "min": 42.7,
+        "max": 42.7
+      },
+      "heapUsed": {
+        "median": 6884597,
+        "min": 6884597,
+        "max": 6884597
+      },
+      "scriptDurationMs": {
+        "median": 60.9,
+        "min": 60.9,
+        "max": 60.9
+      },
+      "taskDurationMs": {
+        "median": 111.2,
+        "min": 111.2,
+        "max": 111.2
+      },
+      "layoutDurationMs": {
+        "median": 16.6,
+        "min": 16.6,
+        "max": 16.6
+      },
+      "themeCostMs": {
+        "median": 11.3,
+        "min": 11.3,
+        "max": 11.3
+      },
+      "htmlResponseEndMs": {
+        "median": 55.4,
+        "min": 55.4,
+        "max": 55.4
+      },
+      "mainScriptResponseEndMs": {
+        "median": 71.6,
+        "min": 71.6,
+        "max": 71.6
+      },
+      "readyAfterHtmlMs": {
+        "median": 155.9,
+        "min": 155.9,
+        "max": 155.9
+      },
+      "fcpAfterHtmlMs": {
+        "median": 152.6,
+        "min": 152.6,
+        "max": 152.6
+      }
+    },
+    "all-managed": {
+      "initialJsBytes": 820930,
+      "initialModuleCount": 473,
+      "initialFeatures": ["katex/dist/katex.min.css"],
+      "fcpMs": {
+        "median": 252,
+        "min": 252,
+        "max": 252
+      },
+      "shellFrameMs": {
+        "median": 244.4,
+        "min": 244.4,
+        "max": 244.4
+      },
+      "readyFrameMs": {
+        "median": 259.8,
+        "min": 259.8,
+        "max": 259.8
+      },
+      "settingsFirstMs": {
+        "median": 38.5,
+        "min": 38.5,
+        "max": 38.5
+      },
+      "settingsWarmMs": {
+        "median": 33.1,
+        "min": 33.1,
+        "max": 33.1
+      },
+      "providersFirstMs": {
+        "median": 41.8,
+        "min": 41.8,
+        "max": 41.8
+      },
+      "extensionsFirstMs": {
+        "median": 36.4,
+        "min": 36.4,
+        "max": 36.4
+      },
+      "terminalFirstMs": {
+        "median": 82.3,
+        "min": 82.3,
+        "max": 82.3
+      },
+      "mathWorkerFirstMs": {
+        "median": 157.1,
+        "min": 157.1,
+        "max": 157.1
+      },
+      "mathFallbackFirstMs": {
+        "median": 69.8,
+        "min": 69.8,
+        "max": 69.8
+      },
+      "heapUsed": {
+        "median": 4629167,
+        "min": 4629167,
+        "max": 4629167
+      },
+      "scriptDurationMs": {
+        "median": 47,
+        "min": 47,
+        "max": 47
+      },
+      "taskDurationMs": {
+        "median": 97.1,
+        "min": 97.1,
+        "max": 97.1
+      },
+      "layoutDurationMs": {
+        "median": 16.2,
+        "min": 16.2,
+        "max": 16.2
+      },
+      "themeCostMs": {
+        "median": 8.6,
+        "min": 8.6,
+        "max": 8.6
+      },
+      "htmlResponseEndMs": {
+        "median": 132.6,
+        "min": 132.6,
+        "max": 132.6
+      },
+      "mainScriptResponseEndMs": {
+        "median": 149.4,
+        "min": 149.4,
+        "max": 149.4
+      },
+      "readyAfterHtmlMs": {
+        "median": 127.2,
+        "min": 127.2,
+        "max": 127.2
+      },
+      "fcpAfterHtmlMs": {
+        "median": 119.4,
+        "min": 119.4,
+        "max": 119.4
+      }
+    }
+  },
+  "raw": [
+    {
+      "variant": "baseline",
+      "sample": 1,
+      "themeMs": [11.300000071525574],
+      "errors": [],
+      "shellFrameMs": 196.89999997615814,
+      "readyFrameMs": 211.30000007152557,
+      "themeCostMs": 11.300000071525574,
+      "fcpMs": 208,
+      "heapUsed": 6884597,
+      "htmlResponseEndMs": 55.39999997615814,
+      "mainScriptResponseEndMs": 71.60000002384186,
+      "scriptDurationMs": 60.897,
+      "taskDurationMs": 111.24199999999999,
+      "layoutDurationMs": 16.627,
+      "cdpHeapUsed": 5366780,
+      "readyAfterHtmlMs": 155.90000009536743,
+      "fcpAfterHtmlMs": 152.60000002384186,
+      "settingsFirstMs": 23.5,
+      "settingsWarmMs": 31,
+      "providersFirstMs": 34.200000047683716,
+      "providersWarmMs": 31.899999976158142,
+      "extensionsFirstMs": 33.200000047683716,
+      "extensionsWarmMs": 33.200000047683716,
+      "terminalFirstMs": 48.299999952316284,
+      "mathWorkerFirstMs": 153.20000004768372,
+      "mathFallbackFirstMs": 42.700000047683716,
+      "markdownWorkerStats": {
+        "posted": 1,
+        "completed": 1,
+        "cancelled": 0,
+        "pending": 0,
+        "running": false,
+        "failed": false
+      },
+      "initialJsBytes": 1496591,
+      "initialModuleCount": 583,
+      "startupTransferBytes": 1683849,
+      "startupFiles": [
+        "/",
+        "/assets/index-CLjvw_Ad.js",
+        "/assets/index-BvpQh2aO.css"
+      ]
+    },
+    {
+      "variant": "all-managed",
+      "sample": 1,
+      "themeMs": [8.600000023841858],
+      "errors": [],
+      "shellFrameMs": 244.39999997615814,
+      "readyFrameMs": 259.7999999523163,
+      "themeCostMs": 8.600000023841858,
+      "fcpMs": 252,
+      "heapUsed": 4629167,
+      "htmlResponseEndMs": 132.60000002384186,
+      "mainScriptResponseEndMs": 149.39999997615814,
+      "scriptDurationMs": 47.001,
+      "taskDurationMs": 97.121,
+      "layoutDurationMs": 16.197,
+      "cdpHeapUsed": 3788460,
+      "readyAfterHtmlMs": 127.19999992847443,
+      "fcpAfterHtmlMs": 119.39999997615814,
+      "settingsFirstMs": 38.5,
+      "settingsWarmMs": 33.10000002384186,
+      "providersFirstMs": 41.799999952316284,
+      "providersWarmMs": 35,
+      "extensionsFirstMs": 36.40000009536743,
+      "extensionsWarmMs": 26.799999952316284,
+      "terminalFirstMs": 82.29999995231628,
+      "mathWorkerFirstMs": 157.10000002384186,
+      "mathFallbackFirstMs": 69.80000007152557,
+      "markdownWorkerStats": {
+        "posted": 1,
+        "completed": 1,
+        "cancelled": 0,
+        "pending": 0,
+        "running": false,
+        "failed": false
+      },
+      "initialJsBytes": 820930,
+      "initialModuleCount": 473,
+      "startupTransferBytes": 984740,
+      "startupFiles": [
+        "/",
+        "/assets/index-CIBgsebc.css",
+        "/assets/index-DkY_TbYi.js"
+      ]
+    }
+  ]
+}

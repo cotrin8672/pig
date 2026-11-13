@@ -1,5 +1,8 @@
 # 起動の遅さ：Window表示前とUI表示前のボトルネック
 
+追加の実測：[候補別A/B・初回操作への移転・CPU profile](desktop-startup-ab-results.md)。
+以下は当初の調査記録で、後続のA/Bもnative end-to-end起動の実測ではない。
+
 実装前の追加調査：[実装方針の成立性と段階的な設計](desktop-startup-implementation-study.md)。
 Bunの単一ファイルbundleではlocal `import()`だけでSDK読込を遅延化できない場合があるため、
 配布artifactの境界、サービスの寿命、bootstrap分割の契約を先に検証する。
