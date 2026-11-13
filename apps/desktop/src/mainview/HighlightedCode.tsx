@@ -1,5 +1,16 @@
-import { Fragment, memo, useEffect, useMemo, useState } from "react";
+import {
+  Fragment,
+  memo,
+  startTransition,
+  useEffect,
+  useMemo,
+  useState,
+} from "react";
 import type { ThemedToken } from "shiki/core";
+import {
+  type HighlightSnapshot,
+  retainedHighlight,
+} from "./retained-highlighting";
 import {
   cachedHighlight,
   canHighlight,
@@ -7,49 +18,61 @@ import {
   languageFromPath,
   terminalText,
 } from "./syntax-highlighting";
+import { sameTokens, terminalRuns, tokenRuns } from "./token-runs";
 
 function useHighlightedLines(text: string, language?: string) {
-  const [result, setResult] = useState<{
-    text: string;
-    language?: string;
-    tokens?: ThemedToken[][];
-  }>();
+  const [result, setResult] = useState<HighlightSnapshot | undefined>(() => {
+    const tokens = cachedHighlight(text, language);
+    return tokens ? { text, language, tokens } : undefined;
+  });
   useEffect(() => {
-    let active = true;
-    void highlightCode(text, language).then((tokens) => {
-      if (active && tokens) setResult({ text, language, tokens });
+    const controller = new AbortController();
+    void highlightCode(text, language, controller.signal).then((tokens) => {
+      if (!controller.signal.aborted && tokens)
+        startTransition(() => setResult({ text, language, tokens }));
     });
-    return () => {
-      active = false;
-    };
+    return () => controller.abort();
   }, [text, language]);
-  // Never display tokens from an older streaming snapshot or a different language.
-  return result?.text === text && result.language === language
-    ? result.tokens
-    : cachedHighlight(text, language);
+  // Prefer exact tokens; while loading, retain only text that is still unchanged.
+  return (
+    cachedHighlight(text, language) ??
+    (result?.text === text && result.language === language
+      ? result.tokens
+      : retainedHighlight(text, language, result))
+  );
 }
 
-function TokenLine({ tokens, text }: { tokens?: ThemedToken[]; text: string }) {
-  if (!tokens) return text;
-  return tokens.map((token, index) => (
-    <span
-      // biome-ignore lint/suspicious/noArrayIndexKey: Tokens retain source order.
-      key={index}
-      className={[
-        "syntax-token",
-        token.fontStyle && token.fontStyle & 1 ? "syntax-italic" : "",
-        token.fontStyle && token.fontStyle & 2 ? "syntax-bold" : "",
-        token.fontStyle && token.fontStyle & 4 ? "syntax-underline" : "",
-        token.fontStyle && token.fontStyle & 8 ? "syntax-strike" : "",
-      ]
-        .filter(Boolean)
-        .join(" ")}
-      style={{ color: token.color, backgroundColor: token.bgColor }}
-    >
-      {token.content}
-    </span>
-  ));
-}
+const TokenLine = memo(
+  function TokenLine({
+    tokens,
+    text,
+  }: {
+    tokens?: ThemedToken[];
+    text: string;
+  }) {
+    if (!tokens) return text;
+    return tokenRuns(tokens).map((token, index) => (
+      <span
+        // biome-ignore lint/suspicious/noArrayIndexKey: Tokens retain source order.
+        key={index}
+        className={[
+          "syntax-token",
+          token.fontStyle && token.fontStyle & 1 ? "syntax-italic" : "",
+          token.fontStyle && token.fontStyle & 2 ? "syntax-bold" : "",
+          token.fontStyle && token.fontStyle & 4 ? "syntax-underline" : "",
+          token.fontStyle && token.fontStyle & 8 ? "syntax-strike" : "",
+        ]
+          .filter(Boolean)
+          .join(" ")}
+        style={{ color: token.color, backgroundColor: token.bgColor }}
+      >
+        {token.content}
+      </span>
+    ));
+  },
+  (previous, next) =>
+    previous.text === next.text && sameTokens(previous.tokens, next.tokens),
+);
 
 /** Inline contents only: callers keep their original pre/code and scrolling. */
 export const CodeText = memo(function CodeText({
@@ -89,7 +112,16 @@ export const TerminalOutput = memo(function TerminalOutput({
     text,
     colored !== plain ? "ansi" : undefined,
   );
-  return plain.split("\n").map((line, index, lines) => (
+  const lines = plain.split("\n");
+  // No pending ANSI enhancement can replace these plain log nodes. Preserve
+  // every byte/line while avoiding thousands of unstyled wrapper spans.
+  if (colored === plain && lines.length > 200)
+    return terminalRuns(lines).map((run) => (
+      <span key={run.start} className={run.tone}>
+        {run.text}
+      </span>
+    ));
+  return lines.map((line, index, lines) => (
     <span
       // biome-ignore lint/suspicious/noArrayIndexKey: Output lines retain source order.
       key={index}
@@ -130,6 +162,34 @@ export function diffHunks(text: string, numbered = false): DiffLine[][] {
   return groups;
 }
 
+const DiffRow = memo(
+  function DiffRow({
+    line,
+    tokens,
+    newline,
+  }: {
+    line: DiffLine;
+    tokens?: ThemedToken[];
+    newline: boolean;
+  }) {
+    return (
+      <>
+        <span className={line.tone ?? ""}>
+          {line.prefix}
+          <TokenLine tokens={tokens} text={line.text} />
+        </span>
+        {newline ? "\n" : ""}
+      </>
+    );
+  },
+  (a, b) =>
+    a.line.prefix === b.line.prefix &&
+    a.line.text === b.line.text &&
+    a.line.tone === b.line.tone &&
+    a.newline === b.newline &&
+    sameTokens(a.tokens, b.tokens),
+);
+
 function DiffHunk({
   lines,
   language,
@@ -139,20 +199,21 @@ function DiffHunk({
   language?: string;
   last: boolean;
 }) {
-  const before = useHighlightedLines(
-    lines
-      .filter((line) => line.code && line.tone !== "add")
-      .map((line) => line.text)
-      .join("\n"),
-    language,
+  const [beforeText, afterText] = useMemo(
+    () => [
+      lines
+        .filter((line) => line.code && line.tone !== "add")
+        .map((line) => line.text)
+        .join("\n"),
+      lines
+        .filter((line) => line.code && line.tone !== "del")
+        .map((line) => line.text)
+        .join("\n"),
+    ],
+    [lines],
   );
-  const after = useHighlightedLines(
-    lines
-      .filter((line) => line.code && line.tone !== "del")
-      .map((line) => line.text)
-      .join("\n"),
-    language,
-  );
+  const before = useHighlightedLines(beforeText, language);
+  const after = useHighlightedLines(afterText, language);
   let oldIndex = 0;
   let newIndex = 0;
   return lines.map((line, index) => {
@@ -164,14 +225,13 @@ function DiffHunk({
     if (line.code && line.tone !== "add") oldIndex++;
     if (line.code && line.tone !== "del") newIndex++;
     return (
-      // biome-ignore lint/suspicious/noArrayIndexKey: Diff lines retain source order.
-      <Fragment key={index}>
-        <span className={line.tone ?? ""}>
-          {line.prefix}
-          <TokenLine tokens={tokens} text={line.text} />
-        </span>
-        {!last || index < lines.length - 1 ? "\n" : ""}
-      </Fragment>
+      <DiffRow
+        // biome-ignore lint/suspicious/noArrayIndexKey: Diff lines retain source order.
+        key={index}
+        line={line}
+        tokens={tokens}
+        newline={!last || index < lines.length - 1}
+      />
     );
   });
 }

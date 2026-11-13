@@ -1,15 +1,23 @@
 import type { ImageContent, TextContent } from "@earendil-works/pi-ai";
 import type { ChatRendererProps } from "@pig/chat-renderers";
+import type { Root } from "hast";
 import { Check, Copy, Pencil } from "lucide-react";
 import {
+  Fragment,
   memo,
+  startTransition,
   useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
+  useRef,
   useState,
   useSyncExternalStore,
 } from "react";
-import ReactMarkdown, { defaultUrlTransform } from "react-markdown";
+import ReactMarkdown, {
+  type Components,
+  defaultUrlTransform,
+} from "react-markdown";
 import rehypeKatex from "rehype-katex";
 import remarkGfm from "remark-gfm";
 import remarkMath from "remark-math";
@@ -25,6 +33,13 @@ import { dataText } from "./custom-data";
 import { CodeText } from "./HighlightedCode";
 import { ImageGallery } from "./ImageGallery";
 import { useT } from "./i18n";
+import {
+  browserMarkdown,
+  cachedMarkdown,
+  plainMarkdown,
+  prepareMarkdown,
+  retainedMarkdown,
+} from "./markdown-processing";
 import { editKey, messageEdits } from "./message-edits";
 import { openChatLink, regenerate, rpc } from "./rpc";
 import { SentAttachments } from "./SentAttachments";
@@ -57,9 +72,114 @@ const RenderedMarkdown = memo(function RenderedMarkdown({
   );
 });
 
+// Stable component types preserve code/image DOM, highlight work and selection
+// while streaming. Inline component functions remount every Markdown update.
+export const markdownComponents: Components = {
+  code: ({ className, children }) => (
+    <code className={className}>
+      {typeof children === "string" ? (
+        <CodeText
+          text={children}
+          language={/(?:^|\s)language-(\S+)/.exec(className ?? "")?.[1]}
+        />
+      ) : (
+        children
+      )}
+    </code>
+  ),
+  a: ({ href, children }) => (
+    <a
+      href={href}
+      onClick={(e) => {
+        e.preventDefault();
+        if (href) {
+          if (sessionIdFromLink(href)) void openChatLink(href);
+          else rpc.send.openExternal({ url: href });
+        }
+      }}
+    >
+      {children}
+    </a>
+  ),
+  img: ({ src, alt }) =>
+    typeof src === "string" && src ? (
+      <ImageGallery sources={[src]} alt={alt} />
+    ) : null,
+};
+
+function MarkdownTree({ tree }: { tree: Root }) {
+  // Feed the worker's HAST through react-markdown's own safe post-processing
+  // and existing React components, rather than replacing DOM with HTML strings.
+  const plugins = useMemo(() => [() => () => tree], [tree]);
+  return (
+    <ReactMarkdown
+      rehypePlugins={plugins}
+      components={markdownComponents}
+      urlTransform={(url) =>
+        sessionIdFromLink(url) ? url : defaultUrlTransform(url)
+      }
+    >
+      {""}
+    </ReactMarkdown>
+  );
+}
+
 export function BuiltinMarkdown({
   data: { text },
 }: ChatRendererProps<"markdown">) {
+  const source = useMemo(() => normalizeMath(text), [text]);
+  const plain = useMemo(() => plainMarkdown(source), [source]);
+  const [result, setResult] = useState<
+    { text: string; tree: Root } | undefined
+  >(() => {
+    const cached = cachedMarkdown(source);
+    return cached ? { text: source, tree: cached.tree } : undefined;
+  });
+  const [error, setError] = useState<unknown>();
+  const committed = useRef<{ text: string; tree: Root } | undefined>(undefined);
+  useEffect(() => {
+    if (!browserMarkdown() || plain) return;
+    const controller = new AbortController();
+    void prepareMarkdown(source, controller.signal).then(
+      (parsed) => {
+        if (parsed && !controller.signal.aborted)
+          startTransition(() => setResult({ text: source, tree: parsed.tree }));
+      },
+      (failure) => {
+        if (!controller.signal.aborted) setError(failure);
+      },
+    );
+    return () => controller.abort();
+  }, [source, plain]);
+  const exact =
+    plain ??
+    cachedMarkdown(source)?.tree ??
+    (result?.text === source ? result.tree : undefined);
+  useLayoutEffect(() => {
+    if (exact) committed.current = { text: source, tree: exact };
+  }, [source, exact]);
+  if (error) throw error;
+  if (exact)
+    return (
+      <Fragment key="markdown-body">
+        <MarkdownTree tree={exact} />
+      </Fragment>
+    );
+  if (browserMarkdown()) {
+    const retained = retainedMarkdown(source, committed.current ?? result);
+    const tailTree = retained.tail ? plainMarkdown(retained.tail) : undefined;
+    return (
+      <Fragment key="markdown-body">
+        {retained.tree && <MarkdownTree tree={retained.tree} />}
+        {retained.tail &&
+          (tailTree ? (
+            <MarkdownTree tree={tailTree} />
+          ) : (
+            <span className="markdown-pending-source">{retained.tail}</span>
+          ))}
+      </Fragment>
+    );
+  }
   return (
     <ReactMarkdown
       remarkPlugins={[remarkGfm, remarkMath]}
@@ -68,40 +188,9 @@ export function BuiltinMarkdown({
       urlTransform={(url) =>
         sessionIdFromLink(url) ? url : defaultUrlTransform(url)
       }
-      components={{
-        code: ({ className, children }) => (
-          <code className={className}>
-            {typeof children === "string" ? (
-              <CodeText
-                text={children}
-                language={/(?:^|\s)language-(\S+)/.exec(className ?? "")?.[1]}
-              />
-            ) : (
-              children
-            )}
-          </code>
-        ),
-        a: ({ href, children }) => (
-          <a
-            href={href}
-            onClick={(e) => {
-              e.preventDefault();
-              if (href) {
-                if (sessionIdFromLink(href)) void openChatLink(href);
-                else rpc.send.openExternal({ url: href });
-              }
-            }}
-          >
-            {children}
-          </a>
-        ),
-        img: ({ src, alt }) =>
-          typeof src === "string" && src ? (
-            <ImageGallery sources={[src]} alt={alt} />
-          ) : null,
-      }}
+      components={markdownComponents}
     >
-      {normalizeMath(text)}
+      {source}
     </ReactMarkdown>
   );
 }

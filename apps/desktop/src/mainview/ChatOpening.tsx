@@ -1,6 +1,6 @@
-import { useRef, useSyncExternalStore } from "react";
+import { useCallback, useRef, useSyncExternalStore } from "react";
 import { composerAction } from "../shared/keymap";
-import type { Snapshot } from "../shared/rpc-schema";
+import type { ModelSelection, Snapshot } from "../shared/rpc-schema";
 import type { PromptDelivery } from "../shared/runtime-contract";
 import { ChatEmpty, ChatLayout } from "./ChatLayout";
 import { ComposerEditor, insertEditorNewline } from "./ComposerEditor";
@@ -34,6 +34,15 @@ export function OpeningComposer({ preview }: { preview?: Snapshot }) {
     target?.id ? s.snapshots[target.id] : undefined,
   );
   const snapshot = preview ?? stored;
+  const selectModel = useCallback(
+    (selection: ModelSelection) => {
+      if (!useStore.getState().openId && preview)
+        void openChat(preview.info.cwd, preview.info.id);
+      const id = useStore.getState().openId;
+      if (id) queueOpeningSelection(id, selection);
+    },
+    [preview],
+  );
   const newText = useStore((s) =>
     target ? (s.newChatDrafts[openingDraftKey(target)] ?? "") : "",
   );
@@ -143,12 +152,7 @@ export function OpeningComposer({ preview }: { preview?: Snapshot }) {
             <ContextIndicator usage={snapshot?.contextUsage} />
             <ModelPicker
               selection={target?.selection ?? snapshot}
-              onSelect={(selection) => {
-                if (!useStore.getState().openId && preview)
-                  void openChat(preview.info.cwd, preview.info.id);
-                const id = useStore.getState().openId;
-                if (id) queueOpeningSelection(id, selection);
-              }}
+              onSelect={selectModel}
             />
           </div>
           <div className="send-controls">

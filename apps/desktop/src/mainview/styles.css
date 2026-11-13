@@ -547,6 +547,26 @@ main > * {
   padding-bottom: calc(var(--composer-height, 140px) + 24px);
   scroll-padding-bottom: calc(var(--composer-height, 140px) + 24px);
 }
+.thread-scroll-to-bottom {
+  position: absolute;
+  bottom: calc(var(--composer-height, 140px) + 12px);
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 11;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  border: 1px solid var(--ds-border-strong);
+  border-radius: var(--radius-full);
+  background: var(--ds-bg-popover);
+  backdrop-filter: blur(20px);
+  box-shadow: var(--ds-shadow-composer);
+  color: var(--ds-text-secondary);
+}
+.thread-scroll-to-bottom:hover {
+  background: var(--ds-tile-hover);
+  color: var(--ds-text-primary);
+}
 .transcript {
   max-width: var(--chat-width, 768px);
   margin: 0 auto;
@@ -817,6 +837,10 @@ details[open] > summary .tool-chevron,
 .tool-diff > span {
   display: inline-block;
   min-width: 100%;
+}
+.markdown-pending-source {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
 .syntax-italic {
   font-style: italic;

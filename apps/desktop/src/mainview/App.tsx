@@ -696,9 +696,13 @@ export function Chat({ snapshot }: { snapshot: ChatSnapshot }) {
   return (
     <ChatLayout
       threadRef={thread}
+      onContentResize={followOptimistic}
       onScroll={({ currentTarget }) => {
         view.follow = isThreadAtBottom(currentTarget);
         view.top = currentTarget.scrollTop;
+      }}
+      onJumpToBottom={() => {
+        view.follow = true;
       }}
       composer={
         readOnly ? (
