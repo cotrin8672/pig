@@ -77,13 +77,23 @@ export function mistralUsage(value: unknown): UsageData {
   const initial = number(row.initial_budget);
   if (used === undefined || used < 0 || initial === undefined || initial <= 0)
     return { windows: [], balances: [] };
+  const resetsAt = timestamp(row.reset_at);
+  let durationMs: number | undefined;
+  if (resetsAt !== undefined) {
+    const start = new Date(resetsAt);
+    const day = start.getUTCDate();
+    start.setUTCMonth(start.getUTCMonth(), 0);
+    start.setUTCDate(Math.min(day, start.getUTCDate()));
+    durationMs = resetsAt - start.getTime();
+  }
   return {
     windows: [
       {
         id: "vibe",
         label: "Vibe",
         usedPercent: used,
-        resetsAt: timestamp(row.reset_at),
+        resetsAt,
+        durationMs,
       },
     ],
     balances: [],

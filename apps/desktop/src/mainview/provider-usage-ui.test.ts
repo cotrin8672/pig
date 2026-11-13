@@ -66,6 +66,35 @@ test.skipIf(!existsSync(edge) && !process.env.PIG_REQUIRE_UI_TESTS)(
           list.scrollTop=list.scrollHeight;
           check(list.lastElementChild.getBoundingClientRect().bottom<=list.getBoundingClientRect().bottom+1,'last account reachable');
         }
+        render(usageFixtures,'remaining',240);
+        const mistralRow=[...document.querySelectorAll('.provider-usage-row')].find(r=>r.querySelector('.provider-usage-name').textContent==='Mistral Vibe');
+        const timeRing=mistralRow.querySelector('.usage-ring-time');
+        const mistral=usageFixtures.find(e=>e.provider==='mistral');
+        const monthly=mistral.data.windows[0];
+        check(timeRing&&Math.abs(parseFloat(timeRing.getAttribute('stroke-dasharray'))-(monthly.resetsAt-usageFixtureTime)/monthly.durationMs*100)<0.001,'Mistral outer ring shows remaining monthly time');
+        const timeDash=timeRing.getAttribute('stroke-dasharray');
+        for(const ring of document.querySelectorAll('.usage-ring-time,.usage-ring-quota')){
+          const matrix=ring.transform.baseVal.consolidate().matrix;
+          const start=ring.getPointAtLength(0).matrixTransform(matrix);
+          const quarter=ring.getPointAtLength(ring.getTotalLength()/4).matrixTransform(matrix);
+          check(Math.abs(start.x-9)<0.05&&start.y<9,'rings start at twelve oclock');
+          check(quarter.x<9&&Math.abs(quarter.y-9)<0.05,'both rings run counterclockwise');
+        }
+        render(usageFixtures,'used',240);
+        check([...document.querySelectorAll('.provider-usage-row')].find(r=>r.querySelector('.provider-usage-name').textContent==='Mistral Vibe').querySelector('.usage-ring-time').getAttribute('stroke-dasharray')===timeDash,'quota preference must not reverse time');
+        const dates=[new Date(2027,0,9).getTime(),new Date(2026,10,18).getTime(),new Date(2026,11,1).getTime()];
+        const dateEntries=dates.map((resetsAt,i)=>({...mistral,key:'date-'+i,label:'Date '+i,data:{windows:[{...monthly,resetsAt}],balances:[]}}));
+        for(const width of [156,210,240,320]){
+          render(dateEntries,'remaining',width);
+          const resets=[...document.querySelectorAll('.provider-usage-reset')];
+          if(width<=210){
+            check(resets.every(r=>getComputedStyle(r).display==='none'),'date grid stays hidden in narrow dock');
+            continue;
+          }
+          check(resets.map(r=>r.textContent).join('|')==='1/9|11/18|12/1','date format remains unpadded');
+          const slashes=resets.map(r=>r.children[1].getBoundingClientRect().x);
+          check(Math.max(...slashes)-Math.min(...slashes)<0.1,'date slash columns align for one and two digit months and days');
+        }
         let refreshes=0;
         const refresh=()=>{refreshes++};
         render(usageFixtures,'remaining',240,false,refresh);

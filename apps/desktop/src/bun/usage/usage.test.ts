@@ -104,6 +104,35 @@ test("Mistral budget accepts zero usage and PAYG overage but not an unknown deno
       .windows,
   ).toEqual([]);
 });
+test("Mistral time ring follows the calendar month ending at reset", () => {
+  for (const [reset, days] of [
+    ["2026-12-01T00:00:00Z", 30],
+    ["2026-02-01T00:00:00Z", 31],
+    ["2026-03-01T00:00:00Z", 28],
+    ["2028-03-01T00:00:00Z", 29],
+    ["2026-03-31T12:00:00Z", 31],
+    ["2026-01-15T12:00:00Z", 31],
+  ] as const) {
+    const window = mistralUsage({
+      vibe_budget: {
+        usage_percentage: 6,
+        initial_budget: 300,
+        reset_at: reset,
+      },
+    }).windows[0];
+    expect(window.resetsAt).toBe(Date.parse(reset));
+    expect(window.durationMs).toBe(days * 86400000);
+  }
+  expect(
+    mistralUsage({
+      vibe_budget: {
+        usage_percentage: 6,
+        initial_budget: 300,
+        reset_at: "invalid",
+      },
+    }).windows[0].durationMs,
+  ).toBeUndefined();
+});
 test("balances preserve decimals, currency, zero and negative available amounts", () => {
   expect(
     deepseekUsage({

@@ -129,6 +129,14 @@
   color: var(--ds-text-muted);
   font-size: var(--text-3xs);
 }
+.provider-usage-reset[data-date] {
+  display: grid;
+  grid-template-columns: 2ch 1ch 2ch;
+  text-align: right;
+}
+.provider-usage-reset[data-date] > :last-child {
+  text-align: left;
+}
 /* The app narrows its sidebar on small windows. Keep identity/quota readable;
    exact reset dates remain in the row tooltip instead of adding horizontal scroll. */
 @container (max-width: 210px) {
@@ -136,7 +144,8 @@
     grid-template-columns: 12px minmax(0, 1fr) 39px 31px;
     column-gap: 4px;
   }
-  .provider-usage-reset {
+  .provider-usage-reset,
+  .provider-usage-reset[data-date] {
     display: none;
   }
   .provider-usage-value[data-balance] {

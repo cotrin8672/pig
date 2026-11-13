@@ -53,7 +53,7 @@ export function UsageRing({
           r="7.8"
           pathLength="100"
           strokeDasharray={`${time} 100`}
-          transform="rotate(-90 9 9)"
+          transform="rotate(-90 9 9) translate(0 18) scale(1 -1)"
         />
       )}
       <circle className="usage-ring-track" data-inner cx="9" cy="9" r="4.2" />
@@ -64,7 +64,7 @@ export function UsageRing({
         r="4.2"
         pathLength="100"
         strokeDasharray={`${quota} 100`}
-        transform="rotate(-90 9 9)"
+        transform="rotate(-90 9 9) translate(0 18) scale(1 -1)"
       />
     </svg>
   );
@@ -162,6 +162,11 @@ export function ProviderUsageView({
             const balance = entry.data?.balances[0];
             const problem = entry.problem && problems[entry.problem];
             const detail = tooltip(entry, display, now, mode, problem);
+            const reset =
+              window?.resetsAt !== undefined
+                ? resetCountdown(window.resetsAt, now)
+                : "—";
+            const [month, day] = reset.split("/");
             return (
               <li
                 key={entry.key}
@@ -209,10 +214,19 @@ export function ProviderUsageView({
                   )}
                 </span>
                 {window && (
-                  <span className="provider-usage-reset">
-                    {window.resetsAt !== undefined
-                      ? resetCountdown(window.resetsAt, now)
-                      : "—"}
+                  <span
+                    className="provider-usage-reset"
+                    data-date={!!day || undefined}
+                  >
+                    {day ? (
+                      <>
+                        <span>{month}</span>
+                        <span>/</span>
+                        <span>{day}</span>
+                      </>
+                    ) : (
+                      reset
+                    )}
                   </span>
                 )}
               </li>

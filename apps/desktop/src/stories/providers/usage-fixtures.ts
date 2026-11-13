@@ -45,6 +45,7 @@ export const usageFixtures: ProviderUsage[] = [
           label: "Vibe",
           usedPercent: 52,
           resetsAt: new Date(2026, 11, 1).getTime(),
+          durationMs: 30 * 86400000,
         },
       ],
       balances: [],
