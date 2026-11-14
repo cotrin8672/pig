@@ -1,5 +1,5 @@
 {
-  "version": "0.6.0",
+  "version": "0.7.0",
   "description": "A thin GUI client for the pi agent harness (pi on gui)",
   "homepage": "https://github.com/cotrin8672/pig",
   "license": "MIT",
