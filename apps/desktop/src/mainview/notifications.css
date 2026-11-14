@@ -16,7 +16,9 @@
   padding: 0;
   color: var(--ds-text-secondary);
 }
-.sidebar-provider-dot {
+/* Sidebar icon status dots share one position so icons never shift. */
+.sidebar-provider-dot,
+.sidebar-update-dot {
   position: absolute;
   right: 3px;
   bottom: 3px;
@@ -33,6 +35,10 @@
 }
 .sidebar-provider-dot.busy {
   background: var(--ds-warning);
+}
+/* A found update is "new", so it takes the highlight, not a status colour. */
+.sidebar-update-dot {
+  background: var(--ds-highlight);
 }
 .notification-center {
   flex-shrink: 0;
@@ -55,8 +61,8 @@
   min-width: 14px;
   padding: 0 3px;
   border-radius: 7px;
-  background: var(--ds-accent);
-  color: var(--ds-on-accent);
+  background: var(--ds-highlight);
+  color: var(--ds-on-highlight);
   font-size: 9px;
   line-height: 13px;
   text-align: center;
@@ -192,5 +198,5 @@
   margin-top: 6px;
   flex-shrink: 0;
   border-radius: 50%;
-  background: var(--ds-accent);
+  background: var(--ds-highlight);
 }

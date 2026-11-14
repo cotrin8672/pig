@@ -37,6 +37,7 @@ const integration = [
 ].map((name) => `src/bun/${name}.test.ts`);
 const ui = [
   "transcript-ui",
+  "sidebar-update-dot-ui",
   "pane-updates-ui",
   "work-folding-ui",
   "provider-usage-ui",

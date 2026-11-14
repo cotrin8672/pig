@@ -151,6 +151,12 @@ export function App() {
   const openingView = state.openingView;
   const displayedChat = openingView ? openingSnapshot : active;
   const connected = state.connected;
+  const updateVersion = useStore((s) =>
+    s.appUpdate?.status === "available" ? s.appUpdate.latest : undefined,
+  );
+  const settingsLabel = updateVersion
+    ? `${t.Settings}: ${t.appUpdateAvailable(updateVersion)}`
+    : t.Settings;
   return (
     // biome-ignore lint/a11y/noStaticElementInteractions: Native drag handles; maximize is also available as a keyboard-accessible button.
     <div
@@ -199,13 +205,16 @@ export function App() {
               <button
                 type="button"
                 className={`sidebar-icon ${state.page === "settings" ? "active" : ""}`}
-                aria-label={t.Settings}
-                title={t.Settings}
+                aria-label={settingsLabel}
+                title={settingsLabel}
                 onClick={() =>
                   navigate(state.page === "settings" ? "chat" : "settings")
                 }
               >
                 <SettingsIcon size={16} aria-hidden="true" />
+                {updateVersion && (
+                  <span className="sidebar-update-dot" aria-hidden="true" />
+                )}
               </button>
               <button
                 type="button"

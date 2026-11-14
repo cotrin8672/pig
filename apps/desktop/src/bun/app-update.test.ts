@@ -143,4 +143,47 @@ describe("Stable app updates", () => {
     await updater.apply();
     expect((await updater.info()).status).toBe("idle");
   });
+  test.skipIf(process.platform !== "win32" || process.arch !== "x64")(
+    "background checks fail silently and never overwrite a shown result",
+    async () => {
+      const base = await fixture();
+      await mkdir(join(base, "bin"));
+      await mkdir(join(base, "Resources"));
+      const exe = join(base, "bin/bun.exe");
+      await writeFile(exe, "");
+      await put(join(base, "Resources/app-build.json"), {
+        channel: "stable",
+        version: "0.2.0",
+        commit: "abc",
+      });
+      const published: string[] = [];
+      const updater = new AppUpdater(
+        exe,
+        join(base, "result.json"),
+        (state) => published.push(state.status),
+        async () => false,
+      );
+      const original = globalThis.fetch;
+      let calls = 0;
+      globalThis.fetch = (async () => {
+        calls++;
+        throw new Error("offline");
+      }) as unknown as typeof fetch;
+      try {
+        expect((await updater.info()).method).toBe("portable");
+        await updater.check({ background: true });
+        const quiet = await updater.info();
+        expect(quiet.status).toBe("idle");
+        expect(quiet.error).toBeUndefined();
+        await updater.check();
+        expect((await updater.info()).status).toBe("error");
+        await updater.check({ background: true });
+        expect((await updater.info()).status).toBe("error");
+        expect(calls).toBe(2);
+        expect(published).toEqual(["checking", "idle", "checking", "error"]);
+      } finally {
+        globalThis.fetch = original;
+      }
+    },
+  );
 });

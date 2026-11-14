@@ -550,6 +550,7 @@ const rpc = BrowserView.defineRPC<RPCSchema>({
         if (typeof active === "boolean") usageService.setActive(active);
       },
       checkAppUpdate: () => {
+        clearTimeout(lazyUpdateCheck);
         void appUpdater.check().catch(report);
       },
       installAppUpdate: () => {
@@ -863,3 +864,7 @@ const appUpdater = new AppUpdater(
     }
   },
 );
+// Lazy: well after startup work settles, check once quietly; never on the startup path.
+const lazyUpdateCheck = setTimeout(() => {
+  void appUpdater.check({ background: true }).catch(console.warn);
+}, 30_000);

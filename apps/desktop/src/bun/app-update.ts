@@ -189,9 +189,12 @@ export class AppUpdater {
     }
   }
 
-  async check() {
+  /** `background`: unprompted startup check; a failure leaves no error in the UI. */
+  async check({ background = false } = {}) {
     await this.info();
     if (this.busy || this.state.method === "disabled") return;
+    // Never replace a result the user already saw (e.g. a prior manual check).
+    if (background && this.state.status !== "idle") return;
     this.busy = true;
     this.release = undefined;
     this.publish({ status: "checking", error: undefined, latest: undefined });
@@ -216,7 +219,10 @@ export class AppUpdater {
       this.release = { ...release, hash: parseChecksum(await checksum.text()) };
       this.publish({ status: "available", latest: release.version });
     } catch (error) {
-      this.publish({ status: "error", error: String(error) });
+      if (background) {
+        console.warn("Background update check failed:", error);
+        this.publish({ status: "idle" });
+      } else this.publish({ status: "error", error: String(error) });
     } finally {
       this.busy = false;
     }
