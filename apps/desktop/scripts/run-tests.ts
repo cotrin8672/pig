@@ -50,6 +50,8 @@ const ui = [
   "dynamic-theme-ui",
   "search-ui",
   "composer-layers-ui",
+  "context-indicator-ui",
+  "effort-chip-ui",
 ].map((name) => `src/mainview/${name}.test.ts`);
 
 export function testFiles(suite: TestSuite): string[] {

@@ -1,0 +1,28 @@
+/* Preview layout only; the trigger and effort chip use shared production styles. */
+.mt-composer {
+  width: min(100%, 560px);
+}
+.mt-text {
+  height: 32px;
+  padding: 4px;
+  color: var(--ds-placeholder-ink);
+}
+.mt-levels {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+.mt-levels h3 {
+  margin: 0 0 8px;
+  color: var(--ds-text-muted);
+  font-size: var(--text-xs);
+  font-weight: var(--font-weight-normal);
+}
+.mt-level-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+}
+.mt-cell {
+  display: inline-flex;
+}

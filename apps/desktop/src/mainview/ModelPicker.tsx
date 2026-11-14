@@ -24,6 +24,7 @@ import {
   accountLocked,
   accountModelSources,
 } from "./account-picker";
+import { EffortChip } from "./EffortChip";
 import { EffortPicker } from "./EffortPicker";
 import { EffortSlider } from "./EffortSlider";
 import { useT } from "./i18n";
@@ -62,9 +63,6 @@ export const ModelPicker = memo(function ModelPicker({
       source.key ===
       accountSourceKey(current.model?.provider ?? "", current.accountId),
   );
-  const multiple = bootstrap.providers.find(
-    (provider) => provider.id === current.model?.provider,
-  )?.accounts?.length;
   const [query, setQuery] = useState("");
   const [source, setSource] = useState<string>();
   const [highlight, setHighlight] = useState(-1);
@@ -170,6 +168,13 @@ export const ModelPicker = memo(function ModelPicker({
           `${currentSource?.label ?? ""} ${current.model?.name ?? t.None}`.trim(),
           effortLabels[current.effort],
         )}
+        title={[
+          currentSource?.label ?? current.accountId,
+          current.model?.name,
+          current.effortLevels.length > 1 && effortLabels[current.effort],
+        ]
+          .filter(Boolean)
+          .join(" / ")}
         onClick={() => {
           if (!ref.current?.open) {
             setQuery("");
@@ -182,22 +187,13 @@ export const ModelPicker = memo(function ModelPicker({
           }
         }}
       >
-        {(multiple || current.accountId) && (
-          <span
-            className="picker-account-label"
-            title={currentSource?.label ?? current.accountId}
-          >
-            {currentSource?.label ?? current.accountId}
-          </span>
+        {current.model && (
+          <ProviderIcon provider={current.model.provider} size={12} />
         )}
         <span className="picker-model-label">
           {current.model?.name ?? t["Select model"]}
         </span>
-        {current.effortLevels.length > 1 && (
-          <span className="picker-effort-label">
-            {effortLabels[current.effort]}
-          </span>
-        )}
+        <EffortChip levels={current.effortLevels} effort={current.effort} />
         <ChevronDown size={12} />
       </summary>
       {open && (

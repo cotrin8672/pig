@@ -4,7 +4,9 @@ import { useStore } from "./store";
 
 export function ContextIndicator({ usage }: { usage?: ContextUsage | null }) {
   const { contextDisplay, language } = useStore((s) => s.settings);
-  const { percent, title } = contextSummary(usage, contextDisplay, language);
+  const summary = contextSummary(usage, contextDisplay, language);
+  const percent = summary.percent ?? (contextDisplay === "used" ? 0 : 100);
+  const title = summary.title;
   return (
     <span
       className="context-indicator"
@@ -31,12 +33,12 @@ export function ContextIndicator({ usage }: { usage?: ContextUsage | null }) {
           strokeWidth="2"
           pathLength="100"
           opacity={percent ? 1 : 0}
-          strokeDasharray={`${percent ?? 0} 100`}
+          strokeDasharray={`${percent} 100`}
           strokeLinecap="round"
           transform="rotate(-90 7 7)"
         />
       </svg>
-      <span aria-hidden="true">{percent === null ? "—" : `${percent}%`}</span>
+      <span aria-hidden="true">{percent}%</span>
     </span>
   );
 }

@@ -117,8 +117,13 @@ export function EffortSlider({
           }}
         />
       </div>
+      {/* Every label shares one grid cell so the widest fixes the width and the slider never shifts. */}
       <output className="effort-value" htmlFor={id}>
-        {effortLabels[draft]}
+        {levels.map((level) => (
+          <span key={level} data-active={level === draft || undefined}>
+            {effortLabels[level]}
+          </span>
+        ))}
       </output>
     </div>
   );
