@@ -1,4 +1,4 @@
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, realpath, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -40,7 +40,7 @@ export async function runUiFixture(
     viewport?: { width: number; height: number };
   } = {},
 ) {
-  const dir = await mkdtemp(join(tmpdir(), `pig-${name}-ui-`));
+  const dir = await realpath(await mkdtemp(join(tmpdir(), `pig-${name}-ui-`)));
   let passed = false;
   try {
     const entry = join(dir, "fixture.tsx");
@@ -139,7 +139,10 @@ export async function runUiFixture(
     );
     try {
       let result: string | undefined;
-      for (let i = 0; i < 1600 && !result; i++) {
+      // A deadline, not a tick count: slow CI runners take ~30s for the
+      // animation fixtures before the page reports.
+      const deadline = Date.now() + 120_000;
+      while (!result && Date.now() < deadline) {
         const state = await browser.evaluate<{
           result?: string;
           capture: boolean;

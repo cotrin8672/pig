@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { mkdtemp } from "node:fs/promises";
+import { mkdtemp, realpath } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -80,7 +80,9 @@ test(
  * list scroll closes, glass surface and no layout shift.
  */
 test("usage details popover in Edge: single, bridged, unpinned, keyboard", async () => {
-  const dir = await mkdtemp(join(tmpdir(), "pig-usage-hover-"));
+  // Vite resolves the entry through the real path; a Windows 8.3 TEMP
+  // directory (RUNNER~1) would otherwise emit an `..`-relative asset name.
+  const dir = await realpath(await mkdtemp(join(tmpdir(), "pig-usage-hover-")));
   const source = (path: string) =>
     JSON.stringify(fileURLToPath(new URL(path, import.meta.url)));
   try {

@@ -119,6 +119,11 @@ export async function fixtureBrowser(
       deviceScaleFactor: 1,
       mobile: false,
     });
+    // Windows CI often reports reduced motion; animation fixtures assert the
+    // shipped timings, so pin the preference instead of inheriting it.
+    await command("Emulation.setEmulatedMedia", {
+      features: [{ name: "prefers-reduced-motion", value: "no-preference" }],
+    });
     await command("Page.enable");
     await command("Page.setLifecycleEventsEnabled", { enabled: true });
     const loaded = new Set<string>();

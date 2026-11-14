@@ -1529,7 +1529,9 @@ test.skipIf(!existsSync(edge) && !process.env.PIG_REQUIRE_UI_TESTS)(
         ],
         { stdout: "ignore", stderr: "pipe" },
       );
-      const timeout = setTimeout(() => child.kill(), 45_000);
+      // The scrollbar audit renders and screenshots 18 batches; a slow CI
+      // runner needs well over a minute, so keep the caps generous.
+      const timeout = setTimeout(() => child.kill(), 120_000);
       const errors = new Response(child.stderr).text();
       let socket: WebSocket | undefined;
       try {
@@ -1610,7 +1612,7 @@ test.skipIf(!existsSync(edge) && !process.env.PIG_REQUIRE_UI_TESTS)(
           exceptionDetails?: unknown;
         };
         let report: Report | undefined;
-        const deadline = Date.now() + 35_000;
+        const deadline = Date.now() + 100_000;
         while (!report) {
           if (Date.now() > deadline) {
             const debug = await command("Runtime.evaluate", {
@@ -1737,5 +1739,5 @@ test.skipIf(!existsSync(edge) && !process.env.PIG_REQUIRE_UI_TESTS)(
       } else console.error("Failed Edge fixture retained at", dir);
     }
   },
-  60_000,
+  150_000,
 );
