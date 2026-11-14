@@ -93,6 +93,11 @@ with the project's **+**. Enter sends; Shift+Enter inserts a newline. Sending
 while pi is running queues a follow-up. Stop aborts the current run. Closing a
 chat releases its live SDK session without deleting history.
 
+Launching pig again while it is running opens another window of the same app
+instead of a second process. Windows share chats, drafts and approval requests;
+an extension terminal is driven by the first window that shows it. Closing the
+last window quits the app.
+
 Subscriptions support multiple accounts: press **+** beside the connected provider
 to sign in, then optionally rename its nested account with **… → Edit name**.
 Choose the account and model together in the model picker. A chat with messages
