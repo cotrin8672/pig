@@ -19,10 +19,12 @@ import {
   useContext,
   useEffect,
   useLayoutEffect,
+  useMemo,
   useState,
   useSyncExternalStore,
 } from "react";
 import type { ToolCard, ToolCardBlock } from "../../../../packages/config/src";
+import { parseGrepOutput } from "../shared/grep-output";
 import {
   diffStats,
   resultText,
@@ -37,6 +39,7 @@ import {
 } from "./annotation-highlights";
 import { ChatContent } from "./ChatContent";
 import { useDisclosureScroll } from "./disclosure-scroll";
+import { GrepOutput } from "./GrepOutput";
 import {
   CodeText,
   HighlightedDiff as Diff,
@@ -188,6 +191,54 @@ function Row({
         <div className="tool-body">{children ?? <Output state={state} />}</div>
       )}
     </Details>
+  );
+}
+
+function Grep({
+  args,
+  state,
+  status,
+}: {
+  args: Record<string, unknown>;
+  state: ToolState;
+  status: Tone;
+}) {
+  const t = useT();
+  const raw = resultText(state?.result);
+  // Failed searches and non-text extension results retain the original literal output.
+  const content = resultContent(state?.result);
+  const canGroup =
+    status !== "error" &&
+    Array.isArray(content) &&
+    content.every((block) => block.type === "text");
+  const result = useMemo(
+    () => parseGrepOutput(canGroup ? raw : ""),
+    [raw, canGroup],
+  );
+  return (
+    <Row
+      defaultOpen
+      icon={<Search size={14} />}
+      verb={t.Search}
+      target={[str(args.pattern), str(args.path), str(args.glob)]
+        .filter(Boolean)
+        .join("  ")}
+      meta={
+        result.files.length > 0
+          ? t.grepSummary(result.files.length, result.matches)
+          : undefined
+      }
+      state={state}
+      status={status}
+    >
+      {result.files.length > 0 ? (
+        <GrepOutput result={result} args={args} />
+      ) : status === "done" && !resultContent(state?.result)?.length ? (
+        <pre className="tool-code">{t["No matches found"]}</pre>
+      ) : (
+        <Output state={state} />
+      )}
+    </Row>
   );
 }
 
@@ -428,15 +479,7 @@ export function BuiltinTool({
       );
     }
     case "grep":
-      return (
-        <Row
-          icon={<Search size={ICON} />}
-          verb={t.Search}
-          target={`${str(args.pattern)}${path ? `  ${path}` : ""}${args.glob ? `  ${str(args.glob)}` : ""}`}
-          state={state}
-          status={status}
-        />
-      );
+      return <Grep args={args} state={state} status={status} />;
     case "find":
       return (
         <Row

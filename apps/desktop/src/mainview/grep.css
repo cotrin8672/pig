@@ -1,0 +1,71 @@
+/* The tool row, body indent, translucent code surface and eight-line scroll
+   limit are shared with Edit/List. Only the grouped result content is new. */
+.tool-grep-output {
+  font-family: var(--font-mono);
+}
+.tool-grep-file {
+  display: block;
+}
+.tool-grep-file + .tool-grep-file {
+  border-top: 1px solid var(--ds-border-strong);
+}
+.tool-grep-file-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  max-width: 100%;
+  padding: 2px 0;
+  color: var(--ds-text-secondary);
+  font-family: var(--font-sans);
+}
+.tool-grep-file-head > svg {
+  flex: none;
+  color: var(--ds-text-muted);
+}
+.tool-grep-file-head strong,
+.tool-grep-file-head small {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.tool-grep-file-head strong {
+  font-size: inherit;
+  font-weight: var(--font-weight-medium);
+}
+.tool-grep-file-head small,
+.tool-grep-count,
+.tool-grep-number {
+  color: var(--ds-text-faint);
+  font-size: var(--text-sm);
+}
+.tool-grep-count {
+  flex: none;
+  margin-left: auto;
+  font-variant-numeric: tabular-nums;
+}
+.tool-grep-line {
+  display: grid;
+  min-width: max-content;
+  grid-template-columns: 4ch 1fr;
+  gap: 12px;
+}
+.tool-grep-number {
+  text-align: right;
+  user-select: none;
+}
+.tool-grep-line code {
+  font: inherit;
+}
+.tool-grep-context code {
+  color: var(--ds-text-muted);
+}
+.tool-grep-line mark {
+  border-radius: var(--radius-3xs);
+  background: var(--ds-bg-highlight);
+  color: var(--ds-highlight);
+}
+.tool-grep-notice {
+  display: block;
+  color: var(--ds-text-muted);
+}
