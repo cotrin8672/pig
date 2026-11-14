@@ -40,6 +40,7 @@ const ui = [
   "sidebar-update-dot-ui",
   "pane-updates-ui",
   "work-folding-ui",
+  "history-paging-ui",
   "provider-usage-ui",
   "provider-usage-hover-ui",
   "provider-accounts-ui",
