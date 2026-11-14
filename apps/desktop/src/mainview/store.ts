@@ -53,6 +53,8 @@ export interface LoginState {
   prompt?: AuthPrompt;
 }
 export interface OpeningTarget {
+  /** Local new-chat identity; no SDK session exists until the first send. */
+  draftId?: string;
   cwd: string;
   id?: string;
   selection?: ModelSelection;
@@ -75,6 +77,8 @@ export type SettingsCategory =
   | "keyboard"
   | "updates";
 export interface PendingOpen extends OpeningTarget {
+  /** A local editor, not an in-flight SDK open. */
+  deferred?: boolean;
   address?: SessionAddress;
   message?: string;
 }

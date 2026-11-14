@@ -1,12 +1,41 @@
+import { projectLabel } from "../shared/projects";
 import type { SessionInfo } from "../shared/rpc-schema";
 import { addressKey, sameAddress } from "./chat-snapshot";
 import { navigationRevision } from "./navigation";
-import { hasUnreadCompletion, sessionStatus } from "./session-status";
+import {
+  hasUnreadCompletion,
+  interruptedSession,
+  sessionStatus,
+} from "./session-status";
 import type { useStore } from "./store";
 
 type State = ReturnType<typeof useStore.getState>;
 
-export function selectAppView(s: State) {
+/** Metadata only: a pane's winbar must not subscribe to streaming bodies. */
+export function selectPaneHeading(s: State, paneId: number) {
+  const pane = s.panes[paneId];
+  const opening = pane?.openId ? s.pendingOpens[pane.openId] : undefined;
+  const sessionId = pane?.sessionId ?? opening?.id;
+  const snapshot = sessionId ? s.snapshots[sessionId] : undefined;
+  const cwd = snapshot?.info.cwd ?? opening?.cwd;
+  const listed =
+    !snapshot && cwd
+      ? s.sessions[cwd]?.find((session) => session.id === sessionId)
+      : undefined;
+  return {
+    project: cwd
+      ? projectLabel(cwd, s.bootstrap.desktop.projects?.[cwd])
+      : undefined,
+    general: !cwd || cwd === s.bootstrap.generalCwd,
+    title: snapshot
+      ? (s.extensionStatuses[addressKey(snapshot.address)]?.title ??
+        snapshot.info.title)
+      : listed?.title,
+  };
+}
+
+/** Full snapshots belong to the conversation, not the window/sidebar subscription. */
+export function selectConversationView(s: State) {
   const openingView = s.opening && s.openingViewRevision === navigationRevision;
   const active =
     s.page === "chat" && !openingView && s.active
@@ -17,6 +46,18 @@ export function selectAppView(s: State) {
       ? s.snapshots[s.openingTarget.id]
       : undefined;
   return {
+    openingView,
+    activeSnapshot: active,
+    openingSnapshot: opening,
+    generalCwd: s.bootstrap.generalCwd,
+  };
+}
+
+export function selectAppView(s: State) {
+  const { openingView, activeSnapshot, openingSnapshot } =
+    selectConversationView(s);
+  const displayed = openingView ? openingSnapshot : activeSnapshot;
+  return {
     initialized: s.initialized,
     sidebarReady: s.initialized || s.cachedSidebar,
     page: s.page,
@@ -24,21 +65,18 @@ export function selectAppView(s: State) {
     // Seed previews update CSS independently, never re-render the conversation.
     windowOpacity: s.appearance.opacity[s.appearance.backdrop],
     connected: s.bootstrap.models.length > 0,
-    generalCwd: s.bootstrap.generalCwd,
-    openingView,
-    openingTarget: s.openingTarget,
-    activeSnapshot: active,
-    openingSnapshot: opening,
-    activeTitle:
-      active && s.extensionStatuses[addressKey(active.address)]?.title,
-    openingTitle:
-      opening && s.extensionStatuses[addressKey(opening.address)]?.title,
-    // Known from the list before the chat's history has loaded.
-    openingListedTitle: s.openingTarget?.id
-      ? s.sessions[s.openingTarget.cwd]?.find(
-          (session) => session.id === s.openingTarget?.id,
-        )?.title
-      : undefined,
+    showChatHeader:
+      s.initialized && s.page === "chat" && !!(openingView || displayed),
+    chatCwd: displayed?.info.cwd ?? s.openingTarget?.cwd,
+    chatTitle: displayed
+      ? (s.extensionStatuses[addressKey(displayed.address)]?.title ??
+        displayed.info.title)
+      : s.openingTarget?.id
+        ? s.sessions[s.openingTarget.cwd]?.find(
+            (session) => session.id === s.openingTarget?.id,
+          )?.title
+        : undefined,
+    openingExistingChat: !!s.openingTarget?.id,
     maximized: s.maximized,
     login: s.login,
   };
@@ -106,7 +144,7 @@ export function mergeLiveSessions(
 export function selectStartingChats(s: State, cwd: string, untitled: string) {
   const rows: string[] = [];
   for (const [openId, open] of Object.entries(s.pendingOpens)) {
-    if (open.cwd !== cwd || open.id) continue;
+    if (open.cwd !== cwd || open.id || open.deferred) continue;
     const first = open.queued?.find((op) => op.kind === "send");
     const text =
       first?.kind === "send" ? first.content.text.trim().split("\n")[0] : "";
@@ -127,7 +165,7 @@ export function selectSessionStatus(s: State, id: string) {
       );
     }),
     s.bootstrap.desktop.sessions[id],
-    s.snapshots[id]?.failure,
+    !!s.snapshots[id] && interruptedSession(s.snapshots[id]) === "failed",
   );
 }
 
