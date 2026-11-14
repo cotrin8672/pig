@@ -29,6 +29,7 @@ export async function fixtureBrowser(
   binary: string,
   directory: string,
   url: string,
+  viewport = { width: 600, height: 600 },
 ) {
   const profile = join(directory, "profile");
   const child = Bun.spawn(
@@ -72,10 +73,9 @@ export async function fixtureBrowser(
     if (!port)
       throw new Error("Fixture browser did not open its debugging port");
     const target = (await (
-      await fetch(
-        `http://127.0.0.1:${port}/json/new?${encodeURIComponent(url)}`,
-        { method: "PUT" },
-      )
+      await fetch(`http://127.0.0.1:${port}/json/new?about:blank`, {
+        method: "PUT",
+      })
     ).json()) as { webSocketDebuggerUrl: string };
     socket = new WebSocket(target.webSocketDebuggerUrl);
     const connected = socket;
@@ -111,6 +111,54 @@ export async function fixtureBrowser(
         connected.addEventListener("close", closed, { once: true });
         connected.send(JSON.stringify({ id: request, method, params }));
       });
+    // Match the native transcript driver: pin layout before loading the page.
+    // Edge's delayed automation infobar otherwise resizes the viewport during
+    // geometry/animation assertions (and intermittently moves the whole page).
+    await command("Emulation.setDeviceMetricsOverride", {
+      ...viewport,
+      deviceScaleFactor: 1,
+      mobile: false,
+    });
+    await command("Page.enable");
+    await command("Page.setLifecycleEventsEnabled", { enabled: true });
+    const loaded = new Set<string>();
+    let loader: string | undefined,
+      ready: (() => void) | undefined,
+      rejectReady: ((error: Error) => void) | undefined;
+    const navigationClosed = () =>
+      rejectReady?.(new Error("Fixture browser closed during navigation"));
+    const lifecycle = (event: MessageEvent) => {
+      const message = JSON.parse(String(event.data));
+      if (
+        message.method === "Page.lifecycleEvent" &&
+        message.params.name === "DOMContentLoaded"
+      ) {
+        loaded.add(message.params.loaderId);
+        if (message.params.loaderId === loader) ready?.();
+      }
+    };
+    connected.addEventListener("message", lifecycle);
+    connected.addEventListener("close", navigationClosed);
+    try {
+      const navigation = await command<{
+        loaderId?: string;
+        errorText?: string;
+      }>("Page.navigate", { url });
+      if (navigation.errorText) throw new Error(navigation.errorText);
+      loader = navigation.loaderId;
+      if (loader && !loaded.has(loader))
+        await new Promise<void>((resolve, reject) => {
+          ready = resolve;
+          rejectReady = reject;
+          if (connected.readyState !== WebSocket.OPEN) navigationClosed();
+        });
+    } finally {
+      connected.removeEventListener("message", lifecycle);
+      connected.removeEventListener("close", navigationClosed);
+    }
+    // about:blank initially focuses browser chrome; activate the fixture's
+    // content before tests exercise real DOM focus/capture and pane ownership.
+    await command("Page.bringToFront");
     return {
       command,
       async evaluate<T>(expression: string): Promise<T> {

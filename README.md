@@ -158,6 +158,16 @@ Before releases or changes to SDK/storage/UI behavior, run the relevant suites
 locally or dispatch `Regression` against the intended revision. UI changes still
 require `pnpm test:ui`; separating CI is not permission to skip that validation.
 
+Unit tests run in isolated Bun workers, using the available CPU count up to eight.
+Override the count with `PIG_TEST_WORKERS` (a positive integer) for comparisons or
+resource-constrained environments. For example, in PowerShell:
+
+```powershell
+$env:PIG_TEST_WORKERS = '4'
+mise exec -- pnpm test
+Remove-Item Env:PIG_TEST_WORKERS
+```
+
 `apps/desktop/scripts/run-tests.ts` owns suite membership; new source tests are
 included in the fast suite by default. Existing heavy suites are explicitly
 listed, and a test checks that no source test is lost or assigned twice. The

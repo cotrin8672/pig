@@ -1,4 +1,5 @@
 import { existsSync } from "node:fs";
+import { availableParallelism } from "node:os";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -72,8 +73,20 @@ export function testFiles(suite: TestSuite): string[] {
   ).map((file) => resolve(desktop, file));
 }
 
+export function unitTestWorkers(cpuCount: number, override?: string): number {
+  if (override === undefined) return Math.min(cpuCount, 8);
+  const workers = Number(override);
+  if (!/^[1-9]\d*$/.test(override) || !Number.isSafeInteger(workers))
+    throw new Error("PIG_TEST_WORKERS must be a positive integer.");
+  return workers;
+}
+
 export async function runTests(suite: TestSuite): Promise<number> {
   const env = { ...process.env };
+  const workers =
+    suite === "unit"
+      ? unitTestWorkers(availableParallelism(), env.PIG_TEST_WORKERS)
+      : undefined;
   if (suite === "ui") {
     const browser =
       env.PIG_UI_BROWSER ??
@@ -86,12 +99,14 @@ export async function runTests(suite: TestSuite): Promise<number> {
     env.PIG_REQUIRE_UI_TESTS = "1";
   }
   const files = testFiles(suite);
-  console.log(`${suite}: ${files.length} test files`);
+  console.log(
+    `${suite}: ${files.length} test files${workers === undefined ? "" : `, ${workers} workers`}`,
+  );
   const child = Bun.spawn(
     [
       process.execPath,
       "test",
-      ...(suite === "unit" ? ["--parallel=4"] : []),
+      ...(workers === undefined ? [] : [`--parallel=${workers}`]),
       ...files,
     ],
     {

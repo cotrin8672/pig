@@ -22,7 +22,7 @@ export const fixtureImport = (url: URL | string) =>
 const rpcStub = `
 const noop=()=>{};export const rpc={request:new Proxy({},{get:(_,method)=>async params=>window.__requests?.[method]?window.__requests[method](params):{}}),send:new Proxy({},{get:()=>noop})};
 export const sends={subscribe:()=>noop,getTick:()=>0,read:()=>undefined,optimistic:()=>[],queued:()=>[],retained:()=>[],send:async()=>{}};
-export const updateAppearance=noop,updateSettings=noop,updateUiPreferences=noop,refreshSessions=noop,refresh=()=>Promise.resolve(),requestSelection=(_address,request)=>request(),connectRuntime=noop,initRuntimeConnection=noop,cancelOpening=noop,openChat=noop,showPendingOpen=noop,openChatLink=noop,forkChat=noop,regenerate=noop,initSessionLinks=noop,initSessionReadTracking=noop,reconnectRuntime=noop;
+export const updateAppearance=noop,updateSettings=noop,updateUiPreferences=noop,refreshSessions=noop,refresh=()=>Promise.resolve(),requestSelection=(_address,request)=>request(),connectRuntime=noop,initRuntimeConnection=noop,cancelOpening=noop,openChat=noop,startOpeningChat=noop,showPendingOpen=noop,openChatLink=noop,forkChat=noop,regenerate=noop,initSessionLinks=noop,initSessionReadTracking=noop,reconnectRuntime=noop;
 `;
 
 /**
@@ -32,7 +32,14 @@ export const updateAppearance=noop,updateSettings=noop,updateUiPreferences=noop,
  * Pixel checks: the page sets `window.__capture = true`; the runner replaces it
  * with a PNG data URL of the viewport, which the page can draw into a canvas.
  */
-export async function runUiFixture(name: string, source: string) {
+export async function runUiFixture(
+  name: string,
+  source: string,
+  options: {
+    realRpc?: boolean;
+    viewport?: { width: number; height: number };
+  } = {},
+) {
   const dir = await mkdtemp(join(tmpdir(), `pig-${name}-ui-`));
   let passed = false;
   try {
@@ -53,6 +60,28 @@ export async function runUiFixture(name: string, source: string) {
         {
           name: "isolated-host",
           setup(b) {
+            if (options.realRpc) {
+              b.onResolve({ filter: /^electrobun\/view$/ }, () => ({
+                path: "fixture-electroview",
+                namespace: "fixture-host",
+              }));
+              b.onLoad({ filter: /.*/, namespace: "fixture-host" }, () => ({
+                loader: "js",
+                contents: `export class Electroview {
+                  constructor() {}
+                  static defineRPC(options) {
+                    window.__rpcHandlers = options.handlers;
+                    return {
+                      request: new Proxy({}, {get: (_, method) => async params => {
+                        if (!window.__requests?.[method]) throw Error('Unmocked RPC: ' + String(method));
+                        return window.__requests[method](params);
+                      }}),
+                      send: new Proxy({}, {get: () => () => {}}),
+                    };
+                  }
+                }`,
+              }));
+            }
             b.onResolve({ filter: /^react\/jsx-runtime$/ }, () => ({
               path: fileURLToPath(import.meta.resolve("react/jsx-runtime")),
             }));
@@ -60,10 +89,11 @@ export async function runUiFixture(name: string, source: string) {
               cssFiles.add(path);
               return { loader: "js", contents: "" };
             });
-            b.onLoad({ filter: /[\\/]mainview[\\/]rpc\.ts$/ }, () => ({
-              loader: "ts",
-              contents: rpcStub,
-            }));
+            if (!options.realRpc)
+              b.onLoad({ filter: /[\\/]mainview[\\/]rpc\.ts$/ }, () => ({
+                loader: "ts",
+                contents: rpcStub,
+              }));
           },
         },
       ],
@@ -105,6 +135,7 @@ export async function runUiFixture(name: string, source: string) {
       fixtureEdge,
       dir,
       pathToFileURL(html).href,
+      options.viewport,
     );
     try {
       let result: string | undefined;
@@ -112,8 +143,21 @@ export async function runUiFixture(name: string, source: string) {
         const state = await browser.evaluate<{
           result?: string;
           capture: boolean;
-        }>("({result:window.__fixture,capture:window.__capture===true})");
+          input?: {
+            method:
+              | "Input.dispatchMouseEvent"
+              | "Input.insertText"
+              | "Input.dispatchKeyEvent";
+            params: Record<string, unknown>;
+          };
+        }>(
+          "({result:window.__fixture,capture:window.__capture===true,input:window.__fixtureInput})",
+        );
         result = state.result;
+        if (state.input) {
+          await browser.command(state.input.method, state.input.params);
+          await browser.evaluate("delete window.__fixtureInput");
+        }
         if (state.capture) {
           const png = (await browser.screenshot()).toString("base64");
           await browser.evaluate(
@@ -124,6 +168,8 @@ export async function runUiFixture(name: string, source: string) {
       await Bun.write(join(dir, "fixture.png"), await browser.screenshot());
       if (result !== "pass")
         throw new Error(result ?? "fixture did not finish");
+      const metrics = await browser.evaluate("window.__fixtureMetrics ?? null");
+      if (metrics) console.info(`${name} metrics:`, JSON.stringify(metrics));
       passed = true;
     } finally {
       await browser.close();
