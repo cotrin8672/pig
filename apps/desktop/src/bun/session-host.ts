@@ -766,10 +766,6 @@ export class SessionHost {
           customTools: [defineTool(shell)],
           excludeTools:
             this.settings.shell === "powershell" ? ["bash"] : undefined,
-          tools:
-            this.settings.shell === "powershell"
-              ? ["read", "powershell", "edit", "write"]
-              : undefined,
         });
         timing.mark("create-agent-session");
         return { ...result, services, diagnostics: services.diagnostics };
