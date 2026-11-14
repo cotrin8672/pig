@@ -20,6 +20,21 @@ test("SDK completion is emitted once after agent_settled projection", () => {
   track(event(true));
   expect(track(event(false, { failure: "failed" }))).toBe("error");
 });
+test("abort after a model error still records failure for unread and closed chat status", () => {
+  const track = createCompletionTracker();
+  track(event(true));
+  expect(
+    track(event(false, { aborted: true, failure: "WebSocket closed 1000" })),
+  ).toBe("error");
+  expect(
+    track(event(false, { aborted: true, failure: "WebSocket closed 1000" })),
+  ).toBeUndefined();
+  track(event(true));
+  expect(track(event(false, { aborted: true }))).toBeUndefined();
+  track(event(true));
+  expect(track(event(false))).toBe("success");
+});
+
 test("abort never reports success; independent conversations stay independent", () => {
   const first = createCompletionTracker();
   const second = createCompletionTracker();

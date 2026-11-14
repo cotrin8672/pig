@@ -5,7 +5,10 @@ export function createCompletionTracker() {
   return (event: WireEvent): "success" | "error" | undefined => {
     const wasRunning = running;
     running = event.transcript.running;
-    if (!wasRunning || running || event.aborted) return;
-    return event.failure ? "error" : "success";
+    if (!wasRunning || running) return;
+    // The host also aborts after model errors to prevent automatic retries.
+    // Preserve that failure as a durable outcome, not a quiet manual stop.
+    if (event.failure) return "error";
+    if (!event.aborted) return "success";
   };
 }

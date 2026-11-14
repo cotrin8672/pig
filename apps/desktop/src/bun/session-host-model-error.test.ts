@@ -10,11 +10,18 @@ test("model errors stop without retry, preserve queued input and allow a later m
       import { expect } from "bun:test";
       import { fauxProvider, fauxAssistantMessage } from "@earendil-works/pi-ai";
       import { SessionHost } from ${JSON.stringify(new URL("./session-host.ts", import.meta.url).href)};
+      import { createCompletionTracker } from ${JSON.stringify(new URL("./notifications.ts", import.meta.url).href)};
       import { modelInfo, disposeSessions } from ${JSON.stringify(new URL("./pi-service.ts", import.meta.url).href)};
       const faux = fauxProvider({ tokensPerSecond: Infinity, models: [{ id: "fixture" }] });
+      const outcomes = [];
+      const track = createCompletionTracker();
       const host = new SessionHost({ modelInfo,
         configureModels: models => models.registerNativeProvider(faux.provider),
-        emit() {}, emitUI() {}, emitTerminal() {},
+        emit(event) {
+          if (event.type !== "snapshot") return;
+          const outcome = track(event.snapshot);
+          if (outcome) outcomes.push(outcome);
+        }, emitUI() {}, emitTerminal() {},
       });
       const chat = await host.openSession({ cwd: ${JSON.stringify(home)}, openId: "error" });
       const model = faux.getModel();
@@ -39,6 +46,7 @@ test("model errors stop without retry, preserve queued input and allow a later m
         "401 authentication_error",
         "503 service unavailable",
         "Unexpected model failure",
+        "WebSocket closed 1000",
       ]) {
         let entered = false;
         const gate = Promise.withResolvers();
@@ -61,6 +69,7 @@ test("model errors stop without retry, preserve queued input and allow a later m
         const snapshot = host.getSessionSnapshot(chat.address);
         expect(snapshot.transcript.running).toBe(false);
         expect(snapshot.failure).toBe(error);
+        expect(outcomes.at(-1)).toBe("error");
         expect(faux.state.callCount - before).toBe(1);
         expect(events.slice(eventStart).some(event => event.type === "auto_retry_start")).toBe(false);
         expect(snapshot.transcript.records.some(record => record.kind === "message" && record.message.role === "assistant" && record.message.errorMessage === error)).toBe(true);
@@ -70,6 +79,7 @@ test("model errors stop without retry, preserve queued input and allow a later m
       await host.prompt(input("try again manually", "manual"));
       await host.receipts.settled(chat.address);
       expect(host.getSessionSnapshot(chat.address).failure).toBeUndefined();
+      expect(outcomes).toEqual(["error", "error", "error", "error", "error", "success"]);
       expect(session.getLastAssistantText()).toBe("manual send succeeded");
       await host.dispose();
       await disposeSessions();
