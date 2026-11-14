@@ -112,7 +112,9 @@ export const markdownComponents: Components = {
     ) : null,
 };
 
-function MarkdownTree({ tree }: { tree: Root }) {
+// Reuse post-processing only for the same parsed tree in this mounted instance.
+// No shared JSX/DOM cache: child state, context and renderer changes still apply.
+const MarkdownTree = memo(function MarkdownTree({ tree }: { tree: Root }) {
   // Feed the worker's HAST through react-markdown's own safe post-processing
   // and existing React components, rather than replacing DOM with HTML strings.
   const plugins = useMemo(() => [() => () => tree], [tree]);
@@ -127,7 +129,7 @@ function MarkdownTree({ tree }: { tree: Root }) {
       {""}
     </ReactMarkdown>
   );
-}
+});
 
 export function BuiltinMarkdown({
   data: { text },

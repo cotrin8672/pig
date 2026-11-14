@@ -1,7 +1,7 @@
 import type { ModelInfo } from "../shared/rpc-schema";
 import type { TranscriptRecord } from "../shared/transcript";
 
-type Model = Pick<ModelInfo, "provider" | "id">;
+type Model = Readonly<Pick<ModelInfo, "provider" | "id">>;
 
 export function modelDividers(records: TranscriptRecord[]) {
   const changes = new Map<string, { from: Model; to: Model }>();
@@ -15,15 +15,16 @@ export function modelDividers(records: TranscriptRecord[]) {
       userId = record.id;
       answered = false;
     } else if (message.role === "assistant") {
-      const model = { provider: message.provider, id: message.model };
-      // Picker changes are intent; only an actual response commits a change.
-      if (
-        !answered &&
-        previous &&
-        (previous.provider !== model.provider || previous.id !== model.id)
-      )
-        changes.set(userId ?? record.id, { from: previous, to: model });
-      previous = model;
+      const { provider, model: id } = message;
+      // Most assistant steps use the same model. Do not allocate a Model for
+      // every saved step on each publication; this is not a history cache.
+      if (!previous || previous.provider !== provider || previous.id !== id) {
+        const model = { provider, id };
+        // Picker changes are intent; only an actual response commits a change.
+        if (!answered && previous)
+          changes.set(userId ?? record.id, { from: previous, to: model });
+        previous = model;
+      }
       answered = true;
     }
   }

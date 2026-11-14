@@ -48,6 +48,7 @@ const ui = [
   "provider-usage-hover-ui",
   "provider-accounts-ui",
   "render-workers-ui",
+  "render-reuse-ui",
   "dynamic-theme-ui",
   "search-ui",
   "composer-layers-ui",

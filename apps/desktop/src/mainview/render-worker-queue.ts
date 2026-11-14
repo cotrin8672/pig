@@ -8,7 +8,7 @@ export interface RenderWorker {
 }
 type Job<I, O> = {
   id: number;
-  input: I;
+  input: I | undefined;
   resolve: (value: O | undefined) => void;
   reject: (error: Error) => void;
   cleanup: () => void;
@@ -28,6 +28,7 @@ export function createRenderWorkerQueue<I, O>(
   const fail = (error: Error) => {
     failed = error;
     for (const job of jobs.values()) {
+      job.input = undefined;
       job.cleanup();
       job.reject(error);
     }
@@ -71,7 +72,14 @@ export function createRenderWorkerQueue<I, O>(
     // Reserve the head before asynchronous worker startup; no duplicate sends.
     const job = jobs.values().next().value as Job<I, O>;
     running = job.id;
-    void getWorker()
+    let started: Promise<RenderWorker>;
+    try {
+      started = getWorker();
+    } catch (error) {
+      fail(error instanceof Error ? error : new Error(String(error)));
+      return;
+    }
+    void started
       .then((value) => {
         if (!jobs.has(job.id)) {
           running = undefined;
@@ -80,37 +88,46 @@ export function createRenderWorkerQueue<I, O>(
         }
         counts.posted++;
         value.postMessage({ id: job.id, input: job.input });
+        // postMessage has synchronously cloned the payload into the worker.
+        // Keeping the source here cannot help completion or cancellation.
+        job.input = undefined;
       })
       .catch((error) =>
         fail(error instanceof Error ? error : new Error(String(error))),
       );
   };
+  // Keep cancellation closures outside run(): otherwise their lexical scope can
+  // retain run's input parameter even after job.input has been released.
+  const enqueue = (job: Job<I, O>, signal?: AbortSignal) => {
+    const id = job.id;
+    const cancel = () => {
+      const current = jobs.get(id);
+      if (!current) return;
+      jobs.delete(id);
+      current.input = undefined;
+      current.cleanup();
+      counts.cancelled++;
+      current.resolve(undefined);
+      // An already running computation finishes in the worker, not the UI.
+      if (running !== id) pump();
+    };
+    job.cleanup = () => signal?.removeEventListener("abort", cancel);
+    jobs.set(id, job);
+    signal?.addEventListener("abort", cancel, { once: true });
+    pump();
+  };
   return {
     run(input: I, signal?: AbortSignal): Promise<O | undefined> {
       if (signal?.aborted) return Promise.resolve(undefined);
       if (failed) return Promise.reject(failed);
-      const id = ++nextId;
-      return new Promise((resolve, reject) => {
-        const cancel = () => {
-          const job = jobs.get(id);
-          if (!job) return;
-          jobs.delete(id);
-          job.cleanup();
-          counts.cancelled++;
-          resolve(undefined);
-          // An already running computation finishes in the worker, not the UI.
-          if (running !== id) pump();
-        };
-        jobs.set(id, {
-          id,
-          input,
-          resolve,
-          reject,
-          cleanup: () => signal?.removeEventListener("abort", cancel),
-        });
-        signal?.addEventListener("abort", cancel, { once: true });
-        pump();
-      });
+      const { promise, resolve, reject } = Promise.withResolvers<
+        O | undefined
+      >();
+      enqueue(
+        { id: ++nextId, input, resolve, reject, cleanup: () => {} },
+        signal,
+      );
+      return promise;
     },
     stats: () => ({
       ...counts,

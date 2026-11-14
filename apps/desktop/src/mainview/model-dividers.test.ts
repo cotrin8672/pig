@@ -27,6 +27,76 @@ const selection = (id: string, modelId: string): TranscriptRecord => ({
   data: { provider: "p", modelId },
 });
 
+// Independent pre-optimization scan; compare values and divider positions, not
+// internal object sharing between immutable model labels.
+function originalDividers(records: TranscriptRecord[]) {
+  type Model = { provider: string; id: string };
+  const changes = new Map<string, { from: Model; to: Model }>();
+  let previous: Model | undefined;
+  let userId: string | undefined;
+  let answered = false;
+  for (const record of records) {
+    if (record.kind !== "message") continue;
+    const { message } = record;
+    if (message.role === "user") {
+      userId = record.id;
+      answered = false;
+    } else if (message.role === "assistant") {
+      const model = { provider: message.provider, id: message.model };
+      if (
+        !answered &&
+        previous &&
+        (previous.provider !== model.provider || previous.id !== model.id)
+      )
+        changes.set(userId ?? record.id, { from: previous, to: model });
+      previous = model;
+      answered = true;
+    }
+  }
+  return changes;
+}
+
+test("model dividers match the original scan across append, prepend, edits, reorder, branch and saved-ID changes", () => {
+  let seed = 8672;
+  const random = () => {
+    seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0;
+    return seed;
+  };
+  for (let sample = 0; sample < 100; sample++) {
+    const records = Array.from({ length: 80 }, (_, i) => {
+      const id = `${sample}-${i}`;
+      const kind = random() % 10;
+      return kind < 2
+        ? user(id)
+        : kind < 9
+          ? assistant(id, `model-${random() % 3}`, `provider-${random() % 2}`)
+          : selection(id, "intent-only");
+    });
+    const variants = [
+      records,
+      records.slice(20),
+      [...records, user("live-user"), assistant("live", "new")],
+      [user("earlier-user"), assistant("earlier-answer", "old"), ...records],
+      [...records].reverse(),
+      [...records.slice(20), ...records.slice(0, 20)],
+      records.map((record, i) => ({
+        ...record,
+        id: `saved-${i}`,
+        entryId: `saved-${i}`,
+        branchId: "replacement",
+        order: i,
+      })),
+      records.map((record, i) =>
+        i === 12 ? assistant(record.id, "edited", "other") : record,
+      ),
+    ];
+    for (const incoming of variants)
+      expect([...modelDividers(incoming)]).toEqual([
+        ...originalDividers(incoming),
+      ]);
+  }
+});
+
 test("picker changes stay hidden until a response uses the final model at a turn boundary", () => {
   const records = [
     selection("initial", "A"),
