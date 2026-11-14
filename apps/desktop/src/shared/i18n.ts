@@ -5,6 +5,9 @@ export const en = {
   paneSplitRows: "Split pane top/bottom",
   paneSplitColumns: "Split pane left/right",
   paneClose: "Close pane (keep session)",
+  sessionStatuses: "Status",
+  sessionWidgets: "Widgets",
+  sessionIndicator: (label: string, count: number) => `${label}: ${count}`,
   paneLeft: "Focus pane to the left",
   paneRight: "Focus pane to the right",
   paneUp: "Focus pane above",
@@ -109,8 +112,6 @@ export const en = {
   "Failed · unread": "Failed · unread",
   "Unread chats": "Unread chats",
   "No projects yet": "No projects yet",
-  "Start a chat, or add a project folder.":
-    "Start a chat, or add a project folder.",
   "Chat without a project": "Chat without a project",
   "Your answer": "Your answer",
   Yes: "Yes",
@@ -265,8 +266,6 @@ export const en = {
   "What shall we build?": "What shall we build?",
   "Choose a project and start a new chat.":
     "Choose a project and start a new chat.",
-  "Connect a provider to start building with pi.":
-    "Connect a provider to start building with pi.",
   "Connect a provider": "Connect a provider",
   "Window controls": "Window controls",
   Minimize: "Minimize",
@@ -365,9 +364,15 @@ export const en = {
   "Send after response": "Send after response",
   "Edit queued message": "Edit queued message in composer",
   "Delete queued message": "Delete queued message",
+  "Steer with queued message": "Send now, without waiting (steer)",
+  "Reorder queued message": "Reorder (drag, or Alt+↑/↓)",
   "Steering pending": "Steering · waiting for the next step",
+  "Steering read": "Steering · read by the agent",
   "Already sending": "This message is already being sent.",
   Send: "Send",
+  Resume: "Resume",
+  resumePrompt:
+    "Continue from where you stopped. Check the work already completed and carry on with the remaining steps.",
   "Choose an enabled model to send a message.":
     "Choose an enabled model to send a message.",
   "Manage models": "Manage models",
@@ -419,7 +424,6 @@ export const en = {
   responseComplete: "Response completed.",
   searchChats: "Filter chat titles",
   editPastes: "Expand pasted text to edit",
-  "Load earlier messages": "Load earlier messages",
   "Scroll to bottom": "Scroll to bottom",
   "Packages from your user and project configuration.":
     "Packages from your user and project configuration.",
@@ -554,6 +558,9 @@ export const en = {
   Write: "Write",
   Explored: "Explored",
   "No output": "(no output)",
+  "No matches found": "No matches found",
+  grepSummary: (files: number, matches: number) =>
+    `${files} ${files === 1 ? "file" : "files"} · ${matches} ${matches === 1 ? "match" : "matches"}`,
   exploreSummary: (reads: number, searches: number, lists: number) =>
     [
       reads && `read ${reads} ${reads === 1 ? "file" : "files"}`,
@@ -611,6 +618,9 @@ export const ja: Dictionary = {
   paneSplitRows: "Paneを上下に分割",
   paneSplitColumns: "Paneを左右に分割",
   paneClose: "Paneを閉じる（セッションは残す）",
+  sessionStatuses: "ステータス",
+  sessionWidgets: "ウィジェット",
+  sessionIndicator: (label: string, count: number) => `${label}: ${count}件`,
   paneLeft: "左のPaneへ移動",
   paneRight: "右のPaneへ移動",
   paneUp: "上のPaneへ移動",
@@ -712,8 +722,6 @@ export const ja: Dictionary = {
   "Failed · unread": "失敗・未読",
   "Unread chats": "未読のチャット",
   "No projects yet": "プロジェクトはまだありません",
-  "Start a chat, or add a project folder.":
-    "チャットを始めるか、プロジェクトフォルダを追加してください。",
   "Chat without a project": "プロジェクトなしのチャット",
   "Your answer": "回答",
   Yes: "はい",
@@ -871,8 +879,6 @@ export const ja: Dictionary = {
   "What shall we build?": "何を作りましょうか？",
   "Choose a project and start a new chat.":
     "プロジェクトを選んで新しいチャットを始めましょう。",
-  "Connect a provider to start building with pi.":
-    "プロバイダーを接続して pi で開発を始めましょう。",
   "Connect a provider": "プロバイダーを接続",
   "Window controls": "ウィンドウ操作",
   Minimize: "最小化",
@@ -970,9 +976,15 @@ export const ja: Dictionary = {
   "Send after response": "応答後に送信",
   "Edit queued message": "キューのメッセージを入力欄で編集",
   "Delete queued message": "キューのメッセージを削除",
+  "Steer with queued message": "待たずに今すぐ送信（割り込み）",
+  "Reorder queued message": "並べ替え（ドラッグ、または Alt+↑↓）",
   "Steering pending": "割り込み待ち · 次のステップで反映",
+  "Steering read": "割り込み · 読まれました",
   "Already sending": "このメッセージはすでに送信を開始しています。",
   Send: "送信",
+  Resume: "再開",
+  resumePrompt:
+    "停止したところから再開してください。完了済みの作業を確認し、残りの手順を続けてください。",
   "Choose an enabled model to send a message.":
     "有効なモデルを選択してメッセージを送信してください。",
   "Manage models": "モデルを管理",
@@ -1025,7 +1037,6 @@ export const ja: Dictionary = {
   responseComplete: "応答が完了しました。",
   searchChats: "チャット名で絞り込み",
   editPastes: "貼り付けた本文を展開して編集",
-  "Load earlier messages": "以前のメッセージを読み込む",
   "Scroll to bottom": "一番下に移動",
   "Packages from your user and project configuration.":
     "ユーザーとプロジェクトの設定にあるパッケージ。",
@@ -1157,6 +1168,8 @@ export const ja: Dictionary = {
   Write: "作成",
   Explored: "探索",
   "No output": "（出力なし）",
+  "No matches found": "一致なし",
+  grepSummary: (files, matches) => `${files} ファイル · ${matches} 件`,
   exploreSummary: (reads, searches, lists) =>
     [
       reads && `${reads}ファイルを読み取り`,

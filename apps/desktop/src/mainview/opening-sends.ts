@@ -69,6 +69,35 @@ export function withdrawOpeningSend(openId: string, id: string) {
   return send;
 }
 
+/** Permutes queued follow-ups within their own slots; model choices stay in place. */
+export function reorderOpeningSends(openId: string, ids: string[]) {
+  update(openId, (target) => {
+    const queued = target.queued ?? [];
+    const isFollowUp = (op: OpeningOp) =>
+      op.kind === "send" && op.delivery === "followUp";
+    const rank = new Map(ids.map((id, index) => [id, index]));
+    const moved = queued
+      .filter(isFollowUp)
+      .sort(
+        (a, b) =>
+          (rank.get(a.id) ?? ids.length) - (rank.get(b.id) ?? ids.length),
+      );
+    let next = 0;
+    return {
+      queued: queued.map((op) => (isFollowUp(op) ? (moved[next++] ?? op) : op)),
+    };
+  });
+}
+/** Sends a queued follow-up as steering once the chat opens. */
+export function steerOpeningSend(openId: string, id: string) {
+  update(openId, (target) => ({
+    queued: target.queued?.map((op) =>
+      op.kind === "send" && op.id === id
+        ? { ...op, delivery: "steer" as const, timestamp: Date.now() }
+        : op,
+    ),
+  }));
+}
 /** Returns unsent messages to the editor ahead of anything typed since. */
 export function restoreOpeningSends(openId: string) {
   const state = useStore.getState();

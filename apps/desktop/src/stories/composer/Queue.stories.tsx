@@ -1,25 +1,21 @@
-import { stories } from "../proposals/kit";
-import {
-  type QueueArgs,
-  QueueDefault,
-  queueProposals,
-} from "../proposals/queue";
+import type { Meta, StoryObj } from "@storybook/react-vite";
+import { QueuePreview } from "./QueuePreview";
 
-export default {
+const meta = {
   title: "Chat/Composer/Queue",
-  args: { count: 3, sending: false } satisfies QueueArgs,
+  component: QueuePreview,
+  args: { count: 3, sending: false },
   argTypes: {
-    count: { control: "inline-radio", options: [1, 3, 6] },
+    count: { control: "inline-radio", options: [0, 1, 3, 6] },
     sending: {
       control: "boolean",
       description: "先頭のメッセージが送信を開始した状態",
     },
   },
-};
-const all = stories(queueProposals, QueueDefault, (args: QueueArgs) => args);
-export const Default = all.Default;
-export const Compare = all.Compare;
-export const NextUp = all.NextUp;
-export const Tabs = all.Tabs;
-export const Timeline = all.Timeline;
-export const Chips = all.Chips;
+} satisfies Meta<typeof QueuePreview>;
+export default meta;
+type Story = StoryObj<typeof meta>;
+
+export const Default: Story = {};
+export const Sending: Story = { args: { sending: true } };
+export const Empty: Story = { args: { count: 0 } };

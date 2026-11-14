@@ -1433,6 +1433,22 @@ export class SessionHost {
   getPromptReceipt(key: SendKey) {
     return this.receipts.lookup(key);
   }
+  /** Returns the resulting order of the host-held follow-ups. */
+  reorderQueuedPrompts(input: SessionAddress & { requestIds: string[] }) {
+    this.current(input, false);
+    if (
+      !Array.isArray(input.requestIds) ||
+      input.requestIds.length > 256 ||
+      input.requestIds.some((id) => typeof id !== "string" || id.length > 256)
+    )
+      throw new Error("Invalid queue order");
+    return this.receipts.reorderQueued(input, input.requestIds);
+  }
+  /** Promotes a waiting follow-up to steering; false once it has started sending. */
+  steerQueuedPrompt(key: SendKey) {
+    this.current(key);
+    return this.receipts.steerQueued(key);
+  }
   private draftOwner(address: SessionAddress) {
     const m = this.current(address, false);
     return {

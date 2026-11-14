@@ -303,6 +303,8 @@ const rpc = BrowserView.defineRPC<RPCSchema>({
         sessionHost.completeSlashArguments(input),
       getPromptReceipt: (input) => sessionHost.getPromptReceipt(input),
       cancelPrompt: (input) => sessionHost.cancelPrompt(input),
+      reorderQueuedPrompts: (input) => sessionHost.reorderQueuedPrompts(input),
+      steerQueuedPrompt: (input) => sessionHost.steerQueuedPrompt(input),
       getRecovery: (input) => sessionHost.getRecovery(input),
       syncDraft: (input) => sessionHost.syncDraft(input),
       getSessionDraft: (input) => sessionHost.getSessionDraft(input),

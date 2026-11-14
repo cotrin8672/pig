@@ -332,6 +332,11 @@ export type RPCSchema = {
       };
       getPromptReceipt: { params: SendKey; response: PromptReceipt };
       cancelPrompt: { params: SendKey; response: PromptReceipt };
+      reorderQueuedPrompts: {
+        params: SessionAddress & { requestIds: string[] };
+        response: string[];
+      };
+      steerQueuedPrompt: { params: SendKey; response: boolean };
       getRecovery: { params: SessionAddress; response: RuntimeRecoveryState };
       syncDraft: { params: DraftSyncParams; response: DraftSyncResult };
       getSessionDraft: {

@@ -1,9 +1,9 @@
 import { useLayoutEffect, useSyncExternalStore } from "react";
 import type { Snapshot } from "../shared/rpc-schema";
 import { expandedDraft } from "./draft-store";
-import { useT } from "./i18n";
 import { UserMessage } from "./MessageContent";
 import { sends } from "./rpc";
+import { transcriptRequestIds } from "./transcript-requests";
 
 /** Reconcile by request identity, never by matching text or timestamps. */
 export function OptimisticMessages({
@@ -13,7 +13,6 @@ export function OptimisticMessages({
   snapshot: Snapshot;
   onChange?: () => void;
 }) {
-  const t = useT();
   const tick = useSyncExternalStore(
     sends.subscribe,
     sends.getTick,
@@ -25,12 +24,14 @@ export function OptimisticMessages({
     const frame = requestAnimationFrame(onChange);
     return () => cancelAnimationFrame(frame);
   }, [tick, onChange]);
-  const visible = new Set(
-    snapshot.transcript.records.map((record) => record.requestId),
-  );
   return sends
     .optimistic(snapshot.address)
-    .filter((send) => !visible.has(send.key.requestId))
+    .filter(
+      (send) =>
+        !transcriptRequestIds(snapshot.transcript.records).has(
+          send.key.requestId,
+        ),
+    )
     .flatMap((send) =>
       send.content ? (
         <div className="response-turn" key={send.key.requestId}>
@@ -38,6 +39,15 @@ export function OptimisticMessages({
             <UserMessage
               sessionId={snapshot.info.id}
               disabled
+              steer={
+                // Queued by the SDK until the next step boundary.
+                send.delivery === "steer" &&
+                (send.disposition === "queued" ||
+                  (send.disposition === undefined &&
+                    snapshot.transcript.running))
+                  ? "pending"
+                  : undefined
+              }
               message={{
                 role: "user",
                 timestamp: send.timestamp ?? 0,
@@ -48,11 +58,6 @@ export function OptimisticMessages({
               }}
             />
           </article>
-          {snapshot.transcript.running && send.delivery === "steer" && (
-            <p className="composer-hint" role="status">
-              {t["Steering pending"]}
-            </p>
-          )}
         </div>
       ) : (
         []

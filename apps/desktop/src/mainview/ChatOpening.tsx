@@ -18,7 +18,9 @@ import {
   openingSends,
   queueOpeningSelection,
   queueOpeningSend,
+  reorderOpeningSends,
   restoreOpeningSends,
+  steerOpeningSend,
   withdrawOpeningSend,
 } from "./opening-sends";
 import { openChat } from "./rpc";
@@ -104,6 +106,15 @@ export function OpeningComposer({ preview }: { preview?: Snapshot }) {
         onDelete={(id) => {
           const openId = useStore.getState().openId;
           if (openId) withdrawOpeningSend(openId, id);
+        }}
+        onMove={(ids) => {
+          const openId = useStore.getState().openId;
+          if (openId) reorderOpeningSends(openId, ids);
+        }}
+        onSteer={(id) => {
+          const openId = useStore.getState().openId;
+          if (openId) steerOpeningSend(openId, id);
+          textareaRef.current?.focus();
         }}
         onEdit={(id) => {
           const openId = useStore.getState().openId;

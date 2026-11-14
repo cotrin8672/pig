@@ -1,7 +1,7 @@
 import type { ImageContent, TextContent } from "@earendil-works/pi-ai";
 import type { ChatRendererProps } from "@pig/chat-renderers";
 import type { Root } from "hast";
-import { Check, Copy, Pencil } from "lucide-react";
+import { Check, Clock, Copy, Pencil } from "lucide-react";
 import {
   Fragment,
   memo,
@@ -218,17 +218,62 @@ const imageSources = (content: Content) =>
         .filter(isImage)
         .map((image) => `data:${image.mimeType};base64,${image.data}`);
 
+/**
+ * Steering is a nudge inside the agent's work, not a new turn: one right-aligned
+ * line, quieter until the agent has read it. Click to read the whole message.
+ */
+function SteerLine({
+  body,
+  state,
+}: {
+  body: string;
+  state: "pending" | "read";
+}) {
+  const t = useT();
+  const [open, setOpen] = useState(false);
+  const label =
+    state === "pending" ? t["Steering pending"] : t["Steering read"];
+  return (
+    <div className="user-steer" data-steer={state}>
+      <span
+        className="user-steer-state"
+        role="img"
+        aria-label={label}
+        title={label}
+      >
+        {state === "pending" ? (
+          <Clock size={13} aria-hidden="true" />
+        ) : (
+          <Check size={13} aria-hidden="true" />
+        )}
+      </span>
+      <button
+        type="button"
+        className="user-bubble"
+        aria-expanded={open}
+        title={open ? undefined : body}
+        onClick={() => setOpen(!open)}
+      >
+        {body}
+      </button>
+    </div>
+  );
+}
+
 /** User turns: images above a plain-text bubble, like ChatGPT. */
 export const UserMessage = memo(function UserMessage({
   message,
   sessionId,
   entryId,
   disabled,
+  steer,
 }: {
   message: Extract<Message, { role: "user" }>;
   sessionId: string;
   entryId?: string;
   disabled: boolean;
+  /** Sent while the agent was working: waiting for, or read at, a step boundary. */
+  steer?: "pending" | "read";
 }) {
   const { content } = message;
   const t = useT();
@@ -315,9 +360,12 @@ export const UserMessage = memo(function UserMessage({
           </div>
         </form>
       ) : (
-        attachments.body && (
+        attachments.body &&
+        (steer ? (
+          <SteerLine body={attachments.body} state={steer} />
+        ) : (
           <div className="user-bubble">{attachments.body}</div>
-        )
+        ))
       )}
       <div className="response-actions user-actions">
         <time dateTime={new Date(message.timestamp).toISOString()}>

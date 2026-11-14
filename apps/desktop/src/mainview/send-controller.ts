@@ -13,6 +13,7 @@ import type {
 } from "../shared/runtime-contract";
 import { addressKey, sameAddress } from "./chat-snapshot";
 import { type DraftStore, expandedDraft } from "./draft-store";
+import { transcriptRequestIds } from "./transcript-requests";
 
 export type SendState = {
   key: SendKey;
@@ -38,6 +39,12 @@ type Transport = {
   getPromptReceipt(params: SendKey): Promise<PromptReceipt>;
   /** Rejects a reserved send that was never dispatched. */
   cancelPrompt?(params: SendKey): Promise<unknown>;
+  /** Reorders waiting follow-ups; resolves with the host's resulting order. */
+  reorderPrompts?(
+    params: SessionAddress & { requestIds: string[] },
+  ): Promise<string[]>;
+  /** Sends a waiting follow-up now as steering; false once it has started. */
+  steerPrompt?(params: SendKey): Promise<boolean>;
 };
 export type PendingAttachments = Promise<
   Pick<DraftContent, "images" | "files">
@@ -63,6 +70,10 @@ export class SendController {
   private dispatched = new Set<string>();
   private cancelled = new Set<string>();
   private withdrawn = new Set<string>();
+  /** Follow-ups the host promoted to steering; later updates keep that delivery. */
+  private promoted = new Set<string>();
+  /** Queue position after a reorder; unranked items follow in send order. */
+  private ranks = new Map<string, number>();
   private barriers = new Map<string, Promise<unknown>>();
   private tick = 0;
   getTick = () => this.tick;
@@ -89,15 +100,14 @@ export class SendController {
     return this.states.get(addressKey(address));
   }
   reconcile(snapshot: Snapshot) {
-    const visible = new Set(
-      snapshot.transcript.records.map((record) => record.requestId),
-    );
     for (const state of this.operations.values()) {
       if (
         sameAddress(state.key, snapshot.address) &&
         state.state === "accepted" &&
         state.content &&
-        visible.has(state.key.requestId)
+        transcriptRequestIds(snapshot.transcript.records).has(
+          state.key.requestId,
+        )
       )
         this.put(
           snapshot.address,
@@ -118,14 +128,58 @@ export class SendController {
     );
   }
   queued(address: SessionAddress) {
-    return [...this.operations.values()].filter(
-      (state) =>
-        sameAddress(state.key, address) &&
-        state.delivery === "followUp" &&
-        state.content &&
-        isSendUnconfirmed(state) &&
-        state.state !== "unknown",
+    const rank = (state: SendState) =>
+      this.ranks.get(this.operationKey(state.key)) ?? Number.MAX_SAFE_INTEGER;
+    return [...this.operations.values()]
+      .filter(
+        (state) =>
+          sameAddress(state.key, address) &&
+          state.delivery === "followUp" &&
+          state.content &&
+          isSendUnconfirmed(state) &&
+          state.state !== "unknown",
+      )
+      .sort((a, b) => rank(a) - rank(b));
+  }
+  private rank(address: SessionAddress, requestIds: string[]) {
+    requestIds.forEach((requestId, index) => {
+      this.ranks.set(this.operationKey({ ...address, requestId }), index);
+    });
+    this.tick++;
+    for (const listener of this.listeners) listener();
+  }
+  /** Shows the new order at once, then adopts the host's authoritative order. */
+  async reorderQueued(address: SessionAddress, requestIds: string[]) {
+    const before = this.queued(address).map((state) => state.key.requestId);
+    this.rank(address, requestIds);
+    try {
+      const order = await this.transport.reorderPrompts?.({
+        ...address,
+        requestIds,
+      });
+      if (order) this.rank(address, order);
+    } catch (error) {
+      this.rank(address, before);
+      throw error;
+    }
+  }
+  /** Sends a waiting follow-up now; it then appears in the conversation as steering. */
+  async steerQueued(address: SessionAddress, key: SendKey) {
+    const id = this.operationKey(key);
+    const state = this.queued(address).find(
+      (item) => this.operationKey(item.key) === id,
     );
+    if (!state || !this.transport.steerPrompt) return false;
+    if (!(await this.transport.steerPrompt(key))) return false;
+    this.promoted.add(id);
+    const latest = this.operations.get(id);
+    if (latest)
+      this.put(
+        address,
+        { ...latest, timestamp: Date.now() },
+        this.read(address)?.key.requestId === key.requestId,
+      );
+    return true;
   }
   /** Editing withdraws to the composer; newer draft text is preserved. */
   async withdrawQueued(address: SessionAddress, key: SendKey, edit = false) {
@@ -221,12 +275,18 @@ export class SendController {
       ) {
         this.operations.delete(key);
         this.transfers.delete(key);
+        this.ranks.delete(key);
+        this.promoted.delete(key);
       }
     this.tick++;
     for (const listener of this.listeners) listener();
   }
   private put(address: SessionAddress, state: SendState, current = true) {
-    this.operations.set(this.operationKey(state.key), state);
+    const id = this.operationKey(state.key);
+    // Captured send states still say followUp; promotion is the newer fact.
+    if (this.promoted.has(id)) state = { ...state, delivery: "steer" };
+    if (!isSendUnconfirmed(state)) this.ranks.delete(id);
+    this.operations.set(id, state);
     if (current) this.states.set(addressKey(address), state);
     this.tick++;
     for (const listener of this.listeners) listener();

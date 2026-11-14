@@ -260,3 +260,130 @@ test("compact queue markup escapes content, offers edit/delete and never exposes
     ),
   ).toBe("");
 });
+
+function reorderable() {
+  const f = fixture();
+  const calls: { requestIds?: string[]; steer?: string }[] = [];
+  let order: string[] | Error = [];
+  let steer = true;
+  const sends = new SendController(
+    f.drafts,
+    {
+      syncDraft: async (p) => ({
+        applied: true,
+        draft: { ...p.content, revision: p.expectedRevision + 1 },
+      }),
+      prompt: () => new Promise(() => {}),
+      getPromptReceipt: async (key) => ({
+        ...key,
+        state: "pending",
+        stage: "queued",
+      }),
+      reorderPrompts: async ({ requestIds }) => {
+        calls.push({ requestIds });
+        if (order instanceof Error) throw order;
+        return order.length ? order : requestIds;
+      },
+      steerPrompt: async (key) => {
+        calls.push({ steer: key.requestId });
+        return steer;
+      },
+    },
+    () => {},
+  );
+  const texts = () =>
+    sends.queued(address).map((item) => item.content?.text ?? "");
+  const ids = () => sends.queued(address).map((item) => item.key.requestId);
+  return {
+    sends,
+    calls,
+    texts,
+    ids,
+    hostOrder: (next: string[] | Error) => {
+      order = next;
+    },
+    refuseSteer: () => {
+      steer = false;
+    },
+  };
+}
+const message = (text: string): DraftContent => ({
+  text,
+  pastes: [],
+  images: [],
+});
+
+test("reordering shows at once, adopts the host order, and rolls back when the host fails", async () => {
+  const r = reorderable();
+  for (const text of ["a", "b", "c"])
+    void r.sends.send(address, message(text), undefined, "followUp");
+  await Bun.sleep(0);
+  const [a, b, c] = r.ids();
+  const moving = r.sends.reorderQueued(address, [c, a, b]);
+  expect(r.texts()).toEqual(["c", "a", "b"]);
+  await moving;
+  expect(r.calls[0].requestIds).toEqual([c, a, b]);
+  // The host keeps a started head first, whatever the renderer asked.
+  r.hostOrder([a, b, c]);
+  await r.sends.reorderQueued(address, [b, c, a]);
+  expect(r.texts()).toEqual(["a", "b", "c"]);
+  r.hostOrder(new Error("offline"));
+  await expect(r.sends.reorderQueued(address, [c, b, a])).rejects.toThrow(
+    "offline",
+  );
+  expect(r.texts()).toEqual(["a", "b", "c"]);
+});
+
+test("steering a queued message moves it from the queue into the conversation", async () => {
+  const r = reorderable();
+  void r.sends.send(address, message("now"), undefined, "followUp");
+  void r.sends.send(address, message("later"), undefined, "followUp");
+  await Bun.sleep(0);
+  const [now] = r.sends.queued(address);
+  expect(await r.sends.steerQueued(address, now.key)).toBe(true);
+  expect(r.texts()).toEqual(["later"]);
+  const shown = r.sends.optimistic(address);
+  expect(shown.map((item) => [item.content?.text, item.delivery])).toEqual([
+    ["now", "steer"],
+  ]);
+  // Later status updates from the original send keep the promoted delivery.
+  await r.sends.lookup(address, now.key);
+  expect(r.sends.optimistic(address)[0].delivery).toBe("steer");
+  r.refuseSteer();
+  const [later] = r.sends.queued(address);
+  expect(await r.sends.steerQueued(address, later.key)).toBe(false);
+  expect(r.texts()).toEqual(["later"]);
+});
+
+test("queue rows offer reorder and steer only when wired, and a started row cannot move or steer", () => {
+  const html = renderToStaticMarkup(
+    <MessageQueue
+      items={[
+        { id: "head", content: message("first"), locked: true },
+        { id: "one", content: message("second") },
+        { id: "two", content: message("third") },
+      ]}
+      onEdit={() => {}}
+      onDelete={() => {}}
+      onMove={() => {}}
+      onSteer={() => {}}
+    />,
+  );
+  expect(html.match(/class="message-queue-grip"/g)).toHaveLength(2);
+  expect(html.match(/class="message-queue-handle"/g)).toHaveLength(3);
+  expect(
+    html.match(/aria-label="Send now, without waiting \(steer\)"/g),
+  ).toHaveLength(3);
+  expect(html).toMatch(
+    /aria-label="Send now, without waiting \(steer\)" disabled=""/,
+  );
+  const plain = renderToStaticMarkup(
+    <MessageQueue
+      items={[{ id: "one", content: message("only") }]}
+      onEdit={() => {}}
+      onDelete={() => {}}
+    />,
+  );
+  expect(plain).not.toContain("message-queue-grip");
+  expect(plain).not.toContain("Send now");
+});

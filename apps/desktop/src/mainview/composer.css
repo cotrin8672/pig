@@ -70,11 +70,17 @@
   width: 72px;
   height: 72px;
 }
-.composer-attachment img {
+.composer-attachment .image-preview {
   width: 100%;
   height: 100%;
+  border-radius: var(--radius-sm);
+  background: transparent;
+}
+.composer-attachment .image-preview img {
+  width: 100%;
+  height: 100%;
+  max-height: none;
   object-fit: cover;
-  border-radius: 6px;
 }
 .composer-attachment.file {
   width: 96px;
@@ -98,7 +104,7 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.composer-attachment button {
+.composer-attachment-remove {
   position: absolute;
   top: 2px;
   right: 2px;
@@ -206,6 +212,45 @@
   min-height: 36px;
   padding: 4px;
   border-top: 1px solid var(--ds-border);
+}
+/* Same column whether or not the row can move, so locking never shifts it. */
+.message-queue-handle {
+  display: grid;
+  place-items: center;
+  flex: 0 0 20px;
+  align-self: stretch;
+  margin-right: -6px;
+}
+.message-queue-grip {
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 28px;
+  padding: 0;
+  border-radius: var(--radius-xs);
+  color: var(--ds-text-faint);
+  cursor: grab;
+}
+.message-queue-started {
+  color: var(--ds-accent);
+}
+.message-queue-grip:hover {
+  background: var(--ds-bg-hover);
+  color: var(--ds-text-primary);
+}
+.message-queue li[data-dragging] {
+  background: var(--ds-bg-chip);
+  color: var(--ds-text-faint);
+}
+.message-queue li[data-dragging] .message-queue-grip {
+  cursor: grabbing;
+}
+/* Drawn inside the row, so the drop target never pushes its neighbours. */
+.message-queue li[data-drop="before"] {
+  box-shadow: inset 0 2px 0 var(--ds-accent);
+}
+.message-queue li[data-drop="after"] {
+  box-shadow: inset 0 -2px 0 var(--ds-accent);
 }
 .message-queue-index {
   flex: 0 0 16px;

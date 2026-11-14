@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import type { AgentSession } from "@earendil-works/pi-coding-agent";
 import type {
   PromptAccepted,
+  PromptDelivery,
   PromptParams,
   PromptReceipt,
   SendIntent,
@@ -15,6 +16,7 @@ export const addressKey = (a: SessionAddress) =>
   JSON.stringify([a.hostId, a.sessionId, a.epoch]);
 const sendKey = (a: SendKey) =>
   `${addressKey(a)}:${JSON.stringify(a.requestId)}`;
+type Deferred<T> = ReturnType<typeof Promise.withResolvers<T>>;
 type RecordState = {
   hash: string;
   receipt: PromptReceipt;
@@ -25,13 +27,24 @@ type RecordState = {
   dispatched: boolean;
   scheduled: boolean;
   intent?: SendIntent;
+  /** Starts as requested; a waiting follow-up may be promoted to steering. */
+  delivery: PromptDelivery;
+  promoted: Deferred<void>;
+  /** Preparing SDK input; from here on the follow-up keeps its place. */
+  starting: boolean;
+};
+/** Waiting follow-ups in send order; the holder runs until its response completes. */
+type Lane = {
+  order: RecordState[];
+  holder?: RecordState;
+  changed: Deferred<void>;
 };
 
 /** Host-lifetime ledger; no eviction or retransmission on lookup. */
 export class SendReceipts {
   private records = new Map<string, RecordState>();
   private queues = new Map<string, Promise<void>>();
-  private followUps = new Map<string, Promise<void>>();
+  private lanes = new Map<string, Lane>();
   private active = new Map<Promise<void>, string>();
   constructor(
     readonly hostId: string,
@@ -54,7 +67,99 @@ export class SendReceipts {
         unresolved.push(record.intent);
       else terminal.set(addressKey(record.receipt), record.intent);
     }
+    // A reload restores the queue in its current (possibly reordered) order.
+    const position = new Map<string, number>();
+    for (const lane of this.lanes.values())
+      lane.order.forEach((record, index) => {
+        position.set(sendKey(record.receipt), index);
+      });
+    const at = (intent: SendIntent) =>
+      position.get(sendKey(intent.receipt)) ?? -1;
+    unresolved.sort((a, b) => at(a) - at(b));
     return structuredClone([...terminal.values(), ...unresolved]);
+  }
+  private lane(address: string) {
+    let lane = this.lanes.get(address);
+    if (!lane) {
+      lane = { order: [], changed: Promise.withResolvers<void>() };
+      this.lanes.set(address, lane);
+    }
+    return lane;
+  }
+  private changed(lane: Lane) {
+    lane.changed.resolve();
+    lane.changed = Promise.withResolvers<void>();
+  }
+  private leave(address: string, record: RecordState) {
+    const lane = this.lanes.get(address);
+    if (!lane) return;
+    lane.order = lane.order.filter((item) => item !== record);
+    if (lane.holder === record) lane.holder = undefined;
+    if (!lane.order.length) this.lanes.delete(address);
+    this.changed(lane);
+  }
+  /** Resolves when this follow-up heads the lane, or once it is promoted to steering. */
+  private async turn(
+    address: string,
+    record: RecordState,
+    wait: <T>(promise: Promise<T>) => Promise<T>,
+  ) {
+    for (;;) {
+      const lane = this.lanes.get(address);
+      if (record.delivery !== "followUp" || !lane || lane.holder === record)
+        return;
+      if (!lane.holder && lane.order[0] === record) {
+        lane.holder = record;
+        return;
+      }
+      await wait(Promise.race([lane.changed.promise, record.promoted.promise]));
+    }
+  }
+  private holds(address: string, record: RecordState) {
+    return this.lanes.get(address)?.holder === record;
+  }
+  /**
+   * Reorders follow-ups that have not started preparing. The one already
+   * starting stays first; IDs missing from the request keep their relative
+   * order at the end. A head that is only waiting for idle can be passed.
+   */
+  reorderQueued(address: SessionAddress, requestIds: string[]) {
+    const lane = this.lanes.get(addressKey(address));
+    if (!lane) return [];
+    const rank = new Map(requestIds.map((id, index) => [id, index]));
+    const fixed = lane.order.filter(
+      (record) => record.dispatched || record.starting,
+    );
+    const movable = lane.order
+      .filter((record) => !fixed.includes(record))
+      .sort(
+        (a, b) =>
+          (rank.get(a.receipt.requestId) ?? requestIds.length) -
+          (rank.get(b.receipt.requestId) ?? requestIds.length),
+      );
+    lane.order = [...fixed, ...movable];
+    if (lane.holder && lane.order[0] !== lane.holder) lane.holder = undefined;
+    this.changed(lane);
+    return lane.order.map((record) => record.receipt.requestId);
+  }
+  /** Sends a waiting follow-up now, as steering. False once SDK input has started. */
+  steerQueued(key: SendKey) {
+    const record = this.records.get(sendKey(key));
+    if (
+      !record ||
+      record.dispatched ||
+      record.delivery !== "followUp" ||
+      record.receipt.state !== "pending"
+    )
+      return false;
+    record.delivery = "steer";
+    if (record.intent) {
+      record.intent = { ...record.intent, delivery: "steer" };
+      this.persist(record);
+    }
+    this.leave(addressKey(key), record);
+    record.promoted.resolve();
+    return true;
   }
   has(key: SendKey) {
     return this.records.has(sendKey(key)) || !!this.recovery?.lookup(key);
@@ -190,6 +295,9 @@ export class SendReceipts {
         cancel: new AbortController(),
         dispatched: true,
         scheduled: true,
+        delivery: saved.delivery ?? "steer",
+        promoted: Promise.withResolvers<void>(),
+        starting: false,
       };
       this.records.set(key, previous);
     }
@@ -212,6 +320,9 @@ export class SendReceipts {
       cancel: new AbortController(),
       dispatched: false,
       scheduled: false,
+      delivery: params.delivery ?? "steer",
+      promoted: Promise.withResolvers<void>(),
+      starting: false,
     };
     if (metadata) {
       record.intent = {
@@ -249,7 +360,9 @@ export class SendReceipts {
     if (record.scheduled || record.receipt.state !== "pending")
       return record.promise;
     record.scheduled = true;
-    const queued = params.delivery === "followUp";
+    // A follow-up promoted before its prompt arrived is sent as steering.
+    const queued = record.delivery === "followUp";
+    const later = () => record.delivery === "followUp";
     record.receipt = {
       ...record.receipt,
       state: "pending",
@@ -284,24 +397,35 @@ export class SendReceipts {
     };
     // Queued follow-ups wait outside the admission lane so they cannot block steering.
     let slot = queued ? undefined : acquire();
-    const previousFollowUp = this.followUps.get(address) ?? Promise.resolve();
+    if (queued) this.lane(address).order.push(record);
     const task = (async () => {
       try {
-        if (queued) await wait(previousFollowUp);
         let input: Awaited<ReturnType<typeof prepare>> | undefined;
         for (;;) {
           signal.throwIfAborted();
-          if (queued) {
-            await wait(session.waitForIdle?.() ?? Promise.resolve());
+          if (later()) {
+            await this.turn(address, record, wait);
+            const lane = this.lanes.get(address);
+            await wait(
+              Promise.race([
+                session.waitForIdle?.() ?? Promise.resolve(),
+                record.promoted.promise,
+                ...(lane ? [lane.changed.promise] : []),
+              ]),
+            );
+            // Reordered behind another follow-up while waiting: wait for the turn again.
+            if (later() && !this.holds(address, record)) continue;
             slot = acquire();
-          }
-          if (!slot) throw new Error("Missing prompt admission");
+          } else slot ??= acquire();
           await wait(slot.prior);
           signal.throwIfAborted();
-          if (!queued || !session.isStreaming) {
+          const displaced = later() && !this.holds(address, record);
+          if (!displaced && (!later() || !session.isStreaming)) {
+            record.starting = later();
             input = await prepare(signal);
             signal.throwIfAborted();
-            if (!queued || !session.isStreaming) break;
+            if (!later() || !session.isStreaming) break;
+            record.starting = false;
           }
           slot.admission.resolve();
           slot = undefined;
@@ -316,7 +440,7 @@ export class SendReceipts {
         // This is the ONLY adapter to SDK 1.5.0's real typed acceptance hook.
         await session.prompt(input.text, {
           images: input.images,
-          streamingBehavior: params.delivery ?? "steer",
+          streamingBehavior: record.delivery,
           preflightResult: (disposition) => {
             // Never throw here: SDK 1.5.0 calls onStarted outside its finally.
             // SessionHost's public Agent.prompt boundary cancels a late start safely.
@@ -354,9 +478,9 @@ export class SendReceipts {
         else this.reject(record, error);
       } finally {
         slot?.admission.resolve();
+        this.leave(address, record);
       }
     })();
-    if (queued) this.followUps.set(address, task);
     this.active.set(task, address);
     void task.finally(() => this.active.delete(task));
     return record.promise;

@@ -1,0 +1,18 @@
+/* Preview layout only; the queue uses the production composer styles. */
+.queue-preview {
+  display: grid;
+  max-width: 760px;
+}
+.queue-preview-response {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 14px;
+  color: var(--ds-text-muted);
+  font-size: var(--text-sm);
+}
+.queue-preview-response button {
+  margin-left: auto;
+  color: var(--ds-text-muted);
+  font-size: var(--text-xs);
+}

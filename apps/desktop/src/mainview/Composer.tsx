@@ -351,13 +351,23 @@ export function Composer({ snapshot }: { snapshot: Snapshot }) {
       />
       <ExtensionWidgets address={address} />
       <MessageQueue
-        items={sends
-          .queued(address)
-          .flatMap((item) =>
-            item.content
-              ? [{ id: item.key.requestId, content: item.content }]
-              : [],
-          )}
+        items={sends.queued(address).flatMap((item) =>
+          item.content
+            ? [
+                {
+                  id: item.key.requestId,
+                  content: item.content,
+                  locked: item.stage === "dispatched",
+                },
+              ]
+            : [],
+        )}
+        onMove={(ids) => sends.reorderQueued(address, ids)}
+        onSteer={async (requestId) => {
+          if (!(await sends.steerQueued(address, { ...address, requestId })))
+            showError(t["Already sending"]);
+          textareaRef.current?.focus();
+        }}
         onEdit={async (requestId) => {
           if (
             await sends.withdrawQueued(address, { ...address, requestId }, true)

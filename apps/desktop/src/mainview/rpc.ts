@@ -501,6 +501,8 @@ export const sends = new SendController(
     prompt: (params) => rpc.request.prompt(params),
     getPromptReceipt: (params) => rpc.request.getPromptReceipt(params),
     cancelPrompt: (params) => rpc.request.cancelPrompt(params),
+    reorderPrompts: (params) => rpc.request.reorderQueuedPrompts(params),
+    steerPrompt: (params) => rpc.request.steerQueuedPrompt(params),
   },
   undefined,
   undefined,
