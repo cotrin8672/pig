@@ -46,15 +46,18 @@ test("appearance validates backdrop and clamps finite opacity", () => {
     expect(() => validateAppearance(value)).toThrow();
 });
 
-test("backdrop removes native caption buttons but preserves resize and Snap", () => {
-  expect(windowStyleForBackdrop(0x16c40000)).toBe(0x140f0000);
-  expect(windowStyleForBackdrop(0x37c40000)).toBe(0x350f0000);
-  expect(windowStyleForBackdrop(0x140f0000)).toBe(0x140f0000);
-  for (const style of [0x16c40000, 0x37c40000, 0x14cf0000]) {
+test("backdrop preserves caption semantics for taskbar auto-hide, resize and Snap", () => {
+  expect(windowStyleForBackdrop(0x16c40000)).toBe(0x14cf0000);
+  expect(windowStyleForBackdrop(0x37c40000)).toBe(0x35cf0000);
+  // Repair the previous captionless style as well as stock hiddenInset windows.
+  expect(windowStyleForBackdrop(0x140f0000)).toBe(0x14cf0000);
+  for (const style of [0x16c40000, 0x37c40000, 0x14cf0000, 0x150f0000]) {
     const next = windowStyleForBackdrop(style);
-    expect(next & 0x00c00000).toBe(0);
+    expect(next & 0x00cf0000).toBe(0x00cf0000);
     expect(next & 0x02000000).toBe(0);
-    expect(next & 0x000f0000).toBe(0x000f0000);
+    // Preserve visibility, minimize/maximize state and unrelated style flags.
+    expect(next & ~0x02cf0000).toBe(style & ~0x02cf0000);
+    expect(windowStyleForBackdrop(next)).toBe(next);
   }
 });
 

@@ -42,9 +42,12 @@ New-Item -ItemType Directory $stage | Out-Null
 mise exec -- bun apps/desktop/scripts/windows-smoke.ts "$stage/pig"
 ```
 
-Add `--interactive` to also move the mouse over the app's actual CSS drag region
-and verify an 80x40-pixel native window move. This briefly uses the foreground
-window and cursor; do not interact with the desktop during the test. The probe
+Add `--interactive` to also verify an 80x40-pixel native window move over the
+app's actual CSS drag region, drag to the top edge to maximize, and reveal each
+auto-hide taskbar after both maximize paths. Taskbar settings are never changed;
+when no auto-hide taskbar is registered there, the reveal check is explicitly
+reported as NOT TESTED. This briefly uses the foreground window and cursor;
+do not interact with the desktop during the test. The probe
 verifies process identity and foreground ownership and restores the cursor.
 
 The runner creates fresh HOME/USERPROFILE/APPDATA/LOCALAPPDATA directories,
@@ -59,14 +62,20 @@ Checks for each of none, Acrylic and Mica:
 - actual relocated packaged app starts and displays its bundled React view;
 - native client and WebView2 child bounds agree after resize/maximize/restore;
 - minimize/restore, non-client activation and native close work;
-- resize/Snap style flags, absence of native caption, composition flag and DWM
-  backdrop value match expectations;
-- optional real mouse drag moves the window by the requested offset.
+- caption/resize/Snap style flags, composition flag and DWM backdrop value match
+  expectations; `hiddenInset` removes the native caption's layout space;
+- maximized client bounds stay inside the monitor work area;
+- optional real mouse drag moves the window by the requested offset and
+  maximizes it at the top edge; edge hovering reveals registered auto-hide
+  taskbars after both direct maximize/activation and drag-to-top.
 
 For `none`, the runner also places a red, then green window behind pig and
 samples the actual desktop pixels through a blank part of its sidebar. Both
-colors must show through, initially and after maximize/minimize/restore. This
-catches opaque/black composition that geometry and PrintWindow checks miss.
+colors must show through, initially, maximized and after minimize/restore. With
+that flat underlay and the toolbar collapsed, the same probe checks the actual
+upper-right desktop pixels for unwanted native caption glyphs. Companion
+`*.caption.png` crops are saved beside the window captures. This catches opaque
+composition and duplicate controls that geometry and PrintWindow checks miss.
 It briefly brings the test app to the foreground; do not cover it during the run.
 
 Screenshots must be reviewed separately: successful assertions alone do not
@@ -106,6 +115,47 @@ Opacity 0/0.3/1 and all three backdrops were exercised; opacity 1 stayed opaque.
 The fixed relocated stable bundle passed all 26 native probes, including the two
 new desktop-pixel checks. Artifacts: `%TEMP%/pig-windows-smoke-OvckBv`. Mixed-DPI
 and transient animation coverage remain separate manual gates.
+
+## Maximized taskbar regression
+
+Removing `WS_CAPTION` in `windowStyleForBackdrop` made a maximized custom-chrome
+window suppress taskbar auto-hide. In an isolated 0.6.0 profile on Windows 11 at
+96 DPI, the client filled 1920x1080; edge hovering left the taskbar at y=1078
+(hidden). Restoring `WS_CAPTION` revealed it at y=1032, without changing the
+client's size. Removing/restoring the style again reproduced/repaired the issue.
+Investigation artifacts: `%TEMP%/pig-taskbar-investigation-HWBKNa`.
+
+Keep `WS_CAPTION` and the normal resize/Snap flags. The stock DLL's `hiddenInset`
+`WM_NCCALCSIZE` handler hides the caption's layout space; do not remove style bits
+to hide it. Unit tests protect the style bits, and the native runner now checks
+caption layout and maximized work-area bounds, plus real auto-hide edge hovering
+with `--interactive`. Always-visible taskbars and keyboard Snap still need
+separate manual coverage when those configurations are unavailable.
+
+The fixed source passed all 39 native probes across none/Acrylic/Mica, including
+real drag-to-top maximization, auto-hide taskbar reveal after both maximize paths,
+alpha and duplicate-caption pixel checks, activation and clean close. Artifacts:
+`%TEMP%/pig-windows-smoke-8mWJnr`. This run used a temporary workspace bundle with
+the current Bun entry rebuilt separately and the staged SDK copied with robocopy:
+the development app held the repository build lock, and the temporary build's
+serial SDK copy exceeded the command timeout. This is runtime validation, not a
+completed installer/update-tarball packaging check. The browser `pnpm test:ui`
+run was also attempted twice: 11 passed, 1 timed out in the unrelated transcript
+scrollbar-geometry fixture; it does not exercise native window styles.
+
+## Duplicate caption controls regression
+
+Keeping `WS_CAPTION` exposed another issue: full-client glass margins (`-1`)
+paint native caption buttons underneath the auto-hiding toolbar. Extend only the
+outer 1px instead; the existing empty blur region still enables full-view alpha.
+Do not disable non-client rendering or remove caption styles to hide the extra
+buttons: preserve DWM corners/shadows and taskbar behavior.
+
+An isolated 0.6.0 profile reproduced the duplicate glyphs with full-client glass.
+The desktop-pixel regression check fails with those margins and passes with 1px;
+Acrylic alpha, maximize/restore/activation and actual auto-hide taskbar reveal
+also passed. Artifacts: `%TEMP%/pig-caption-investigation-mi43MY` (fixed) and
+`%TEMP%/pig-caption-investigation-aVIuHp` (expected regression failure).
 
 ## Remaining release gates
 

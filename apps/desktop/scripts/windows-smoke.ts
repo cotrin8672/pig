@@ -149,6 +149,11 @@ for (const [backdrop, expected] of [
         minimized: boolean;
         backdrop: number;
         surfaces: number[][];
+        clientX: number;
+        clientY: number;
+        windowTop: number;
+        work: { Left: number; Top: number; Right: number; Bottom: number };
+        taskbarChecks: number;
       };
       if (!native.minimized) {
         assert(
@@ -158,9 +163,26 @@ for (const [backdrop, expected] of [
           ),
           `WebView2/client bounds mismatch: ${output}`,
         );
+        assert.equal(
+          native.clientY,
+          native.maximized ? native.work.Top : native.windowTop,
+          "hiddenInset must remove the native titlebar's layout space",
+        );
+        if (native.maximized) {
+          assert(
+            native.clientX >= native.work.Left &&
+              native.clientX + native.width <= native.work.Right &&
+              native.clientY + native.height <= native.work.Bottom,
+            `Maximized client must not cover the taskbar work-area reservation: ${output}`,
+          );
+        }
       }
       assert.equal(native.style & 0x000f0000, 0x000f0000, "Resize/Snap styles");
-      assert.equal(native.style & 0x00c00000, 0, "No standard caption");
+      assert.equal(
+        native.style & 0x00c00000,
+        0x00c00000,
+        "Keep WS_CAPTION for taskbar auto-hide; hiddenInset hides the titlebar",
+      );
       assert(native.exStyle & 0x00200000, "Composition transparency");
       assert.equal(native.backdrop, expected, "Requested DWM backdrop");
       results.push({ backdrop, action, native });
@@ -174,16 +196,29 @@ for (const [backdrop, expected] of [
       return native;
     }
     await probe("inspect");
-    if (backdrop === "none") await probe("transparency", false);
+    if (backdrop === "none") await probe("transparency");
     await probe("resize");
     assert((await probe("maximize"))?.maximized);
     await probe("activate");
+    if (backdrop === "none") await probe("transparency");
+    if (process.argv.includes("--interactive")) {
+      const taskbar = await probe("taskbar", false);
+      console.log(
+        taskbar?.taskbarChecks
+          ? `PASS ${backdrop}/taskbar: ${taskbar.taskbarChecks} auto-hide edge(s)`
+          : `NOT TESTED ${backdrop}/taskbar: no auto-hide taskbar on this monitor`,
+      );
+    }
     assert(!(await probe("restore"))?.maximized);
     assert((await probe("minimize", false))?.minimized);
     assert(!(await probe("restore"))?.minimized);
     await probe("activate");
-    if (backdrop === "none") await probe("transparency", false);
-    if (process.argv.includes("--interactive")) await probe("drag");
+    if (backdrop === "none") await probe("transparency");
+    if (process.argv.includes("--interactive")) {
+      await probe("drag");
+      assert((await probe("snap"))?.maximized);
+      await probe("taskbar", false);
+    }
     await probe("close", false);
     assert.equal(
       await Promise.race([
@@ -201,5 +236,5 @@ for (const [backdrop, expected] of [
   }
 }
 console.log(
-  "PASS native geometry/backdrops/activation/close. Review screenshots separately; mixed-DPI monitors still need manual testing. Mouse dragging runs only with --interactive.",
+  "PASS native geometry/backdrops/activation/close. Review screenshots separately; mixed-DPI monitors still need manual testing. Mouse dragging and taskbar auto-hide checks run only with --interactive.",
 );

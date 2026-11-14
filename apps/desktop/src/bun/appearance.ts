@@ -57,8 +57,10 @@ const gdi =
     : undefined;
 
 export function windowStyleForBackdrop(style: number) {
-  // Custom controls own the caption; keep resize/Snap flags without native buttons.
-  return (style & ~(0x02000000 | 0x00c00000)) | 0x000b0000;
+  // Keep WS_CAPTION: removing it makes maximized windows suppress taskbar auto-hide.
+  // hiddenInset's WM_NCCALCSIZE hides the titlebar, not the style bits Windows needs.
+  // Remove WS_CLIPCHILDREN; retain the standard caption, resize and Snap flags.
+  return (style & ~0x02000000) | 0x00cf0000;
 }
 
 export function applyBackdrop(hwnd: Pointer | null, appearance: Appearance) {
@@ -67,7 +69,7 @@ export function applyBackdrop(hwnd: Pointer | null, appearance: Appearance) {
   let frameChanged = false;
   if (user) {
     const windowStyle = user.symbols.GetWindowLongW(hwnd, -16);
-    // Remove native caption painting while preserving SYSMENU and both boxes for Snap.
+    // Preserve native window semantics; hiddenInset owns caption layout.
     const nextStyle = windowStyleForBackdrop(windowStyle);
     if (nextStyle !== windowStyle) {
       user.symbols.SetWindowLongW(hwnd, -16, nextStyle);
@@ -88,7 +90,10 @@ export function applyBackdrop(hwnd: Pointer | null, appearance: Appearance) {
   check(dwm.symbols.DwmSetWindowAttribute(hwnd, 3, ptr(disableTransitions), 4));
   const dark = new Int32Array([1]);
   check(dwm.symbols.DwmSetWindowAttribute(hwnd, 20, ptr(dark), 4));
-  const margins = new Int32Array([-1, -1, -1, -1]);
+  // Full-client glass (-1) also paints native caption buttons beneath our
+  // auto-hiding toolbar. A 1px frame keeps DWM corners/shadows without that
+  // extra set; the empty blur region below enables alpha for the whole view.
+  const margins = new Int32Array([1, 1, 1, 1]);
   check(dwm.symbols.DwmExtendFrameIntoClientArea(hwnd, ptr(margins)));
   if (gdi) {
     // Windowed WebView2 still needs DWM alpha enabled, even with NOREDIRECTIONBITMAP.
