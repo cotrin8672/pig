@@ -64,6 +64,9 @@ const equal = (a: DraftContent, b: DraftContent) =>
   sameImages(a.images, b.images) &&
   ids(a.files) === ids(b.files) &&
   ids(a.annotations) === ids(b.annotations);
+// Extension edits can carry an older consumption marker; only the immediate clear counts.
+const consumes = (remote: DraftState, revision: number) =>
+  remote.consumedRevision === revision && remote.revision === revision + 1;
 /** Address-owned drafts outlive React mounts, tab navigation and asynchronous file reads. */
 export class DraftStore {
   private entries = new Map<string, EditorDraft>();
@@ -159,12 +162,13 @@ export class DraftStore {
     const flight = this.flights.get(addressKey(address));
     const own =
       flight &&
-      remote.revision === flight.expectedRevision + 1 &&
+      remote.revision > flight.expectedRevision &&
       equal(remote, flight.content);
-    if (draft.dirty && remote.consumedRevision === draft.revision) {
+    if (draft.dirty && consumes(remote, draft.revision)) {
       this.put(address, {
         ...draft,
         revision: remote.revision,
+        dirty: !equal(draft.content, remote),
         conflict: undefined,
       });
     } else if (own || equal(draft.content, remote)) {
@@ -337,48 +341,70 @@ export class DraftStore {
     requestId?: string,
     delivery?: PromptDelivery,
   ): Promise<EditorDraft> {
-    target = { ...target, content: structuredClone(target.content) };
+    if (requestId)
+      target = { ...target, content: structuredClone(target.content) };
     const key = addressKey(address);
     const run = async () => {
-      const draft = this.read(address);
-      if (draft.retired)
-        throw new Error("This draft belongs to a replaced or closed session");
-      if (draft.conflict)
-        throw new Error(
-          "Extension changed the editor. Choose which draft to keep before sending.",
-        );
-      // A queued mirror must never overwrite a newer acknowledged edit.
-      if (draft.version !== target.version && !draft.dirty)
-        throw new Error(
-          "Editor changed before synchronization; your draft has been retained",
-        );
-      if (!requestId && !draft.dirty) return draft;
-      const flight = {
-        content: target.content,
-        version: target.version,
-        expectedRevision: draft.revision,
-      };
-      this.flights.set(key, flight);
-      try {
-        const result = await sync({
-          ...address,
-          expectedRevision: flight.expectedRevision,
-          content: flight.content,
-          ...(requestId ? { requestId, delivery } : {}),
-        });
-        this.receive(address, result.draft);
-        if (!result.applied) {
-          const now = this.read(address);
-          if (!now.retired && !equal(now.content, result.draft))
-            this.put(address, { ...now, conflict: result.draft });
+      for (let attempt = 0; attempt < 2; attempt++) {
+        const draft = this.read(address);
+        if (draft.retired)
+          throw new Error("This draft belongs to a replaced or closed session");
+        if (draft.conflict)
           throw new Error(
-            "Editor revision conflict; your draft has been retained",
+            "Extension changed the editor. Choose which draft to keep before sending.",
+          );
+        if (!requestId) {
+          if (!draft.dirty) return draft;
+          // Queued mirrors and retries must never replay an older local edit.
+          target = { ...draft, content: structuredClone(draft.content) };
+        } else if (
+          attempt === 0 &&
+          draft.version !== target.version &&
+          !draft.dirty
+        ) {
+          throw new Error(
+            "Editor changed before synchronization; your draft has been retained",
           );
         }
-        return { ...target, revision: result.draft.revision, dirty: false };
-      } finally {
-        this.flights.delete(key);
+        const flight = {
+          content: target.content,
+          version: target.version,
+          expectedRevision: draft.revision,
+        };
+        this.flights.set(key, flight);
+        try {
+          const result = await sync({
+            ...address,
+            expectedRevision: flight.expectedRevision,
+            content: flight.content,
+            ...(requestId ? { requestId, delivery } : {}),
+          });
+          this.receive(address, result.draft);
+          if (result.applied)
+            return { ...target, revision: result.draft.revision, dirty: false };
+          const now = this.read(address);
+          const recoverable =
+            equal(flight.content, result.draft) ||
+            consumes(result.draft, flight.expectedRevision) ||
+            (!requestId && !now.dirty);
+          if (
+            now.retired ||
+            now.conflict ||
+            !recoverable ||
+            (requestId && now.revision > result.draft.revision)
+          )
+            throw new Error(
+              "Editor revision conflict; your draft has been retained",
+            );
+          if (!requestId && !now.dirty) return now;
+          // Sends must still perform an applied CAS to reserve their request ID.
+        } finally {
+          this.flights.delete(key);
+        }
       }
+      throw new Error(
+        "Editor kept changing during synchronization; your draft has been retained",
+      );
     };
     const pending = (this.queues.get(key) ?? Promise.resolve())
       .catch(() => {})
