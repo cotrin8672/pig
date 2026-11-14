@@ -41,6 +41,7 @@ test.skipIf(!existsSync(edge) && !process.env.PIG_REQUIRE_UI_TESTS)(
           check(card.getBoundingClientRect().width===width,'dock must follow sidebar width');
           const viewport=card.querySelector('.provider-usage-list');
           check(viewport.scrollWidth<=viewport.clientWidth+1,'narrow dock must not require horizontal scrolling');
+          check(getComputedStyle(viewport).overflowX==='hidden','usage list never shows a horizontal scrollbar');
           check(card.querySelector('.provider-usage-name').getBoundingClientRect().width>35,'account identity must retain readable space');
           check([...card.querySelectorAll('.provider-usage-row')].every(r=>r.getBoundingClientRect().height===22),'row height');
           check([...card.querySelectorAll('.provider-usage-ring')].every(r=>r.getBoundingClientRect().width===18&&r.getBoundingClientRect().height===18),'18px rings');
@@ -48,12 +49,12 @@ test.skipIf(!existsSync(edge) && !process.env.PIG_REQUIRE_UI_TESTS)(
           const labels=()=>[...document.querySelectorAll('.provider-usage-row')].map(r=>r.getAttribute('aria-label')).join('|');
           check(labels().includes('12%'),'remaining is default');
           check(!/d%/.test(card.textContent),'percent lives in the tooltip, not the row');
-          const codex=[...card.querySelectorAll('.provider-usage-row')].find(r=>r.querySelector('.provider-usage-name').textContent==='OpenAI Work');
+          const codex=[...card.querySelectorAll('.provider-usage-row')].find(r=>r.querySelector('.provider-usage-name').textContent==='Work');
           if(width>180)check([...codex.querySelectorAll('.provider-usage-reset')].map(r=>r.textContent).join('|')==='1h 12m|11/17','shortest window first, each ring with its own reset');
           check(card.querySelector('.provider-usage-toggle').textContent===(language==='en'?'Usage':'使用量'),'heading must not show display mode or summary');
           check(!card.querySelector('.provider-usage-heading small'),'heading must not show an age timer');
           const names=[...card.querySelectorAll('.provider-usage-name')].map(n=>n.textContent);
-          check(names.join('|')==='Anthropic|DeepSeek|Mistral Vibe|OpenAI Personal|OpenAI Work|OpenRouter|Qwen CLI|Vercel','stable alphabetical account order');
+          check(names.join('|')==='Anthropic|DeepSeek|Mistral Vibe|Personal|Work|OpenRouter|Qwen CLI|Vercel','stable alphabetical account order, shared provider prefix dropped');
           check(!card.textContent.includes('Claude CLI'),'Anthropic is not duplicated as Claude CLI');
           const canvas=document.createElement('canvas');canvas.width=canvas.height=1;
           const ctx=canvas.getContext('2d');ctx.fillStyle=getComputedStyle(card).backgroundColor;ctx.fillRect(0,0,1,1);
@@ -98,6 +99,14 @@ test.skipIf(!existsSync(edge) && !process.env.PIG_REQUIRE_UI_TESTS)(
           check(resets.map(r=>r.textContent).join('|')==='1/9|11/18|12/1','date format remains unpadded');
           const slashes=resets.map(r=>r.children[1].getBoundingClientRect().x);
           check(Math.max(...slashes)-Math.min(...slashes)<0.1,'date slash columns align for one and two digit months and days');
+        }
+        const work=usageFixtures.find(e=>e.label==='OpenAI Work');
+        const longReset={...work,data:{...work.data,windows:work.data.windows.map(w=>({...w,resetsAt:usageFixtureTime+(18*60+44)*60000}))}};
+        for(const width of [156,210,240,320]){
+          render([longReset,...usageFixtures.filter(e=>e!==work)],'remaining',width);
+          const list=document.querySelector('.provider-usage-list');
+          check(list.scrollWidth<=list.clientWidth+1,'long resets must fit without horizontal scrolling');
+          if(width>180)check([...list.querySelectorAll('.provider-usage-reset')].every(r=>r.scrollWidth<=r.clientWidth+1),'long resets are not clipped');
         }
         let refreshes=0;
         const refresh=()=>{refreshes++};

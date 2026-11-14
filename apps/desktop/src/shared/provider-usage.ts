@@ -74,6 +74,44 @@ export function resetCountdown(at: number, now: number) {
   const rest = minutes % 60;
   return `${Math.floor(minutes / 60)}h${rest ? ` ${rest}m` : ""}`;
 }
+/**
+ * Row names keyed by entry: accounts of the same provider drop the leading
+ * words they all share ("OpenAI Personal" / "OpenAI Work" → "Personal" / "Work").
+ * A provider with one account keeps its full label, and every name keeps at
+ * least one word. The full label lives in the popover.
+ */
+export function shortUsageLabels(
+  entries: Pick<ProviderUsage, "key" | "provider" | "label">[],
+) {
+  const groups = new Map<string, string[][]>();
+  const words = (label: string) => label.trim().split(/\s+/);
+  for (const entry of entries)
+    groups.set(entry.provider, [
+      ...(groups.get(entry.provider) ?? []),
+      words(entry.label),
+    ]);
+  const shared = new Map<string, number>();
+  for (const [provider, labels] of groups) {
+    if (labels.length < 2) continue;
+    const shortest = Math.min(...labels.map((l) => l.length)) - 1;
+    let n = 0;
+    while (
+      n < shortest &&
+      labels.every((l) => l[n]?.toLowerCase() === labels[0]?.[n]?.toLowerCase())
+    )
+      n++;
+    shared.set(provider, n);
+  }
+  return new Map(
+    entries.map((entry) => {
+      const n = shared.get(entry.provider) ?? 0;
+      return [
+        entry.key,
+        n ? words(entry.label).slice(n).join(" ") : entry.label,
+      ];
+    }),
+  );
+}
 export function observationAge(at: number, now: number) {
   const seconds = Math.max(0, Math.floor((now - at) / 1000));
   if (seconds < 60) return `${seconds}s`;

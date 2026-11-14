@@ -21,6 +21,7 @@ import {
   clampPercent,
   type ProviderUsage,
   resetCountdown,
+  shortUsageLabels,
   sortUsage,
   timeRemaining,
   USAGE_REFRESH_COOLDOWN_MS,
@@ -329,6 +330,7 @@ export function ProviderUsageView({
     unavailable: t.usageUnavailable,
   };
   const sorted = sortUsage(entries);
+  const names = shortUsageLabels(sorted);
   const activeEntry = sorted.find((entry) => entry.key === popover.active);
   return (
     <section className="provider-usage-card" aria-label={t.usageTitle}>
@@ -384,7 +386,9 @@ export function ProviderUsageView({
                 {...popover.rowProps(entry.key)}
               >
                 <ProviderIcon provider={entry.provider} size={12} />
-                <span className="provider-usage-name">{entry.label}</span>
+                <span className="provider-usage-name">
+                  {names.get(entry.key)}
+                </span>
                 {windows.length ? (
                   windows.map((w) => (
                     <span key={w.id} className="provider-usage-window">

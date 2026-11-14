@@ -43,10 +43,11 @@
 .provider-usage-list {
   --scrollbar-inset: var(--radius-sm);
   display: grid;
-  grid-template-columns: 12px minmax(0, 1fr) 60px 60px;
+  /* Ring columns size to their content so a long reset never forces a scrollbar. */
+  grid-template-columns: 12px minmax(0, 1fr) max-content max-content;
   column-gap: 5px;
   max-height: min(35vh, 286px);
-  overflow: auto;
+  overflow: hidden auto;
   margin: 0;
   padding: 0;
   border-radius: var(--radius-sm);
@@ -227,6 +228,7 @@
 .provider-usage-reset {
   display: inline-flex;
   min-width: 0;
+  font-size: var(--text-4xs);
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
@@ -238,7 +240,6 @@
 }
 .provider-usage-reset {
   color: var(--ds-text-muted);
-  font-size: var(--text-3xs);
 }
 .provider-usage-reset[data-level="warning"] {
   color: var(--ds-warning);

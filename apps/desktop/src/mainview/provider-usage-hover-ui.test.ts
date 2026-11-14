@@ -149,7 +149,7 @@ test("usage details popover in Edge: single, bridged, unpinned, keyboard", async
           browser.evaluate<T>(`(()=>{${body}})()`);
         const rowPoint = (name: string, dx = 4) =>
           js<{ x: number; y: number }>(
-            `const r=[...document.querySelectorAll('.provider-usage-row')].find(r=>r.querySelector('.provider-usage-name').textContent===${JSON.stringify(name)}).getBoundingClientRect();return {x:r.x+${dx},y:r.y+r.height/2}`,
+            `const r=[...document.querySelectorAll('.provider-usage-row')].find(r=>r.getAttribute('aria-label').split('\\n')[0]===${JSON.stringify(name)}).getBoundingClientRect();return {x:r.x+${dx},y:r.y+r.height/2}`,
           );
         const move = async (point: { x: number; y: number }, wait = 60) => {
           await browser.command("Input.dispatchMouseEvent", {
@@ -164,7 +164,7 @@ test("usage details popover in Edge: single, bridged, unpinned, keyboard", async
           );
         const rowTop = (name: string) =>
           js<number>(
-            `return Math.round([...document.querySelectorAll('.provider-usage-row')].find(r=>r.querySelector('.provider-usage-name').textContent===${JSON.stringify(name)}).getBoundingClientRect().top)`,
+            `return Math.round([...document.querySelectorAll('.provider-usage-row')].find(r=>r.getAttribute('aria-label').split('\\n')[0]===${JSON.stringify(name)}).getBoundingClientRect().top)`,
           );
 
         const before = await rowTop("OpenAI Personal");
@@ -244,7 +244,7 @@ test("usage details popover in Edge: single, bridged, unpinned, keyboard", async
         expect(s.count).toBe(1);
         expect(s.name).toBe(
           await js<string>(
-            "return document.activeElement.querySelector('.provider-usage-name')?.textContent??''",
+            "return document.activeElement.getAttribute('aria-label')?.split('\\n')[0]??''",
           ),
         );
         await browser.command("Input.dispatchKeyEvent", {

@@ -2,12 +2,38 @@ import { expect, test } from "bun:test";
 import {
   type ProviderUsage,
   resetCountdown,
+  shortUsageLabels,
   sortUsage,
   timeRemaining,
   usageLevel,
   usagePercent,
 } from "./provider-usage";
 
+test("row names drop only the prefix shared by one provider's accounts", () => {
+  const row = (key: string, provider: string, label: string) => ({
+    key,
+    provider,
+    label,
+  });
+  const names = shortUsageLabels([
+    row("a", "openai-codex", "OpenAI Codex Personal"),
+    row("b", "openai-codex", "OpenAI Codex Work"),
+    row("c", "mistral", "Mistral Vibe"),
+    row("d", "anthropic", "Claude"),
+    row("e", "anthropic", "Claude Team"),
+    row("f", "deepseek", "Main"),
+    row("g", "deepseek", "Side"),
+  ]);
+  expect([...names.values()]).toEqual([
+    "Personal",
+    "Work",
+    "Mistral Vibe",
+    "Claude",
+    "Claude Team",
+    "Main",
+    "Side",
+  ]);
+});
 test("usage clocks and calendar dates are language independent", () => {
   const now = new Date(2026, 10, 12, 14).getTime();
   expect(resetCountdown(now + 72 * 60000, now)).toBe("1h 12m");
