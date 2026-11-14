@@ -36,7 +36,7 @@ import {
   selectStartingChats,
 } from "./ui-selectors";
 
-/** Unpinned chats shown before the list is expanded; pinned chats always show. */
+/** Unpinned chats, including the selected chat, shown before expanding. */
 export const RECENT_CHAT_LIMIT = 5;
 
 export const SessionList = memo(function SessionList({
@@ -80,13 +80,22 @@ export const SessionList = memo(function SessionList({
         Number(!!desktop.sessions[b.id]?.pinned) -
           Number(!!desktop.sessions[a.id]?.pinned) || b.modified - a.modified,
     );
-  // Pinned chats and the open chat always stay; other rows fill the recent slots.
-  let recentSlots = RECENT_CHAT_LIMIT - startingRows.length;
-  const shown = visible.filter((session) => {
-    if (desktop.sessions[session.id]?.pinned || session.id === activeId)
-      return true;
-    return recentSlots-- > 0;
-  });
+  // Selection uses a recent slot, never an extra row that resizes the sidebar.
+  const unpinned = visible.filter(
+    (session) => !desktop.sessions[session.id]?.pinned,
+  );
+  const recent = unpinned.slice(
+    0,
+    Math.max(0, RECENT_CHAT_LIMIT - startingRows.length),
+  );
+  const selected = unpinned.find((session) => session.id === activeId);
+  if (selected && recent.length && !recent.includes(selected))
+    recent[recent.length - 1] = selected;
+  const recentIds = new Set(recent.map((session) => session.id));
+  const shown = visible.filter(
+    (session) =>
+      desktop.sessions[session.id]?.pinned || recentIds.has(session.id),
+  );
   const rows = showAll ? visible : shown;
   const canToggle = shown.length < visible.length;
   return (

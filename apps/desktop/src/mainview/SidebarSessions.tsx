@@ -1,9 +1,10 @@
-import { Archive, ChevronRight, Folder, Pin, Plus } from "lucide-react";
+import { Archive, ChevronRight, Folder, Pin, SquarePen } from "lucide-react";
 import { memo, useId, useState } from "react";
 import { useShallow } from "zustand/react/shallow";
 import { visibleProjects } from "../shared/projects";
 import { InlineRename } from "./InlineRename";
 import { useT } from "./i18n";
+import { FolderPlusCorner } from "./icons";
 import { ProjectMenu, renameProject } from "./ProjectMenu";
 import { openChat, rpc } from "./rpc";
 import { SessionList } from "./SessionList";
@@ -37,7 +38,7 @@ export const SidebarSessions = memo(function SidebarSessions() {
             disabled={!generalCwd}
             onClick={() => void openChat(generalCwd)}
           >
-            <Plus size={14} aria-hidden="true" />
+            <SquarePen size={14} aria-hidden="true" />
           </button>
         </div>
         {generalCwd && <SessionList cwd={generalCwd} />}
@@ -51,7 +52,7 @@ export const SidebarSessions = memo(function SidebarSessions() {
             title={t["Add project"]}
             onClick={() => rpc.send.addProject()}
           >
-            <Plus size={14} aria-hidden="true" />
+            <FolderPlusCorner size={14} aria-hidden="true" />
           </button>
         </div>
         {visibleProjects(projects, projectFlags, archived).map((cwd) => (
@@ -93,7 +94,7 @@ function ProjectSessions({ cwd }: { cwd: string }) {
     if (status) counts[status]++;
     if (activity[index + 1]) unread++;
   }
-  const leading = (["waiting", "running", "failed", "completed"] as const).find(
+  const leading = (["waiting", "failed", "running", "completed"] as const).find(
     (status) => counts[status],
   );
   return (
@@ -170,7 +171,7 @@ function ProjectSessions({ cwd }: { cwd: string }) {
               void openChat(cwd);
             }}
           >
-            <Plus size={13} aria-hidden="true" />
+            <SquarePen size={13} aria-hidden="true" />
           </button>
           <ProjectMenu
             cwd={cwd}

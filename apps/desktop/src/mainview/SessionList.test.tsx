@@ -131,7 +131,7 @@ test("collapsed lists mount no rows, while project headings expose a background 
   }
 });
 
-test("long lists show pinned chats, the open chat and five recent chats behind a more button", () => {
+test("long lists include the selected chat within five unpinned slots without changing the row count", () => {
   const state = useStore.getInitialState();
   const previous = { ...state };
   const sessions = Array.from({ length: 12 }, (_, index) => ({
@@ -165,11 +165,27 @@ test("long lists show pinned chats, the open chat and five recent chats behind a
       "Chat 1",
       "Chat 2",
       "Chat 3",
-      "Chat 4",
       "Chat 8",
     ]);
     expect(html).toContain(`aria-label="${ja["Show older chats"]}"`);
     expect(html).toContain('aria-expanded="false"');
+    for (const active of ["s0", "s4", "s8", "s11", "s10", undefined]) {
+      state.active = active;
+      const selected = renderToStaticMarkup(<SessionList cwd="many" />);
+      const titles = [
+        ...selected.matchAll(/class="thread-title">([^<]+)</g),
+      ].map((match) => match[1]);
+      expect(titles).toHaveLength(6);
+      expect(titles).toContain("Chat 10");
+      if (active) expect(titles).toContain(`Chat ${active.slice(1)}`);
+      expect(selected).toContain('class="thread more-chats"');
+    }
+    state.pendingOpens = { starting: { cwd: "many" } };
+    for (const active of ["s0", "s8", undefined]) {
+      state.active = active;
+      const html = renderToStaticMarkup(<SessionList cwd="many" />);
+      expect([...html.matchAll(/class="thread-title">/g)]).toHaveLength(6);
+    }
   } finally {
     Object.assign(state, previous);
   }
