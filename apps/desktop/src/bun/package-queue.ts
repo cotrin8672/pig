@@ -1,5 +1,5 @@
-// Session creation and package changes share one queue: resource discovery must not
-// observe an installation halfway through. Rejections never poison the queue.
+// Resource discovery and package changes share one queue: discovery must not
+// observe an installation halfway through. Never hold this lock while requesting reloads.
 let queue = Promise.resolve();
 export function withPackageLock<T>(work: () => Promise<T>): Promise<T> {
   const result = queue.then(work);
@@ -8,6 +8,33 @@ export function withPackageLock<T>(work: () => Promise<T>): Promise<T> {
     () => {},
   );
   return result;
+}
+
+// A burst of installs needs one reload, not one reload per package. Changes made
+// during an active reload require another pass so no session keeps stale resources.
+export function coalescePackageReload(reload: () => Promise<string[]>) {
+  let revision = 0;
+  let pending: Promise<string[]> | undefined;
+  return () => {
+    revision++;
+    pending ??= Promise.resolve()
+      .then(async () => {
+        for (;;) {
+          const current = revision;
+          let failures: string[];
+          try {
+            failures = await reload();
+          } catch (error) {
+            failures = [String(error)];
+          }
+          if (current === revision) return failures;
+        }
+      })
+      .finally(() => {
+        pending = undefined;
+      });
+    return pending;
+  };
 }
 
 // Capture before enqueueing: abort must cancel starts waiting behind a mutation.

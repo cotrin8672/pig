@@ -1,5 +1,12 @@
 import { expect, test } from "bun:test";
-import { PromptQueue, withPackageLock } from "./package-queue";
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import {
+  coalescePackageReload,
+  PromptQueue,
+  withPackageLock,
+} from "./package-queue";
 import {
   mapSearchItem,
   packageOperation,
@@ -168,6 +175,221 @@ test("persisted mutations finish and warn after reload failures", async () => {
     expect(events).toEqual(["running", "installed", "done", "warning"]);
   }
 });
+test("successful installs finish before reload and do not block other installs", async () => {
+  let release = () => {};
+  let started = () => {};
+  const ready = new Promise<void>((resolve) => {
+    started = resolve;
+  });
+  const events: string[] = [];
+  const first = packageOperation(
+    "install",
+    { opId: "first", name: "first" },
+    (event) => events.push(event.status),
+    () => {},
+    async () => {
+      started();
+      await new Promise<void>((resolve) => {
+        release = resolve;
+      });
+    },
+    () => {},
+    fakeDependencies(),
+  );
+  await ready;
+  try {
+    expect(events).toEqual(["running", "done"]);
+    await packageOperation(
+      "install",
+      { opId: "second", name: "second" },
+      () => {},
+      () => {},
+      async () => {},
+      () => {},
+      fakeDependencies(),
+    );
+  } finally {
+    release();
+    await first;
+  }
+});
+test("list refresh failures cannot leave persisted installs running", async () => {
+  const events: string[] = [];
+  const warnings: string[] = [];
+  let reloaded = false;
+  await packageOperation(
+    "install",
+    { opId: "test", name: "x" },
+    (event) => events.push(event.status),
+    () => {},
+    async () => {
+      reloaded = true;
+    },
+    (warning) => warnings.push(warning),
+    {
+      ...fakeDependencies(),
+      installed: async () => {
+        throw new Error("manifest unavailable");
+      },
+    },
+  );
+  expect(events).toEqual(["running", "done"]);
+  expect(reloaded).toBe(true);
+  expect(warnings[0]).toContain("refreshing the installed list failed");
+});
+test("a queued install does not delay completion of a persisted install", async () => {
+  let release = () => {};
+  let started = () => {};
+  const ready = new Promise<void>((resolve) => {
+    started = resolve;
+  });
+  const events: string[] = [];
+  const first = packageOperation(
+    "install",
+    { opId: "first", name: "first" },
+    (event) => events.push(event.status),
+    () => {},
+    async () => {},
+    () => {},
+    fakeDependencies(),
+  );
+  const second = packageOperation(
+    "install",
+    { opId: "second", name: "second" },
+    () => {},
+    () => {},
+    async () => {},
+    () => {},
+    fakeDependencies(async () => {
+      started();
+      await new Promise<void>((resolve) => {
+        release = resolve;
+      });
+    }),
+  );
+  await ready;
+  try {
+    await first;
+    expect(events).toEqual(["running", "done"]);
+  } finally {
+    release();
+    await second;
+  }
+});
+test("late installed snapshots never replace a newer published snapshot", async () => {
+  let release = () => {};
+  let started = () => {};
+  const ready = new Promise<void>((resolve) => {
+    started = resolve;
+  });
+  const publications: string[] = [];
+  const first = packageOperation(
+    "install",
+    { opId: "first", name: "first" },
+    () => {},
+    () => publications.push("first"),
+    async () => {},
+    () => {},
+    {
+      ...fakeDependencies(),
+      installed: async () => {
+        started();
+        await new Promise<void>((resolve) => {
+          release = resolve;
+        });
+        return [];
+      },
+    },
+  );
+  await ready;
+  await packageOperation(
+    "install",
+    { opId: "second", name: "second" },
+    () => {},
+    () => publications.push("second"),
+    async () => {},
+    () => {},
+    fakeDependencies(),
+  );
+  release();
+  await first;
+  expect(publications).toEqual(["second"]);
+});
+test("failed later mutations do not hide a successful installed snapshot", async () => {
+  let release = () => {};
+  let started = () => {};
+  const ready = new Promise<void>((resolve) => {
+    started = resolve;
+  });
+  let published = false;
+  const first = packageOperation(
+    "install",
+    { opId: "first", name: "first" },
+    () => {},
+    () => {
+      published = true;
+    },
+    async () => {},
+    () => {},
+    {
+      ...fakeDependencies(),
+      installed: async () => {
+        started();
+        await new Promise<void>((resolve) => {
+          release = resolve;
+        });
+        return [];
+      },
+    },
+  );
+  await ready;
+  await expect(
+    packageOperation(
+      "install",
+      { opId: "second", name: "second" },
+      () => {},
+      () => {},
+      async () => {},
+      () => {},
+      fakeDependencies(async () => {
+        throw new Error("offline");
+      }),
+    ),
+  ).rejects.toThrow("offline");
+  release();
+  await first;
+  expect(published).toBe(true);
+});
+test("reload requests coalesce and changes during reload get another pass", async () => {
+  let release = () => {};
+  let started = () => {};
+  const ready = new Promise<void>((resolve) => {
+    started = resolve;
+  });
+  let calls = 0;
+  const reload = coalescePackageReload(async () => {
+    if (++calls === 1) {
+      started();
+      await new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      throw new Error("stale reload");
+    }
+    return [];
+  });
+  const first = reload();
+  const second = reload();
+  expect(second).toBe(first);
+  await ready;
+  expect(calls).toBe(1);
+  const third = reload();
+  release();
+  expect(await third).toEqual([]);
+  await Promise.all([first, second]);
+  expect(calls).toBe(2);
+  await reload();
+  expect(calls).toBe(3);
+});
 test("mutation failures emit running then error with action and source", async () => {
   const events: string[] = [];
   await expect(
@@ -291,6 +513,79 @@ test("preview failures retry and overlapping requests share in-flight names", as
     globalThis.fetch = original;
   }
 });
+test("installed discovery is nonblocking and resource loads cannot overlap mutations", async () => {
+  const home = await mkdtemp(join(tmpdir(), "pig-installed-"));
+  try {
+    const script = `
+      import { expect } from "bun:test";
+      import { mkdir, writeFile } from "node:fs/promises";
+      import { join } from "node:path";
+      import { DefaultPackageManager } from "@earendil-works/pi-coding-agent";
+      const agent = join(${JSON.stringify(home)}, ".pi/agent");
+      const manifest = join(agent, "npm/node_modules/fixture");
+      await mkdir(manifest, { recursive: true });
+      await writeFile(join(agent, "settings.json"), JSON.stringify({ packages: ["npm:fixture"] }));
+      await writeFile(join(manifest, "package.json"), JSON.stringify({ name: "fixture", version: "1.0.0" }));
+      let release;
+      const network = new Promise(resolve => { release = resolve; });
+      DefaultPackageManager.prototype.checkForAvailableUpdates = async () => {
+        await network;
+        return [{ source: "npm:fixture", scope: "user", type: "npm", displayName: "fixture" }];
+      };
+      const { listInstalled } = await import(${JSON.stringify(new URL("./packages.ts", import.meta.url).href)});
+      let push;
+      const updated = new Promise(resolve => { push = resolve; });
+      const initial = await listInstalled(push);
+      expect(initial).toMatchObject([{ name: "fixture", version: "1.0.0", updateAvailable: false }]);
+      release();
+      expect(await updated).toMatchObject([{ name: "fixture", updateAvailable: true }]);
+      const { withPackageLock } = await import(${JSON.stringify(new URL("./package-queue.ts", import.meta.url).href)});
+      const { loadExclusive } = await import(${JSON.stringify(new URL("./session-host.ts", import.meta.url).href)});
+      let unlock, mutationStarted;
+      const ready = new Promise(resolve => { mutationStarted = resolve; });
+      const mutation = withPackageLock(async () => {
+        mutationStarted();
+        await new Promise(resolve => { unlock = resolve; });
+      });
+      await ready;
+      let loaded = false;
+      const loading = loadExclusive(async () => { loaded = true; });
+      await Promise.resolve();
+      await Promise.resolve();
+      expect(loaded).toBe(false);
+      unlock();
+      await Promise.all([mutation, loading]);
+      expect(loaded).toBe(true);
+      const { packageOperation } = await import(${JSON.stringify(new URL("./packages.ts", import.meta.url).href)});
+      await packageOperation(
+        "install", { opId: "fixture", name: "fixture" },
+        () => {}, () => {}, () => loadExclusive(async () => []), () => {},
+        { configured: async () => [], installed: async () => [], mutate: async () => {} },
+      );
+    `;
+    const env: Record<string, string | undefined> = {
+      ...process.env,
+      HOME: home,
+      USERPROFILE: home,
+    };
+    delete env.PI_CODING_AGENT_DIR;
+    delete env.PI_OFFLINE;
+    const child = Bun.spawn([process.execPath, "--eval", script], {
+      cwd: join(import.meta.dir, "../.."),
+      env,
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+    const [code, stdout, stderr] = await Promise.all([
+      child.exited,
+      new Response(child.stdout).text(),
+      new Response(child.stderr).text(),
+    ]);
+    expect({ code, stdout, stderr }).toMatchObject({ code: 0 });
+  } finally {
+    await rm(home, { recursive: true, force: true });
+  }
+}, 30_000);
 test("oversized registry responses are rejected", async () => {
   const original = globalThis.fetch;
   globalThis.fetch = (async () =>

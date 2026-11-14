@@ -73,6 +73,7 @@ import {
 } from "./model-runtime";
 import { defaultEffort } from "./model-settings";
 import { traceOpen } from "./open-performance";
+import { withPackageLock } from "./package-queue";
 import { resolveProjectTrust } from "./project-trust";
 import { providerAccounts } from "./provider-accounts";
 import { desktopResourceOptions } from "./resources";
@@ -221,7 +222,7 @@ async function stopBudget<T>(task: Promise<T>, phase: string): Promise<T> {
   }
 }
 export function loadExclusive<T>(fn: () => Promise<T>): Promise<T> {
-  const task = loaderQueue.then(fn);
+  const task = loaderQueue.then(() => withPackageLock(fn));
   loaderQueue = task.then(
     () => {},
     () => {},

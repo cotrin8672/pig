@@ -11,7 +11,12 @@ import { dictionary } from "../shared/i18n";
 import { sanitizeOverride } from "../shared/model-overrides";
 import { isModelEnabled } from "../shared/models";
 import { knownProject, withoutProject } from "../shared/projects";
-import type { Notice, RPCSchema, SessionTarget } from "../shared/rpc-schema";
+import type {
+  InstalledPackage,
+  Notice,
+  RPCSchema,
+  SessionTarget,
+} from "../shared/rpc-schema";
 import type { OpenSessionParams } from "../shared/runtime-contract";
 import { sessionIdFromLink } from "../shared/session-links";
 import { patchSettings } from "../shared/settings";
@@ -58,6 +63,7 @@ import {
   writeModelOverride,
 } from "./model-settings";
 import { createCompletionTracker } from "./notifications";
+import { coalescePackageReload, withPackageLock } from "./package-queue";
 import {
   listInstalled,
   packageOperation,
@@ -235,7 +241,12 @@ const report = (error: unknown) => {
   rpc.send.error({ message: String(error) });
 };
 initImageMenu(report, () => window.ptr);
-async function reloadPackages() {
+function publishInstalled(items: InstalledPackage[]) {
+  rpc.send.installed(items);
+  void listInstalled((updated) => rpc.send.installed(updated)).catch(report);
+}
+const reloadPackages = coalescePackageReload(async () => {
+  await withPackageLock(async () => {});
   const failures: string[] = [];
   await Promise.all([
     refreshUserCatalog().then(
@@ -252,7 +263,7 @@ async function reloadPackages() {
       ),
   ]);
   return failures;
-}
+});
 const usageService = new UsageService(discoverUsageTargets, (entries) =>
   rpc.send.providerUsage(entries),
 );
@@ -279,7 +290,7 @@ const rpc = BrowserView.defineRPC<RPCSchema>({
       getChatRendererBundle: () => chatRendererLoader.load(),
       searchPackages: (input) => searchPackages(input),
       packagePreviews: (input) => packagePreviews(input),
-      listInstalled: () => listInstalled(),
+      listInstalled: () => listInstalled((items) => rpc.send.installed(items)),
       prompt: (input) => promptSession(input),
       getOpenState: (input) => packOpenState(sessionHost.getOpenState(input)),
       cancelOpen: (input) => sessionHost.cancelOpen(input),
@@ -640,7 +651,7 @@ const rpc = BrowserView.defineRPC<RPCSchema>({
           "install",
           input,
           (event) => rpc.send.packageOp(event),
-          (items) => rpc.send.installed(items),
+          publishInstalled,
           reloadPackages,
           (message) => rpc.send.error({ message }),
         ).catch(console.error);
@@ -650,7 +661,7 @@ const rpc = BrowserView.defineRPC<RPCSchema>({
           "uninstall",
           input,
           (event) => rpc.send.packageOp(event),
-          (items) => rpc.send.installed(items),
+          publishInstalled,
           reloadPackages,
           (message) => rpc.send.error({ message }),
         ).catch(console.error);
@@ -660,7 +671,7 @@ const rpc = BrowserView.defineRPC<RPCSchema>({
           "update",
           input,
           (event) => rpc.send.packageOp(event),
-          (items) => rpc.send.installed(items),
+          publishInstalled,
           reloadPackages,
           (message) => rpc.send.error({ message }),
         ).catch(console.error);
