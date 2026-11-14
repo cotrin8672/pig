@@ -7,6 +7,8 @@ import type { SessionInfo } from "../shared/rpc-schema";
 import { isProjectTrusted } from "./project-trust";
 import { agentDir, expandHome } from "./runtime-profile";
 import { SessionManager, SettingsManager } from "./sdk";
+import { defaultSessionDir } from "./session-directory";
+import { SessionListCache } from "./session-list-cache";
 
 /** Pi CLI precedence (without --session-dir): PI_CODING_AGENT_SESSION_DIR,
  * then settings sessionDir; undefined selects the SDK per-cwd default.
@@ -41,15 +43,13 @@ export function sameSessionPath(left: string, right: string) {
   };
   return key(left) === key(right);
 }
+const sessionList = new SessionListCache();
 export async function listSessionFiles(cwd: string): Promise<SessionInfo[]> {
-  return (await SessionManager.list(cwd, await sessionDirFor(cwd)))
+  const directory =
+    (await sessionDirFor(cwd)) ?? defaultSessionDir(cwd, agentDir);
+  return (await sessionList.list(expandHome(directory)))
     .filter((info) => sameSessionPath(info.cwd, cwd))
-    .map((info) => ({
-      id: info.id,
-      cwd,
-      title: info.name ?? info.firstMessage ?? "New chat",
-      modified: info.modified.getTime(),
-    }));
+    .map((info) => ({ ...info, cwd }));
 }
 export async function resolveSessionFile(cwd: string, id: string) {
   validSessionId(id);

@@ -27,6 +27,24 @@ test("session discovery reads headers only, normalizes header paths and rejects 
       const listed = await listSessionFiles(cwd);
       expect(listed).toHaveLength(1);
       expect(listed[0]).toMatchObject({id,cwd});
+      const oracle = async () => (await SessionManager.list(cwd)).filter(info=>sameSessionPath(info.cwd,cwd)).map(info=>({id:info.id,cwd,title:info.name??info.firstMessage??"New chat",modified:info.modified.getTime()}));
+      expect(listed).toEqual(await oracle());
+      // Compare SDK listing semantics, without opening/migrating any file.
+      const original = lines.join("\\n");
+      const entry = message => JSON.stringify({type:"message",timestamp:"2026-01-02T00:00:00.000Z",message})+"\\n";
+      const info = name => JSON.stringify({type:"session_info",name})+"\\n";
+      for (const suffix of [
+        info(" Named "), info("Cleared")+info("  "),
+        entry({role:"user",content:[{type:"text",text:"Second"},{type:"text",text:"question"}],timestamp:100}),
+        entry({role:"assistant",content:[{type:"text",text:"Answer"}],timestamp:999999}),
+        entry({role:"toolResult",content:[{type:"text",text:"Not activity"}],timestamp:999999999}),
+        "incomplete JSON", "\\n"+info("日本語"),
+      ]) {
+        await writeFile(file,original+suffix);
+        expect(await listSessionFiles(cwd)).toEqual(await oracle());
+        expect(await readFile(file,"utf8")).toBe(original+suffix);
+      }
+      await writeFile(file,original);
       const list = SessionManager.list;
       SessionManager.list = async () => {throw new Error("Must not read transcript bodies to find a session");};
       expect(await resolveSessionFile(cwd,id)).toBe(file);
@@ -39,6 +57,15 @@ test("session discovery reads headers only, normalizes header paths and rejects 
       await expect(removeSessionFile(cwd,id)).rejects.toThrow("does not belong");
       expect(existsSync(file)).toBe(true);
       SessionManager.list = list;
+      expect(await listSessionFiles(cwd)).toHaveLength(0);
+      const previousDir = process.env.PI_CODING_AGENT_SESSION_DIR;
+      const alternate = join(${JSON.stringify(home)}, "alternate-sessions");
+      await mkdir(alternate);
+      await writeFile(join(alternate,"alternate.jsonl"),JSON.stringify({...header,id:"alternate-id",cwd})+"\\n"+entry({role:"user",content:"Alternate directory",timestamp:42}));
+      process.env.PI_CODING_AGENT_SESSION_DIR = alternate;
+      expect(await listSessionFiles(cwd)).toEqual([{id:"alternate-id",cwd,title:"Alternate directory",modified:42}]);
+      if (previousDir === undefined) delete process.env.PI_CODING_AGENT_SESSION_DIR;
+      else process.env.PI_CODING_AGENT_SESSION_DIR = previousDir;
       expect(await listSessionFiles(cwd)).toHaveLength(0);
     `;
     const child = Bun.spawn([process.execPath, "--eval", script], {
