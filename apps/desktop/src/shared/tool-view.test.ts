@@ -100,8 +100,16 @@ describe("tool-view", () => {
     expect(work.get(1)).toEqual({ key: "r1", first: 1, final: 3, tools: 1 });
     expect(work.get(3)).toBe(work.get(1));
     expect(work.has(5)).toBe(false); // plain answer: nothing to fold
-    expect(work.has(7)).toBe(false); // no final text: keep the work visible
-    // The response still running is never folded.
-    expect(finishedWork(records.slice(0, 4), true, all).size).toBe(0);
+    // No final text (interrupted): still folded by default.
+    expect(work.get(7)).toEqual({ key: "r7", first: 7, final: 7, tools: 1 });
+    // A running response folds as soon as its newest message is the answer.
+    expect(finishedWork(records.slice(0, 4), true, all).get(1)).toEqual({
+      key: "r1",
+      first: 1,
+      final: 3,
+      tools: 1,
+    });
+    // ...but not while it is still calling tools.
+    expect(finishedWork(records.slice(0, 3), true, all).size).toBe(0);
   });
 });

@@ -85,7 +85,9 @@ const role = (record: TranscriptRecord) =>
 /**
  * Maps every record index of a finished response that has intermediate work
  * (tool calls, thinking, earlier steps) to that response, so the UI can fold
- * the work and show only the final answer. The running response is left open.
+ * the work and show only the final answer. A finished response without a
+ * final answer still folds (its error stays visible). The running response
+ * folds once its last message streams an answer with no tool calls.
  */
 export function finishedWork(
   records: readonly TranscriptRecord[],
@@ -94,7 +96,7 @@ export function finishedWork(
   from = 0,
 ): Map<number, WorkRange> {
   const result = new Map<number, WorkRange>();
-  const close = (start: number, end: number) => {
+  const close = (start: number, end: number, live = false) => {
     const shown: number[] = [];
     for (let i = start; i <= end; i++)
       if (visible(records[i]) && role(records[i]) !== "toolResult")
@@ -107,8 +109,13 @@ export function finishedWork(
     if (message.kind !== "message" || message.message.role !== "assistant")
       return;
     const blocks = message.message.content;
-    // Without a final answer there is nothing to show instead of the work.
-    if (!blocks.some((block) => block.type === "text" && block.text.trim()))
+    // A live response folds only while its newest message is the answer.
+    if (
+      live &&
+      (final !== shown.at(-1) ||
+        blocks.some((block) => block.type === "toolCall") ||
+        !blocks.some((block) => block.type === "text" && block.text.trim()))
+    )
       return;
     if (shown.length < 2 && blocks.every((block) => block.type === "text"))
       return;
@@ -128,7 +135,7 @@ export function finishedWork(
     if (index > start) close(start, index - 1);
     start = index + 1;
   }
-  if (!running && start < records.length) close(start, records.length - 1);
+  if (start < records.length) close(start, records.length - 1, running);
   return result;
 }
 
@@ -164,13 +171,25 @@ export function createFinishedWorkIndex(
     let from = shared;
     while (from > 0 && role(records[from - 1]) !== "user") from--;
     const suffix = finishedWork(records, running, visible, from);
-    let changed = suffix.size > 0;
-    if (!changed)
-      for (const index of ranges.keys())
-        if (index >= from) {
-          changed = true;
-          break;
-        }
+    // A streaming answer recomputes its live range on every delta; keep the map when it is unchanged.
+    let old = 0;
+    let changed = false;
+    for (const [index, range] of ranges) {
+      if (index < from) continue;
+      old++;
+      const next = suffix.get(index);
+      if (
+        !next ||
+        next.key !== range.key ||
+        next.first !== range.first ||
+        next.final !== range.final ||
+        next.tools !== range.tools
+      ) {
+        changed = true;
+        break;
+      }
+    }
+    if (old !== suffix.size) changed = true;
     if (changed)
       ranges = new Map([
         ...[...ranges].filter(([index]) => index < from),

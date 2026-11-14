@@ -459,7 +459,8 @@ test.skipIf(!existsSync(edge) && !process.env.PIG_REQUIRE_UI_TESTS)(
       }
       perfRecords.push(assistant("perf-live",perfRecords.length,[{type:"text",text:"Live"}]));
       let perfSnapshot={...base,transcript:{...transcript(perfRecords),tools:perfTools,running:true,current:"perf-live"}};
-      await show(perfSnapshot);await pause(150);toolRenders=0;
+      // The streaming answer folds the work; expand it to observe saved tools.
+      await show(perfSnapshot);document.querySelector('.work-toggle')?.click();await pause(150);toolRenders=0;
       {
         const savedOutput=document.querySelector('.tool-term-output');
         check(savedOutput,'saved tool output must be expanded');
@@ -490,7 +491,7 @@ test.skipIf(!existsSync(edge) && !process.env.PIG_REQUIRE_UI_TESTS)(
       const groupedCalls=perfRecords.filter(record=>record.message?.role==="assistant").flatMap(record=>record.message.content).filter(block=>block.type==="toolCall" && block.name==="read");
       const groupedTurn=assistant("perf-group",1,groupedCalls);groupedTurn.entryId=groupedTurn.id;
       perfSnapshot={...perfSnapshot,transcript:{...perfSnapshot.transcript,records:[user(0),groupedTurn,...perfRecords.filter(record=>record.message?.role==="toolResult" && groupedCalls.some(call=>call.id===record.message.toolCallId)),perfRecords.at(-1)]}};
-      await show(perfSnapshot);await click(document.querySelector(".tool-group > summary"));toolRenders=0;
+      await show(perfSnapshot);await click(document.querySelector(".work-toggle"));await click(document.querySelector(".tool-group > summary"));toolRenders=0;
       const groupClone=structuredClone(perfSnapshot);groupClone.snapshotSeq++;
       perfSnapshot=newerSnapshot(perfSnapshot,groupClone);await show(perfSnapshot);
       check(toolRenders===0,"an expanded exploration group must ignore unrelated cloned updates");

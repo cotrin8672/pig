@@ -24,8 +24,8 @@ function turn(id: string, message: Message): Turn {
 }
 const user = (id: string) =>
   turn(id, { role: "user", content: id, timestamp: 0 });
-function assistant(id: string, live = false) {
-  const message = fauxAssistantMessage(id);
+function assistant(id: string, live = false, text = id) {
+  const message = fauxAssistantMessage(text);
   message.content.unshift({ type: "thinking", thinking: "working" });
   const record = turn(id, message);
   if (live) delete record.entryId;
@@ -125,7 +125,8 @@ test("visibility and live-to-saved identity changes invalidate the containing re
   index(mutable, false, "branch");
   final.entryId = final.id;
   final.message = fauxAssistantMessage("   ");
-  expect(index(mutable, false, "branch").size).toBe(0);
+  // Finished responses fold even without a final answer.
+  expect(index(mutable, false, "branch").size).toBe(2);
 });
 
 test("IPC-shared records reuse work, while new envelopes remain authoritative", () => {
@@ -140,8 +141,9 @@ test("IPC-shared records reuse work, while new envelopes remain authoritative", 
   for (let i = 0; i < 10; i++) {
     const incoming = structuredClone(current);
     incoming.records[incoming.records.length - 1] = assistant(
-      `live-${i}`,
+      "live",
       true,
+      `live-${i}`,
     );
     current = { ...current, ...shareTranscript(current, incoming) };
     expect(index(current.records, true, "branch")).toBe(first);
@@ -192,11 +194,16 @@ test("100 live updates do not re-inspect completed response visibility or conten
   visibilityReads = contentReads = 0;
   for (let i = 0; i < 100; i++)
     expect(
-      index([...history, prompt, assistant(`live-${i}`, true)], true, "branch"),
+      index(
+        [...history, prompt, assistant("live", true, `live-${i}`)],
+        true,
+        "branch",
+      ),
     ).toBe(first);
-  expect(visibilityReads).toBe(0);
+  // Only the streaming record is inspected on each delta.
+  expect(visibilityReads).toBe(100);
   expect(contentReads).toBe(0);
-  expect(first.size).toBe(600);
+  expect(first.size).toBe(601);
 });
 
 test("mixed history edits always agree with full calculation", () => {
