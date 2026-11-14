@@ -15,7 +15,7 @@ export const effortLabels = {
   low: "Low",
   medium: "Medium",
   high: "High",
-  xhigh: "Extra high",
+  xhigh: "x-high",
   max: "Max",
 } as const satisfies Record<Effort, string>;
 export type EffortMap = Partial<Record<Effort, string | null>>;
