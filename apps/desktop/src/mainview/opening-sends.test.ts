@@ -6,7 +6,9 @@ import {
   openingSends,
   queueOpeningSelection,
   queueOpeningSend,
+  reorderOpeningSends,
   restoreOpeningSends,
+  steerOpeningSend,
   takeOpeningOps,
   withdrawOpeningSend,
 } from "./opening-sends";
@@ -114,4 +116,31 @@ test("existing startup send restoration preserves attachments and cannot overwri
   expect(openingDraftKey({ cwd: "project", id: "one" })).not.toBe(
     openingDraftKey({ cwd: "project", id: "two" }),
   );
+});
+
+test("startup follow-ups reorder among themselves; steering one only changes its delivery", () => {
+  useStore.setState({ openId: "a", pendingOpens: { a: { cwd: "project" } } });
+  const model = {
+    model: { provider: "p", id: "B", name: "B" },
+    effort: "off" as const,
+    effortLevels: [],
+  };
+  queueOpeningSend("a", { ...emptyContent(), text: "now" });
+  queueOpeningSend("a", { ...emptyContent(), text: "one" }, "followUp");
+  queueOpeningSelection("a", model);
+  queueOpeningSend("a", { ...emptyContent(), text: "two" }, "followUp");
+  const ops = () =>
+    (useStore.getState().pendingOpens.a.queued ?? []).map((op) =>
+      op.kind === "send" ? `${op.content.text}:${op.delivery}` : "select",
+    );
+  const [, one, two] = openingSends(useStore.getState().pendingOpens.a);
+  reorderOpeningSends("a", [two.id, one.id]);
+  expect(ops()).toEqual([
+    "now:steer",
+    "two:followUp",
+    "select",
+    "one:followUp",
+  ]);
+  steerOpeningSend("a", one.id);
+  expect(ops()).toEqual(["now:steer", "two:followUp", "select", "one:steer"]);
 });

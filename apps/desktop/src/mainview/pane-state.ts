@@ -1,4 +1,5 @@
 import { navigate } from "./navigation";
+import { openingDraftKey } from "./opening-sends";
 import {
   adjacentPane,
   paneGeometry,
@@ -30,19 +31,19 @@ export function focusPane(id: number) {
 }
 
 export function createPane(axis: SplitAxis) {
-  const state = useStore.getState();
-  if (
-    state.page !== "chat" ||
-    !state.initialized ||
-    Object.values(state.panes).some(
-      (pane) => pane.openId && state.pendingOpens[pane.openId],
-    )
-  )
-    return;
+  let state = useStore.getState();
+  if (state.page !== "chat" || !state.initialized) return;
   const cwd =
     (state.active && state.snapshots[state.active]?.info.cwd) ||
+    state.pendingOpens[state.panes[state.activePane]?.openId ?? ""]?.cwd ||
     state.bootstrap.generalCwd;
   if (!cwd) return;
+  const current = state.panes[state.activePane];
+  if (!current?.sessionId && !state.pendingOpens[current?.openId ?? ""]) {
+    // Splitting the initial welcome screen must leave two usable local editors.
+    void openChat(cwd);
+    state = useStore.getState();
+  }
   const id = Math.max(nextPaneId, ...Object.keys(state.panes).map(Number)) + 1;
   nextPaneId = id;
   useStore.setState({
@@ -50,9 +51,7 @@ export function createPane(axis: SplitAxis) {
     panes: { ...state.panes, [id]: {} },
     activePane: id,
   });
-  void openChat(cwd).then((snapshot) => {
-    if (!snapshot) closePane(id);
-  });
+  void openChat(cwd);
   focusEditor(id);
 }
 
@@ -67,8 +66,16 @@ export function closePane(id = useStore.getState().activePane) {
   const paneTree = removePane(state.paneTree, id);
   if (!paneTree) return;
   const panes = { ...state.panes };
+  const openId = panes[id].openId;
+  const pending = openId ? state.pendingOpens[openId] : undefined;
+  const pendingOpens = { ...state.pendingOpens };
+  const newChatDrafts = { ...state.newChatDrafts };
+  if (openId && pending?.deferred) {
+    delete pendingOpens[openId];
+    delete newChatDrafts[openingDraftKey(pending)];
+  }
   delete panes[id];
-  useStore.setState({ paneTree, panes });
+  useStore.setState({ paneTree, panes, pendingOpens, newChatDrafts });
   if (state.activePane === id) {
     const next = paneGeometry(paneTree).panes[0].id;
     focusPane(next);

@@ -3,8 +3,9 @@ import type { DraftContent, PromptDelivery } from "../shared/runtime-contract";
 import { drafts } from "./draft-store";
 import { type OpeningOp, type OpeningTarget, useStore } from "./store";
 
-export const openingDraftKey = (target: Pick<OpeningTarget, "cwd" | "id">) =>
-  target.id ? `${target.cwd}\0${target.id}` : target.cwd;
+export const openingDraftKey = (
+  target: Pick<OpeningTarget, "cwd" | "id" | "draftId">,
+) => target.draftId ?? (target.id ? `${target.cwd}\0${target.id}` : target.cwd);
 
 function update(
   openId: string,

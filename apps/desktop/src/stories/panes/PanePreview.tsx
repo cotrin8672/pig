@@ -405,7 +405,13 @@ export function PanePreview({
                 ) : (
                   <div className="chat-empty">
                     <h1>何を作りましょうか？</h1>
-                    <p className="muted">作業場所: piris</p>
+                    <p
+                      className="muted chat-empty-project"
+                      title="作業場所: piris"
+                    >
+                      <Folder size={14} aria-hidden="true" />
+                      <span>piris</span>
+                    </p>
                     <p className="muted pane-preview-extension">
                       Ponytail loaded: full
                     </p>

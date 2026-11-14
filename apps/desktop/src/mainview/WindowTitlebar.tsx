@@ -1,6 +1,7 @@
-import { Copy, Minus, Square, X } from "lucide-react";
+import { Columns2, Copy, Minus, Rows2, Square, X } from "lucide-react";
 import { type ReactNode, useEffect, useRef, useState } from "react";
 import { useT } from "./i18n";
+import type { SplitAxis } from "./pane-layout";
 
 type WindowAction = "minimize" | "toggleMaximize" | "close";
 
@@ -41,7 +42,7 @@ export class TitlebarHover {
     this.timer = setTimeout(() => {
       this.timer = undefined;
       if (!this.dragging && !this.isHovered(this.expanded)) this.reset();
-    }, 300);
+    }, 200);
   };
 
   startDrag = () => {
@@ -72,10 +73,14 @@ export class TitlebarHover {
 export function WindowTitlebar({
   maximized,
   onAction,
+  onSplit,
+  splitDisabled = false,
   children,
 }: {
   maximized: boolean;
   onAction: (action: WindowAction) => void;
+  onSplit?: (axis: SplitAxis) => void;
+  splitDisabled?: boolean;
   children?: ReactNode;
 }) {
   const t = useT();
@@ -170,6 +175,28 @@ export function WindowTitlebar({
         >
           {children}
         </div>
+        {onSplit && (
+          <div className="window-controls window-pane-controls electrobun-webkit-app-region-no-drag">
+            <button
+              type="button"
+              aria-label={t.paneSplitColumns}
+              title={t.paneSplitColumns}
+              disabled={splitDisabled}
+              onClick={() => onSplit("columns")}
+            >
+              <Columns2 size={14} aria-hidden="true" />
+            </button>
+            <button
+              type="button"
+              aria-label={t.paneSplitRows}
+              title={t.paneSplitRows}
+              disabled={splitDisabled}
+              onClick={() => onSplit("rows")}
+            >
+              <Rows2 size={14} aria-hidden="true" />
+            </button>
+          </div>
+        )}
         <div className="window-controls electrobun-webkit-app-region-no-drag">
           <button
             type="button"

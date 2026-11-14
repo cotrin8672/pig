@@ -82,12 +82,18 @@ if (process.env.PIG_OPEN_NAVIGATION_CHILD !== "1") {
     window: new EventTarget(),
     Element: class {},
   });
-  const { openChat, cancelOpening, connectRuntime, initRuntimeConnection } =
-    await import("./rpc");
+  const {
+    openChat,
+    startOpeningChat,
+    cancelOpening,
+    connectRuntime,
+    initRuntimeConnection,
+  } = await import("./rpc");
   const { useStore } = await import("./store");
   const { navigate } = await import("./navigation");
   const { receiveRuntime, receiveSnapshot } = await import("./runtime-events");
   const { drafts } = await import("./draft-store");
+  const { openingDraftKey } = await import("./opening-sends");
   afterAll(initRuntimeConnection());
   await connectRuntime();
   let epoch = 0;
@@ -103,7 +109,20 @@ if (process.env.PIG_OPEN_NAVIGATION_CHILD !== "1") {
   }
   async function start(id: string | undefined, cwd = "project") {
     const index = calls.length;
-    const promise = openChat(cwd, id);
+    let promise = openChat(cwd, id);
+    if (!id) {
+      const state = useStore.getState();
+      const openId = state.openId;
+      if (!openId) throw Error("Expected local new chat");
+      const key = openingDraftKey(state.pendingOpens[openId]);
+      if (state.newChatDrafts[cwd])
+        useStore.setState({
+          newChatDrafts: { [key]: state.newChatDrafts[cwd] },
+        });
+      const starting = startOpeningChat(openId);
+      if (!starting) throw Error("Expected first-submit startup");
+      promise = starting;
+    }
     await Bun.sleep(1);
     expect(calls).toHaveLength(index + 1);
     const call = calls[index];
@@ -135,11 +154,12 @@ if (process.env.PIG_OPEN_NAVIGATION_CHILD !== "1") {
         disabledModels: ["test/hidden"],
       },
     });
-    const promise = openChat("project");
+    const count = calls.length;
+    await openChat("project");
     const selection = useStore.getState().openingTarget?.selection;
     await Bun.sleep(1);
-    calls[calls.length - 1].deferred.resolve(snapshot(crypto.randomUUID()));
-    await promise;
+    expect(calls).toHaveLength(count);
+    await cancelOpening();
     useStore.setState({ bootstrap });
     expect(selection).toMatchObject({
       model,
@@ -167,11 +187,11 @@ if (process.env.PIG_OPEN_NAVIGATION_CHILD !== "1") {
       },
     });
     try {
-      const promise = openChat("project");
+      const count = calls.length;
+      await openChat("project");
       const selection = useStore.getState().openingTarget?.selection;
-      await Bun.sleep(1);
-      calls[calls.length - 1].deferred.resolve(snapshot(crypto.randomUUID()));
-      await promise;
+      expect(calls).toHaveLength(count);
+      await cancelOpening();
       expect(selection).toMatchObject({
         model: preferred,
         effort: "high",
@@ -259,20 +279,28 @@ if (process.env.PIG_OPEN_NAVIGATION_CHILD !== "1") {
     }
   });
 
-  test("new-chat clicks deduplicate per project and transfer each background draft to its own session", async () => {
-    useStore.setState({
-      newChatDrafts: { one: "Draft one", two: "Draft two" },
-    });
+  test("new-chat clicks reuse the current editor and transfer each background draft to its own session", async () => {
     const one = await start(undefined, "one");
+    const oneKey = openingDraftKey(
+      useStore.getState().pendingOpens[one.params.openId],
+    );
+    useStore.setState({ newChatDrafts: { [oneKey]: "Draft one" } });
     const count = calls.length;
     const repeated = openChat("one");
     expect(calls).toHaveLength(count);
     const two = await start(undefined, "two");
+    const twoKey = openingDraftKey(
+      useStore.getState().pendingOpens[two.params.openId],
+    );
+    useStore.setState((s) => ({
+      newChatDrafts: { ...s.newChatDrafts, [twoKey]: "Draft two" },
+    }));
     const afterTwo = calls.length;
     const sidebarReturn = openChat("one", one.ready.info.id);
     expect(useStore.getState().openId).toBe(one.params.openId);
     expect(calls).toHaveLength(afterTwo);
-    const returnTwo = openChat("two");
+    const { showPendingOpen } = await import("./rpc");
+    showPendingOpen(two.params.openId);
     drafts.receive(one.ready.address, {
       revision: 1,
       text: "Extension draft",
@@ -282,13 +310,13 @@ if (process.env.PIG_OPEN_NAVIGATION_CHILD !== "1") {
     one.deferred.resolve(one.ready);
     await Promise.all([one.promise, repeated, sidebarReturn]);
     expect(useStore.getState().openId).toBe(two.params.openId);
-    expect(useStore.getState().newChatDrafts.two).toBe("Draft two");
+    expect(useStore.getState().newChatDrafts[twoKey]).toBe("Draft two");
     expect(drafts.read(one.ready.address).content.text).toContain("Draft one");
     expect(drafts.read(one.ready.address).content.text).toContain(
       "Extension draft",
     );
     two.deferred.resolve(two.ready);
-    await Promise.all([two.promise, returnTwo]);
+    await two.promise;
     expect(drafts.read(two.ready.address).content.text).toBe("Draft two");
     expect(useStore.getState().active).toBe(two.ready.info.id);
     expect(useStore.getState().newChatDrafts).toEqual({});
@@ -341,7 +369,13 @@ if (process.env.PIG_OPEN_NAVIGATION_CHILD !== "1") {
       paneTree: { type: "pane", id: 1 },
       panes: { 1: { sessionId: first.info.id } },
     });
+    const count = calls.length;
     createPane("rows");
+    expect(calls).toHaveLength(count);
+    const localId = useStore.getState().panes[2].openId;
+    if (!localId) throw Error("Expected local pane editor");
+    expect(useStore.getState().pendingOpens[localId].deferred).toBe(true);
+    const starting = startOpeningChat(localId);
     await Bun.sleep(1);
     const call = calls.at(-1);
     if (!call) throw Error("Expected pane session open");
@@ -368,6 +402,7 @@ if (process.env.PIG_OPEN_NAVIGATION_CHILD !== "1") {
       await Bun.sleep(1);
     expect(useStore.getState().active).toBe(first.info.id);
     expect(useStore.getState().panes[2].sessionId).toBe(second.info.id);
+    await starting;
     focusPane(2);
     expect(useStore.getState().active).toBe(second.info.id);
     // Selecting a session already visible focuses its pane instead of duplicating it.
@@ -403,5 +438,35 @@ if (process.env.PIG_OPEN_NAVIGATION_CHILD !== "1") {
     } finally {
       failRecovery = false;
     }
+  });
+  test("splitting the initial welcome creates two local editors and closing one never opens the SDK", async () => {
+    const { createPane, closePane } = await import("./pane-state");
+    useStore.setState((state) => ({
+      initialized: true,
+      page: "chat",
+      active: undefined,
+      activePane: 1,
+      paneTree: { type: "pane", id: 1 },
+      panes: { 1: {} },
+      pendingOpens: {},
+      opening: false,
+      openId: undefined,
+      bootstrap: { ...state.bootstrap, generalCwd: "initial" },
+    }));
+    const count = calls.length;
+    createPane("columns");
+    const state = useStore.getState();
+    expect(Object.keys(state.panes)).toHaveLength(2);
+    for (const pane of Object.values(state.panes)) {
+      expect(pane.sessionId).toBeUndefined();
+      expect(state.pendingOpens[pane.openId ?? ""]).toMatchObject({
+        cwd: "initial",
+        deferred: true,
+      });
+    }
+    const closedId = state.panes[state.activePane].openId ?? "";
+    closePane();
+    expect(useStore.getState().pendingOpens[closedId]).toBeUndefined();
+    expect(calls).toHaveLength(count);
   });
 }

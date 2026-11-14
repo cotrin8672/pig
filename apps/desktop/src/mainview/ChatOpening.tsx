@@ -1,4 +1,10 @@
-import { useCallback, useRef, useSyncExternalStore } from "react";
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useRef,
+  useSyncExternalStore,
+} from "react";
 import { composerAction } from "../shared/keymap";
 import type { ModelSelection, Snapshot } from "../shared/rpc-schema";
 import type { PromptDelivery } from "../shared/runtime-contract";
@@ -23,27 +29,35 @@ import {
   steerOpeningSend,
   withdrawOpeningSend,
 } from "./opening-sends";
-import { openChat } from "./rpc";
+import { openChat, startOpeningChat } from "./rpc";
 import { useStore } from "./store";
 import "./composer.css";
+
+const OpeningId = createContext<string | undefined>(undefined);
+function useOpeningTarget() {
+  const id = useContext(OpeningId);
+  return useStore((s) => (id ? s.pendingOpens[id] : s.openingTarget));
+}
 
 export function OpeningComposer({ preview }: { preview?: Snapshot }) {
   const t = useT();
   const keybindings = useStore((s) => s.settings.keybindings);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
-  const target = useStore((s) => s.openingTarget);
+  const paneOpenId = useContext(OpeningId);
+  const currentOpenId = () => paneOpenId ?? useStore.getState().openId;
+  const target = useOpeningTarget();
   const stored = useStore((s) =>
     target?.id ? s.snapshots[target.id] : undefined,
   );
   const snapshot = preview ?? stored;
   const selectModel = useCallback(
     (selection: ModelSelection) => {
-      if (!useStore.getState().openId && preview)
+      if (!(paneOpenId ?? useStore.getState().openId) && preview)
         void openChat(preview.info.cwd, preview.info.id);
-      const id = useStore.getState().openId;
+      const id = paneOpenId ?? useStore.getState().openId;
       if (id) queueOpeningSelection(id, selection);
     },
-    [preview],
+    [preview, paneOpenId],
   );
   const newText = useStore((s) =>
     target ? (s.newChatDrafts[openingDraftKey(target)] ?? "") : "",
@@ -77,10 +91,10 @@ export function OpeningComposer({ preview }: { preview?: Snapshot }) {
   }
   function send(delivery: PromptDelivery = "steer") {
     if (!text.trim()) return;
-    if (!useStore.getState().openId && preview)
+    if (!currentOpenId() && preview)
       void openChat(preview.info.cwd, preview.info.id);
     const state = useStore.getState();
-    const id = state.openId;
+    const id = currentOpenId();
     const opening = id && state.pendingOpens[id];
     if (!id || !opening) return;
     const content = snapshot
@@ -91,12 +105,13 @@ export function OpeningComposer({ preview }: { preview?: Snapshot }) {
     useStore.setState((s) => ({
       newChatDrafts: { ...s.newChatDrafts, [openingDraftKey(opening)]: "" },
     }));
+    void startOpeningChat(id);
   }
   const viewKey = snapshot
     ? addressKey(snapshot.address)
     : target?.id
       ? `opening:${target.id}`
-      : `new:${target?.cwd}`;
+      : `new:${target?.draftId ?? target?.cwd}`;
   return (
     <ComposerFrame>
       <MessageQueue
@@ -104,20 +119,20 @@ export function OpeningComposer({ preview }: { preview?: Snapshot }) {
           (send) => send.delivery === "followUp",
         )}
         onDelete={(id) => {
-          const openId = useStore.getState().openId;
+          const openId = currentOpenId();
           if (openId) withdrawOpeningSend(openId, id);
         }}
         onMove={(ids) => {
-          const openId = useStore.getState().openId;
+          const openId = currentOpenId();
           if (openId) reorderOpeningSends(openId, ids);
         }}
         onSteer={(id) => {
-          const openId = useStore.getState().openId;
+          const openId = currentOpenId();
           if (openId) steerOpeningSend(openId, id);
           textareaRef.current?.focus();
         }}
         onEdit={(id) => {
-          const openId = useStore.getState().openId;
+          const openId = currentOpenId();
           const send = openId && withdrawOpeningSend(openId, id);
           if (!send) return;
           if (snapshot) drafts.restoreSent(snapshot.address, send.content);
@@ -156,9 +171,11 @@ export function OpeningComposer({ preview }: { preview?: Snapshot }) {
           }}
         />
         <div className="composer-toolbar">
-          <span className="sr-only" role="status">
-            {t["Opening chat…"]}
-          </span>
+          {(!target?.draftId || queued) && (
+            <span className="sr-only" role="status">
+              {t["Opening chat…"]}
+            </span>
+          )}
           <div className="composer-pickers">
             <ContextIndicator usage={snapshot?.contextUsage} />
             <ModelPicker
@@ -173,7 +190,7 @@ export function OpeningComposer({ preview }: { preview?: Snapshot }) {
               hasContent={!!text}
               disabled={!text.trim()}
               onStop={() => {
-                const id = useStore.getState().openId;
+                const id = currentOpenId();
                 if (id) restoreOpeningSends(id);
               }}
             />
@@ -185,7 +202,7 @@ export function OpeningComposer({ preview }: { preview?: Snapshot }) {
 }
 
 export function OpeningMessages() {
-  const target = useStore((state) => state.openingTarget);
+  const target = useOpeningTarget();
   return openingSends(target)
     .filter((send) => send.delivery !== "followUp")
     .map((send) => (
@@ -208,11 +225,29 @@ export function OpeningMessages() {
     ));
 }
 
-export function ChatOpening() {
-  const target = useStore((s) => s.openingTarget);
-  const message = useStore((s) => s.openMessage);
+export function ChatOpening({ openId }: { openId?: string }) {
   return (
-    <ChatLayout loading composer={<OpeningComposer />}>
+    <OpeningId.Provider value={openId}>
+      <OpeningView />
+    </OpeningId.Provider>
+  );
+}
+
+function OpeningView() {
+  const target = useOpeningTarget();
+  const id = useContext(OpeningId);
+  const message = useStore((s) =>
+    id ? s.pendingOpens[id]?.message : s.openMessage,
+  );
+  const deferred = useStore((s) =>
+    id
+      ? s.pendingOpens[id]?.deferred
+      : s.openId
+        ? s.pendingOpens[s.openId]?.deferred
+        : false,
+  );
+  return (
+    <ChatLayout loading={!deferred} composer={<OpeningComposer />}>
       {message && (
         <p className="muted" role="status">
           {message}

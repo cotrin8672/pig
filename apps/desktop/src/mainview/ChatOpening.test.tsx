@@ -42,6 +42,7 @@ if (process.env.PIG_CHAT_OPENING_CHILD !== "1") {
       optimistic: () => [],
     },
     openChat: async () => {},
+    startOpeningChat: async () => {},
     showPendingOpen: () => {},
     openChatLink: async () => {},
     forkChat: async () => {},
@@ -192,6 +193,12 @@ if (process.env.PIG_CHAT_OPENING_CHILD !== "1") {
       expect(bar).toContain('class="chat-header"');
       expect(bar).toContain("Live session title");
       expect(bar).not.toContain("chat-header-actions");
+      expect(bar).toContain('aria-label="Split pane left/right"');
+      expect(bar).toContain('aria-label="Split pane top/bottom"');
+      expect(bar).not.toContain('aria-label="Close pane (keep session)"');
+      expect(main).not.toContain(
+        'class="pane-close electrobun-webkit-app-region-no-drag"',
+      );
 
       state.opening = true;
       state.openingViewRevision = navigationRevision;
@@ -213,9 +220,17 @@ if (process.env.PIG_CHAT_OPENING_CHILD !== "1") {
       expect(previewBar).not.toContain("chat-header-actions");
 
       state.page = "settings";
-      expect(renderToStaticMarkup(<App />)).not.toContain(
-        'class="chat-header"',
+      const settings = renderToStaticMarkup(<App />);
+      expect(settings).not.toContain('class="chat-header"');
+      const settingsBar = settings.slice(
+        settings.indexOf('class="window-titlebar"'),
       );
+      for (const label of ["Split pane left/right", "Split pane top/bottom"]) {
+        const button = settingsBar
+          .match(/<button\b[^>]*>/g)
+          ?.find((tag) => tag.includes(`aria-label="${label}"`));
+        expect(button).toContain('disabled=""');
+      }
     } finally {
       Object.assign(state, previous);
     }
@@ -354,7 +369,8 @@ if (process.env.PIG_CHAT_OPENING_CHILD !== "1") {
       />,
     );
     expect(html).toContain("What shall we build?");
-    expect(html).toContain("Working in project");
+    expect(html).toContain('title="Working in project"');
+    expect(html).toContain("<span>project</span>");
     expect(html).not.toContain("Raw record");
     expect(html).not.toContain("a2ccf4cd");
     expect(html).not.toContain('class="transcript-search"');
@@ -499,7 +515,8 @@ if (process.env.PIG_CHAT_OPENING_CHILD !== "1") {
       const html = renderToStaticMarkup(<App />);
       expect(html).toContain("History is readable before the model is ready");
       expect(html).not.toContain("What shall we build?");
-      expect(html).toContain("Load earlier messages");
+      expect(html).toContain('class="history-edge"');
+      expect(html).not.toContain("Load earlier messages");
       const newChatButtons = [
         ...html.matchAll(/<button[^>]*title="New chat"[^>]*>/g),
       ];

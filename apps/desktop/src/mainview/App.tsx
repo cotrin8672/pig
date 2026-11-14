@@ -6,7 +6,6 @@ import {
   ExternalLink,
   LoaderCircle,
   PanelLeft,
-  Plus,
   Puzzle,
   Settings2,
   Settings as SettingsIcon,
@@ -32,7 +31,7 @@ import { ChatOpening, OpeningComposer, OpeningMessages } from "./ChatOpening";
 import { Composer } from "./Composer";
 import { CustomRecord } from "./CustomRecord";
 import type { ChatSnapshot } from "./chat-snapshot";
-import { addressKey, prependHistory, sameAddress } from "./chat-snapshot";
+import { addressKey, sameAddress } from "./chat-snapshot";
 import { dataText, isVisibleRecord } from "./custom-data";
 import { DynamicTheme } from "./DynamicTheme";
 import { Extensions } from "./Extensions";
@@ -56,6 +55,7 @@ import { PaneWorkspace } from "./PaneWorkspace";
 import { ProviderIcon } from "./ProviderIcon";
 import { Providers } from "./Providers";
 import { ProviderUsage } from "./ProviderUsage";
+import { createPane } from "./pane-state";
 import { ResponseError } from "./ResponseError";
 import { ResponseFooter } from "./ResponseFooter";
 import { createResponseFooterIndex } from "./response-footers";
@@ -74,15 +74,23 @@ import { Settings } from "./Settings";
 import { SidebarSessions } from "./SidebarSessions";
 import { revealTarget } from "./search-target";
 import { initShortcuts } from "./shortcuts";
+import { isSteeredUser } from "./steered-records";
 import { type LoginState, showError, showNotice, useStore } from "./store";
 import { ThinkingBlock, ToolBlock, ToolGroup, WorkToggle } from "./ToolBlock";
+import {
+  captureThreadAnchor,
+  restoreThreadAnchor,
+  type ThreadAnchor,
+} from "./thread-anchor";
 import {
   isThreadAtBottom,
   pruneThreadViews,
   threadView,
 } from "./thread-scroll";
+import { transcriptRequestIds } from "./transcript-requests";
 import { UIRequestBroker } from "./UIRequestBroker";
-import { selectAppView } from "./ui-selectors";
+import { selectAppView, selectConversationView } from "./ui-selectors";
+import { useHistoryPaging } from "./use-history-paging";
 import { WindowTitlebar } from "./WindowTitlebar";
 
 function isWindowDragTarget(target: EventTarget) {
@@ -146,10 +154,6 @@ export function App() {
   useEffect(() => {
     document.documentElement.lang = state.language;
   }, [state.language]);
-  const active = state.activeSnapshot;
-  const openingSnapshot = state.openingSnapshot;
-  const openingView = state.openingView;
-  const displayedChat = openingView ? openingSnapshot : active;
   const connected = state.connected;
   const updateVersion = useStore((s) =>
     s.appUpdate?.status === "available" ? s.appUpdate.latest : undefined,
@@ -264,41 +268,7 @@ export function App() {
         ) : state.page === "settings" ? (
           <Settings />
         ) : (
-          <PaneWorkspace renderChat={renderPaneChat}>
-            {openingView ? (
-              openingSnapshot ? (
-                <Chat
-                  key={addressKey(openingSnapshot.address)}
-                  snapshot={openingSnapshot}
-                />
-              ) : (
-                <ChatOpening />
-              )
-            ) : active ? (
-              <Chat key={addressKey(active.address)} snapshot={active} />
-            ) : (
-              <div className="welcome">
-                <h1>{t["What shall we build?"]}</h1>
-                <p className="muted">
-                  {connected
-                    ? t["Start a chat, or add a project folder."]
-                    : t["Connect a provider to start building with pi."]}
-                </p>
-                <button
-                  className="primary"
-                  type="button"
-                  onClick={() =>
-                    connected
-                      ? void openChat(state.generalCwd)
-                      : navigate("providers")
-                  }
-                >
-                  {connected ? <Plus size={16} /> : <Settings2 size={16} />}{" "}
-                  {connected ? t["New chat"] : t["Connect a provider"]}
-                </button>
-              </div>
-            )}
-          </PaneWorkspace>
+          <ConversationWorkspace />
         )}
       </MainViewport>
       <UIRequestBroker />
@@ -306,28 +276,55 @@ export function App() {
       <WindowTitlebar
         maximized={state.maximized}
         onAction={(action) => rpc.send.windowControl({ action })}
+        onSplit={createPane}
+        splitDisabled={!state.initialized || state.page !== "chat"}
       >
-        {state.initialized &&
-          state.page === "chat" &&
-          (openingView || displayedChat) && (
-            <ChatHeader
-              cwd={displayedChat?.info.cwd ?? state.openingTarget?.cwd}
-              title={
-                displayedChat
-                  ? ((openingView ? state.openingTitle : state.activeTitle) ??
-                    displayedChat.info.title)
-                  : state.openingTarget?.id
-                    ? (state.openingListedTitle ?? t["Opening chat…"])
-                    : t["New chat"]
-              }
-            />
-          )}
+        {state.showChatHeader && (
+          <ChatHeader
+            cwd={state.chatCwd}
+            title={
+              state.chatTitle ??
+              (state.openingExistingChat ? t["Opening chat…"] : t["New chat"])
+            }
+          />
+        )}
       </WindowTitlebar>
       {state.login && (
         <OAuthLoginDialog key={state.login.loginId} login={state.login} />
       )}
       <Notifications />
     </div>
+  );
+}
+
+function ConversationWorkspace() {
+  const {
+    activeSnapshot: active,
+    openingSnapshot,
+    openingView,
+    generalCwd,
+  } = useStore(useShallow(selectConversationView));
+  const idle = !openingView && !active;
+  // With no chat shown, the workspace is simply a new local draft. Drafts do
+  // not start an SDK session until the first send, so this is free.
+  useLayoutEffect(() => {
+    if (idle && generalCwd) void openChat(generalCwd, undefined, false);
+  }, [idle, generalCwd]);
+  return (
+    <PaneWorkspace renderChat={renderPaneChat}>
+      {openingView ? (
+        openingSnapshot ? (
+          <Chat
+            key={addressKey(openingSnapshot.address)}
+            snapshot={openingSnapshot}
+          />
+        ) : (
+          <ChatOpening />
+        )
+      ) : active ? (
+        <Chat key={addressKey(active.address)} snapshot={active} />
+      ) : null}
+    </PaneWorkspace>
   );
 }
 
@@ -610,49 +607,62 @@ export const Chat = memo(function Chat({
   // A resend replaces its message onward; a branch keeps the chosen entry.
   const cut = rewound >= 0 && rewind?.kind === "fork" ? rewound + 1 : rewound;
   const ja = useStore((s) => s.settings.language === "ja");
-  const thread = useRef<HTMLDivElement>(null);
+  const thread = useRef<HTMLElement>(null);
   const [view] = useState(() => threadView(snapshot.address.hostId, info.id));
-  const prependScroll = useRef<{ top: number; height: number } | undefined>(
-    undefined,
+  const prependScroll = useRef<ThreadAnchor | undefined>(undefined);
+  const retainedAnchor = useRef<ThreadAnchor | undefined>(undefined);
+  const resizeContent = useCallback(
+    (wasAtBottom: boolean) => {
+      const element = thread.current;
+      if (!element) return;
+      if (view.follow) {
+        if (wasAtBottom) element.scrollTop = element.scrollHeight;
+      } else if (
+        retainedAnchor.current?.record &&
+        element.contains(retainedAnchor.current.record)
+      ) {
+        restoreThreadAnchor(element, retainedAnchor.current);
+        view.top = element.scrollTop;
+      } else {
+        retainedAnchor.current = undefined;
+      }
+    },
+    [view],
   );
-  const followOptimistic = useCallback(() => {
-    if (thread.current && view.follow)
-      thread.current.scrollTop = thread.current.scrollHeight;
+  const followOptimistic = useCallback(
+    () => resizeContent(true),
+    [resizeContent],
+  );
+  // biome-ignore lint/correctness/useExhaustiveDependencies: A new branch must not inherit a pending/retained viewport anchor.
+  useLayoutEffect(() => {
+    prependScroll.current = undefined;
+    retainedAnchor.current = undefined;
+  }, [transcript.history?.revision]);
+  useEffect(() => {
+    const element = thread.current;
+    if (!element) return;
+    const release = () => {
+      retainedAnchor.current = undefined;
+    };
+    // Do not fight native wheel/touch/keyboard/scrollbar movement after a prepend.
+    const events = ["wheel", "touchstart", "pointerdown", "keydown"] as const;
+    for (const event of events)
+      element.addEventListener(event, release, { passive: true });
+    return () => {
+      for (const event of events) element.removeEventListener(event, release);
+    };
+  }, []);
+  const preparePrepend = useCallback(() => {
+    if (!thread.current) return;
+    // A native wheel can move the viewport before its React scroll event lands.
+    if (!isThreadAtBottom(thread.current)) view.follow = false;
+    prependScroll.current = captureThreadAnchor(thread.current);
   }, [view]);
-  const [loadingHistory, setLoadingHistory] = useState(false);
-  const [historyError, setHistoryError] = useState<string>();
-  async function loadEarlier() {
-    const cursor = transcript.history;
-    if (!cursor?.before || loadingHistory) return;
-    setLoadingHistory(true);
-    setHistoryError(undefined);
-    try {
-      const page = await rpc.request.getSessionHistory({
-        ...snapshot.address,
-        revision: cursor.revision,
-        before: cursor.before,
-      });
-      useStore.setState((state) => {
-        const current = state.snapshots[info.id];
-        if (!current || !sameAddress(current.address, snapshot.address))
-          return {};
-        const next = prependHistory(current, page, cursor.before as string);
-        if (next === current) return {};
-        if (thread.current) {
-          prependScroll.current = {
-            top: thread.current.scrollTop,
-            height: thread.current.scrollHeight,
-          };
-          view.follow = false;
-        }
-        return { snapshots: { ...state.snapshots, [info.id]: next } };
-      });
-    } catch (error) {
-      setHistoryError(String(error));
-    } finally {
-      setLoadingHistory(false);
-    }
-  }
+  const { edge, loadingHistory, historyError, loadEarlier } = useHistoryPaging(
+    snapshot,
+    thread,
+    preparePrepend,
+  );
   const status = useStore(
     (s) => s.extensionStatuses[addressKey(snapshot.address)],
   );
@@ -665,10 +675,12 @@ export const Chat = memo(function Chat({
   // agent_start (running) arrives before the new user message. Until it lands,
   // a send made while idle means the trailing response is finished, not live.
   const idleSends = useRef(new Set<string>()).current;
-  const echoed = new Set(transcript.records.map((record) => record.requestId));
   const pending = sends
     .optimistic(snapshot.address)
-    .filter((send) => !echoed.has(send.key.requestId));
+    .filter(
+      (send) =>
+        !transcriptRequestIds(transcript.records).has(send.key.requestId),
+    );
   if (!transcript.running)
     for (const send of pending) idleSends.add(send.key.requestId);
   const starting = pending.some((send) => idleSends.has(send.key.requestId));
@@ -749,6 +761,7 @@ export const Chat = memo(function Chat({
       return;
     }
     const id = transcript.records[index].id;
+    retainedAnchor.current = undefined;
     view.follow = false;
     return revealTarget(
       () =>
@@ -765,8 +778,10 @@ export const Chat = memo(function Chat({
     const element = thread.current;
     if (!element) return;
     if (prependScroll.current) {
-      const { top, height } = prependScroll.current;
-      element.scrollTop = top + element.scrollHeight - height;
+      if (view.follow) element.scrollTop = element.scrollHeight;
+      else restoreThreadAnchor(element, prependScroll.current);
+      retainedAnchor.current = view.follow ? undefined : prependScroll.current;
+      view.top = element.scrollTop;
       prependScroll.current = undefined;
     } else if (view.follow) {
       element.scrollTop = element.scrollHeight;
@@ -775,12 +790,14 @@ export const Chat = memo(function Chat({
   return (
     <ChatLayout
       threadRef={thread}
-      onContentResize={followOptimistic}
+      onContentResize={resizeContent}
       onScroll={({ currentTarget }) => {
         view.follow = isThreadAtBottom(currentTarget);
+        if (view.follow) retainedAnchor.current = undefined;
         view.top = currentTarget.scrollTop;
       }}
       onJumpToBottom={() => {
+        retainedAnchor.current = undefined;
         view.follow = true;
       }}
       composer={
@@ -815,20 +832,7 @@ export const Chat = memo(function Chat({
         )
       }
     >
-      {transcript.history?.before && (
-        <button
-          type="button"
-          disabled={loadingHistory}
-          onClick={() => void loadEarlier()}
-        >
-          {loadingHistory ? t["Loading…"] : t["Load earlier messages"]}
-        </button>
-      )}
-      {historyError && (
-        <p className="error" role="alert">
-          {historyError}
-        </p>
-      )}
+      <div ref={edge} className="history-edge" aria-hidden="true" />
       {readOnly && opening && openMessage && (
         <p className="muted" role="status">
           {openMessage}
@@ -909,6 +913,11 @@ export const Chat = memo(function Chat({
                     sessionId={info.id}
                     entryId={record.entryId}
                     disabled={readOnly || !snapshot.model}
+                    steer={
+                      isSteeredUser(transcript.records, index)
+                        ? "read"
+                        : undefined
+                    }
                   />
                 ) : message.role === "assistant" ? (
                   <>

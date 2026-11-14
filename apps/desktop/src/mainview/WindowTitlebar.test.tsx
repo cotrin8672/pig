@@ -1,4 +1,4 @@
-import { expect, test } from "bun:test";
+import { afterEach, beforeEach, expect, jest, test } from "bun:test";
 import { renderToStaticMarkup } from "react-dom/server";
 import { getT } from "./i18n";
 import {
@@ -7,7 +7,14 @@ import {
   WindowTitlebar,
 } from "./WindowTitlebar";
 
-const waitForHide = () => Bun.sleep(350);
+beforeEach(() => {
+  jest.useFakeTimers();
+});
+afterEach(() => {
+  jest.useRealTimers();
+});
+
+const waitForHide = () => jest.advanceTimersByTime(350);
 
 function setup() {
   const changes: boolean[] = [];
@@ -54,13 +61,14 @@ test("only an expanded bar keeps a 24px margin on every edge", () => {
   expect(isTitlebarHotzone(600, -25, bounds, true)).toBe(false);
 });
 
-test("hover opens immediately and leaving waits before hiding", async () => {
+test("hover opens immediately and leaving waits 200ms before hiding", () => {
   const { hover, changes } = setup();
   hover.enter();
   expect(changes).toEqual([true]);
   hover.leave();
+  jest.advanceTimersByTime(199);
   expect(changes).toEqual([true]);
-  await waitForHide();
+  jest.advanceTimersByTime(1);
   expect(changes).toEqual([true, false]);
   hover.dispose();
 });
@@ -69,9 +77,11 @@ test("moving outside repeatedly does not postpone hiding indefinitely", async ()
   const { hover, changes } = setup();
   hover.enter();
   hover.leave();
-  await Bun.sleep(100);
+  jest.advanceTimersByTime(100);
   hover.leave();
-  await Bun.sleep(250);
+  jest.advanceTimersByTime(99);
+  expect(changes).toEqual([true]);
+  jest.advanceTimersByTime(1);
   expect(changes).toEqual([true, false]);
   hover.dispose();
 });
@@ -80,7 +90,7 @@ test("returning before the hide delay cancels collapse", async () => {
   const { hover, changes } = setup();
   hover.enter();
   hover.leave();
-  await Bun.sleep(220);
+  jest.advanceTimersByTime(150);
   expect(changes).toEqual([true]);
   hover.enter();
   await waitForHide();
@@ -189,6 +199,31 @@ test("unmount cancels pending work", async () => {
   hover.dispose();
   await waitForHide();
   expect(changes).toEqual([true]);
+});
+
+test("pane actions precede window controls and can stay disabled without disappearing", () => {
+  const t = getT();
+  for (const splitDisabled of [false, true]) {
+    const html = renderToStaticMarkup(
+      <WindowTitlebar
+        maximized={false}
+        onAction={() => {}}
+        onSplit={() => {}}
+        splitDisabled={splitDisabled}
+      />,
+    );
+    expect(html.match(/<button\b/g)).toHaveLength(5);
+    expect(html).toContain(
+      'class="window-controls window-pane-controls electrobun-webkit-app-region-no-drag"',
+    );
+    const columns = html.indexOf(`aria-label="${t.paneSplitColumns}"`);
+    const rows = html.indexOf(`aria-label="${t.paneSplitRows}"`);
+    expect(columns).toBeGreaterThan(0);
+    expect(rows).toBeGreaterThan(columns);
+    expect(html).not.toContain(`aria-label="${t.paneClose}"`);
+    expect(html.indexOf(`aria-label="${t.Minimize}"`)).toBeGreaterThan(rows);
+    expect(html.match(/disabled=""/g)?.length ?? 0).toBe(splitDisabled ? 2 : 0);
+  }
 });
 
 test("the collapsed toolbar has a keyboard entry point and announces maximize or restore", () => {

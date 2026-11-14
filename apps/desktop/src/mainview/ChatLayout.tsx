@@ -1,4 +1,4 @@
-import { ArrowDown, Settings2 } from "lucide-react";
+import { ArrowDown, Folder, Settings2 } from "lucide-react";
 import {
   type ReactNode,
   type Ref,
@@ -29,19 +29,19 @@ export function ChatLayout({
   children: ReactNode;
   composer: ReactNode;
   panel?: ReactNode;
-  threadRef?: Ref<HTMLDivElement>;
-  onScroll?: UIEventHandler<HTMLDivElement>;
+  threadRef?: Ref<HTMLElement>;
+  onScroll?: UIEventHandler<HTMLElement>;
   onJumpToBottom?: () => void;
-  onContentResize?: () => void;
+  onContentResize?: (wasAtBottom: boolean) => void;
   loading?: boolean;
 }) {
   const t = useT();
   const { width, setWidth } = useChatWidth();
-  const thread = useRef<HTMLDivElement>(null);
+  const thread = useRef<HTMLElement>(null);
   const resizeContent = useRef(onContentResize);
   resizeContent.current = onContentResize;
   const [awayFromBottom, setAwayFromBottom] = useState(false);
-  useImperativeHandle(threadRef, () => thread.current as HTMLDivElement, []);
+  useImperativeHandle(threadRef, () => thread.current as HTMLElement, []);
   useLayoutEffect(() => {
     const element = thread.current;
     const content = element?.firstElementChild;
@@ -57,7 +57,7 @@ export function ChatLayout({
           scrollTop: element.scrollTop,
         });
         scrollHeight = nextHeight;
-        if (wasAtBottom) resizeContent.current?.();
+        resizeContent.current?.(wasAtBottom);
       }
       setAwayFromBottom(!isThreadAtBottom(element));
     };
@@ -74,9 +74,12 @@ export function ChatLayout({
         style={{ "--chat-width": `${width}px` } as React.CSSProperties}
       >
         <ChatWidthHandles width={width} onChange={setWidth} />
-        <div
+        <section
           ref={thread}
           className="thread-scroll"
+          aria-label={t.Chats}
+          // biome-ignore lint/a11y/noNoninteractiveTabindex: The scroll region must support keyboard paging after removal of the manual load button.
+          tabIndex={0}
           onScroll={(event) => {
             setAwayFromBottom(!isThreadAtBottom(event.currentTarget));
             onScroll?.(event);
@@ -84,7 +87,7 @@ export function ChatLayout({
           aria-busy={loading}
         >
           <div className="transcript">{children}</div>
-        </div>
+        </section>
         {awayFromBottom && (
           <button
             type="button"
@@ -115,16 +118,25 @@ export function ChatEmpty({ cwd }: { cwd?: string }) {
     (s) => s.bootstrap,
   );
   const enabled = filterModels(models, disabledModels);
+  const project =
+    cwd && generalCwd !== cwd
+      ? projectLabel(cwd, desktop.projects?.[cwd])
+      : undefined;
   return (
     <div className="chat-empty">
       <h1>{t["What shall we build?"]}</h1>
-      <p className="muted">
-        {generalCwd === cwd
-          ? t["Chat without a project"]
-          : cwd
-            ? t.workingIn(projectLabel(cwd, desktop.projects?.[cwd]))
+      {project ? (
+        <p className="muted chat-empty-project" title={t.workingIn(project)}>
+          <Folder size={14} aria-hidden="true" />
+          <span>{project}</span>
+        </p>
+      ) : (
+        <p className="muted">
+          {generalCwd === cwd
+            ? t["Chat without a project"]
             : t["Opening chat…"]}
-      </p>
+        </p>
+      )}
       {!enabled.length && (
         <button
           type="button"

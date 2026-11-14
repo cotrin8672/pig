@@ -57,6 +57,7 @@ import { lane } from "./session-lane";
 import { visibleCompletion } from "./session-read";
 import { createSnapshotRecovery } from "./snapshot-recovery";
 import {
+  type OpeningTarget,
   readViewedNotices,
   receivePackageOp,
   showError,
@@ -754,6 +755,16 @@ function restoreOpening(openId: string) {
 }
 export async function cancelOpening(openId = useStore.getState().openId) {
   if (!openId) return;
+  if (useStore.getState().pendingOpens[openId]?.deferred) {
+    restoreOpening(openId);
+    clearOpeningView(openId);
+    useStore.setState((state) => {
+      const pendingOpens = { ...state.pendingOpens };
+      delete pendingOpens[openId];
+      return { pendingOpens };
+    });
+    return;
+  }
   const cancellation = opens.cancel(openId);
   restoreOpening(openId);
   clearOpeningView(openId);
@@ -765,7 +776,33 @@ export async function openChat(
   push = true,
   selection?: ModelSelection,
 ): Promise<Snapshot | undefined> {
-  const key = JSON.stringify([cwd, id ?? null]);
+  if (!id) {
+    const state = useStore.getState();
+    const paneOpenId = state.panes[state.activePane]?.openId;
+    const target = paneOpenId && state.pendingOpens[paneOpenId];
+    if (target && !target.id && target.cwd === cwd) {
+      if (selection) queueOpeningSelection(paneOpenId, selection);
+      showOpening(paneOpenId, push);
+      return;
+    }
+    const openId = crypto.randomUUID();
+    useStore.setState({
+      pendingOpens: {
+        ...state.pendingOpens,
+        [openId]: {
+          cwd,
+          draftId: openId,
+          deferred: true,
+          selection: selection ?? newChatSelection(),
+        },
+      },
+    });
+    const initial = useStore.getState().pendingOpens[openId].selection;
+    if (initial) queueOpeningSelection(openId, initial);
+    showOpening(openId, push);
+    return;
+  }
+  const key = JSON.stringify([cwd, id]);
   const pending =
     pendingChats.get(key) ??
     (id
@@ -775,7 +812,6 @@ export async function openChat(
         })
       : undefined);
   if (pending && !opens.isCancelled(pending.openId)) {
-    if (selection && !id) queueOpeningSelection(pending.openId, selection);
     showOpening(pending.openId, push);
     return pending.promise;
   }
@@ -818,7 +854,6 @@ export async function openChat(
     openId,
     { id, cwd },
   );
-  if (selection && !id) queueOpeningSelection(openId, selection);
   pendingChats.set(key, { openId, promise });
   const settled = () => {
     if (pendingChats.get(key)?.openId === openId) pendingChats.delete(key);
@@ -944,32 +979,78 @@ export async function regenerate(
   }
   await sending;
 }
+function newChatSelection(): ModelSelection | undefined {
+  const { models, disabledModels, defaultModel, accountCatalogs } =
+    useStore.getState().bootstrap;
+  const available = models.filter(
+    (model) =>
+      (!accountCatalogs ||
+        accountCatalogs[accountSourceKey(model.provider)]?.some(
+          (entry) => entry.id === model.id,
+        )) &&
+      isModelEnabled(model, disabledModels),
+  );
+  const model =
+    available.find(
+      (m) => m.provider === defaultModel?.provider && m.id === defaultModel.id,
+    ) ?? available[0];
+  return model
+    ? {
+        model,
+        effort: model.effectiveDefaultEffort ?? "off",
+        effortLevels: model.effortLevels ?? [],
+      }
+    : undefined;
+}
+
+/** The first submit promotes a local editor to an SDK session, exactly once. */
+export function startOpeningChat(openId: string) {
+  const state = useStore.getState();
+  const target = state.pendingOpens[openId];
+  if (!target?.deferred) return;
+  useStore.setState({
+    pendingOpens: {
+      ...state.pendingOpens,
+      [openId]: { ...target, deferred: false },
+    },
+  });
+  const promise = openSnapshot(
+    () =>
+      opens.open({ openId, cwd: target.cwd }, (message) => {
+        useStore.setState((state) => {
+          const pending = state.pendingOpens[openId];
+          return pending
+            ? {
+                pendingOpens: {
+                  ...state.pendingOpens,
+                  [openId]: { ...pending, message },
+                },
+                ...(state.openId === openId ? { openMessage: message } : {}),
+              }
+            : {};
+        });
+      }),
+    true,
+    openId,
+    target,
+  );
+  const key = `draft:${target.draftId}`;
+  pendingChats.set(key, { openId, promise });
+  const settled = () => {
+    if (pendingChats.get(key)?.openId === openId) pendingChats.delete(key);
+  };
+  void promise.then(settled, settled);
+  return promise;
+}
+
 async function openSnapshot(
   load: () => Promise<Snapshot | undefined>,
   push = true,
-  openId = crypto.randomUUID(),
-  optimistic?: { id?: string; cwd: string },
+  openId: string = crypto.randomUUID(),
+  optimistic?: OpeningTarget,
 ): Promise<Snapshot | undefined> {
   const previous = useStore.getState();
-  if (optimistic) {
-    const { disabledModels, defaultModel, accountCatalogs } =
-      previous.bootstrap;
-    const models = previous.bootstrap.models.filter(
-      (model) =>
-        !accountCatalogs ||
-        accountCatalogs[accountSourceKey(model.provider)]?.some(
-          (entry) => entry.id === model.id,
-        ),
-    );
-    const model =
-      !optimistic.id &&
-      (models.find(
-        (m) =>
-          m.provider === defaultModel?.provider &&
-          m.id === defaultModel.id &&
-          isModelEnabled(m, disabledModels),
-      ) ??
-        models.find((m) => isModelEnabled(m, disabledModels)));
+  if (optimistic && !optimistic.draftId) {
     useStore.setState({
       pendingOpens: {
         ...previous.pendingOpens,
@@ -977,18 +1058,12 @@ async function openSnapshot(
           ...optimistic,
           selection: optimistic.id
             ? previous.snapshots[optimistic.id]
-            : model
-              ? {
-                  model,
-                  effort: model.effectiveDefaultEffort ?? "off",
-                  effortLevels: model.effortLevels ?? [],
-                }
-              : undefined,
+            : undefined,
         },
       },
     });
     showOpening(openId, push);
-  } else {
+  } else if (!optimistic) {
     useStore.setState({
       opening: true,
       openId,
@@ -1001,6 +1076,7 @@ async function openSnapshot(
   }
   const revision = navigationRevision;
   let transferred: { cwd: string; text: string } | undefined;
+  let completed = false;
   try {
     await connectRuntime();
     if (opens.isCancelled(openId)) return;
@@ -1020,7 +1096,7 @@ async function openSnapshot(
         );
       const merged = drafts.read(snapshot.address).content.text;
       transferEditorView(
-        `new:${optimistic.cwd}`,
+        `new:${optimistic.draftId ?? optimistic.cwd}`,
         addressKey(snapshot.address),
         merged.slice(0, merged.length - text.length),
       );
@@ -1076,6 +1152,7 @@ async function openSnapshot(
         );
       else if (push) navigate("chat", snapshot.info.id);
     }
+    completed = true;
     openingReturns.delete(openId);
     void refreshSessions(snapshot.info.cwd).catch(showError);
     return useStore.getState().snapshots[snapshot.info.id];
@@ -1092,25 +1169,55 @@ async function openSnapshot(
     }
   } finally {
     restoreOpeningSends(openId);
-    restoreOpening(openId);
-    clearOpeningView(openId);
-    useStore.setState((state) => {
-      const pendingOpens = { ...state.pendingOpens };
-      delete pendingOpens[openId];
-      const newChatDrafts = { ...state.newChatDrafts };
-      if (transferred && newChatDrafts[transferred.cwd] === transferred.text)
-        delete newChatDrafts[transferred.cwd];
-      return {
-        pendingOpens,
-        newChatDrafts,
-        panes: Object.fromEntries(
-          Object.entries(state.panes).map(([id, pane]) => [
-            id,
-            pane.openId === openId ? { sessionId: pane.sessionId } : pane,
-          ]),
-        ),
-      };
-    });
+    if (optimistic?.draftId && !completed && !opens.isCancelled(openId)) {
+      // Keep the editor and restored text on failure, allowing an explicit retry.
+      openingReturns.delete(openId);
+      useStore.setState((state) => {
+        const pending = state.pendingOpens[openId];
+        if (!pending) return {};
+        const next = {
+          ...pending,
+          deferred: true,
+          address: undefined,
+          message: undefined,
+        };
+        const retryId = crypto.randomUUID();
+        const pendingOpens = { ...state.pendingOpens, [retryId]: next };
+        delete pendingOpens[openId];
+        return {
+          pendingOpens,
+          panes: Object.fromEntries(
+            Object.entries(state.panes).map(([id, pane]) => [
+              id,
+              pane.openId === openId ? { openId: retryId } : pane,
+            ]),
+          ),
+          ...(state.openId === openId
+            ? { openId: retryId, openingTarget: next, openMessage: undefined }
+            : {}),
+        };
+      });
+    } else {
+      restoreOpening(openId);
+      clearOpeningView(openId);
+      useStore.setState((state) => {
+        const pendingOpens = { ...state.pendingOpens };
+        delete pendingOpens[openId];
+        const newChatDrafts = { ...state.newChatDrafts };
+        if (transferred && newChatDrafts[transferred.cwd] === transferred.text)
+          delete newChatDrafts[transferred.cwd];
+        return {
+          pendingOpens,
+          newChatDrafts,
+          panes: Object.fromEntries(
+            Object.entries(state.panes).map(([id, pane]) => [
+              id,
+              pane.openId === openId ? { sessionId: pane.sessionId } : pane,
+            ]),
+          ),
+        };
+      });
+    }
   }
 }
 
