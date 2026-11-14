@@ -7,7 +7,8 @@
   overflow: auto;
   color: var(--ds-text-primary);
   background: var(--ds-bg-elevated-opaque);
-  border: 1px solid var(--ds-border-strong);
+  /* Waiting on the user: a tertiary ring marks it apart from ordinary dialogs. */
+  border: 1px solid color-mix(in srgb, var(--ds-highlight) 55%, transparent);
   border-radius: var(--radius-md);
   box-shadow: var(--ds-shadow-dialog);
   padding: 24px;
@@ -183,19 +184,11 @@
   border-radius: var(--radius-xs);
 }
 .ui-waiting [aria-pressed="true"] {
-  color: var(--ds-accent);
-  background: var(--ds-bg-active);
+  color: var(--ds-highlight);
+  background: var(--ds-bg-highlight);
 }
-.extension-widgets:empty,
 .extension-status:empty {
   display: none;
-}
-.extension-widgets pre {
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-  padding: 8px 12px;
-  font-size: var(--text-sm);
-  color: var(--ds-text-secondary);
 }
 .extension-status {
   display: flex;

@@ -39,6 +39,7 @@ const ui = [
   "transcript-ui",
   "grep-ui",
   "sidebar-update-dot-ui",
+  "session-status-ui",
   "session-resume-ui",
   "pane-updates-ui",
   "work-folding-ui",

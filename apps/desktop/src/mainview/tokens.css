@@ -19,17 +19,20 @@
   --ds-accent-hover: #d9e7ff;
   --ds-accent-soft: #adc4e6;
   --ds-bg-active: #c5d9ff1f;
+  --ds-highlight: #ddbce0;
+  --ds-on-highlight: #3f2844;
+  --ds-bg-highlight: #ddbce029;
   --ds-bg-chip: #ffffff0d;
-  --ds-bg-composer: #1a3b6be6;
-  --ds-bg-elevated: #113464f5;
-  --ds-bg-elevated-opaque: #113464;
-  --ds-bg-popover: #11346466;
+  --ds-bg-composer: #333c4de6;
+  --ds-bg-elevated: #2c3546f5;
+  --ds-bg-elevated-opaque: #2c3546;
+  --ds-bg-popover: #2c354699;
   --ds-bg-hover: #ffffff0d;
   --ds-bg-inset: #001f46;
   --ds-bg-primary: #042b5b;
-  --ds-bg-secondary: #1a3b6b;
+  --ds-bg-secondary: #333c4d;
   --ds-bg-sidebar: #00132f1f;
-  --ds-bg-tertiary: #153666;
+  --ds-bg-tertiary: #2e3748;
   --ds-bg-under: #042b5b;
   --ds-border-default: transparent;
   --ds-border-strong: #dbe7ff30;
@@ -38,7 +41,7 @@
   --ds-field-inset-bg: #ffffff0d;
   --ds-focus: #d4e4ff;
   --ds-placeholder-ink: #b4bbc9;
-  --ds-raised: #1a3b6b;
+  --ds-raised: #333c4d;
   --ds-shadow-composer: 0 6px 18px #1111163d, inset 0 1px 0 #ffffff08;
   --ds-shadow-dialog: 0 16px 48px #11111666;
   --ds-text-faint: #a0a9ba;
@@ -86,6 +89,7 @@
   --color-accent: var(--ds-accent);
   --color-accent-hover: var(--ds-accent-hover);
   --color-accent-soft: var(--ds-accent-soft);
+  --color-highlight: var(--ds-highlight);
   --color-success: var(--ds-success);
   --color-warning: var(--ds-warning);
   --color-error: var(--ds-error);
@@ -124,6 +128,7 @@
   --font-mono: var(--font-mono-default);
 
   /* Type ramp (Codex metrics; "-plus" = half-step between named sizes) */
+  --text-4xs: calc(10px * var(--font-scale));
   --text-3xs: calc(10.5px * var(--font-scale));
   --text-2xs: calc(11px * var(--font-scale)); /* alias kept: --text-xs */
   --text-xs: calc(11px * var(--font-scale));

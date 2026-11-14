@@ -77,7 +77,7 @@ test("all seeds produce complete deterministic palettes with translucent surface
       expect(alpha).toBeGreaterThan(0);
       expect(alpha).toBeLessThan(255);
     }
-    expect(tokens["--ds-bg-popover"].slice(7)).toBe("66");
+    expect(tokens["--ds-bg-popover"].slice(7)).toBe("99");
     const seedHct = Hct.fromInt(argbFromHex(seed));
     const popover = Hct.fromInt(
       argbFromHex(tokens["--ds-bg-popover"].slice(0, 7)),
@@ -87,6 +87,8 @@ test("all seeds produce complete deterministic palettes with translucent surface
       expect(popover.chroma).toBeGreaterThan(8);
       const delta = Math.abs(popover.hue - seedHct.hue) % 360;
       expect(Math.min(delta, 360 - delta)).toBeLessThan(20);
+      // Cards stay pastel instead of carrying the full primary chroma.
+      expect(popover.chroma).toBeLessThanOrEqual(18);
     } else expect(popover.chroma).toBeLessThan(4);
   }
   expect(createThemeTokens("#ff0000")["--ds-shell-start"]).not.toBe(
@@ -125,6 +127,22 @@ test("generated foreground/background pairs retain contrast, including saturated
     expect(
       contrast(t["--ds-error"], t["--ds-on-error"]),
     ).toBeGreaterThanOrEqual(4.5);
+    expect(
+      contrast(t["--ds-highlight"], t["--ds-on-highlight"]),
+    ).toBeGreaterThanOrEqual(4.5);
+    for (const background of ["--ds-bg-primary", "--ds-bg-secondary"] as const)
+      expect(
+        contrast(t["--ds-highlight"], t[background]),
+        `${seed}: highlight/${background}`,
+      ).toBeGreaterThanOrEqual(4.5);
+    // The highlight is a real second hue, not another tone of the theme colour.
+    const seedHct = Hct.fromInt(argbFromHex(seed));
+    if (seedHct.chroma >= 4) {
+      const highlight = Hct.fromInt(argbFromHex(t["--ds-highlight"]));
+      const accent = Hct.fromInt(argbFromHex(t["--ds-accent"]));
+      const delta = Math.abs(highlight.hue - accent.hue) % 360;
+      expect(Math.min(delta, 360 - delta), seed).toBeGreaterThan(30);
+    }
     for (const role of [
       "keyword",
       "function",

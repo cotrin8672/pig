@@ -207,6 +207,19 @@ function SearchDialog({ initialQuery }: { initialQuery: string }) {
         if (event.target === event.currentTarget) close();
       }}
     >
+      {/* Referenced by the palette's backdrop-filter: raises the blurred backdrop to
+          full alpha so the sharp content behind the transparent window cannot leak. */}
+      <svg
+        className="search-palette-filter"
+        aria-hidden="true"
+        focusable="false"
+      >
+        <filter id="search-palette-solid" x="0" y="0" width="1" height="1">
+          <feComponentTransfer>
+            <feFuncA type="linear" slope="8" />
+          </feComponentTransfer>
+        </filter>
+      </svg>
       <div className="search-palette-input">
         <Search size={16} aria-hidden="true" />
         <input

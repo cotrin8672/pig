@@ -9,6 +9,9 @@ import {
 } from "@material/material-color-utilities";
 import { defaultThemeColor, normalizeThemeColor } from "../shared/theme-color";
 
+/** Chroma for card-like surfaces: keeps the theme hue without saturating cards. */
+const cardChroma = 16;
+
 /** Stable spec/version; no image extraction, network requests or DOM needed. */
 export function createThemeTokens(
   seed: string,
@@ -24,6 +27,9 @@ export function createThemeTokens(
   const neutral = (tone: number) => hex(scheme.neutralPalette.tone(tone));
   const primary = (tone: number) => hex(scheme.primaryPalette.tone(tone));
   const secondary = (tone: number) => hex(scheme.secondaryPalette.tone(tone));
+  // Tertiary is the hue-shifted counterpart: reserved for small "look here"
+  // signals (unread, waiting for the user, search hits), never for surfaces.
+  const tertiary = (tone: number) => hex(scheme.tertiaryPalette.tone(tone));
   const extended = (color: string, tone = 80) =>
     hex(
       TonalPalette.fromInt(Blend.harmonize(argbFromHex(color), source)).tone(
@@ -34,6 +40,14 @@ export function createThemeTokens(
   // TonalSpot's neutral (~chroma 4) reads as grey. Text stays on neutral/ink.
   const surface = (tone: number) =>
     hct.chroma < 4 ? neutral(tone) : primary(tone);
+  // Cards float over the tinted shell, so the full primary chroma stacks up and
+  // looks loud. Keep the hue but use a pastel chroma for card-like surfaces.
+  const cardPalette = TonalPalette.fromHueAndChroma(
+    scheme.primaryPalette.hue,
+    Math.min(cardChroma, scheme.primaryPalette.chroma),
+  );
+  const card = (tone: number) =>
+    hct.chroma < 4 ? neutral(tone) : hex(cardPalette.tone(tone));
   const ink = hex(scheme.onSurface);
   const success = extended("#249c64");
   const warning = extended("#d99a20");
@@ -44,18 +58,21 @@ export function createThemeTokens(
     "--ds-accent-hover": primary(87),
     "--ds-accent-soft": secondary(80),
     "--ds-bg-active": `${primary(80)}1f`,
+    "--ds-highlight": tertiary(80),
+    "--ds-on-highlight": tertiary(20),
+    "--ds-bg-highlight": `${tertiary(80)}29`,
     "--ds-bg-chip": `${ink}0d`,
-    "--ds-bg-composer": `${surface(25)}e6`,
-    "--ds-bg-elevated": `${surface(22)}f5`,
-    "--ds-bg-elevated-opaque": surface(22),
-    // Light alpha: a dense overlay on the shell hides the backdrop.
-    "--ds-bg-popover": `${surface(22)}66`,
+    "--ds-bg-composer": `${card(25)}e6`,
+    "--ds-bg-elevated": `${card(22)}f5`,
+    "--ds-bg-elevated-opaque": card(22),
+    // 60%: readable over busy backdrops while the wallpaper still shows through.
+    "--ds-bg-popover": `${card(22)}99`,
     "--ds-bg-hover": `${ink}0d`,
     "--ds-bg-inset": surface(12),
     "--ds-bg-primary": surface(18),
-    "--ds-bg-secondary": surface(25),
+    "--ds-bg-secondary": card(25),
     "--ds-bg-sidebar": `${surface(6)}1f`,
-    "--ds-bg-tertiary": surface(23),
+    "--ds-bg-tertiary": card(23),
     "--ds-bg-under": surface(18),
     "--ds-shell-start": surface(21),
     "--ds-shell-end": surface(16),
@@ -66,7 +83,7 @@ export function createThemeTokens(
     "--ds-field-inset-bg": `${ink}0d`,
     "--ds-focus": primary(90),
     "--ds-placeholder-ink": neutral(72),
-    "--ds-raised": surface(25),
+    "--ds-raised": card(25),
     "--ds-shadow-composer": `0 6px 18px ${neutral(3)}3d, inset 0 1px 0 ${ink}08`,
     "--ds-shadow-dialog": `0 16px 48px ${neutral(3)}66`,
     "--ds-text-faint": neutral(69),

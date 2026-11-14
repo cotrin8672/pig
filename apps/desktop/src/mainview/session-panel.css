@@ -486,7 +486,7 @@
   }
 }
 .session-panel mark {
-  background: var(--ds-bg-active);
+  background: var(--ds-bg-highlight);
   color: var(--ds-text-primary);
 }
 .session-task-group-actions:not(:empty) {

@@ -4,11 +4,18 @@
   padding: 0;
   overflow: hidden;
   color: var(--ds-text-primary);
-  background: var(--ds-bg-popover);
+  background: color-mix(in srgb, var(--ds-bg-elevated-opaque) 64%, transparent);
   border: 1px solid var(--ds-border-strong);
   border-radius: var(--radius-lg);
   box-shadow: var(--ds-shadow-dialog);
-  backdrop-filter: blur(20px);
+  /* The window is transparent, so a plain blur is itself translucent and the sharp
+     text underneath shows through it. #search-palette-solid makes the blur opaque. */
+  backdrop-filter: blur(24px) saturate(140%) url("#search-palette-solid");
+}
+.search-palette-filter {
+  position: absolute;
+  width: 0;
+  height: 0;
 }
 .search-palette[open] {
   display: flex;
@@ -25,13 +32,17 @@
   border-bottom: 1px solid var(--ds-border-strong);
   color: var(--ds-text-muted);
 }
-.search-palette-input input {
+/* Beat the global input field style: the input row itself is the field, no inner box. */
+.search-palette-input input:not([type="range"]),
+.search-palette-input input:not([type="range"]):focus {
   flex: 1;
   min-width: 0;
   padding: 4px 0;
   background: transparent;
   border: 0;
+  border-radius: 0;
   outline: none;
+  box-shadow: none;
   color: var(--ds-text-primary);
   font-size: var(--text-md);
 }
@@ -84,7 +95,7 @@
 }
 .search-match {
   background: transparent;
-  color: var(--ds-accent);
+  color: var(--ds-highlight);
   font-weight: var(--font-weight-semibold);
 }
 .search-shortcut,
@@ -121,7 +132,7 @@
 }
 @keyframes search-target {
   from {
-    outline: 2px solid var(--ds-accent);
+    outline: 2px solid var(--ds-highlight);
     outline-offset: -2px;
   }
   to {
@@ -132,7 +143,7 @@
 @media (prefers-reduced-motion: reduce) {
   .search-target {
     animation: none;
-    outline: 2px solid var(--ds-accent);
+    outline: 2px solid var(--ds-highlight);
     outline-offset: -2px;
   }
 }

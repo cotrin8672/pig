@@ -300,7 +300,7 @@ p {
   height: 4px;
   flex: none;
   border-radius: var(--radius-round);
-  background: var(--ds-text-secondary);
+  background: var(--ds-highlight);
 }
 .project-actions {
   display: flex;
@@ -338,20 +338,23 @@ p {
   height: 6px;
   flex: none;
   border-radius: var(--radius-round);
+  background: currentColor;
+  box-shadow: 0 0 6px 1px color-mix(in srgb, currentColor 25%, transparent);
 }
+/* Running matches the running terminal (`.tool-term.running`). */
 .session-dot.running {
-  background: var(--ds-warning);
+  color: var(--ds-accent);
   box-shadow:
-    0 0 4px 1px color-mix(in srgb, var(--ds-warning) 40%, transparent),
-    0 0 12px 4px color-mix(in srgb, var(--ds-warning) 20%, transparent);
+    0 0 4px 1px color-mix(in srgb, var(--ds-accent) 40%, transparent),
+    0 0 12px 4px color-mix(in srgb, var(--ds-accent) 20%, transparent);
   animation: session-dot-breathe 2.4s ease-in-out infinite;
 }
 @keyframes session-dot-breathe {
   50% {
     opacity: 0.45;
     box-shadow:
-      0 0 2px 0 color-mix(in srgb, var(--ds-warning) 15%, transparent),
-      0 0 6px 1px color-mix(in srgb, var(--ds-warning) 8%, transparent);
+      0 0 2px 0 color-mix(in srgb, var(--ds-accent) 15%, transparent),
+      0 0 6px 1px color-mix(in srgb, var(--ds-accent) 8%, transparent);
   }
 }
 @media (prefers-reduced-motion: reduce) {
@@ -360,13 +363,13 @@ p {
   }
 }
 .session-dot.completed {
-  background: var(--ds-success);
+  color: var(--ds-success);
 }
 .session-dot.waiting {
-  background: var(--ds-info);
+  color: var(--ds-warning);
 }
 .session-dot.failed {
-  background: var(--ds-error);
+  color: var(--ds-error);
 }
 .thread {
   display: block;
@@ -537,6 +540,13 @@ main > *,
   border-radius: 0;
   color: var(--ds-text-muted);
 }
+.window-controls.window-pane-controls {
+  gap: 4px;
+  margin-right: 12px;
+}
+.window-pane-controls button {
+  width: 34px;
+}
 .window-controls button:hover {
   color: var(--ds-text-primary);
 }
@@ -609,6 +619,9 @@ main > *,
   max-width: var(--chat-width, 768px);
   margin: 0 auto;
 }
+.history-edge {
+  height: 1px;
+}
 .extension-notice {
   margin: 12px 0;
   white-space: pre-wrap;
@@ -620,6 +633,15 @@ main > *,
 .chat-empty {
   text-align: center;
   padding-top: 20vh;
+}
+.chat-empty-project {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+.chat-empty-project svg {
+  flex: none;
 }
 .message {
   margin: 0 0 28px;
@@ -1831,7 +1853,8 @@ input:not([type="range"]) {
 .picker svg {
   flex: none;
 }
-.picker-trigger > span {
+/* Effort chips keep their full label and glyph descenders; only other labels ellipsize. */
+.picker-trigger > span:not(.picker-effort-label) {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -1890,7 +1913,8 @@ input:not([type="range"]) {
   color: var(--ds-text-primary);
 }
 .model-browser {
-  height: min(224px, max(84px, calc(100dvh - 240px)));
+  /* Six 28px rows. */
+  height: min(168px, max(84px, calc(100dvh - 240px)));
   display: grid;
   grid-template-columns: minmax(0, 1fr);
   grid-template-rows: minmax(0, 1fr);
@@ -1901,7 +1925,6 @@ input:not([type="range"]) {
 .model-source-rail {
   display: flex;
   flex-direction: column;
-  gap: 2px;
   min-height: 0;
   overflow-y: auto;
   overscroll-behavior: contain;
@@ -1998,12 +2021,24 @@ input:not([type="range"]) {
   color: var(--ds-text-muted);
 }
 .picker-effort-label {
+  display: inline-grid;
+  justify-items: center;
+  flex: none;
   padding: 0 5px;
   border-radius: 4px;
   background: var(--ds-bg-chip);
   color: var(--ds-text-muted);
-  font-size: 10px;
-  line-height: 15px;
+  font-size: var(--text-4xs);
+  line-height: 1.5;
+  white-space: nowrap;
+}
+/* All supported labels share a cell, keeping the chip width stable. */
+.picker-effort-label > span {
+  grid-area: 1 / 1;
+  visibility: hidden;
+}
+.picker-effort-label > span[data-active] {
+  visibility: visible;
 }
 .model-reasoning {
   display: grid;
@@ -2019,11 +2054,18 @@ input:not([type="range"]) {
   font-size: 10px;
 }
 .effort-value {
-  min-width: 7ch;
+  display: grid;
+  justify-items: end;
   color: var(--ds-text-muted);
   font-size: 10px;
-  text-align: right;
   white-space: nowrap;
+}
+.effort-value > span {
+  grid-area: 1 / 1;
+  visibility: hidden;
+}
+.effort-value > span[data-active] {
+  visibility: visible;
 }
 .effort-slider {
   position: relative;
@@ -2702,6 +2744,50 @@ input:not([type="range"]) {
 }
 .user-turn .user-bubble {
   max-width: 100%;
+}
+/* Steering: one right-aligned line in the agent's work, translucent like a
+   tool row. Quieter (color, not opacity) until the agent has read it. */
+.user-steer {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 6px;
+  max-width: 100%;
+  min-width: 0;
+}
+.user-steer-state {
+  display: grid;
+  flex: none;
+  place-items: center;
+  color: var(--ds-text-faint);
+}
+.user-steer[data-steer="read"] .user-steer-state {
+  color: var(--ds-success);
+}
+.user-steer .user-bubble {
+  min-width: 0;
+  max-width: 100%;
+  padding: 4px 12px;
+  border-radius: var(--radius-lg);
+  background: var(--ds-tool-row-bg);
+  color: var(--ds-text-muted);
+  font: inherit;
+  font-size: var(--text-sm);
+  text-align: left;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.user-steer[data-steer="read"] .user-bubble {
+  color: var(--ds-text-primary);
+}
+.user-steer .user-bubble[aria-expanded="true"] {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.user-steer .user-bubble:hover {
+  background: var(--ds-tile-hover);
 }
 .user-turn .sent-attachments {
   justify-content: flex-end;
