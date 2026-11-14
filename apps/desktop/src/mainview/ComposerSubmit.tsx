@@ -1,15 +1,15 @@
-import { ArrowUp, LoaderCircle, Square } from "lucide-react";
+import { ArrowUp, LoaderCircle, Play, Square } from "lucide-react";
 import { useT } from "./i18n";
 
 /**
- * One button, three states: Send when idle, a spinner only while the app truly
- * waits (a send not yet started, or Stop not yet confirmed), Stop while the
- * response runs. A next message typed during a response keeps its own Send.
+ * One action slot: Send, Resume after interruption, pending spinner, or Stop.
+ * A typed next message replaces Stop with Send; pending spinners are disabled.
  */
 export function ComposerSubmit({
   busy,
   waiting = false,
   stopping = false,
+  resumable = false,
   hasContent,
   disabled,
   onStop,
@@ -17,51 +17,52 @@ export function ComposerSubmit({
   busy: boolean;
   waiting?: boolean;
   stopping?: boolean;
+  resumable?: boolean;
   hasContent: boolean;
   disabled: boolean;
   onStop: () => void;
 }) {
   const t = useT();
+  const resume = resumable && !hasContent;
   const send = (
     <button
       type="submit"
       className="send-button"
-      title={t.Send}
-      aria-label={t.Send}
+      title={resume ? t.Resume : t.Send}
+      aria-label={resume ? t.Resume : t.Send}
       disabled={disabled}
     >
-      <ArrowUp size={19} aria-hidden="true" />
+      {resume ? (
+        <Play size={17} fill="currentColor" aria-hidden="true" />
+      ) : (
+        <ArrowUp size={19} aria-hidden="true" />
+      )}
     </button>
   );
-  if (stopping || (waiting && !busy))
+  if (stopping || waiting)
     return (
       <button
         type="button"
         className="send-button waiting"
-        title={stopping ? "Stopping…" : "Cancel send"}
-        aria-label={stopping ? "Stopping…" : "Cancel send"}
-        aria-keyshortcuts="Escape"
+        title={stopping ? "Stopping…" : t["Sending…"]}
+        aria-label={stopping ? "Stopping…" : t["Sending…"]}
         aria-busy="true"
-        disabled={stopping}
-        onClick={onStop}
+        disabled
       >
         <LoaderCircle size={17} className="spinner" aria-hidden="true" />
       </button>
     );
-  if (!busy) return send;
+  if (!busy || hasContent) return send;
   return (
-    <>
-      <button
-        type="button"
-        className="send-button"
-        title={t.Stop}
-        aria-label={t.Stop}
-        aria-keyshortcuts="Escape"
-        onClick={onStop}
-      >
-        <Square size={15} fill="currentColor" aria-hidden="true" />
-      </button>
-      {hasContent && send}
-    </>
+    <button
+      type="button"
+      className="send-button"
+      title={t.Stop}
+      aria-label={t.Stop}
+      aria-keyshortcuts="Escape"
+      onClick={onStop}
+    >
+      <Square size={15} fill="currentColor" aria-hidden="true" />
+    </button>
   );
 }

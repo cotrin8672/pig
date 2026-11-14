@@ -38,6 +38,7 @@ const integration = [
 const ui = [
   "transcript-ui",
   "sidebar-update-dot-ui",
+  "session-resume-ui",
   "pane-updates-ui",
   "work-folding-ui",
   "history-paging-ui",

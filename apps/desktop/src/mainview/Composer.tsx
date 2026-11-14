@@ -39,13 +39,15 @@ import { ComposerSubmit } from "./ComposerSubmit";
 import { ContextIndicator } from "./ContextIndicator";
 import { addressKey } from "./chat-snapshot";
 import { createDraftMirror } from "./draft-mirror";
-import { drafts, expandedDraft } from "./draft-store";
-import { ExtensionWidgets } from "./extension-status";
+import { drafts, emptyContent, expandedDraft } from "./draft-store";
+import { ImagePreview } from "./ImageGallery";
 import { useT } from "./i18n";
 import { MessageQueue } from "./MessageQueue";
 import { ModelPicker } from "./ModelPicker";
 import { rpc, sends } from "./rpc";
 import { subscribeOwnership } from "./runtime-events";
+import { SessionIndicators } from "./SessionIndicators";
+import { interruptedSession } from "./session-status";
 import {
   applySlashCompletion,
   extensionCommand,
@@ -54,6 +56,7 @@ import {
   slashContext,
 } from "./slash-completion";
 import { showError, useStore } from "./store";
+import { transcriptRequestIds } from "./transcript-requests";
 import "./composer.css";
 
 const categoryIcons = { extension: Puzzle, skill: BookOpen, prompt: FileText };
@@ -113,6 +116,11 @@ export function Composer({ snapshot }: { snapshot: Snapshot }) {
   const loading = loads.some((load) => load.state === "pending");
   const previews = loads.filter((load) => load.preview);
   const { text, images, pastes, files = [], annotations = [] } = draft.content;
+  const imageSources = useMemo(
+    () =>
+      images.map(({ image }) => `data:${image.mimeType};base64,${image.data}`),
+    [images],
+  );
   const [stopping, setStopping] = useState<string>();
   function stop() {
     if (stopping === key) return;
@@ -128,18 +136,18 @@ export function Composer({ snapshot }: { snapshot: Snapshot }) {
   const expanded = useMemo(() => expandedDraft(draft.content), [draft.content]);
   useSyncExternalStore(sends.subscribe, sends.getTick);
   // Sent but not started yet: the host has the message, the response has not begun.
-  const echoed = useMemo(
-    () => new Set(transcript.records.map((record) => record.requestId)),
-    [transcript.records],
-  );
   const waiting =
     sendState?.state === "sending" ||
     sendState?.state === "checking" ||
     sends
       .optimistic(address)
       .some(
-        (send) => send.state !== "unknown" && !echoed.has(send.key.requestId),
+        (send) =>
+          send.state !== "unknown" &&
+          !transcriptRequestIds(transcript.records).has(send.key.requestId),
       );
+  const hasContent = !!expanded || images.length > 0 || loading;
+  const resumable = !transcript.running && !!interruptedSession(snapshot);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const listId = useId();
   const [commandState, setCommandState] = useState<{
@@ -295,12 +303,21 @@ export function Composer({ snapshot }: { snapshot: Snapshot }) {
   }, [slashAddress, draft, mirror]);
   function send(delivery: PromptDelivery = "steer") {
     const loading = attachmentReads.pending(address) > 0;
+    const resume = resumable && !expanded && !images.length && !loading;
     if (
-      (!expanded && !images.length && !loading) ||
+      (!hasContent && !resume) ||
       (!canSend && !extensionSend) ||
-      draft.conflict
+      draft.conflict ||
+      stopping === key
     )
       return;
+    if (resume) {
+      // Use the normal durable send path: receipt recovery, Stop and ordering
+      // remain identical to a typed message, without replaying the original request.
+      const pending = sends.read(address)?.state;
+      if (waiting || pending === "sending" || pending === "checking") return;
+      drafts.edit(address, () => ({ ...emptyContent(), text: t.resumePrompt }));
+    }
     // In-flight attachments move with this message; it is sent once they load.
     void sends
       .send(address, undefined, attachmentReads.claim(address), delivery)
@@ -349,7 +366,6 @@ export function Composer({ snapshot }: { snapshot: Snapshot }) {
           textareaRef.current?.focus();
         }}
       />
-      <ExtensionWidgets address={address} />
       <MessageQueue
         items={sends.queued(address).flatMap((item) =>
           item.content
@@ -448,14 +464,16 @@ export function Composer({ snapshot }: { snapshot: Snapshot }) {
         />
         {images.length + files.length + previews.length > 0 && (
           <div className="composer-attachments">
-            {images.map(({ id, image }, index) => (
+            {images.map(({ id }, index) => (
               <div className="composer-attachment" key={id}>
-                <img
-                  src={`data:${image.mimeType};base64,${image.data}`}
-                  alt=""
+                <ImagePreview
+                  sources={imageSources}
+                  index={index}
+                  alt={t.imageN(index + 1, images.length)}
                 />
                 <button
                   type="button"
+                  className="composer-attachment-remove"
                   aria-label={`${t["Remove attachment"]}: ${t.imageN(index + 1, images.length)}`}
                   title={t["Remove attachment"]}
                   onClick={() =>
@@ -477,6 +495,7 @@ export function Composer({ snapshot }: { snapshot: Snapshot }) {
                   <span>{name}</span>
                   <button
                     type="button"
+                    className="composer-attachment-remove"
                     aria-label={`${t["Remove attachment"]}: ${name}`}
                     title={t["Remove attachment"]}
                     onClick={() =>
@@ -502,6 +521,7 @@ export function Composer({ snapshot }: { snapshot: Snapshot }) {
                 <span>{load.name}</span>
                 <button
                   type="button"
+                  className="composer-attachment-remove"
                   aria-label={`${t["Remove attachment"]}: ${load.name}`}
                   title={t["Remove attachment"]}
                   onClick={() => attachmentReads.cancel(load.id)}
@@ -746,6 +766,7 @@ export function Composer({ snapshot }: { snapshot: Snapshot }) {
           }}
         />
         <div className="composer-toolbar">
+          <SessionIndicators address={address} />
           <div className="composer-pickers">
             <ContextIndicator usage={snapshot.contextUsage} />
             <ModelPicker snapshot={snapshot} />
@@ -755,10 +776,11 @@ export function Composer({ snapshot }: { snapshot: Snapshot }) {
               busy={transcript.running}
               waiting={waiting}
               stopping={stopping === key}
-              hasContent={!!expanded || images.length > 0 || loading}
+              resumable={resumable}
+              hasContent={hasContent}
               onStop={stop}
               disabled={
-                (!expanded && !images.length && !loading) ||
+                (!hasContent && !resumable) ||
                 (!canSend && !extensionSend) ||
                 !!draft.conflict
               }

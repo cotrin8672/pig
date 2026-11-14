@@ -49,6 +49,17 @@ test("dots prioritize waiting over running over unread outcome; idle stays empty
   );
 });
 
+test("failed completion stays red after read, including chats without snapshots", () => {
+  const flags: SessionFlags = {
+    completion: { id: "failed", outcome: "error" },
+    readCompletionId: "failed",
+  };
+  expect(hasUnreadCompletion(flags)).toBe(false);
+  expect(sessionStatus(false, false, flags)).toBe("failed");
+  expect(sessionStatus(true, false, flags)).toBe("running");
+  expect(sessionStatus(false, true, flags)).toBe("waiting");
+});
+
 test("only the rendered, focused, visible, settled chat acknowledges its exact completion", () => {
   expect(visibleCompletion(state(), true, true)).toEqual({
     id: "chat",
