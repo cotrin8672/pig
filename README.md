@@ -11,7 +11,7 @@ WebView2 Runtime, then run in PowerShell (after the corresponding pig build is p
 ```powershell
 scoop bucket add pig https://github.com/cotrin8672/pig
 scoop install pig          # Latest stable release
-# Or: scoop install pig-nightly   # Latest successful main build
+# Or: scoop install pig-nightly   # Latest successful dev build
 ```
 
 Both packages install the same unsigned portable app, with the `pig` command
@@ -41,16 +41,20 @@ cancelled. A failed update is reported on the next launch.
 
 ### Publish
 
-PRs and `main` pushes run fast CI, not native release builds. The `Release`
-workflow publishes/replaces the `nightly` prerelease daily at 19:00 UTC (04:00
-JST), skipping it when the published commit is unchanged. Run `Release` manually
-on `main` for an immediate nightly. Checks and packaging use the same event
-commit, never a moving branch tip. The release body identifies nightlies as
+Development lands on `dev`; `main` holds released code. PRs and pushes to
+`main` or `dev` run fast CI, not native release builds. The `Release` workflow
+publishes/replaces the `nightly` prerelease from `dev` daily at 19:00 UTC
+(04:00 JST), skipping it when the published commit is unchanged. Run `Release`
+manually on `dev` for an immediate nightly. Checks and packaging use one
+resolved commit, never a moving branch tip. Scheduled workflows always run the
+workflow files on `main`, so workflow changes take effect on the schedule only
+after they reach `main`. The release body identifies nightlies as
 `0.1.0-nightly.<UTC date>.<short SHA>`; the internal app version stays at the
 configured base version, and the Electrobun channel stays `stable`.
 
 For stable releases, keep the versions in `apps/desktop/package.json` and
-`apps/desktop/electrobun.config.ts` equal, commit and push `main`, then:
+`apps/desktop/electrobun.config.ts` equal, merge `dev` into `main`, push `main`,
+then tag a commit on `main` (the workflow rejects tags outside `main`):
 
 ```sh
 git tag v0.1.0 && git push --tags
@@ -59,7 +63,8 @@ git tag v0.1.0 && git push --tags
 The workflow uploads `pig-windows-x64.zip` plus its `.sha256`, then commits the
 stable Scoop version/hash to `main` using `GITHUB_TOKEN` (`contents: write`).
 No Excavator service is needed; checkver/autoupdate metadata is also provided.
-Wait for that bucket commit before installing the first stable build. See
+Wait for that bucket commit before installing the first stable build, then
+merge `main` back into `dev` so the branches do not diverge. See
 [bucket maintenance notes](bucket/README.md) for the initial checksum and layout.
 
 ## Run
@@ -144,7 +149,7 @@ in use. Do not edit the generated devkit to change this setting.
 
 | Command | Scope | Automation |
 | --- | --- | --- |
-| `pnpm test` | Fast source tests, UI style rules, SDK packaging and build metadata tests | Every PR/main push; release validation |
+| `pnpm test` | Fast source tests, UI style rules, SDK packaging and build metadata tests | Every PR and `main`/`dev` push; release validation |
 | `pnpm test:integration` | Real SDK startup, native processes, large storage/recovery fixtures | Daily and manual `Regression` workflow |
 | `pnpm test:ui` | Edge/Chromium drawing and input regressions; missing browser fails | Daily and manual `Regression` workflow |
 | `pnpm test:all` | All three maintained suites | Local full verification |
@@ -152,7 +157,7 @@ in use. Do not edit the generated devkit to change this setting.
 CI also runs Lint, TypeScript and a Vite webview build. Superseded CI runs are
 cancelled. Native Electrobun packaging runs only for stable tags and scheduled
 or manual nightlies, after the same fast checks pass. A release deliberately
-rechecks its exact revision rather than assuming a previous main build covered
+rechecks its exact revision rather than assuming a previous CI build covered
 it. It does **not** rerun the slow regression suites or wait for their daily run.
 Before releases or changes to SDK/storage/UI behavior, run the relevant suites
 locally or dispatch `Regression` against the intended revision. UI changes still
@@ -174,8 +179,8 @@ listed, and a test checks that no source test is lost or assigned twice. The
 previously excluded `scripts/lazy-routes.test.ts` remains excluded: it describes
 an obsolete route-loading policy, not the current application contract.
 Regression suites run serially within each of two independent jobs to avoid
-SDK/Edge contention. The workflow runs daily at 18:00 UTC (03:00 JST), or manually
-on a selected branch/tag. CI, Regression and Release share the Hutch cache key;
+SDK/Edge contention. The workflow runs daily at 18:00 UTC (03:00 JST) on `dev`,
+an hour before its nightly, or manually on a selected branch/tag. CI, Regression and Release share the Hutch cache key;
 the generated project devkit is never cached. Release ZIP/checksum artifacts are
 also retained for seven days if publishing or the Scoop update fails.
 
