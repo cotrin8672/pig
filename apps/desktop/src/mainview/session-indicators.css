@@ -1,0 +1,112 @@
+/* Session-wide extension state in the composer toolbar (setStatus / setWidget). */
+.session-indicators {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex: 1;
+  min-width: 0;
+  margin-left: -4px;
+}
+.session-indicator {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex: none;
+  height: 24px;
+  padding: 0 8px;
+  border-radius: var(--radius-full);
+  color: var(--ds-text-secondary);
+  font-size: var(--text-xs);
+  font-variant-numeric: tabular-nums;
+}
+.session-indicator:hover {
+  background: var(--ds-bg-hover);
+  color: var(--ds-text-primary);
+}
+.session-indicator[aria-expanded="true"] {
+  background: var(--ds-bg-active);
+  color: var(--ds-accent);
+}
+/* Top layer: placed by JS above the composer with the same left/right edges. */
+.session-indicator-panel {
+  --scrollbar-inset: var(--radius-md);
+  position: fixed;
+  inset: auto;
+  margin: 0;
+  overflow: auto;
+  padding: 10px;
+  border: 1px solid var(--ds-border-strong);
+  border-radius: var(--radius-md);
+  background: var(--ds-bg-popover);
+  box-shadow: var(--ds-shadow-dialog);
+  backdrop-filter: blur(20px);
+  color: var(--ds-text-primary);
+  font-size: var(--text-sm);
+}
+.session-indicator-panel:focus-visible {
+  outline: 1px solid var(--ds-focus);
+  outline-offset: -1px;
+}
+.session-indicator-panel h3 {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0 0 6px;
+  padding: 0 2px;
+  color: var(--ds-text-muted);
+  font-size: var(--text-xs);
+  font-weight: var(--font-weight-medium);
+}
+.session-indicator-panel h3 span {
+  margin-left: auto;
+  color: var(--ds-text-faint);
+  font-variant-numeric: tabular-nums;
+}
+.session-indicator-statuses {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 2px 12px;
+  margin: 0;
+  padding: 0 2px;
+}
+.session-indicator-statuses > div {
+  display: contents;
+}
+.session-indicator-statuses dt {
+  color: var(--ds-text-faint);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  line-height: var(--leading-row);
+}
+.session-indicator-statuses dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+  line-height: var(--leading-row);
+}
+.session-indicator-widget {
+  margin: 0;
+  padding: 6px 8px;
+  border-radius: var(--radius-xs);
+  background: var(--ds-tool-row-bg);
+  box-shadow: var(--ds-elevation-stroke);
+}
+.session-indicator-widget + .session-indicator-widget {
+  margin-top: 6px;
+}
+.session-indicator-widget figcaption {
+  margin-bottom: 2px;
+  color: var(--ds-text-faint);
+  font-family: var(--font-mono);
+  font-size: var(--text-4xs);
+}
+.session-indicator-widget pre {
+  margin: 0;
+  padding: 0;
+  border-radius: 0;
+  background: none;
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  line-height: var(--leading-body);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
