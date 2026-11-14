@@ -1,3 +1,4 @@
+import { Database } from "bun:sqlite";
 import { afterEach, beforeEach, expect, test } from "bun:test";
 import {
   appendFile,
@@ -9,7 +10,9 @@ import {
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { MAX_TERMS, searchTerms } from "../shared/fuzzy";
 import { defaultSessionDir, SearchIndex, snippet } from "./search-index";
+import { FULL_SCAN_SEARCH_SQL } from "./search-query";
 
 let dir: string;
 let index: SearchIndex;
@@ -125,6 +128,109 @@ test("the index survives reopening", async () => {
   index.close();
   index = new SearchIndex(join(dir, "search.sqlite"));
   expect(index.search("persistent")).toHaveLength(1);
+});
+
+test("a pre-optimization version-1 index opens without migration or reindexing", () => {
+  const file = join(dir, "legacy.sqlite");
+  const legacy = new Database(file, { create: true });
+  legacy.exec(`CREATE TABLE files(path TEXT PRIMARY KEY, session TEXT NOT NULL, cwd TEXT NOT NULL,
+    size INTEGER NOT NULL, mtime REAL NOT NULL, offset INTEGER NOT NULL, tail BLOB NOT NULL);
+    CREATE VIRTUAL TABLE messages USING fts5(text, session UNINDEXED, entry UNINDEXED,
+      role UNINDEXED, ts UNINDEXED, tokenize='trigram'); PRAGMA user_version=1;`);
+  legacy
+    .query("INSERT INTO files VALUES(?,?,?,0,0,0,x'')")
+    .run("legacy.jsonl", "legacy", cwd);
+  legacy
+    .query("INSERT INTO messages VALUES(?,?,?,?,?)")
+    .run("legacy needle 100%_", "legacy", "saved-entry", "assistant", 42);
+  legacy.close();
+  const reopened = new SearchIndex(file);
+  try {
+    expect(reopened.search("needle 100%_")).toEqual([
+      {
+        sessionId: "legacy",
+        cwd,
+        entryId: "saved-entry",
+        role: "assistant",
+        timestamp: 42,
+        snippet: "legacy needle 100%_",
+      },
+    ]);
+  } finally {
+    reopened.close();
+  }
+});
+
+test("indexed search keeps complete hit metadata, snippets, limits and jump destinations identical to the old SQL", async () => {
+  const file = join(dir, "sessions", "a.jsonl");
+  await writeFile(
+    file,
+    header("a") +
+      Array.from({ length: 300 }, (_, i) => {
+        const text =
+          (i % 3
+            ? `Alpha 設定 path C:\\temp\\file 100%_ text ${i}`
+            : `alphabet without literal symbols ${i}`) +
+          (i === 7 ? " rare-literal" : "");
+        return message(
+          `entry-${i}`,
+          i % 2 ? "assistant" : "user",
+          i % 2 ? [{ type: "text", text }] : text,
+          Math.floor(i / 4),
+        );
+      }).join(""),
+  );
+  await index.refresh(roots);
+  const db = new Database(join(dir, "search.sqlite"));
+  try {
+    for (const query of [
+      "ALPHA",
+      "設定",
+      "100%_ 設定",
+      "C:\\temp\\file",
+      "alphabet symbols",
+      "rare-literal",
+      "100%_ rare-literal",
+      "text 7",
+      "missing",
+    ])
+      for (const limit of [0, 1, 7, 50]) {
+        const terms = searchTerms(query);
+        const patterns = Array.from({ length: MAX_TERMS }, (_, i) =>
+          terms[i] === undefined
+            ? "%"
+            : `%${terms[i].replace(/[\\%_]/g, "\\$&")}%`,
+        );
+        const expected = (
+          db.query(FULL_SCAN_SEARCH_SQL).all(...patterns, limit) as {
+            text: string;
+            session: string;
+            entry: string;
+            role: "user" | "assistant";
+            ts: number;
+          }[]
+        ).map((row) => ({
+          sessionId: row.session,
+          cwd,
+          entryId: row.entry,
+          role: row.role,
+          timestamp: row.ts,
+          snippet: snippet(row.text, terms),
+        }));
+        expect(index.search(query, limit)).toEqual(expected);
+      }
+  } finally {
+    db.close();
+  }
+  const before = index.search("100%_ 設定");
+  index.close();
+  index = new SearchIndex(join(dir, "search.sqlite"));
+  expect(index.search("100%_ 設定")).toEqual(before);
+  expect(index.search("rare-literal").map((hit) => hit.entryId)).toEqual([
+    "entry-7",
+  ]);
+  index.forget("a");
+  expect(index.search("rare-literal")).toEqual([]);
 });
 
 test("snippets centre on the first match", () => {
