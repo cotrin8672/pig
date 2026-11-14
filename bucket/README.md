@@ -14,10 +14,10 @@ Neither relocates the AppData profile or uses Scoop `persist`.
 - The initial `0.1.0` hash is from a locally validated bootstrap ZIP, **not a
   published release**. The first stable release job replaces it with the CI
   artifact's hash. Wait for the workflow's bucket commit before installing.
-- Nightly: fixed `nightly` prerelease tag, moved to the built `main` commit, with
+- Nightly: fixed `nightly` prerelease tag, moved to the built `dev` commit, with
   assets replaced by scheduled daily builds (19:00 UTC) or manual `Release`
-  runs on `main`. Scheduled runs skip unchanged commits; a main push runs fast
-  CI only.
+  runs on `dev`. Scheduled runs skip unchanged commits; a push runs fast CI
+  only. Stable tags must point to a commit on `main`.
   `version: "nightly"` intentionally omits a hash: Scoop updates re-download the
   rolling ZIP without integrity checking. The release body includes the base
   version, UTC date and short commit SHA.

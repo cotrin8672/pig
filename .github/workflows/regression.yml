@@ -2,7 +2,7 @@ name: Regression
 
 on:
   schedule:
-    - cron: '0 18 * * *' # 03:00 JST
+    - cron: '0 18 * * *' # 03:00 JST, on dev before its nightly
   workflow_dispatch:
 
 permissions:
@@ -23,6 +23,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
+          # Schedules start on the default branch; nightly code lives on dev.
+          ref: ${{ github.event_name == 'schedule' && 'dev' || github.ref }}
           persist-credentials: false
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
