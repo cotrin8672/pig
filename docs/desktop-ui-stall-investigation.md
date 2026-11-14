@@ -246,3 +246,348 @@ mise exec -- bun apps/desktop/scripts/profile-model-retention.ts
 - Windowsの一時Edge profile削除でBunのrmがEBUSYを返す問題は、Browser.close後の終了待ちとNodeのWindows対応recursive rmで処理する。永続的な削除失敗は握りつぶさずテスト失敗にする。
 - 最新ログ：`%TEMP%/pig-render-workers-tests.log`、`%TEMP%/pig-render-workers-ui.log`、`%TEMP%/pig-render-workers-lint.log`、`%TEMP%/pig-render-workers-build.log`。
 - 未確認：実症状時のWebView thread/heap trace、実ユーザー拡張の起動/継続保持、インストール済みアプリのviews://上のWorkerと長時間利用。HTML/React/DOM commit、非常に大きな履歴のenvelope/live本文転送は残る負荷。上記は合成Edge/SDK検査であり、実症状の全解消とは同一視しない。ユーザーの稼働中アプリは再起動・更新していない。
+
+## 11. 追加分離：アクティブ会話更新をAppの画面枠へ伝えない
+
+UXを変えづらい⑫の残件として、`selectAppView` からSnapshot全体の参照を外した。
+画面枠はタイトル・cwd・接続状態・設定等の必要な値だけを選び、会話用の
+`ConversationWorkspace` が `selectConversationView` でSnapshotを購読する。
+本文の切り捨て、更新頻度の変更、バックグラウンド更新の停止、新たな履歴キャッシュはない。
+フォーカス移動・分割・リサイズでChatの型やキーを切り替える設計にもしていない。
+
+- 実Edgeの本番App fixtureで、アクティブSnapshotを6回更新。Appだけが使うラベルの読み取りを
+  計測し、変更前14回 → 変更後0回。本文は毎回更新され、他ペインの本文再読取も0回。
+  ラベルの読み取り回数は入力latencyの測定ではない。
+- `pane-updates-ui.test.ts` を拡張し、アクティブペイン切り替え後も枠側の再描画0回、
+  タイトル/cwd変更の反映、IME・選択・下書き・フォーカス・スクロールの保持、
+  分割/リサイズでのDOM保持、起動プレビューとepoch切り替えを検査した。
+- selector単体では100回のアクティブ更新、metadata変更、拡張タイトルの追加/削除/空文字、
+  一覧タイトルから起動プレビューへの移行を検査する。⑤の追加キャッシュは今回導入していない。
+
+検証結果：
+
+- `pnpm --filter @pig/desktop exec tsc --noEmit`、全体Lint成功。
+  標準の `pnpm typecheck` は `electrobun sync` のbuild lock待ちで180秒後に停止。
+  起動済み開発アプリの停止やlock削除はしていない。
+- 対象のselector/ペイン検査16件成功。単体全865件も、同じ対象を並列化せず実行すると成功。
+  標準 `pnpm test` は2回とも863成功/2失敗で、失敗箇所が異なる5秒timeoutだった。
+  標準の並列実行が安定したとは扱わない。
+- 必須 `pnpm test:ui` は2回とも10成功/2失敗。今回のペイン検査は成功したが、
+  タイトルバー単独fixtureのpage geometry検査と、会話fixtureのtimeoutが残った。
+  検査項目・許容誤差・timeoutは変更していない。全体UI成功や原因解消とは報告しない。
+- ログ：`%TEMP%/pig-shell-isolation-unit.log`、`pig-shell-isolation-unit-retry.log`、
+  `pig-shell-isolation-unit-serial.log`、`pig-shell-isolation-ui.log`、`pig-shell-isolation-ui-retry.log`。
+- 実症状の会話での入力遅延改善、症状中のCPU/GC/heap推移、インストール版との一致は未確認。
+  稼働中のユーザーセッションの再起動・更新はしていない。
+
+## 12. 派生計算の計測・request ID集合の共有と一覧キャッシュ
+
+### 12.1 ⑤：計測後、送信照合の重複走査だけを削減
+
+`profile-transcript-derivations.ts` は保存済み100/1000/10000件と更新されるlive末尾を作り、
+モデル境界・request ID集合・作業折り畳み・応答フッターを各100回計測する。
+ユーザーのファイル・拡張・認証情報は使わない。
+
+今回のBun参考値では、10000件でモデル境界の平均約0.23ms、作業折り畳み約0.19ms、
+フッター約0.38ms。これらへ追加の増分キャッシュは入れなかった。計測はWebViewや
+入力latencyの測定ではなく、実症状の支配箇所を特定したという意味でもない。
+
+一方、Chat・Composer・OptimisticMessages・SendControllerの4か所にrequest ID集合の生成があった。
+未反映の送信がなければ集合を作らず、必要な場合だけ `transcript-requests.ts` のWeakMapで
+同じ不変records配列の集合を共有する。配列が変われば必ず再計算するため、末尾追記の仮定はない。
+値はID集合だけで、過去のrecords配列や本文への強い参照を保持しない。
+
+- 10000件・4消費者の合成計測：集合生成の平均約1.30ms → 約0.30ms。
+- 実EdgeのApp fixture：送信がない6回の更新で、Chat・Composer・楽観表示によるrequest ID読取0回。
+- 単体：共有時の走査1回、request ID変更/削除、履歴追加、並べ替え、分岐、保存ID移行、
+  照合不要時の読取0回、受信確認後の楽観本文解放を検査する。
+- モデル境界・フッター・折り畳みの全履歴の確認走査自体は残っている。
+
+### 12.2 ⑨：一覧専用のファイル単位キャッシュ
+
+`session-list-cache.ts` を `listSessionFiles` に接続した。SDK 1.5.2の一覧は、pigが使わない
+`allMessagesText` まで作るため、タイトル・cwd・ID・最終会話時刻だけを投影する読み取りに分離した。
+最初のユーザー本文、最新の名前と明示クリア、user/assistantだけのactivity、header/mtimeのfallback、
+同時刻の順序を維持する。SDKの一覧との比較を `session-files.test.ts` に追加した。
+SessionManagerをopenせず、ファイル修復や書き換えもしない。
+
+- 再取得時もディレクトリ探索とstatを実行する。同時要求だけディレクトリ単位で集約し、
+  明示更新・focus復帰の外部CLI変更探索は止めない。
+- size/mtimeだけでなくdev/ino/ctime/birthtimeも確認。読み取り前後の属性が変われば結果をキャッシュせず、
+  差し替え・縮小・削除・保存先変更を扱う。削除/差し替え中の古い読み取りから旧結果を復活させない。
+- 空・不正・読取失敗は負のキャッシュにしない。途中JSONLやUTF-8境界で不完全だった読取は次回再試行する。
+  有効行から得られるmetadataはSDK同様表示し、読取中の追記で整合を確認できなければ同じ所有者の直近の正常値を保つ。
+- 保持するのはファイル属性と一覧情報だけ。4096件・推定8MiBの予算でLRU削除し、巨大なタイトルは
+  省略せずキャッシュ対象外にする。全会話本文や検索用の連結本文は保持しない。
+- default sessionDirの副作用なしの計算は `session-directory.ts` に共通化し、従来のSDK一致検査を維持した。
+
+`profile-session-list-cache.ts` の一時ファイル12件、合計約7.5MBの参考値：
+
+| 操作 | 平均wall time | キャッシュの本文読取 |
+| --- | ---: | ---: |
+| SDK一覧、5回 | 約54.9ms | SDK内部は未計測 |
+| 新キャッシュ初回、1回 | 約49.0ms | 12ファイル |
+| 変更なし、5回 | 約0.42ms | 0ファイル |
+| 1ファイルの名前変更後、1回 | 約13.3ms | 1ファイル |
+
+一覧情報はSDKと一致。速度は一時ファイルのBun計測で、実ユーザーの一覧表示時間ではない。
+初回・変更されたファイルのJSONL読み取り/JSON.parseは引き続き残る。
+
+### 12.3 検証時の作業ツリー
+
+- 初回（起動UIの並行変更前）は直接の `tsc --noEmit` と
+  `tsgo --noEmit -p apps/desktop/tsconfig.json`、全体Lint成功。
+  `electrobun sync` を含む標準wrapperの再検査はしていない。
+- 同じ時点の標準 `pnpm test`：880成功/0失敗。`pnpm test:ui`：12成功/0失敗。
+- 一覧のSDK比較、セッション削除、SessionHost性能、pi-serviceの選択した統合検査：6成功/0失敗。
+  統合suite全体の実行ではない。
+- ディレクトリ削除時のmetadata解放の検査を追加した後、起動UI関連の並行変更も入った。
+  全体単体の再検査は879成功/2失敗、さらに再実行で880成功/1失敗（881件）。
+  最新の失敗は `chat-opening-navigation.test.ts` の起動フロー検査。
+  型検査は `rpc.ts` のopenId型、Lintは起動関連ファイルのformat/import/finallyで失敗した。
+  並行編集中のファイルは上書き修正せず、全体成功とは扱わない。
+  キャッシュ/送信照合の対象14件はこの後の個別実行でも成功。最終の関連検査45件と、
+  変更対象13ファイルのBiome検査も成功。UI全体の12成功は並行変更前の結果である。
+- 検査項目・許容誤差を緩めて成功させたものではない。ただし過去のUI timeoutの恒久解消は断定しない。
+- ログ：`%TEMP%/pig-derived-calculations-profile.log`、`pig-session-list-cache-profile.log`、
+  `pig-list-and-derived-unit.log`、`pig-list-and-derived-unit-retry.log`、
+  `pig-list-and-derived-ui.log`、`pig-list-and-derived-integration.log`、`pig-list-and-derived-targeted.log`。
+- 実症状の会話での改善確認、長時間CPU/GC/heapの計測、インストール版との一致は依然未確認。
+  ユーザーの稼働中セッションの再起動・更新はしていない。
+
+## 13. 手動の履歴ボタンを廃止し、先頭付近で自動先読み
+
+ユーザーの明示依頼により、履歴取得の操作を変更した。`use-history-paging.ts` の
+IntersectionObserverが、先頭の約1画面手前（最低320px）で既存の履歴RPCを呼ぶ。
+ページのサイズ・応答単位の境界・本文は従来のまま。取得済み履歴の破棄・仮想化はしない。
+初期表示の末尾から全履歴を取得するのではなく、読む位置に応じて1ページずつ取得する。
+会話領域はキーボードでもスクロール可能とした。
+
+- 同じ表示のowner/revision/cursorへの要求を集約し、検索ジャンプとも共有する。
+  先頭到達で停止し、進まないcursorや不一致のrevisionはエラーにして自動ループを防ぐ。
+  古いbranch/epochやunmount後の応答は適用しない。
+- エラーは既存通知に出す。会話内にローディング行・エラー行を挿入して高さを変えない。
+  一度失敗した位置へ再接近、またはfocus/online復帰で再試行できる。
+  先頭にいる場合も再度の上wheel/キー/タッチ操作で再試行できる。失敗直後の入力連打だけ500ms抑制し、通常の取得は遅延させない。
+- `thread-anchor.ts` が、要求開始時ではなく反映直前の読む位置を記録する。
+  全体のscrollHeight差だけで補正せず、同時に伸びた末尾の分を読み位置へ加算しない。
+- 描画テストで、先頭追加後の遅い数式整形によって読む位置がずれるケースを再現した。
+  追加後は表示中要素を一時的にアンカーとし、遅い上側の高さ変化を補正する。
+  次のwheel/touch/pointer/key操作、検索ジャンプ、末尾への移動、branch変更で保持を解除する。
+  通常のスクロールはpreventDefaultせず、操作後の古い位置への引き戻しもしない。
+
+検査：
+
+- `history-paging-ui.test.ts` を必須UI suiteへ登録。実Edgeのtrusted wheelで先頭到達前に取得開始し、
+  RPC保留中もtrusted入力・wheelを処理すること、同じ要求が重複しないことを検査した。
+- 100→150→200件の先頭追加で、既存DOM・選択・下書き・読む位置を保持。
+  古いページの数式が整形された後も位置を維持し、その後のwheelと遅い上側の成長では
+  アプリ側scrollTop書込0回とブラウザのアンカリングを確認する。
+- エラー通知と再試行、全件到達時の停止、古いbranch/epochの応答破棄、進まないcursorの停止も検査。
+  `thread-anchor.test.ts` は末尾同時成長の除外と、ブラウザ補正との二重書込防止を検査する。
+- 個別の履歴・折り畳み・ペイン・検索のUI検査5件は成功。直接の型検査、全体Lint、単体886件も成功した。
+- 初回の必須UI全体は12成功/4失敗。履歴RPCのオブジェクトキー順が従来と変わっていたため
+  JSON文字列比較に失敗した点は、従来の順序を維持して修正した。残りはペイン/使用量の並行変更部分とtimeout。
+  修正後のペイン・検索・履歴の個別再実行は成功した。
+  会話全体fixtureの個別再実行は履歴250件の追加・位置保持まで通過したが、後半のツール注釈でtimeout。
+  timeoutや検査項目・許容誤差は緩めていない。
+  必須UIの再実行は15成功/1失敗（16件）。会話全体fixtureも全工程を通過し、通常スクロールの
+  読む位置のdrift 0・アプリ側scrollTop書込0回、履歴250件の追加、選択/注釈/8行previewを確認した。
+  この再実行の1失敗はタイトルバー単独fixtureのpage geometry検査だった。
+  先頭での再試行操作の検査を追加した最終の必須UIも15成功/1失敗。自動履歴・ペイン・検索等は成功したが、
+  今度は会話全体fixtureの後半scrollbar geometryでtimeout。全体UI成功とはまだ扱わない。
+  最終の直接型検査・全体Lint・単体886件、およびBackendの読み取り専用履歴検査1件は成功した。
+- 入力観測は約64〜65ms、ページ反映観測は約66〜83msでrunnerのpoll/frame待ちを含む。
+  rAFの最大gapは最終の全体実行で約50ms、他の実行では約33〜300msまで観測した。これらは合成Edgeでの観測であり、
+  実症状の会話の滑らかさや物理キー入力latencyを保証する値ではない。
+- ログ：`%TEMP%/pig-auto-history-unit.log`、`pig-auto-history-lint.log`、`pig-auto-history-ui.log`、
+  `pig-auto-history-transcript.log`、`pig-auto-history-focused-ui.log`、`pig-auto-history-ui-retry.log`、
+  `pig-auto-history-ui-final.log`、`pig-auto-history-unit-final.log`、`pig-auto-history-lint-final.log`、`pig-auto-history-backend.log`。
+- 未完了：実際の重い会話での連続した遡り・配信中wheel・長時間利用の計測。
+  SDK起動に失敗した会話の閲覧では、ページごとのファイル全体再読込も従来どおり残る。
+  インストール済みアプリへの反映・ユーザーセッションの再起動はしていない。
+
+## 14. UX不変を優先した⑤・⑥・⑩の追加対応
+
+### 14.1 ⑤：モデル境界の不要な生成だけを削減
+
+再計測でもモデル境界・フッター・折り畳みの計算は10000件で平均1ms未満だったため、
+履歴prefix用の汎用キャッシュは追加しなかった。`model-dividers.ts` は同じモデルの連続stepで
+毎回Modelオブジェクトを生成せず、読み取り専用のラベルを計算中だけ共有する。
+全履歴の順序を毎回確認する処理は残し、先頭追加・編集・並べ替え・branch・保存ID移行を末尾追記扱いにしない。
+
+独立した変更前の計算と800通りを比較し、境界位置・provider/modelの値が一致した。
+`profile-transcript-derivations.ts` の参考値では10000件・100回の平均が約0.223ms → 約0.159ms。
+小さな改善であり、実会話全体の入力遅延改善率ではない。フッター等の全履歴走査は引き続き残る。
+
+### 14.2 ⑥：Workerキューが保持する不要な元入力を解放
+
+`render-worker-queue.ts` はpostMessageの構造化コピーが完了しても元入力をjobに保持していた。
+また、起動待ち中にキャンセルしても、Promise executor内のcancelクロージャからrunのinput引数が
+保持され続けることを、WeakRefと強制GCを使う検査で再現した。
+
+- postMessage後・キャンセル時・失敗時にjobの元入力を解放する。
+- cancel/cleanupのクロージャをrunの引数スコープから分離する。job.inputを空にするだけでは
+  GC検査が失敗することも確認した。
+- Workerに渡した本文全バイト、実行順、同時1件、待機/実行中キャンセル、古い結果の破棄を維持する。
+  同期的なWorker生成例外もPromiseの拒否として返し、clone失敗時も全待機者を解放する。
+- 転送済み入力はWorkerの計算中でも回収でき、キャンセル済み入力はWorker起動の完了前でも回収できることを検査。
+  回収を待ってからWorkerの結果を返し、その結果と転送済みの独立したコピーが正しいことも確認する。
+
+会話Snapshot・取得済み履歴・解析済みの表示キャッシュは捨てない。cache上限変更や自動session停止もない。
+これはキューの不要な参照の解消であり、実アプリ全体のheap/プロセスメモリ削減量を測定したものではない。
+
+### 14.3 ⑩：索引用の候補と、正確な部分一致を併用
+
+`search-query.ts` を追加。必要な語だけの `LIKE ... ESCAPE` を必ず残し、全語の確認と
+`ORDER BY ts DESC` の後に件数を制限する。未使用語に対応していた `LIKE '%'` は冗長なため除去する。
+FTS MATCHへの置換や、リテラル記号の扱いを変えるESCAPE削除はしていない。
+
+- 語の中から `%` / `_` を含まない3 Unicode codepoint以上の連続部分を選び、
+  ESCAPEなしの必要条件LIKEを追加してtrigram索引で候補を絞る。候補は最大64 codepointに留め、全文の語は最終条件で確認する。
+- NULを含む語からは候補を作らない。SQLite LIKEがNULで止まるため、後ろの部分を必要条件と決めつけない。
+  短い日本語・記号だけの語など、安全なtrigram候補を確認できない場合は正確な全走査へ戻す。
+- 初期案は頻出語でかえって遅くなったため、そのまま採用しなかった。既存FTSの語彙metadataを
+  接続内TEMP語彙テーブルから参照し、先頭/末尾の最大2 trigramがどちらも広い場合は索引候補を使わない。
+  件数は既存docsize metadataから取得・自分のinsert/deleteで更新し、本文を数え直さない。
+  この情報は実行経路を選ぶヒントだけで、結果を絞る条件にはしない。
+- 永続schema/version・索引に保存する本文は変更しない。旧version-1索引が再索引なしで利用できることも検査する。
+- 旧SQLとの比較には、短い日本語、`%`/`_`/backslash/引用符、Unicode・NUL、全語AND、同時刻の順序、
+  LIMITより後ろになりそうな古い真の一致、snippet・session/entry ID・ジャンプ先、再open/削除を含める。
+  EXPLAINで希少候補の `VIRTUAL TABLE INDEX ... L0` と、頻出語の全走査への復帰を確認した。
+
+`profile-search-query.ts` の10000メッセージ・約1KB/件・各20回の交互計測（Bun/SQLite in-memory参考値）：
+
+| クエリ種別 | 旧SQLの平均 | 新SQLの平均 |
+| --- | ---: | ---: |
+| 希少語＋短い日本語 | 約16.86ms | 約0.39ms |
+| リテラル記号を含む全語検索 | 約12.40ms | 約0.80ms |
+| 全件にある頻出語 | 約38.79ms | 約30.96ms |
+| 2文字の日本語 | 約14.86ms | 約13.78ms |
+| 記号のみで一致なし | 約11.94ms | 約12.13ms |
+
+返す行は旧SQLと一致。すべての検索が速くなるという保証ではなく、2文字検索は依然全走査。
+時間は検索パレットの描画・IPC・実データのI/Oを含まない。
+
+### 14.4 検証の切り分け
+
+- 最終のtsc/tsgoによる直接の型検査、全体Lint、単体905件は成功した。
+  SDKを使う `session-history.test.ts` の個別実行も1件成功した。
+- 初回の必須UIは15成功/3失敗（18件）。会話全体fixture後半のscrollbar geometryのtimeout、
+  ペインの本文再描画検査、使用量Popoverの検査が失敗した。
+- ペイン検査はrecords配列へのアクセスを本文再描画の代用として数えていた。最新turnの状態を読む
+  `interruptedSession` でも計数されるため、実際のmessage.contentへのアクセスへ計測を変更した。
+  metadataだけを読む場合は0、明示的な本文読取は1となる正の対照も置き、再描画0の閾値は緩めていない。
+- 修正後の関連UI6件（ペイン・自動履歴・折り畳み/コピー・検索・本番inline Worker）は成功。
+  本番Workerで全文・数式・UI heartbeatを確認し、通常スクロール・選択・下書き・検索ジャンプの検査も維持した。
+- 必須UIの最終再実行は17成功/1失敗（18件）。ペインと使用量Popoverは成功し、
+  会話全体fixture後半のscrollbar geometryのtimeoutが残った。履歴・検索・コピー・本番Workerは成功。
+  assertion・許容差・timeoutは緩めていない。この残件を解決するまで全体UIを成功とは扱わない。
+- 現段階の結果をもって実会話での全症状改善や、全体UIの恒久安定を断定しない。
+- ログ：`%TEMP%/pig-model-dividers-profile.log`、`pig-search-query-profile.log`、`pig-search-query-profile-final.log`、
+  `pig-safe-optimizations-unit.log`、`pig-safe-optimizations-lint.log`、`pig-safe-optimizations-ui.log`、
+  `pig-safe-optimizations-focused-ui.log`、`pig-safe-optimizations-unit-final.log`、
+  `pig-safe-optimizations-lint-final.log`、`pig-safe-optimizations-ui-final.log`、
+  `pig-safe-optimizations-history-backend.log`。
+
+## 15. ⑪の分割索引と、①・②の事前互換性検査
+
+### 15.1 ⑪：読込から登録までを分割
+
+従来はJSON.parseのloopだけに8ms予算があり、その前にファイルの残り全量をBuffer化・UTF-8 decode・
+改行splitしていた。SQLite登録も、解析で集めた行を1 transactionでまとめて処理していた。
+
+`search-jsonl.ts` / `search-index.ts` の対応：
+
+- 本文は最大8MiB単位で読み、完全なLFに到達した行だけを扱う。旧文字列prefilterと等価なbyte検査で
+  対象外のtool出力はdecode自体を省く。UTF-8の途中・CRLF・短いreadを扱い、未完了行は次回へ残す。
+  保持量はファイル全量でなく、read chunk＋最長の単一JSONL行＋登録待ちの本文が基本となる。
+- 正規化後の登録待ち本文は約256KiB/128 actionまで。無視するtoolResultの連続区間はcheckpointだけにまとめ、
+  raw JSONを登録待ちに保持しない。最初の小chunk案では過剰なI/O/checkpointで遅くなったため、そのまま採用しなかった。
+- decode/解析とSQLite登録の両方で8msを目安に制御を返す。登録loopも1行ずつ時間を確認する。
+  Windowsで粗くなるsetTimeout(0)は使わずsetImmediateでI/O loopへ戻る。長い行の途中でもtimerが処理される検査を置いた。
+  **単一の巨大JSON.parseやFTSの1行登録は割り込めないため、最大停止8msを保証するものではない。**
+- 行と、直後の絶対バイトoffset・64byte tailを同じtransactionで保存する。中断・I/Oエラーの後も
+  確定済みprefixから再開し、登録済みentryを再登録しない。
+  未検証の進捗はsize=-2で識別する。再開時に元のstampが変わっていれば捨て、reopen時も未検証行を公開しない。
+  I/Oエラー時は元ファイルが不変と確認できたprefixだけを再開可能にし、書換え＋中断＋再開で新旧本文を混ぜない。
+- refreshの新世代・保存先変更・forget・close後は古い処理を反映しない。forgetはroots取得待ちや
+  queued follow-upにも有効で、run終了後はtombstoneを保持しない。古いroots取得の失敗で最新要求を捨てない。
+- 同名置換・縮小・同サイズ書換えはファイルidentity/ctime・header・tailから検査する。
+  版1の既存索引を再構築せず、任意の追加metadataテーブル `file_identity` を遅延補完する。
+- 読込中にサイズが増えた場合、読んだ固定範囲のhashとheaderを再検査して通常の追記と書換えを区別する。
+  読込開始後の追記は次回の対象とし、変わったfileは最大1回だけ再試行する。
+
+appendの高速経路には元からのtail方式の検出限界がある。同一inodeで、過去に読んだ中間部だけを
+書き換えて同時に追記し、headerとcheckpoint tailを残すような任意の外部改変に対して、過去prefix全量を
+毎回hashし直してはいない。任意の改変を完全検出する保証とは扱わない。
+
+検査は `search-jsonl.test.ts` / `search-index-streaming.test.ts` / 既存の検索SQL比較。
+1〜80byteのchunk・短いread、UTF-8境界・CRLF・未完了行、同名置換・同サイズのmtime復元書換え、
+増大する書換え・header変更、削除・forget・roots変更・close、中断再開、単一chunkより大きい行の全文を含む。
+検索の本文・順序・snippet・session/entry IDは変更しない。SDK履歴取得・会話キャッシュも変更していない。
+
+参考計測（`profile-search-indexing.ts`、6000 record / 約29MB、うち検索対象600件）：
+変更前の1回は全体約92ms・最大timer gap約54.5ms。途中には約135ms・最大6.7〜12.7msというrunもあったが、
+反復中の負荷・Windowsのtimer粒度で値が大きく変動した。最新2回（byte prefilter/8MiB chunk）は全体約226〜233ms・
+最大timer gap約16.2〜45.5ms。**同一負荷のpaired計測ではなく、一定の改善率やスループット向上は報告しない。**
+索引完了までの時間は増え得る。会話履歴の取得経路は変更せず、低速ディスク・大量ファイル・巨大1行は引き続き要計測。
+heap/RSSのtimer samplingは停止中の一時peakを逃すため、メモリ削減量の根拠にはしない。
+
+`profile-session-indexing.ts --current-session` でも、現在の会話の読み取り専用コピーを一時索引へ投入した。
+約6.35MB・721行・検索対象44件が全文oracleと一致し、参考値は約43.5ms、最大timer gap約8.3ms。
+元の会話は変更せず、コピーと一時DBは削除した。本文やIDはログへ出していない。
+**症状が出ていた特定の会話や、インストール済みWebViewのスクロール性能を測ったものではない。**
+
+### 15.2 ①：単純な行統合は実装しない
+
+`render-reuse-ui.test.ts` で、同じ色のspanを1つにまとめて追記する候補を実ブラウザで検査した。
+全文・改行は同じでも、既存text nodeの全体置換で選択と注釈用Rangeが失われた。
+独立した既存行は同じ操作でも選択・Rangeと位置を維持した。診断結果は
+`existingLinesPreservedRange: true` / `naiveLiveMergePreservedRange: false`。
+
+ユーザーの「確認後、問題なければ実装」に従い、この統合は本番へ入れない。
+完成時だけ切り替える方式も、その瞬間の選択を壊し得るため無条件には採用しない。
+既存のtokenRuns/大きなplain terminalの集約はそのままにした。①の追加削減は未実装。
+
+### 15.3 ②：同じ解析済みtreeの後処理だけ再利用
+
+解析cacheがあっても、同じHASTの親再描画でReactMarkdownの後処理・JSX生成が再実行されていた。
+数式100個＋table/code/linkのfixtureで、参考値約30.3ms・tree getter参照1664回を観測した。
+変更前にDOM・選択・Range・URL安全処理・拡張Renderer切替の互換性を確認してから、
+`MessageContent.tsx` の `MarkdownTree` をmemo化した。
+
+変更後は同じ参照の親再描画で約0.3ms・tree参照0回。異なる入力は新しいtreeへ進み、
+各mountのDOM/stateは独立したまま。既存の解析cacheの容量や保持期間は変えていない。
+画像Viewerの開閉・同一DOM/state、子の言語購読、nested image RendererとMarkdown Rendererの切替も検査する。
+一般的な増分Markdown cacheや、別メッセージのJSX/DOMを共有するcacheは追加しない。
+
+### 15.4 UI検査のtimeoutと前提条件
+
+段階別計測で、タイトルバー検査だけで約12.8秒、後続のMarkdown等の区間で約12.2秒を使い、
+多数の検査を追加した会話fixtureが35秒制限を使い切っていることを確認した。
+タイトルバーの実Chat検査を既存の専用testへ移し、元と同じ1100×800 viewport、全6通り、
+各10frame、35msの待機・hover保持時間・assertionを維持した。会話側は全スクロールバー検査を維持する。
+
+共通browser driverも、about:blankでCDP接続後にviewportを固定してからfixtureへnavigateする。
+会話driverにはあったこの処理が共通driverになく、Edgeの遅いautomation infobarでページ全体の高さが変化し得た。
+DOMContentLoadedをloader IDで待ち、about:blank作成で残るbrowser chromeのfocusはPage.bringToFrontで解消する。
+ユーザーのブラウザprofileには接続しない。timeout・許容差・検査対象を減らす修正はしていない。
+
+ログは `%TEMP%/pig-indexing-*.log`、`pig-transcript-timing.log`、`pig-transcript-separated.log`、
+`pig-render-reuse-before-measured.log`、`pig-render-reuse-after.log`。
+
+### 15.5 最終検証
+
+- 直接tsc・tsgo・全体Lintは成功。最終の標準単体検査は952成功/0失敗。
+- 索引の境界・復旧・全文一致とSDK履歴の個別検査は37成功/0失敗。
+- 必須UIの直近全体は23成功/0失敗。タイトルバー・全スクロールバー・ペインfocus・履歴・コピー・検索・
+  本番Worker・Markdown再利用を含む。以後の追加修正はBun側の索引処理・検査のみで、描画codeは変更していない。
+- 途中の全体検査ではisolated renderer/ChatOpeningの5秒timeout、並行追加中のgrep fixtureのimportエラー、
+  about:blank切替後のfocus前提不足が出た。最終の型検査・単体は再実行で成功し、focusは共通driverの
+  Page.bringToFrontで修正後、ペイン単独と全体UIで成功した。assertion・timeoutを緩めていない。
+- インストール済みアプリへの更新・ユーザーsessionの再起動はしていない。問題の特定会話での連続操作・
+  長時間heap/GC/入力遅延の実測は未完了で、全症状の解消とは扱わない。
+- ログ：`pig-indexing-typecheck-complete.log`、`pig-indexing-tsgo-complete.log`、`pig-indexing-lint-complete.log`、
+  `pig-indexing-unit-last.log`、`pig-indexing-recovery-verified.log`、`pig-indexing-ui-latest.log`、
+  `pig-indexing-bounded-final-1.log`、`pig-indexing-bounded-final-2.log`。
