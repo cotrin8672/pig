@@ -4,6 +4,7 @@ import type {
   SessionManager,
 } from "@earendil-works/pi-coding-agent";
 import { unfoldPastes } from "../shared/paste";
+import type { RetryWait } from "../shared/rpc-schema";
 import type { SendIntent, SendKey } from "../shared/runtime-contract";
 import {
   emptyTranscript,
@@ -117,6 +118,7 @@ export class SDKProjector {
   running = false;
   failure?: string;
   aborted = false;
+  retry?: RetryWait;
   readonly diagnostics: SessionDiagnostics;
   private recovered: (RecoveredPrompt & {
     message: Extract<Message, { role: "user" }>;
@@ -286,6 +288,21 @@ export class SDKProjector {
       };
     if (event.type === "compaction_end" && event.errorMessage)
       this.fail(event.errorMessage);
+    if (event.type === "auto_retry_start") {
+      // The failed attempt is superseded; only exhausted retries are a failure.
+      this.failure = undefined;
+      this.retry = {
+        attempt: event.attempt,
+        maxAttempts: event.maxAttempts,
+        retryAt: Date.now() + event.delayMs,
+      };
+    }
+    if (
+      event.type === "auto_retry_end" ||
+      event.type === "agent_settled" ||
+      (event.type === "message_start" && event.message.role === "assistant")
+    )
+      this.retry = undefined;
     if (event.type === "auto_retry_end" && event.finalError)
       this.fail(event.finalError);
     // agent_end is not completion: before-settle hooks may still be executing.

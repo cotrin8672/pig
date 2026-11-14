@@ -40,8 +40,15 @@ export type WireEvent = {
   transcript: WireTranscript;
   failure?: string;
   aborted?: boolean;
+  retry?: RetryWait;
   sessionUI?: SessionUIState;
   configError?: string;
+};
+/** SDK auto-retry backoff in progress; `retryAt` is epoch ms. */
+export type RetryWait = {
+  attempt: number;
+  maxAttempts: number;
+  retryAt: number;
 };
 
 // Provider catalog and authentication status supplied by pi-ai.
@@ -141,6 +148,7 @@ export interface Snapshot extends ModelSelection {
   transcript: WireTranscript;
   failure?: string;
   aborted?: boolean;
+  retry?: RetryWait;
   sessionUI?: SessionUIState;
   configError?: string;
 }

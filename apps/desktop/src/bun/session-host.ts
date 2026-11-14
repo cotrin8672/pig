@@ -1024,6 +1024,7 @@ export class SessionHost {
         if (requestId) m.startedSends.push({ ...m.address, requestId });
       }
     });
+    let retrying = false;
     const unsubscribe = session.subscribe((event) => {
       if (!current()) return;
       const failure = m.projector?.failure;
@@ -1033,18 +1034,30 @@ export class SessionHost {
           ? m.requestIds.get(event.message)
           : undefined,
       );
-      if (
-        event.type === "message_end" &&
-        event.message.role === "assistant" &&
-        event.message.stopReason === "error" &&
-        m.phase !== "closing" &&
-        !m.stopping
-      ) {
-        // Abort synchronously before the SDK can retry or deliver queued input.
+      if (event.type === "auto_retry_start") retrying = true;
+      // The SDK retries transient errors up to its budget. A model error it
+      // will not retry stops the run synchronously, before queued input is
+      // delivered: agent_end for an unretried error, auto_retry_end once the
+      // budget is exhausted.
+      const lastAssistant =
+        event.type === "agent_end"
+          ? [...event.messages]
+              .reverse()
+              .find((message) => message.role === "assistant")
+          : undefined;
+      const unrecovered =
+        (event.type === "agent_end" &&
+          lastAssistant?.role === "assistant" &&
+          lastAssistant.stopReason === "error" &&
+          !event.willRetry &&
+          !retrying) ||
+        (event.type === "auto_retry_end" && !event.success);
+      if (event.type === "auto_retry_end" || event.type === "agent_settled")
+        retrying = false;
+      if (unrecovered && m.phase !== "closing" && !m.stopping)
         void this.abort(m.address).catch((error) =>
           console.error("Stop after model error failed", error),
         );
-      }
       if (event.type === "agent_settled") {
         for (const key of m.startedSends.splice(0)) {
           try {
@@ -1182,6 +1195,7 @@ export class SessionHost {
       transcript: snapshot.transcript,
       failure: snapshot.failure,
       aborted: snapshot.aborted,
+      retry: snapshot.retry,
       sessionUI: snapshot.sessionUI,
       configError: snapshot.configError,
     });
@@ -1315,6 +1329,7 @@ export class SessionHost {
       transcript: projector.snapshot(),
       failure: projector.failure,
       aborted: projector.aborted,
+      retry: projector.retry,
       sessionUI: m.adapterSnapshot,
       configError: this.configLoader.error,
       ...(m.runtime

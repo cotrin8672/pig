@@ -84,6 +84,7 @@ export function applyChatEvent(
     ),
     failure: event.failure,
     aborted: event.aborted,
+    retry: event.retry,
     sessionUI: event.sessionUI,
     configError: event.configError,
   };

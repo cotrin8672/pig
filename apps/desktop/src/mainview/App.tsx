@@ -56,9 +56,10 @@ import { ProviderIcon } from "./ProviderIcon";
 import { Providers } from "./Providers";
 import { ProviderUsage } from "./ProviderUsage";
 import { createPane } from "./pane-state";
-import { ResponseError } from "./ResponseError";
+import { ResponseError, RetryNotice } from "./ResponseError";
 import { ResponseFooter } from "./ResponseFooter";
 import { createResponseFooterIndex } from "./response-footers";
+import { retriedAttempts } from "./retry-attempts";
 import {
   initRuntimeConnection,
   initSessionLinks,
@@ -582,6 +583,10 @@ export const Chat = memo(function Chat({
     () => modelDividers(transcript.records),
     [transcript.records],
   );
+  const retried = useMemo(
+    () => retriedAttempts(transcript.records),
+    [transcript.records],
+  );
   const hasConversation =
     !!transcript.history?.before || transcript.records.some(isVisibleRecord);
   const [observedRun, setObservedRun] = useState(transcript.running);
@@ -988,12 +993,27 @@ export const Chat = memo(function Chat({
                         </DisclosureScope>
                       );
                     })}
-                    {(message.errorMessage ||
-                      message.stopReason === "error") && (
-                      <ResponseError
+                    {retried.has(id) ? (
+                      <RetryNotice
+                        attempt={retried.get(id) ?? 1}
                         message={message.errorMessage ?? "Model request failed"}
-                        stopReason={message.stopReason}
+                        waiting={
+                          snapshot.retry?.attempt === retried.get(id) &&
+                          id === [...retried.keys()].at(-1)
+                            ? snapshot.retry
+                            : undefined
+                        }
                       />
+                    ) : (
+                      (message.errorMessage ||
+                        message.stopReason === "error") && (
+                        <ResponseError
+                          message={
+                            message.errorMessage ?? "Model request failed"
+                          }
+                          stopReason={message.stopReason}
+                        />
+                      )
                     )}
                   </>
                 ) : (

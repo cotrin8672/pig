@@ -6,7 +6,7 @@ export function createCompletionTracker() {
     const wasRunning = running;
     running = event.transcript.running;
     if (!wasRunning || running) return;
-    // The host also aborts after model errors to prevent automatic retries.
+    // The host aborts after model errors the SDK does not (or no longer) retry.
     // Preserve that failure as a durable outcome, not a quiet manual stop.
     if (event.failure) return "error";
     if (!event.aborted) return "success";

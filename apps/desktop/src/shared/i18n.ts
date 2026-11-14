@@ -524,6 +524,9 @@ export const en = {
       },
     })[reason],
   responseErrorDetails: "Error details",
+  retryWaiting: (attempt: number, max: number, seconds: number) =>
+    `Retrying ${attempt}/${max}${seconds > 0 ? ` · in ${seconds}s` : ""}`,
+  retryDone: (attempt: number) => `Retried · attempt ${attempt}`,
   responseError: (stopReason: string, error: string) =>
     stopReason === "aborted" ? "Response stopped." : error,
   relativeDate: (count: number, unit: "d" | "mo" | "y") =>
@@ -1134,6 +1137,9 @@ export const ja: Dictionary = {
       },
     })[reason],
   responseErrorDetails: "エラーの詳細",
+  retryWaiting: (attempt, max, seconds) =>
+    `再試行中 ${attempt}/${max}${seconds > 0 ? ` · ${seconds}秒後` : ""}`,
+  retryDone: (attempt) => `再試行しました · ${attempt}回目`,
   responseError: (stopReason, error) =>
     stopReason === "aborted" ? "応答を停止しました。" : error,
   relativeDate: (count, unit) =>

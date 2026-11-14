@@ -6,6 +6,12 @@ export interface ChatRenderData {
   image: { sources: string[]; alt?: string };
   thinking: { text: string; label: string; active: boolean };
   error: { message: string; stopReason?: string };
+  /** A failed attempt the SDK retried. `waiting` is set while the next attempt is pending. */
+  retry: {
+    attempt: number;
+    message: string;
+    waiting?: { maxAttempts: number; retryAt: number };
+  };
   tool: {
     call: { id: string; name: string; arguments: Record<string, unknown> };
     state?: { status: "running" | "done" | "error"; result?: unknown };

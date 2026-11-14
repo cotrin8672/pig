@@ -39,3 +39,33 @@
   font-family: var(--font-mono);
   font-size: var(--text-xs);
 }
+/* A retried attempt: a small muted chip, not an alert. */
+.response-retry {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin: 6px 0;
+  padding: 1px 8px;
+  border-radius: var(--radius-full);
+  background: var(--ds-tool-row-bg);
+  color: var(--ds-text-muted);
+  font-size: var(--text-xs);
+  line-height: 1.6;
+  white-space: nowrap;
+}
+.response-retry > svg {
+  flex: none;
+}
+.response-retry[data-waiting] > svg {
+  animation: response-retry-spin 1.6s linear infinite;
+}
+@keyframes response-retry-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .response-retry[data-waiting] > svg {
+    animation: none;
+  }
+}
