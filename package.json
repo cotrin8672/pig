@@ -6,6 +6,7 @@
     "dev": "pnpm --filter @pig/desktop dev",
     "build": "pnpm --filter @pig/desktop build",
     "typecheck": "pnpm --filter @pig/desktop typecheck",
+    "typecheck:tsc": "pnpm --filter @pig/desktop typecheck:tsc",
     "lint": "biome check . && pnpm lint:ui",
     "lint:ui": "bun apps/desktop/scripts/check-ui-styles.ts",
     "format": "biome check --write .",

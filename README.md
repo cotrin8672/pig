@@ -64,7 +64,8 @@ Wait for that bucket commit before installing the first stable build. See
 
 ## Run
 
-Requires Windows with WebView2, Node 22+, pnpm 10.14, and Bun (tested with 1.4.2).
+Requires Windows with WebView2, Node 22+, pnpm 10.14, Bun (tested with 1.4.2),
+and [mise](https://mise.jdx.dev/) for the pinned TypeScript Native Preview (`tsgo`).
 
 Builds use Electrobun's stock Windows native binaries; no local C++ build is
 required. `dev`, `build`, and `typecheck` first run `electrobun sync` to generate
@@ -74,6 +75,7 @@ See [Windows migration checks](apps/desktop/scripts/windows-smoke.md) for the
 native regression test and remaining manual release gates.
 
 ```sh
+mise install
 mise exec -- pnpm install
 mise run dev
 ```
@@ -132,6 +134,13 @@ pnpm build
 ```
 
 ### Checks and CI
+
+`pnpm typecheck` uses `tsgo`, pinned in `mise.toml` and installed with `mise install`
+locally and in CI/Release. The existing TypeScript dependency is retained;
+`pnpm typecheck:tsc` runs the previous checker for compatibility comparisons.
+The desktop tsconfig overrides the generated Electrobun `baseUrl` with `null`
+because TypeScript 7 removes that option; the generated `paths` aliases remain
+in use. Do not edit the generated devkit to change this setting.
 
 | Command | Scope | Automation |
 | --- | --- | --- |

@@ -66,6 +66,8 @@ jobs:
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: 1.4.2
+      - name: Set up pinned TypeScript Native Preview
+        uses: jdx/mise-action@v3
       - name: Identify release
         id: release
         run: |

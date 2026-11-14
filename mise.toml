@@ -1,3 +1,6 @@
+[tools]
+"npm:@typescript/native-preview" = "7.0.0-dev.20260707.2"
+
 [tasks.storybook]
 description = "Browse the built-in chat renderers with live reload"
 dir = "apps/desktop"
