@@ -7,6 +7,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import tailwindcss from "@tailwindcss/vite";
 import { build as buildStyles } from "vite";
 import { renderWorkerFixturePlugin } from "../../scripts/render-worker-fixture";
+import { titlebarChatFixture } from "../../scripts/titlebar-chat-fixture";
 import {
   fixtureHelpers,
   fixtureImport,
@@ -18,9 +19,51 @@ const edge =
   "C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe";
 
 test.skipIf(!existsSync(edge) && !process.env.PIG_REQUIRE_UI_TESTS)(
-  "titlebar in Edge: snapped top edge and slower synchronized animation",
+  "sidebar chat selection keeps the row count and following project position stable",
   () =>
     runUiFixture(
+      "sidebar-selection",
+      `
+    const {createRoot}=await import(${fixtureImport(import.meta.resolve("react-dom/client"))});
+    const {flushSync}=await import(${fixtureImport(import.meta.resolve("react-dom"))});
+    const {SidebarSessions}=await import(${fixtureImport(new URL("./SidebarSessions.tsx", import.meta.url))});
+    const {useStore}=await import(${fixtureImport(new URL("./store.ts", import.meta.url))});
+    await import(${fixtureImport(new URL("./styles.css", import.meta.url))});
+    ${fixtureHelpers}
+    const sessions=cwd=>Array.from({length:12},(_,index)=>({id:cwd+index,cwd,title:cwd+' chat '+index,modified:100-index}));
+    flushSync(()=>useStore.setState(s=>({
+      page:'chat',active:undefined,pendingOpens:{},snapshots:{},pendingUI:[],
+      sessions:{general:sessions('general'),many:sessions('many'),next:sessions('next').slice(0,1)},
+      bootstrap:{...s.bootstrap,generalCwd:'general',projects:['many','next'],desktop:{sessions:{many10:{pinned:true},many11:{pinned:true}}}},
+      settings:{...s.settings,language:'en'},
+    })));
+    const root=createFixtureRoot(createRoot);
+    flushSync(()=>root.render(<aside className="sidebar" style={{width:260,height:'100vh'}}><SidebarSessions/></aside>));
+    await wait();
+    const general=document.querySelector('.sidebar-section');
+    const project=document.querySelectorAll('.project')[0];
+    const following=document.querySelectorAll('.project')[1];
+    const measure=()=>({general:general.querySelectorAll('.thread-row').length,project:project.querySelectorAll('.thread-row').length,height:project.getBoundingClientRect().height,nextTop:following.getBoundingClientRect().top});
+    const baseline=measure();
+    check(baseline.general===5&&baseline.project===7,'initial recent slots must exclude pinned rows');
+    for(const active of ['many0','many4','many8','many9','many10','general0','general11',undefined]){
+      flushSync(()=>useStore.setState({active}));await wait();
+      check(JSON.stringify(measure())===JSON.stringify(baseline),'selection must not change row counts, list height or following project position: '+active);
+      if(active)check(document.querySelector('.thread[aria-current="page"]'),'selected old and pinned chats must stay visible: '+active);
+    }
+    const more=project.querySelector('.more-chats');more.click();await wait();
+    check(project.querySelectorAll('.thread-row').length===12,'explicit expansion must still show the entire list');
+    more.click();await wait();
+    check(JSON.stringify(measure())===JSON.stringify(baseline),'collapsing must restore the fixed recent slots');
+  `,
+    ),
+  60_000,
+);
+
+test.skipIf(!existsSync(edge) && !process.env.PIG_REQUIRE_UI_TESTS)(
+  "titlebar in Edge: snapped top edge and slower synchronized animation",
+  async () => {
+    await runUiFixture(
       "titlebar",
       `
       const {createRoot}=await import(${fixtureImport(import.meta.resolve("react-dom/client"))});
@@ -61,6 +104,84 @@ test.skipIf(!existsSync(edge) && !process.env.PIG_REQUIRE_UI_TESTS)(
       }
       root.unmount();
       `,
+    );
+    await runUiFixture(
+      "titlebar-chat",
+      `
+      const {createRoot}=await import(${fixtureImport(import.meta.resolve("react-dom/client"))});
+      const {flushSync}=await import(${fixtureImport(import.meta.resolve("react-dom"))});
+      const {WindowTitlebar}=await import(${fixtureImport(new URL("./WindowTitlebar.tsx", import.meta.url))});
+      const {MainViewport}=await import(${fixtureImport(new URL("./MainViewport.tsx", import.meta.url))});
+      const {Chat}=await import(${fixtureImport(new URL("./App.tsx", import.meta.url))});
+      await import(${fixtureImport(new URL("./styles.css", import.meta.url))});
+      ${fixtureHelpers}
+      const root=createFixtureRoot(createRoot),pause=ms=>new Promise(resolve=>setTimeout(resolve,ms));
+      const render=async node=>{flushSync(()=>root.render(node));await wait();};
+      const metrics=window.__fixtureMetrics={};
+      const base={address:{hostId:'ui',sessionId:'chat',epoch:1},snapshotSeq:1,info:{id:'chat',cwd:'fixture',title:'Fixture',modified:1},effort:'off',effortLevels:[],ready:false};
+      const transcript=records=>({records,tools:{},history:{revision:'branch'},current:null,running:false,liveToEntry:{}});
+      const user=i=>({id:'r'+i,parentId:null,branchId:'branch',order:i,kind:'message',message:{role:'user',content:'Question '+i+' '+(i===5?'needle-search ':'')+'wrapping words '.repeat(20),timestamp:i}});
+      ${titlebarChatFixture}
+      check(metrics.titlebarClipping.length===6,'all sidebar/reader-position combinations must run');
+      root.unmount();
+      `,
+      { viewport: { width: 1100, height: 800 } },
+    );
+  },
+  60_000,
+);
+
+test.skipIf(!existsSync(edge) && !process.env.PIG_REQUIRE_UI_TESTS)(
+  "composer attachments open the shared image viewer without modifying the draft or layout",
+  () =>
+    runUiFixture(
+      "composer-image-preview",
+      `
+      const {createRoot}=await import(${fixtureImport(import.meta.resolve("react-dom/client"))});
+      const {flushSync}=await import(${fixtureImport(import.meta.resolve("react-dom"))});
+      const {Composer}=await import(${fixtureImport(new URL("./Composer.tsx", import.meta.url))});
+      const {drafts}=await import(${fixtureImport(new URL("./draft-store.ts", import.meta.url))});
+      const {useStore}=await import(${fixtureImport(new URL("./store.ts", import.meta.url))});
+      await import(${fixtureImport(new URL("./styles.css", import.meta.url))});
+      ${fixtureHelpers}
+      const root=createFixtureRoot(createRoot);
+      flushSync(()=>useStore.setState(s=>({settings:{...s.settings,language:'en'}})));
+      window.__requests={listSlashCommands:async()=>[],syncDraft:async()=>({})};
+      const address={hostId:'images',sessionId:'images',epoch:1};
+      const snapshot={address,snapshotSeq:1,info:{id:'images',cwd:'fixture',title:'Fixture',modified:1},effort:'off',effortLevels:[],ready:true,modelCatalog:[],transcript:{records:[],tools:{},history:{revision:'branch'},current:null,running:false,liveToEntry:{}}};
+      const canvas=document.createElement('canvas');canvas.width=160;canvas.height=90;
+      const context=canvas.getContext('2d');
+      const images=['red','blue'].map((color,index)=>{context.fillStyle=color;context.fillRect(0,0,160,90);return {id:'image-'+index,image:{type:'image',mimeType:'image/png',data:canvas.toDataURL('image/png').split(',')[1]}};});
+      drafts.edit(address,content=>({...content,text:'Keep this draft',images}));
+      flushSync(()=>root.render(<div className="chat-shell" style={{height:350}}><Composer snapshot={snapshot}/></div>));await wait();
+      const click=async element=>{check(element,'missing click target');element.click();await wait();};
+      let submissions=0;document.querySelector('form.composer').addEventListener('submit',()=>submissions++);
+      const bounds=()=>JSON.stringify(['form.composer','.composer-attachment'].map(selector=>{const r=document.querySelector(selector).getBoundingClientRect();return [r.x,r.y,r.width,r.height];}));
+      const before=bounds();
+      const previews=[...document.querySelectorAll('.composer-attachment .image-preview')];
+      check(previews.length===2 && previews.every(preview=>preview.tagName==='BUTTON' && preview.type==='button' && preview.getAttribute('aria-label').startsWith('Open image')),'each attachment must have an accessible non-submit preview button');
+      check(previews.every(preview=>preview.getBoundingClientRect().width===72 && preview.getBoundingClientRect().height===72),'preview hit areas must fill the existing 72px attachment slots');
+      const attachedDraft=drafts.read(address);
+      await click(previews[1]);
+      let viewer=document.querySelector('.image-viewer');
+      check(viewer?.open && !document.querySelector('form.composer .image-viewer'),'composer previews must use the shared top-layer viewer outside the form');
+      check(viewer.querySelector('.image-viewer-zoom img').src===previews[1].querySelector('img').src && viewer.querySelector('output').textContent==='2 / 2','the clicked attachment must be the initial image');
+      await click(viewer.querySelector('[aria-label="Previous image"]'));
+      check(viewer.querySelector('.image-viewer-zoom img').src===previews[0].querySelector('img').src,'the viewer must navigate between attachments');
+      await click(viewer.querySelector('.image-viewer-zoom'));
+      check(viewer.querySelector('.image-viewer-zoom').getAttribute('aria-pressed')==='true','composer previews must support actual-size zoom');
+      viewer.dispatchEvent(new Event('cancel',{cancelable:true}));await wait();
+      check(!document.querySelector('.image-viewer') && document.activeElement===previews[1],'Escape must close the viewer and restore focus to the clicked thumbnail');
+      check(bounds()===before && drafts.read(address)===attachedDraft && submissions===0,'previewing must not move the composer, modify or submit the draft');
+      await click(document.querySelector('.composer-attachment-remove'));
+      check(!document.querySelector('.image-viewer') && drafts.read(address).content.images.length===1,'removing an image must not open its preview');
+      await click(document.querySelector('.composer-attachment .image-preview'));
+      viewer=document.querySelector('.image-viewer');
+      check(viewer?.open && !viewer.querySelector('.image-viewer-footer'),'the remaining attachment must open as a single image');
+      await click(viewer.querySelector('[aria-label="Close image viewer"]'));
+      check(!document.querySelector('.image-viewer') && drafts.read(address).content.text==='Keep this draft' && submissions===0,'closing the viewer must preserve the draft');
+      root.unmount();
+      `,
     ),
   60_000,
 );
@@ -85,8 +206,6 @@ test.skipIf(!existsSync(edge) && !process.env.PIG_REQUIRE_UI_TESTS)(
       import {createRoot} from ${JSON.stringify(fileURLToPath(import.meta.resolve("react-dom/client")))};
       import {flushSync} from ${JSON.stringify(fileURLToPath(import.meta.resolve("react-dom")))};
       import {Chat} from ${source("./App.tsx")};
-      import {MainViewport} from ${source("./MainViewport.tsx")};
-      import {WindowTitlebar} from ${source("./WindowTitlebar.tsx")};
       import {Composer} from ${source("./Composer.tsx")};
       import {ModelPicker} from ${source("./ModelPicker.tsx")};
       import {SessionList} from ${source("./SessionList.tsx")};
@@ -125,7 +244,12 @@ test.skipIf(!existsSync(edge) && !process.env.PIG_REQUIRE_UI_TESTS)(
       const check=(value,message)=>{if(!value) throw new Error(message);};
       const until=async(predicate,message)=>{const end=performance.now()+3000;while(!predicate()){check(performance.now()<end,message);await wait();}};
       const render=async node=>{flushSync(()=>root.render(node));await wait();};
-      const metrics=window.__transcriptMetrics={wheels:[],loaded:[]};
+      const metrics=window.__transcriptMetrics={wheels:[],loaded:[],stageTimes:[]};
+      let currentStage='setup',stageStarted=performance.now();
+      Object.defineProperty(metrics,'stage',{enumerable:true,get:()=>currentStage,set:next=>{
+        metrics.stageTimes.push({stage:currentStage,ms:performance.now()-stageStarted});
+        currentStage=next;stageStarted=performance.now();
+      }});
       const click=async element=>{check(element,"missing click target");element.click();await wait();};
       const button=(parent,text)=>[...parent.querySelectorAll("button")].find(b=>b.textContent===text);
       const visible=element=>!!element?.checkVisibility({visibilityProperty:true});
@@ -202,56 +326,8 @@ test.skipIf(!existsSync(edge) && !process.env.PIG_REQUIRE_UI_TESTS)(
       flushSync(()=>useStore.setState({snapshots:{chat:statusSnapshot}}));await wait();
       check(!!statusRow.querySelector('.session-dot.running'),'restarting the chat must restore the working dot');
       await render(null);flushSync(()=>useStore.setState(beforeStatus,true));
-      metrics.stage="titlebar-clipping";
-      metrics.titlebarClipping=[];
-      for(const collapsed of [false,true]){
-        await render(<div className={"app-shell"+(collapsed?" sidebar-collapsed":"")}><aside className="sidebar"/><MainViewport><Chat snapshot={{...base,transcript:transcript(Array.from({length:40},(_,i)=>user(i)))}}/></MainViewport><WindowTitlebar maximized={false} onAction={()=>{}}/></div>);
-        const bar=document.querySelector('.window-titlebar'),clip=document.querySelector('.main-clip'),thread=document.querySelector('.thread-scroll');
-        await pause(220);
-        const measure=()=>{
-          const nodes=[document.querySelector('.session-layout'),document.querySelector('.composer'),document.querySelector('[data-record-id="r20"]'),thread];
-          return [...nodes.flatMap(node=>{check(node,"missing titlebar measurement target");const r=node.getBoundingClientRect();return [r.x,r.y,r.width,r.height];}),thread.scrollTop,thread.scrollHeight,thread.clientHeight];
-        };
-        for(const position of ['top','middle','bottom']){
-          thread.scrollTop=position==='top'?0:position==='bottom'?thread.scrollHeight:1000;await wait();
-          const before=measure();
-          for(const expanded of [true,false]){
-            if(expanded){const r=bar.getBoundingClientRect();window.dispatchEvent(new MouseEvent('mousemove',{clientX:r.left+100,clientY:2}));}
-            else window.dispatchEvent(new Event('blur'));
-            for(let frame=0;frame<10;frame++){
-              await pause(35);
-              check(measure().every((value,i)=>Math.abs(value-before[i])<0.01),'titlebar must not resize or move chat/composer/records or change scroll position during animation');
-            }
-            check(bar.dataset.expanded===String(expanded),'titlebar hover must change visibility');
-            const bounds=clip.getBoundingClientRect();
-            check(Math.abs(bounds.top-(expanded?34:8))<0.01,'only the clipping boundary should move');
-            if(expanded){
-              check(!!document.elementFromPoint(bounds.left+100,20)?.closest('.window-titlebar'),'revealed band must receive pointer input');
-              check(!document.elementFromPoint(bounds.left+100,33)?.closest('.main-viewport'),'clipped content must not receive pointer input');
-            }
-          }
-          metrics.titlebarClipping.push({collapsed,position,drift:0});
-        }
-        const barBounds=bar.getBoundingClientRect();
-        const move=(x,y)=>window.dispatchEvent(new MouseEvent('mousemove',{clientX:x,clientY:y}));
-        move(barBounds.left+100,46);await pause(350);
-        check(bar.dataset.expanded==='false','retention margin must not open a closed band');
-        move(barBounds.left+100,2);await pause(350);
-        for(const [x,y] of [[barBounds.left+100,58],[barBounds.left-24,24],[barBounds.right+4,24]]){
-          move(x,y);await pause(350);
-          check(bar.dataset.expanded==='true','open band must stay visible in its retention margin');
-        }
-        check(!document.elementFromPoint(barBounds.left+100,46)?.closest('.window-titlebar'),'retention margin must not intercept page input');
-        move(barBounds.left+100,72);await pause(220);
-        check(bar.dataset.expanded==='true','leaving must allow 300ms to return');
-        move(barBounds.left+100,46);await pause(350);
-        check(bar.dataset.expanded==='true','returning to the margin must cancel collapse');
-        move(barBounds.left+100,72);await pause(700);
-        check(bar.dataset.expanded==='false' && Math.abs(clip.getBoundingClientRect().top-8)<0.01,'leaving beyond the margin must collapse the band');
-        bar.focus();await pause(350);
-        check(Math.abs(clip.getBoundingClientRect().top-34)<0.01,'keyboard focus must reveal the band');
-        bar.blur();await pause(350);
-      }
+      // Real-chat titlebar geometry/retention checks run unchanged in the
+      // dedicated titlebar fixture above, rather than consuming this deadline.
       metrics.stage="response-errors";
       const providerError='429 {"type":"error","error":{"type":"rate_limit_error","message":"Please try again later."},"request_id":"req_ui_error"}';
       const failedRecord=assistant("failed",1,[]);
@@ -557,12 +633,17 @@ test.skipIf(!existsSync(edge) && !process.env.PIG_REQUIRE_UI_TESTS)(
       viewer.dispatchEvent(new Event("cancel",{cancelable:true}));await wait();
       check(!document.querySelector(".image-viewer"),"Escape must still close the viewer");
       const historyRequests=[];
-      window.__getSessionHistory=async request=>{historyRequests.push(request);return transcript(Array.from({length:100},(_,i)=>user(i)));};
+      let replyHistory;
+      const historyGate=new Promise(resolve=>{replyHistory=resolve;});
+      window.__getSessionHistory=async request=>{historyRequests.push(request);return historyGate;};
       snapshot={...base,address:{...base.address,sessionId:"history"},info:{...base.info,id:"history"},transcript:{...transcript(Array.from({length:150},(_,i)=>user(i+100))),history:{revision:"branch",before:"r100"}}};
       await show(snapshot);thread=document.querySelector(".thread-scroll");await wheel(thread,-thread.scrollHeight);await pause(100);
-      check(historyRequests.length===0 && !document.querySelector('[data-record-id="r0"]'),"scrolling to the top must not load history automatically");
-      await click(button(document,"Load earlier messages"));
-      await until(()=>document.querySelectorAll("[data-record-id]").length===250,"the earlier-history button must prepend its returned rows");
+      await until(()=>historyRequests.length===1,'scrolling near the top must automatically request history');
+      check(!document.querySelector('[data-record-id="r0"]')&&!button(document,"Load earlier messages"),'pending history must not require a load button');
+      const historyReader=document.querySelector('[data-record-id="r100"]'),historyOffset=historyReader.getBoundingClientRect().top;
+      replyHistory(transcript(Array.from({length:100},(_,i)=>user(i))));
+      await until(()=>document.querySelectorAll("[data-record-id]").length===250,"automatic paging must prepend its returned rows");
+      check(document.querySelector('[data-record-id="r100"]')===historyReader&&Math.abs(historyReader.getBoundingClientRect().top-historyOffset)<=2,'automatic history prepend must preserve the reader and its DOM');
       check(JSON.stringify(historyRequests)==='[{"hostId":"ui","sessionId":"history","epoch":1,"revision":"branch","before":"r100"}]',"history must use the active session and cursor");
       check(document.querySelector('[data-record-id="r0"]') && document.querySelector('[data-record-id="r249"]') && !button(document,"Load earlier messages") && !document.querySelector(".text-range"),"all fetched history must be available without another presentation page");
       metrics.historyRows=document.querySelectorAll("[data-record-id]").length;
@@ -887,6 +968,25 @@ test.skipIf(!existsSync(edge) && !process.env.PIG_REQUIRE_UI_TESTS)(
       flushSync(()=>useStore.setState({extensionStatuses:{[addressKey(composerSnapshot.address)]:{statuses:[],widgets:[{key:"footer",placement:"belowEditor",lines:["Extension footer must not render"]}]}}}));
       await renderComposer([]);checkComposer();
       check(!dock.textContent.includes("Extension footer") && !dock.textContent.includes("Choose an enabled model") && composer.querySelector('[aria-label="Send"]').disabled,"no-model state and extension footers must not add a message row");
+      metrics.stage="composer-session-indicators";
+      const pickerRect=()=>JSON.stringify(composer.querySelector(".composer-pickers").getBoundingClientRect());
+      flushSync(()=>useStore.setState({extensionStatuses:{}}));await wait();
+      const bareRect=pickerRect();check(!composer.querySelector(".session-indicators"),"no extension state must render no indicators");
+      flushSync(()=>useStore.setState({extensionStatuses:{[addressKey(composerSnapshot.address)]:{statuses:[{key:"lint",text:"2 warnings"}],widgets:[{key:"plan",placement:"aboveEditor",lines:["step one","step two"]}]}}}));await wait();
+      checkComposer();
+      const indicators=[...composer.querySelectorAll(".session-indicator")],indicatorPanel=composer.querySelector(".session-indicator-panel");
+      check(indicators.length===2 && pickerRect()===bareRect,"status/widget counters must sit in the toolbar without moving the pickers");
+      check(!dock.textContent.includes("step one") && !dock.textContent.includes("2 warnings"),"indicator contents stay unrendered until opened");
+      await click(indicators[1]);
+      const indicatorRect=indicatorPanel.getBoundingClientRect(),formRect=composer.getBoundingClientRect();
+      check(indicatorPanel.matches(":popover-open") && indicatorPanel.textContent.includes("step two") && indicators[1].getAttribute("aria-expanded")==="true","the widget counter must open the top-layer panel");
+      check(Math.abs(indicatorRect.left-formRect.left)<1 && Math.abs(indicatorRect.right-formRect.right)<1 && indicatorRect.bottom<=formRect.top && indicatorRect.top>=0,"the panel must sit above the composer with matching left/right edges");
+      checkComposer();
+      await click(indicators[0]);
+      check(indicatorPanel.matches(":popover-open") && indicatorPanel.textContent.includes("2 warnings") && !indicatorPanel.textContent.includes("step two"),"switching counters must reuse the one panel");
+      await click(indicators[0]);
+      check(!indicatorPanel.matches(":popover-open") && indicators[0].getAttribute("aria-expanded")==="false","the open counter must close its panel");
+      flushSync(()=>useStore.setState({extensionStatuses:{}}));await wait();checkComposer();
       window.__requests.syncDraft=async()=>{throw new Error("Composer mirror fixture failure");};
       await type(document.querySelector("textarea"),"unsaved draft");
       await until(()=>useStore.getState().noticeHistory.some(notice=>notice.message.includes("Composer mirror fixture failure")),"mirror errors must reach the existing notification UI");
@@ -985,6 +1085,10 @@ test.skipIf(!existsSync(edge) && !process.env.PIG_REQUIRE_UI_TESTS)(
         check(rect.height===panelRect.height && rect.top===panelRect.top && browser.getBoundingClientRect().height===browserHeight && reasoning.getBoundingClientRect().top===reasoningTop,"model counts and account/search states must not resize or shift the picker or effort slider");
       };
       check(document.querySelectorAll(".model-option").length===5,"recent fixture must have five models");
+      const effortRange=document.querySelector(".effort-range"),effortWidth=document.querySelector(".effort-slider").getBoundingClientRect().width;
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,"value").set.call(effortRange,"1");effortRange.dispatchEvent(new Event("input",{bubbles:true}));await wait();
+      check(document.querySelector(".effort-value [data-active]").textContent==="High" && document.querySelector(".effort-slider").getBoundingClientRect().width===effortWidth,"effort labels of different length must not resize the slider");
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,"value").set.call(effortRange,"0");effortRange.dispatchEvent(new Event("input",{bubbles:true}));await wait();
       window.__scrollbarCapture=true;await until(()=>typeof window.__scrollbarCapture==="string","missing model picker screenshot");window.__modelPickerScreenshot=window.__scrollbarCapture;delete window.__scrollbarCapture;
       const sourceButton=text=>[...document.querySelectorAll(".model-source-rail button")].find(button=>button.textContent.includes(text));
       await click(sourceButton("OpenAI Codex"));checkPickerHeight();
@@ -1235,6 +1339,7 @@ test.skipIf(!existsSync(edge) && !process.env.PIG_REQUIRE_UI_TESTS)(
         ["shell-vertical",'<details class="tool-term done" open><summary>$ fixture</summary><pre class="tool-term-output audit-scroller" data-axis="y"></pre></details>'],
         ["horizontal-stable-gutter",'<pre class="audit-scroller" data-axis="x" style="scrollbar-gutter:stable;white-space:pre"></pre>'],
         ["edit",'<div class="tool-body"><pre class="tool-diff audit-scroller"></pre></div>'],
+        ["grep",'<div class="tool-body"><pre class="tool-code tool-grep-output audit-scroller"></pre></div>'],
         ["markdown",'<div class="prose"><pre class="audit-scroller"></pre></div>'],
         ["markdown-table",'<div class="prose"><div class="markdown-table-scroll audit-scroller" data-axis="x"></div></div>'],
         ["read",'<div class="tool-body"><div class="message-content literal"><pre class="audit-scroller"></pre></div></div>'],
@@ -1357,7 +1462,7 @@ test.skipIf(!existsSync(edge) && !process.env.PIG_REQUIRE_UI_TESTS)(
             return {};
           }}),send:new Proxy({},{get:()=>noop})};
           export const sends={subscribe:()=>noop,getTick:()=>0,read:()=>window.__sendState,optimistic:()=>[],queued:()=>[],retained:()=>[],send:async(_address,_content,_attachments,delivery)=>{window.__sendCount=(window.__sendCount??0)+1;window.__sendModes?.push(delivery);}};
-          export const updateAppearance=noop,updateSettings=noop,updateUiPreferences=noop,refreshSessions=noop,refresh=()=>window.__refresh?.()??Promise.resolve(),requestSelection=(_address,request)=>request(),connectRuntime=noop,initRuntimeConnection=noop,cancelOpening=noop,openChat=noop,showPendingOpen=noop,openChatLink=noop,forkChat=noop,regenerate=noop,initSessionLinks=noop,initSessionReadTracking=noop,reconnectRuntime=noop;
+          export const updateAppearance=noop,updateSettings=noop,updateUiPreferences=noop,refreshSessions=noop,refresh=()=>window.__refresh?.()??Promise.resolve(),requestSelection=(_address,request)=>request(),connectRuntime=noop,initRuntimeConnection=noop,cancelOpening=noop,openChat=noop,startOpeningChat=noop,showPendingOpen=noop,openChatLink=noop,forkChat=noop,regenerate=noop,initSessionLinks=noop,initSessionReadTracking=noop,reconnectRuntime=noop;
         `,
               }));
             },
@@ -1548,6 +1653,7 @@ test.skipIf(!existsSync(edge) && !process.env.PIG_REQUIRE_UI_TESTS)(
             });
           }
           if (state.capture) {
+            const captureStarted = performance.now();
             const screenshot = await command<{ data: string }>(
               "Page.captureScreenshot",
               { format: "png" },
@@ -1555,6 +1661,14 @@ test.skipIf(!existsSync(edge) && !process.env.PIG_REQUIRE_UI_TESTS)(
             await command("Runtime.evaluate", {
               expression: `window.__scrollbarCapture=${JSON.stringify(screenshot.data)}`,
             });
+            if (process.env.PIG_UI_PROFILE)
+              console.info(
+                "Scrollbar capture",
+                JSON.stringify({
+                  ms: performance.now() - captureStarted,
+                  bytes: screenshot.data.length,
+                }),
+              );
           }
           report = state.report;
           if (!report) await Bun.sleep(25);

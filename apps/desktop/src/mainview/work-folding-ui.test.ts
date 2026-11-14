@@ -36,9 +36,9 @@ test.skipIf(!existsSync(fixtureEdge) && !process.env.PIG_REQUIRE_UI_TESTS)(
           record('result',5,{role:'toolResult',toolCallId:'tool',toolName:'bash',content:[text(log)],isError:false,timestamp:5}),
           assistant('final',6,[text('Final answer')]),user('u2',7),live],
           tools:{tool:{status:'done',result:{content:[text(log)]}}},running:true,current:'live',liveToEntry:{}}};
-      window.__requests={listSlashCommands:async()=>[],getSessionHistory:async()=>({history:{revision:'branch'},
-        records:[user('earlier-user',0),assistant('earlier-step',1,[text('Earlier work')]),assistant('earlier-final',2,[text('Earlier final')])],
-        tools:{},running:false,current:null,liveToEntry:{}})};
+      let replyHistory;
+      const historyGate=new Promise(resolve=>{replyHistory=resolve;});
+      window.__requests={listSlashCommands:async()=>[],getSessionHistory:async()=>historyGate};
       flushSync(()=>useStore.setState(s=>({snapshots:{chat:current},settings:{...s.settings,language:'en'}})));
       function StoredChat(){const snapshot=useStore(s=>s.snapshots.chat);return <Chat key={addressKey(snapshot.address)} snapshot={snapshot}/>;}
       flushSync(()=>root.render(<div className="chat-shell" style={{height:600}}><StoredChat/></div>));
@@ -50,6 +50,7 @@ test.skipIf(!existsSync(fixtureEdge) && !process.env.PIG_REQUIRE_UI_TESTS)(
       await click(footer.querySelector('[aria-label="Copy response"]'));
       check(copied.at(-1)==='Checking file\\n\\nFinal answer','copy must include the complete response, not only its visible final answer');
       await click(document.querySelector('.work-toggle'));
+      await until(()=>document.querySelector('.work-toggle')?.getAttribute('aria-expanded')==='true','work toggle must expand while history is pending');
       const output=document.querySelector('.tool-term-output');
       check(output?.textContent===log,'expanded work must retain the complete tool output');
       output.scrollTop=80;const top=output.scrollTop;
@@ -70,8 +71,11 @@ test.skipIf(!existsSync(fixtureEdge) && !process.env.PIG_REQUIRE_UI_TESTS)(
       await until(()=>useStore.getState().jump===undefined&&document.querySelector('[data-record-id="step"].search-target'),'search must unfold and reveal the cached work range');
       const step=document.querySelector('[data-record-id="step"]');
       check(document.querySelector('.tool-term-output').scrollTop===top,'search reopening must restore the internal tool scroll');
-      await click([...document.querySelectorAll('button')].find(button=>button.textContent==='Load earlier messages'));
-      await until(()=>document.querySelector('[data-record-id="earlier-final"]'),'history page must be prepended');
+      check(![...document.querySelectorAll('button')].some(button=>button.textContent==='Load earlier messages'),'history must not require a load button');
+      replyHistory({history:{revision:'branch'},
+        records:[user('earlier-user',0),assistant('earlier-step',1,[text('Earlier work')]),assistant('earlier-final',2,[text('Earlier final')])],
+        tools:{},running:false,current:null,liveToEntry:{}});
+      await until(()=>document.querySelector('[data-record-id="earlier-final"]'),'history must be automatically prepended');
       current=useStore.getState().snapshots.chat;
       check(document.querySelector('[data-record-id="step"]')===step&&document.querySelectorAll('.work-toggle').length===2,'prepend must recompute indices without losing the existing open work');
       const complete=structuredClone(current);complete.snapshotSeq++;complete.transcript.running=false;complete.transcript.current=null;

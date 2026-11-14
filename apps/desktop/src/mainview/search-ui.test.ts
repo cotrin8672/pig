@@ -69,6 +69,10 @@ test.skipIf(!existsSync(edge) && !process.env.PIG_REQUIRE_UI_TESTS)(
         const ctx=canvas.getContext('2d');ctx.fillStyle=getComputedStyle(dialog).backgroundColor;ctx.fillRect(0,0,1,1);
         const alpha=ctx.getImageData(0,0,1,1).data[3];
         check(alpha>0&&alpha<255&&getComputedStyle(dialog).opacity==='1','translucent palette, opaque content');
+        const glass=getComputedStyle(dialog).backdropFilter;
+        check(glass.includes('blur(')&&glass.includes('#search-palette-solid')&&dialog.querySelector('#search-palette-solid feFuncA'),'palette blur is made opaque so sharp text behind the transparent window cannot leak');
+        const inputStyle=getComputedStyle(input);
+        check(inputStyle.borderTopWidth==='0px'&&inputStyle.outlineStyle==='none'&&inputStyle.backgroundColor==='rgba(0, 0, 0, 0)','focused search input draws no inner box');
         const listHeight=list.getBoundingClientRect().height;
         const dialogRect=dialog.getBoundingClientRect();
         const same=()=>{const r=dialog.getBoundingClientRect();return Math.abs(list.getBoundingClientRect().height-listHeight)<0.5&&Math.abs(r.height-dialogRect.height)<0.5&&Math.abs(r.top-dialogRect.top)<0.5;};
@@ -171,7 +175,7 @@ test.skipIf(!existsSync(edge) && !process.env.PIG_REQUIRE_UI_TESTS)(
                 contents: `
           const noop=()=>{};export const rpc={request:new Proxy({},{get:(_,method)=>async params=>window.__requests?.[method]?window.__requests[method](params):{}}),send:new Proxy({},{get:()=>noop})};
           export const sends={subscribe:()=>noop,getTick:()=>0,read:()=>undefined,optimistic:()=>[],queued:()=>[],retained:()=>[],send:async()=>{}};
-          export const updateAppearance=noop,updateSettings=noop,updateUiPreferences=noop,refreshSessions=noop,refresh=()=>Promise.resolve(),requestSelection=(_address,request)=>request(),connectRuntime=noop,initRuntimeConnection=noop,cancelOpening=noop,openChat=noop,showPendingOpen=noop,openChatLink=noop,forkChat=noop,regenerate=noop,initSessionLinks=noop,initSessionReadTracking=noop,reconnectRuntime=noop;
+          export const updateAppearance=noop,updateSettings=noop,updateUiPreferences=noop,refreshSessions=noop,refresh=()=>Promise.resolve(),requestSelection=(_address,request)=>request(),connectRuntime=noop,initRuntimeConnection=noop,cancelOpening=noop,openChat=noop,startOpeningChat=noop,showPendingOpen=noop,openChatLink=noop,forkChat=noop,regenerate=noop,initSessionLinks=noop,initSessionReadTracking=noop,reconnectRuntime=noop;
         `,
               }));
             },

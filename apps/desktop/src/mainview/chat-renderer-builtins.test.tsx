@@ -337,6 +337,36 @@ if (process.env.PIG_RENDERER_BUILTINS_CHILD !== "1") {
     expect(image).toContain("data:image/png;base64,YWJj");
   });
 
+  test("Grep groups files and highlights matches without dropping notices or literal failures", () => {
+    const text = [
+      "src/a.ts-1- // context greeting",
+      "src/a.ts:2:   greeting(greeting);",
+      "src/b.ts:9: greeting;",
+      "[3 matches limit reached]",
+    ].join("\n");
+    const render = (status: "done" | "error") =>
+      renderToStaticMarkup(
+        <ToolBlock
+          call={{
+            id: "grep",
+            name: "grep",
+            arguments: { pattern: "greeting", path: "src" },
+          }}
+          state={{ status, result: { content: [{ type: "text", text }] } }}
+          live={false}
+        />,
+      );
+    const html = render("done");
+    expect(html.match(/class="tool-grep-file"/g)).toHaveLength(2);
+    expect(html.match(/<mark>greeting<\/mark>/g)).toHaveLength(3);
+    expect(html).toContain('class="tool-grep-line tool-grep-context"');
+    expect(html).toContain("  <mark>greeting</mark>");
+    expect(html).toContain("[3 matches limit reached]");
+    expect(html).toContain('data-tool-call-id="grep"');
+    expect(render("error")).not.toContain("tool-grep-file");
+    expect(render("error")).toContain(text);
+  });
+
   test("Bash ANSI output and EDIT code retain their built-in shell and diff structure", async () => {
     const { highlightCode } = await import("./syntax-highlighting");
     const output = "\u001b[32mPASS\u001b[0m";
@@ -420,7 +450,7 @@ if (process.env.PIG_RENDERER_BUILTINS_CHILD !== "1") {
     expect(html).not.toContain("text-range");
   });
 
-  test("bash, edit, write and thinking start open but respect saved closed state", () => {
+  test("bash, grep, edit, write and thinking start open but respect saved closed state", () => {
     for (const status of ["running", "done", "error"] as const) {
       for (const name of [
         "bash",
@@ -450,7 +480,7 @@ if (process.env.PIG_RENDERER_BUILTINS_CHILD !== "1") {
         );
         const html = renderToStaticMarkup(tool);
         expect(html.split(">")[0].includes('open=""')).toBe(
-          ["bash", "edit", "write"].includes(name),
+          ["bash", "grep", "edit", "write"].includes(name),
         );
         const closed = renderToStaticMarkup(
           <DisclosureScope
@@ -478,7 +508,14 @@ if (process.env.PIG_RENDERER_BUILTINS_CHILD !== "1") {
 
   test("closed tool bodies, groups and thinking do not render their payloads", () => {
     const text = "hidden payload".repeat(10_000);
-    for (const name of ["read", "powershell", "unknown", "write", "edit"]) {
+    for (const name of [
+      "read",
+      "grep",
+      "powershell",
+      "unknown",
+      "write",
+      "edit",
+    ]) {
       const html = renderToStaticMarkup(
         <DisclosureScope
           id="closed"
