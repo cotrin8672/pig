@@ -7,7 +7,8 @@ const sdkEndpoint = (path: string) =>
   path.startsWith("@earendil-works/pi-") ||
   path.replaceAll("\\", "/").endsWith("/bun/sdk.ts");
 const localGraph = new Map<string, string[]>();
-const entry = resolve(import.meta.dir, "../src/bun/index.ts");
+// index.ts only claims the single instance, then dynamically imports app.ts.
+const entry = resolve(import.meta.dir, "../src/bun/app.ts");
 
 async function visit(file: string) {
   if (localGraph.has(file)) return;
