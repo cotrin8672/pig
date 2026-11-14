@@ -40,23 +40,17 @@ export function BuiltinImageGallery({
 }: ChatRendererProps<"image">) {
   const t = useT();
   const [current, setCurrent] = useState(0);
-  const [viewing, setViewing] = useState(false);
   const index = Math.min(current, sources.length - 1);
   const src = sources[index];
-  const trigger = useRef<HTMLButtonElement>(null);
   if (!src) return null;
   return (
     <span className={`image-set${sources.length > 1 ? " is-multiple" : ""}`}>
-      <button
-        type="button"
-        className="image-preview"
-        ref={trigger}
-        aria-label={alt ? `${t["Open image"]}: ${alt}` : t["Open image"]}
-        onClick={() => setViewing(true)}
-        onContextMenu={(e) => openImageMenu(e, src)}
-      >
-        <img src={src} alt={alt ?? t.Image} loading="lazy" />
-      </button>
+      <ImagePreview
+        sources={sources}
+        index={index}
+        alt={alt}
+        onViewed={setCurrent}
+      />
       {sources.length > 1 && (
         <span className="image-thumbnails">
           {sources.map((thumb, i) => (
@@ -75,6 +69,39 @@ export function BuiltinImageGallery({
           ))}
         </span>
       )}
+    </span>
+  );
+}
+
+/** Shared trigger and viewer for message images and unsent attachments. */
+export function ImagePreview({
+  sources,
+  index = 0,
+  alt,
+  onViewed,
+}: {
+  sources: string[];
+  index?: number;
+  alt?: string;
+  onViewed?: (index: number) => void;
+}) {
+  const t = useT();
+  const [viewing, setViewing] = useState(false);
+  const trigger = useRef<HTMLButtonElement>(null);
+  const src = sources[index];
+  if (!src) return null;
+  return (
+    <>
+      <button
+        type="button"
+        className="image-preview"
+        ref={trigger}
+        aria-label={alt ? `${t["Open image"]}: ${alt}` : t["Open image"]}
+        onClick={() => setViewing(true)}
+        onContextMenu={(e) => openImageMenu(e, src)}
+      >
+        <img src={src} alt={alt ?? t.Image} loading="lazy" />
+      </button>
       {viewing &&
         createPortal(
           <ImageViewer
@@ -82,14 +109,14 @@ export function BuiltinImageGallery({
             start={index}
             alt={alt}
             onClose={(last) => {
-              setCurrent(last);
+              onViewed?.(last);
               setViewing(false);
               requestAnimationFrame(() => trigger.current?.focus());
             }}
           />,
           document.body,
         )}
-    </span>
+    </>
   );
 }
 
