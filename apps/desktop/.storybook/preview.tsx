@@ -12,35 +12,72 @@ import "../src/mainview/styles.css";
 function GlassStage({
   children,
   windowPreview,
+  appPreview,
 }: {
   children: ReactNode;
   windowPreview?: boolean;
+  appPreview?: boolean;
 }) {
   return (
     <div className="glass-stage">
       <div className="glass-wallpaper" aria-hidden="true" />
-      <div
-        className="app-shell glass-shell"
-        style={{ "--window-opacity": 0.78 } as CSSProperties}
-      >
-        {windowPreview ? (
-          children
-        ) : (
-          <div className="glass-scroll">
-            <div className="transcript">{children}</div>
-          </div>
-        )}
-      </div>
+      {appPreview ? (
+        children
+      ) : (
+        <div
+          className="app-shell glass-shell"
+          style={{ "--window-opacity": 0.78 } as CSSProperties}
+        >
+          {windowPreview ? (
+            children
+          ) : (
+            <div className="glass-scroll">
+              <div className="transcript">{children}</div>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }
 
 export default {
-  parameters: { layout: "fullscreen" },
+  parameters: {
+    layout: "fullscreen",
+    options: {
+      storySort: {
+        order: [
+          "Design System",
+          [
+            "Screens",
+            "Domain",
+            [
+              "Sidebar",
+              ["Default", "*"],
+              "ChatScreen",
+              ["Default", "Running", "*"],
+              "ComposerUI",
+              ["Default", "Running", "*"],
+            ],
+            "Patterns",
+            "Primitives",
+            "Foundations",
+            "Guide",
+          ],
+          "*",
+        ],
+      },
+    },
+  },
   decorators: [
     (Story, { parameters }) => (
-      <GlassStage windowPreview={parameters.windowPreview}>
-        {parameters.gallery || parameters.windowPreview ? (
+      <GlassStage
+        windowPreview={parameters.windowPreview}
+        appPreview={parameters.appPreview}
+      >
+        {parameters.gallery ||
+        parameters.windowPreview ||
+        parameters.appPreview ? (
           <Story />
         ) : (
           <StoryTurn role={parameters.role}>

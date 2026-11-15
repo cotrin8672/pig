@@ -1,0 +1,253 @@
+/* All selectors are scoped to this review. No production stylesheet is changed. */
+.ds-review {
+  width: 100%;
+  max-width: 1100px;
+  margin-inline: auto;
+  display: grid;
+  gap: 28px;
+  padding-bottom: 24px;
+  overflow-wrap: anywhere;
+}
+.ds-review .ds-review-header {
+  display: grid;
+  gap: 10px;
+}
+.ds-review .ds-review-header h1,
+.ds-review .ds-review-header p,
+.ds-review h3 {
+  margin: 0;
+}
+.ds-review .ds-review-kicker,
+.ds-review .ds-review-tag {
+  color: var(--ds-text-muted);
+  font-size: var(--text-sm);
+  font-weight: var(--font-weight-medium);
+}
+.ds-review .ds-review-boundary {
+  padding-left: 12px;
+  border-left: 2px solid var(--ds-border-strong);
+  color: var(--ds-text-secondary);
+}
+.ds-review .ds-review-section {
+  display: grid;
+  gap: 14px;
+  min-width: 0;
+}
+.ds-review .ds-review-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 280px), 1fr));
+  gap: 16px;
+  min-width: 0;
+}
+.ds-review .ds-review-card {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-width: 0;
+  padding: 18px;
+  border-radius: var(--radius-md);
+  background: var(--ds-tile);
+  box-shadow: var(--ds-elevation-stroke);
+}
+.ds-review .ds-review-card > header {
+  display: grid;
+  gap: 6px;
+}
+.ds-review h3 {
+  font-size: var(--text-base);
+  font-weight: var(--font-weight-semibold);
+}
+.ds-review .ds-review-source {
+  color: var(--ds-text-muted);
+  font-size: var(--text-sm);
+  white-space: normal;
+}
+.ds-review .ds-review-guidance {
+  display: grid;
+  gap: 10px;
+  margin: 0;
+}
+.ds-review .ds-review-guidance > div {
+  display: grid;
+  gap: 3px;
+}
+.ds-review .ds-review-guidance dt {
+  color: var(--ds-text-secondary);
+  font-size: var(--text-sm);
+}
+.ds-review .ds-review-guidance dd {
+  margin: 0;
+}
+.ds-review .ds-review-demo {
+  display: grid;
+  gap: 14px;
+  min-width: 0;
+  margin-top: auto;
+  padding-top: 16px;
+  border-top: 1px solid var(--ds-border-strong);
+}
+.ds-review .ds-review-inline {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+.ds-review .ds-review-icon-button {
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  flex: none;
+}
+.ds-review .ds-review-field {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+.ds-review .ds-review-field input,
+.ds-review .ds-review-field select {
+  width: 100%;
+  min-width: 0;
+}
+.ds-review .ds-review-note {
+  color: var(--ds-text-muted);
+  font-size: var(--text-sm);
+}
+.ds-review .ds-review-table {
+  display: grid;
+  gap: 0;
+  margin: 0;
+}
+.ds-review .ds-review-table > div {
+  display: grid;
+  grid-template-columns: minmax(120px, 1fr) minmax(0, 3fr);
+  gap: 12px;
+  padding-block: 14px;
+  border-bottom: 1px solid var(--ds-border-strong);
+}
+.ds-review .ds-review-table dt {
+  font-weight: var(--font-weight-semibold);
+}
+.ds-review .ds-review-table dd {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  min-width: 0;
+}
+.ds-review .ds-review-list {
+  display: grid;
+  gap: 10px;
+  margin: 0;
+  padding-left: 22px;
+}
+.ds-review ol.ds-review-list {
+  list-style: decimal;
+}
+.ds-review ul.ds-review-list {
+  list-style: disc;
+}
+.ds-review .ds-review-swatch {
+  width: 32px;
+  height: 32px;
+  border: 1px solid var(--ds-border-strong);
+  border-radius: var(--radius-xs);
+  background: var(--sample-color);
+  flex: none;
+}
+.ds-review .ds-review-token {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+.ds-review .ds-review-token code {
+  font-size: var(--text-sm);
+}
+.ds-review .ds-review-type-title {
+  font-size: var(--text-2xl);
+  line-height: var(--leading-heading);
+}
+.ds-review .ds-review-type-label {
+  font-size: var(--text-sm);
+  color: var(--ds-text-secondary);
+}
+.ds-review .ds-review-output {
+  margin: 0;
+  padding: 12px;
+  border-radius: var(--radius-sm);
+  background: var(--ds-tool-row-bg);
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  line-height: var(--leading-relaxed);
+  max-height: calc(8lh + 24px + var(--scrollbar-size));
+  overflow: auto;
+  white-space: pre;
+  --scrollbar-inset: var(--radius-sm);
+}
+.ds-review .ds-review-output pre {
+  margin: 0;
+  font: inherit;
+}
+.ds-review .ds-review-setting {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+.ds-review .ds-review-setting > label {
+  display: grid;
+  gap: 4px;
+  flex: 1 1 180px;
+}
+.ds-review .ds-review-setting > input,
+.ds-review .ds-review-setting > select {
+  max-width: 100%;
+  min-width: 0;
+}
+.ds-review .ds-review-setting > input:not([type="checkbox"]),
+.ds-review .ds-review-setting > select {
+  flex: 1 1 180px;
+}
+.ds-review input[type="checkbox"] {
+  flex: none;
+  width: auto;
+  padding: 0;
+}
+.ds-review .ds-review-menu-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.ds-review .ds-review-menu-row .thread-more {
+  opacity: 1;
+}
+.ds-review .ds-review-dialog {
+  width: min(420px, calc(100vw - 32px));
+  max-height: calc(100dvh - 32px);
+  padding: 24px;
+  border: 1px solid var(--ds-border-strong);
+  border-radius: var(--radius-lg);
+  background: var(--ds-bg-popover);
+  color: var(--ds-text-primary);
+  box-shadow: var(--ds-shadow-dialog);
+  backdrop-filter: blur(20px);
+  --scrollbar-inset: var(--radius-lg);
+}
+.ds-review .ds-review-dialog form {
+  display: grid;
+  gap: 16px;
+}
+.ds-review .ds-review-submit {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 68px;
+  margin: 0;
+}
+@media (max-width: 560px) {
+  .ds-review .ds-review-table > div {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 6px;
+  }
+}
