@@ -11,7 +11,8 @@ bundle, stock Electrobun framework/native setup, frontend copy entries and
 release-metadata postBuild hook remain in place. Do not externalize all packages indiscriminately:
 Electrobun's own framework bundling has different native path requirements.
 
-The `preBuild` hook `sdk-runtime-assets.ts` stages the **installed production
+The `preBuild` hook `pre-build.ts` calls `stageSdkRuntime()` in
+`sdk-runtime-assets.ts`, which stages the **installed production
 closure** of SDK/pi-ai/pi-tui in `build/sdk-runtime`. It follows dependencies,
 installed optional dependencies and peers, not devDependencies; missing required
 edges fail the build. No install, registry resolution, lifecycle script or source
@@ -30,6 +31,10 @@ Durable is forbidden even on an optional edge. The generated
 `sdk-runtime-manifest.json` records every placement's name, version, manifest
 SHA256 and resolved production edges (not a signature or full-file integrity
 manifest).
+
+The same hook bundles the local statistics SQLite worker into
+`build/statistics/statistics-worker.js`; `build.copy` places it at
+`Resources/app/bun/statistics-worker.js`, beside the host bundle.
 
 `build.copy` places `node_modules` and the manifest under `Resources/app`, beside
 `bun/`, so standard resolution works from the host and unbundled SDK. No runtime

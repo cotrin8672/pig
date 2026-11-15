@@ -106,6 +106,8 @@ import {
 } from "./session-files";
 import { currentSettings } from "./settings";
 import { desktopShellTool } from "./shell-tools";
+import { SessionStatistics, statisticsOwner } from "./statistics/collector";
+import type { StatisticsSink } from "./statistics/contracts";
 import { UIRequestBroker } from "./ui-request-broker";
 
 type Managed = {
@@ -126,6 +128,7 @@ type Managed = {
   projector?: SDKProjector;
   ui: ExtensionUIHost;
   unsubscribe?: () => void;
+  statistics?: SessionStatistics;
   eventBus: EventBusController;
   adapterSource?: ReturnType<typeof createAdapterSource>;
   adapters?: AdapterRuntime;
@@ -196,6 +199,7 @@ type Options = {
   configureModels?: (runtime: ModelRuntime) => void | Promise<void>;
   connectionNow?: () => number;
   recoveryFile?: string;
+  statistics?: StatisticsSink;
 };
 // SDK's low-level API registry is process-global: serialize loader/reload work.
 let loaderQueue = Promise.resolve();
@@ -937,7 +941,16 @@ export class SessionHost {
     session.agent.transformContext = async (messages, signal) => {
       const result = transform ? await transform(messages, signal) : messages;
       m.controller.signal.throwIfAborted();
-      return this.settings.blockImages ? scrubImages(result) : result;
+      const outgoing = this.settings.blockImages ? scrubImages(result) : result;
+      try {
+        m.statistics?.initialContext(
+          outgoing,
+          session.model?.contextWindow ?? null,
+        );
+      } catch {
+        console.error("[statistics] initial context unavailable");
+      }
+      return outgoing;
     };
     const setModel = session.setModel.bind(session);
     session.setModel = async (model, options) => {
@@ -1017,6 +1030,38 @@ export class SessionHost {
       !m.quarantined &&
       m.address.epoch === epoch &&
       m.runtime?.session === session;
+    let statistics: SessionStatistics | undefined;
+    let statisticsErrorReported = false;
+    const observe = (callback: () => void) => {
+      if (!this.options.statistics) return;
+      try {
+        callback();
+      } catch {
+        // Extension metadata and collection failures must never break a run.
+        if (!statisticsErrorReported) {
+          console.error("[statistics] session metadata unavailable");
+          statisticsErrorReported = true;
+        }
+      }
+    };
+    observe(() => {
+      statistics = new SessionStatistics(
+        {
+          profile: agentDir,
+          cwd: m.cwd,
+          session: m.address.sessionId,
+          host: this.hostId,
+          epoch,
+          account: (provider) =>
+            m.models
+              ? runtimeAccounts(m.models).selection()[provider]
+              : undefined,
+        },
+        required(this.options.statistics),
+      );
+      statistics.context(session);
+      m.statistics = statistics;
+    });
     const dequeue = session.agent.subscribe((event) => {
       if (current() && event.type === "message_start") {
         const requestId = m.queued.get(event.message);
@@ -1027,6 +1072,19 @@ export class SessionHost {
     let retrying = false;
     const unsubscribe = session.subscribe((event) => {
       if (!current()) return;
+      observe(() => {
+        statistics?.event(
+          event,
+          event.type === "message_start"
+            ? m.requestIds.get(event.message)
+            : undefined,
+        );
+        if (
+          event.type === "agent_start" ||
+          (event.type === "message_start" && event.message.role === "assistant")
+        )
+          statistics?.context(session);
+      });
       const failure = m.projector?.failure;
       m.projector?.event(
         this.settings.blockImages ? scrubImages(event) : event,
@@ -1080,6 +1138,8 @@ export class SessionHost {
     m.unsubscribe = () => {
       dequeue();
       unsubscribe();
+      observe(() => statistics?.close());
+      if (m.statistics === statistics) m.statistics = undefined;
     };
   }
   private maybeReload(m: Managed) {
@@ -2160,6 +2220,9 @@ export class SessionHost {
     }
     this.runDiagnostics.delete(manager);
     this.failedHistory.delete(info.id);
+    await this.options.statistics?.forget(
+      statisticsOwner(agentDir, info.cwd, info.id),
+    );
   }
   private recoveryState(sessions: Managed[]): RuntimeRecoveryState {
     const allowed = sessions

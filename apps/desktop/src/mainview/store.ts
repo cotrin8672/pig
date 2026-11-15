@@ -94,7 +94,7 @@ export const useStore = create<{
   paneTree: PaneNode;
   activePane: number;
   panes: Record<number, { sessionId?: string; openId?: string }>;
-  page: "chat" | "providers" | "extensions" | "settings";
+  page: "chat" | "providers" | "extensions" | "settings" | "statistics";
   searchOpen: boolean;
   settingsCategory: SettingsCategory;
   /** Settings row (`data-setting`) to reveal once the settings page renders. */

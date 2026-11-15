@@ -20,7 +20,10 @@ export type PaletteKind =
   | "message";
 export type PaletteTarget =
   | { type: "chat"; cwd: string; id?: string }
-  | { type: "page"; page: "settings" | "providers" | "extensions" }
+  | {
+      type: "page";
+      page: "settings" | "providers" | "extensions" | "statistics";
+    }
   | { type: "action"; action: ActionId }
   | { type: "setting"; category: SettingsCategory; setting?: string }
   | { type: "message"; cwd: string; sessionId: string; entryId: string };
@@ -85,6 +88,7 @@ export function paletteItems(t: typeof en, s: PaletteSources): PaletteItem[] {
     ["settings", "Settings"],
     ["providers", "Providers"],
     ["extensions", "Extensions"],
+    ["statistics", "Statistics"],
   ] as const)
     items.push({
       key: `page:${page}`,
