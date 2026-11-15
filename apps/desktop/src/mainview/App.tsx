@@ -40,7 +40,6 @@ import {
   ExtensionNoticeLine,
   interleaveExtensionNotices,
 } from "./extension-notices";
-import { workingLabel } from "./extension-status";
 import { fontFamilyValue } from "./font-family";
 import { getT, useT } from "./i18n";
 import { DisclosureScope, LazyDetails } from "./LazyDetails";
@@ -59,6 +58,7 @@ import { ProviderUsage } from "./ProviderUsage";
 import { createPane } from "./pane-state";
 import { ResponseError, RetryNotice } from "./ResponseError";
 import { ResponseFooter } from "./ResponseFooter";
+import { RunningIndicator } from "./RunningIndicator";
 import { createResponseFooterIndex } from "./response-footers";
 import { retriedAttempts } from "./retry-attempts";
 import {
@@ -1081,9 +1081,10 @@ export const Chat = memo(function Chat({
           (snapshot.aborted ? t.Stopped : t.responseComplete)}
       </span>
       {transcript.running && (
-        <p className="muted running" role="status">
-          {workingLabel(status, t["Working…"])}
-        </p>
+        <RunningIndicator
+          symbol={status?.workingSymbol}
+          message={status?.workingMessage}
+        />
       )}
     </ChatLayout>
   );

@@ -849,6 +849,35 @@ details[open] > summary .tool-chevron,
   }
 }
 
+/* Running line: the wait under a live response. One line, no card, no height change. */
+.running-line {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 1.5em;
+}
+.running-glyph {
+  flex: none;
+  width: 1em;
+  font-family: var(--font-mono);
+  text-align: center;
+  color: var(--ds-text-secondary);
+}
+.running-verb {
+  animation: running-verb-in 260ms ease-out;
+}
+@keyframes running-verb-in {
+  from {
+    opacity: 0;
+    transform: translateY(2px);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .running-verb {
+    animation: none;
+  }
+}
+
 /* One-line tool rows (read, grep, find, ls, edit, write, MCP, groups) */
 .tool-row > summary {
   display: flex;
