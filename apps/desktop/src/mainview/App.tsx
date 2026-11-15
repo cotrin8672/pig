@@ -25,7 +25,11 @@ import {
 } from "react";
 import { useShallow } from "zustand/react/shallow";
 import appIcon from "../../assets/icon.svg";
-import { createFinishedWorkIndex, groupBlocks } from "../shared/tool-view";
+import {
+  createFinishedWorkIndex,
+  groupBlocks,
+  responseImages,
+} from "../shared/tool-view";
 import { ChatHeader } from "./ChatHeader";
 import { ChatEmpty, ChatLayout } from "./ChatLayout";
 import { ChatOpening, OpeningComposer, OpeningMessages } from "./ChatOpening";
@@ -43,7 +47,7 @@ import {
 import { fontFamilyValue } from "./font-family";
 import { getT, useT } from "./i18n";
 import { DisclosureScope, LazyDetails } from "./LazyDetails";
-import { Markdown, UserMessage } from "./MessageContent";
+import { Markdown, MessageContent, UserMessage } from "./MessageContent";
 import { modelDividers } from "./model-dividers";
 import { NotificationCenter } from "./NotificationCenter";
 import { OptimisticMessages } from "./OptimisticMessages";
@@ -720,6 +724,16 @@ export const Chat = memo(function Chat({
       transcript.history?.revision,
     ],
   );
+  // A generated image belongs to the answer, not only to the folded work above it.
+  const workImages = useMemo(() => {
+    const images = new Map<string, ReturnType<typeof responseImages>>();
+    for (const range of new Set(work.values()))
+      images.set(
+        range.key,
+        responseImages(transcript.records, range, transcript.tools),
+      );
+    return images;
+  }, [work, transcript.records, transcript.tools]);
   const [indexFooters] = useState(createResponseFooterIndex);
   const footers = useMemo(
     () =>
@@ -875,6 +889,10 @@ export const Chat = memo(function Chat({
         if (!isVisibleRecord(record)) return null;
         const range = work.get(index);
         const folded = range !== undefined && !openWork[range.key];
+        const images =
+          range && index === range.final
+            ? workImages.get(range.key)
+            : undefined;
         const toggle = range && !renderedWork.has(range.key) && (
           <WorkToggle
             open={!folded}
@@ -1025,6 +1043,9 @@ export const Chat = memo(function Chat({
                         />
                       )
                     )}
+                    {images?.length ? (
+                      <MessageContent content={images} markdown={false} />
+                    ) : null}
                   </>
                 ) : (
                   <CustomRecord record={record} />
