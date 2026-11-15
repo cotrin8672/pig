@@ -26,6 +26,7 @@ export type SendState = {
   disposition?: PromptAccepted["disposition"];
   recoveryReason?: "prepared" | "lookup-timeout";
   recoveredQueue?: boolean;
+  detached?: true;
   optimistic?: boolean;
   timestamp?: number;
   delivery?: PromptDelivery;
@@ -103,18 +104,28 @@ export class SendController {
   reconcile(snapshot: Snapshot) {
     for (const state of this.operations.values()) {
       if (
-        sameAddress(state.key, snapshot.address) &&
-        state.state === "accepted" &&
+        sameAddress(
+          this.transfers.get(this.operationKey(state.key))?.address ??
+            state.key,
+          snapshot.address,
+        ) &&
+        (state.state === "accepted" || isSendUnconfirmed(state)) &&
         state.content &&
         transcriptRequestIds(snapshot.transcript.records).has(
           state.key.requestId,
         )
-      )
+      ) {
+        // Matching history is authoritative even if the acceptance RPC was lost.
+        if (isSendUnconfirmed(state))
+          this.settle(state.key, state, { state: "accepted" });
+        const confirmed =
+          this.operations.get(this.operationKey(state.key)) ?? state;
         this.put(
           snapshot.address,
-          { ...state, content: undefined, optimistic: false },
+          { ...confirmed, content: undefined, optimistic: false },
           this.read(snapshot.address)?.key.requestId === state.key.requestId,
         );
+      }
     }
   }
   optimistic(address: SessionAddress) {
@@ -125,6 +136,7 @@ export class SendController {
         (state.delivery !== "followUp" || state.disposition !== undefined) &&
         state.content &&
         state.state !== "rejected" &&
+        state.state !== "unknown" &&
         state.disposition !== "handled",
     );
   }
@@ -135,6 +147,7 @@ export class SendController {
       .filter(
         (state) =>
           sameAddress(state.key, address) &&
+          !state.detached &&
           state.delivery === "followUp" &&
           state.content &&
           isSendUnconfirmed(state) &&
@@ -228,6 +241,7 @@ export class SendController {
                 state.key,
               address,
             )) &&
+          !state.detached &&
           isSendUnconfirmed(state),
       );
     await Promise.all(
@@ -261,11 +275,29 @@ export class SendController {
         state.state === "unknown" ||
         (state.state === "checking" &&
           !(state.delivery === "followUp" && state.stage === "queued")) ||
+        (state.detached && !!state.content) ||
         state.recoveredQueue,
     );
   }
   private operationKey(key: SendKey) {
     return `${addressKey(key)}:${key.requestId}`;
+  }
+  /** After a confirmed stop and history change, keep old payloads out of the new run. */
+  retire(address: SessionAddress) {
+    for (const [id, state] of this.operations) {
+      const owner = this.transfers.get(id)?.address ?? state.key;
+      if (!sameAddress(state.key, address) && !sameAddress(owner, address))
+        continue;
+      if (!this.dispatched.has(id)) this.cancelled.add(id);
+      this.operations.set(id, { ...state, detached: true, optimistic: false });
+      this.transfers.delete(id);
+      this.ranks.delete(id);
+    }
+    for (const [key, state] of this.states)
+      if (this.operations.get(this.operationKey(state.key))?.detached)
+        this.states.delete(key);
+    this.tick++;
+    for (const listener of this.listeners) listener();
   }
   discard(address: SessionAddress) {
     this.states.delete(addressKey(address));
@@ -284,6 +316,8 @@ export class SendController {
   }
   private put(address: SessionAddress, state: SendState, current = true) {
     const id = this.operationKey(state.key);
+    if (this.operations.get(id)?.detached)
+      state = { ...state, detached: true, optimistic: false };
     // Captured send states still say followUp; promotion is the newer fact.
     if (this.promoted.has(id)) state = { ...state, delivery: "steer" };
     if (!isSendUnconfirmed(state)) this.ranks.delete(id);
@@ -312,6 +346,7 @@ export class SendController {
       if (receipt.state === "pending" && receipt.stage !== "prepared")
         this.dispatched.add(this.operationKey(receipt));
       const existing = this.operations.get(this.operationKey(receipt));
+      if (existing?.detached) continue;
       const draft = this.drafts.read(receipt);
       const recoveredQueue = !!(
         draft.retired &&
@@ -370,7 +405,7 @@ export class SendController {
     for (const [id, state] of this.operations)
       if (
         sameAddress(state.key, address) &&
-        state.state === "sending" &&
+        isSendUnconfirmed(state) &&
         !this.dispatched.has(id)
       )
         this.cancelled.add(id);
@@ -590,6 +625,7 @@ export class SendController {
       state.optimistic &&
       result.state === "rejected" &&
       state.content &&
+      !previous?.detached &&
       !this.withdrawn.has(id)
     )
       this.drafts.restoreSent(address, state.content);
@@ -598,6 +634,7 @@ export class SendController {
       {
         ...state,
         content:
+          previous?.detached ||
           state.recoveredQueue ||
           (state.optimistic && result.state === "accepted")
             ? state.content
@@ -624,7 +661,8 @@ export class SendController {
     if (!key) return Promise.resolve();
     const id = this.operationKey(key);
     const state = this.operations.get(id);
-    if (!isSendUnconfirmed(state) || !state) return Promise.resolve();
+    if (!isSendUnconfirmed(state) || !state || state.detached)
+      return Promise.resolve();
     const flight = this.lookups.get(id);
     if (flight) return flight;
     let timer: ReturnType<typeof setTimeout>;
@@ -684,10 +722,15 @@ export class SendController {
         });
       })
       .catch(() => {
-        this.failures.set(id, (this.failures.get(id) ?? 0) + 1);
+        const failures = (this.failures.get(id) ?? 0) + 1;
+        this.failures.set(id, failures);
+        // An unreachable receipt service must not leave a send looking active forever.
         update({
           ...state,
-          state: "checking",
+          state: failures >= 3 ? "unknown" : "checking",
+          ...(failures >= 3
+            ? { recoveryReason: "lookup-timeout" as const }
+            : {}),
         });
       })
       .finally(() => {
@@ -724,6 +767,7 @@ export class SendController {
     for (const [id, state] of this.operations) {
       const transfer = this.transfers.get(id);
       if (
+        state.detached ||
         !isSendUnconfirmed(state) ||
         !sameAddress(transfer?.address ?? state.key, previous)
       )

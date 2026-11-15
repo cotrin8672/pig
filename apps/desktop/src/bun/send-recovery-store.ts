@@ -15,6 +15,18 @@ import { validateDraftContent } from "./composer-bridge";
 import { sessionKey } from "./ui-request-broker";
 
 type IntentRow = { hash: string; metadata: string; content: string | null };
+type PackedContent = Omit<DraftContent, "images"> & {
+  images: { id: string; hash: string }[];
+};
+function parseRecovery<T>(text: string): T {
+  try {
+    return JSON.parse(text) as T;
+  } catch (cause) {
+    throw new Error("Invalid send recovery JSON; existing data preserved", {
+      cause,
+    });
+  }
+}
 const key = (r: SendKey) =>
   JSON.stringify([r.hostId, r.sessionId, r.epoch, r.requestId]);
 const session = (id: string, cwd: string) => JSON.stringify([id, cwd]);
@@ -27,6 +39,7 @@ const addressOf = (a: SessionAddress) => ({
 /** SQLite serializes writers across processes; every ACK commits only the affected owner. */
 export class SendRecoveryStore {
   private db?: Database;
+  private imageRefsRemoved = false;
   error?: string;
   constructor(file: string) {
     let opened: Database | undefined;
@@ -63,13 +76,15 @@ export class SendRecoveryStore {
   private write<T>(fn: (db: Database) => T): T {
     if (!this.db)
       throw new Error(this.error ?? "Send recovery storage is closed");
+    this.imageRefsRemoved = false;
     try {
       const result = this.db
         .transaction(() => {
           const result = fn(this.db as Database);
-          this.db?.exec(
-            "DELETE FROM images WHERE NOT EXISTS (SELECT 1 FROM image_refs WHERE image_refs.hash = images.hash)",
-          );
+          if (this.imageRefsRemoved)
+            this.db?.exec(
+              "DELETE FROM images WHERE NOT EXISTS (SELECT 1 FROM image_refs WHERE image_refs.hash = images.hash)",
+            );
           return result;
         })
         .immediate();
@@ -85,7 +100,7 @@ export class SendRecoveryStore {
       throw new Error("Recovery data belongs to a deleted session");
   }
   private pack(db: Database, object: string, content: DraftContent) {
-    db.query("DELETE FROM image_refs WHERE object = ?").run(object);
+    this.removeImageRefs(db, object);
     const images = content.images.map(({ id, image }) => {
       const hash = createHash("sha256")
         .update(image.mimeType)
@@ -112,9 +127,15 @@ export class SendRecoveryStore {
       annotations: content.annotations,
     });
   }
+  private removeImageRefs(db: Database, object: string) {
+    const result = db
+      .query("DELETE FROM image_refs WHERE object = ?")
+      .run(object);
+    this.imageRefsRemoved ||= result.changes > 0;
+  }
   private unpack(data: string): DraftContent {
-    const content = JSON.parse(data);
-    content.images = content.images.map(
+    const packed = parseRecovery<PackedContent>(data);
+    const images = packed.images.map(
       ({ id, hash }: { id: string; hash: string }) => {
         const image = this.db
           ?.query("SELECT mime, data FROM images WHERE hash = ?")
@@ -123,10 +144,15 @@ export class SendRecoveryStore {
           throw new Error("Recovery image is missing; existing data preserved");
         return {
           id,
-          image: { type: "image", mimeType: image.mime, data: image.data },
+          image: {
+            type: "image" as const,
+            mimeType: image.mime,
+            data: image.data,
+          },
         };
       },
     );
+    const content = { ...packed, images };
     validateDraftContent(content);
     return content;
   }
@@ -156,7 +182,7 @@ export class SendRecoveryStore {
         ? JSON.stringify({
             text: draft.text,
             pastes: draft.pastes,
-            images: JSON.parse(previous.content).images,
+            images: parseRecovery<PackedContent>(previous.content).images,
             files: draft.files,
             annotations: draft.annotations,
           })
@@ -191,9 +217,7 @@ export class SendRecoveryStore {
         db.query("DELETE FROM drafts WHERE owner = ?").run(
           sessionKey(previous),
         );
-        db.query("DELETE FROM image_refs WHERE object = ?").run(
-          `draft:${sessionKey(previous)}`,
-        );
+        this.removeImageRefs(db, `draft:${sessionKey(previous)}`);
       }
     });
   }
@@ -216,10 +240,7 @@ export class SendRecoveryStore {
         (r.state === "accepted" &&
           (r.accepted.disposition !== "queued" || !original));
       const content = terminal || discarded ? undefined : original;
-      if (!content)
-        db.query("DELETE FROM image_refs WHERE object = ?").run(
-          `intent:${key(r)}`,
-        );
+      if (!content) this.removeImageRefs(db, `intent:${key(r)}`);
       const packed = content
         ? (prior?.content ?? this.pack(db, `intent:${key(r)}`, content))
         : null;
@@ -259,7 +280,7 @@ export class SendRecoveryStore {
     return intent;
   }
   private decode(row: IntentRow, hostId: string): SendIntent {
-    const intent = JSON.parse(row.metadata) as SendIntent;
+    const intent = parseRecovery<SendIntent>(row.metadata);
     if (intent.hash !== row.hash)
       throw new Error("Invalid saved send identity");
     if (row.content !== null) intent.content = this.unpack(row.content);
@@ -285,9 +306,11 @@ export class SendRecoveryStore {
         content: string;
         revision: number;
       }[]) {
-        const item = JSON.parse(row.metadata) as RecoveredDraft & {
-          consumedRevision?: number;
-        };
+        const item = parseRecovery<
+          RecoveredDraft & {
+            consumedRevision?: number;
+          }
+        >(row.metadata);
         const content = this.unpack(row.content);
         drafts.push({
           address: item.address,
@@ -315,18 +338,13 @@ export class SendRecoveryStore {
       const row = db
         .query("SELECT metadata FROM drafts WHERE owner = ?")
         .get(sessionKey(address)) as { metadata: string } | null;
-      if (
-        !row ||
-        (JSON.parse(row.metadata) as RecoveredDraft).owner.cwd !== cwd
-      )
+      if (!row || parseRecovery<RecoveredDraft>(row.metadata).owner.cwd !== cwd)
         throw new Error("Retained draft owner mismatch");
       db.query("INSERT OR IGNORE INTO discarded VALUES (?)").run(
         sessionKey(address),
       );
       db.query("DELETE FROM drafts WHERE owner = ?").run(sessionKey(address));
-      db.query("DELETE FROM image_refs WHERE object = ?").run(
-        `draft:${sessionKey(address)}`,
-      );
+      this.removeImageRefs(db, `draft:${sessionKey(address)}`);
       for (const row of db
         .query("SELECT id, metadata FROM intents WHERE session = ?")
         .all(session(address.sessionId, cwd)) as {
@@ -334,15 +352,13 @@ export class SendRecoveryStore {
         metadata: string;
       }[])
         if (
-          sessionKey((JSON.parse(row.metadata) as SendIntent).receipt) ===
+          sessionKey(parseRecovery<SendIntent>(row.metadata).receipt) ===
           sessionKey(address)
         ) {
           db.query("UPDATE intents SET content = NULL WHERE id = ?").run(
             row.id,
           );
-          db.query("DELETE FROM image_refs WHERE object = ?").run(
-            `intent:${row.id}`,
-          );
+          this.removeImageRefs(db, `intent:${row.id}`);
         }
     });
   }
@@ -353,14 +369,14 @@ export class SendRecoveryStore {
       for (const row of db
         .query("SELECT metadata FROM drafts WHERE session = ?")
         .all(id) as { metadata: string }[]) {
-        const address = (JSON.parse(row.metadata) as RecoveredDraft).address;
+        const address = parseRecovery<RecoveredDraft>(row.metadata).address;
         addresses.set(sessionKey(address), address);
       }
       for (const row of db
         .query("SELECT metadata FROM intents WHERE session = ?")
         .all(id) as { metadata: string }[]) {
         const address = addressOf(
-          (JSON.parse(row.metadata) as SendIntent).receipt,
+          parseRecovery<SendIntent>(row.metadata).receipt,
         );
         addresses.set(sessionKey(address), address);
       }
@@ -368,15 +384,11 @@ export class SendRecoveryStore {
       for (const row of db
         .query("SELECT owner FROM drafts WHERE session = ?")
         .all(id) as { owner: string }[])
-        db.query("DELETE FROM image_refs WHERE object = ?").run(
-          `draft:${row.owner}`,
-        );
+        this.removeImageRefs(db, `draft:${row.owner}`);
       for (const row of db
         .query("SELECT id FROM intents WHERE session = ?")
         .all(id) as { id: string }[])
-        db.query("DELETE FROM image_refs WHERE object = ?").run(
-          `intent:${row.id}`,
-        );
+        this.removeImageRefs(db, `intent:${row.id}`);
       db.query("DELETE FROM drafts WHERE session = ?").run(id);
       db.query("DELETE FROM intents WHERE session = ?").run(id);
       return [...addresses.values()];

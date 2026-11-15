@@ -65,6 +65,85 @@ test("real SDK: steering joins the active run, editable follow-ups wait until se
       chat = await host.openSession({ cwd, id, openId: "reopen" });
       expect(JSON.stringify(recovered())).toContain("recover this queue");
       console.log("Stop preserved host-held queue across close/reopen.");
+
+      const session = host.session(chat.info.id);
+      for (const boundary of ["idle", "message_end", "agent_end", "agent_settled"]) {
+        let next;
+        let subsequent;
+        const sendNext = () => {
+          const requestId = "boundary-" + boundary;
+          const text = "日本語で答えて " + boundary;
+          const { draft } = host.syncDraft({
+            ...chat.address, requestId, delivery: "steer",
+            expectedRevision: host.drafts.read(chat.address).revision,
+            content: { text, pastes: [], images: [] },
+          });
+          next = { ...chat.address, requestId, text, delivery: "steer", draftRevision: draft.revision };
+          return host.prompt(next);
+        };
+        faux.setResponses([
+          fauxAssistantMessage("completed response " + boundary),
+          fauxAssistantMessage("次の応答 " + boundary),
+        ]);
+        if (boundary === "idle") subsequent = sendNext();
+        else {
+          const unsubscribe = session.subscribe(event => {
+            if (subsequent || event.type !== boundary) return;
+            if (boundary === "message_end" && event.message.role !== "assistant") return;
+            subsequent = sendNext();
+          });
+          await host.prompt(input("before-" + boundary, "finish this response"));
+          await wait(() => !!subsequent);
+          unsubscribe();
+        }
+        await subsequent;
+        await host.receipts.settled(chat.address);
+        await session.waitForIdle();
+        const snapshot = host.getSessionSnapshot(chat.address);
+        expect(snapshot.failure).toBeUndefined();
+        expect(snapshot.transcript.running).toBe(false);
+        expect(snapshot.transcript.records.filter(r => r.requestId === next.requestId)).toHaveLength(1);
+        expect(session.messages.filter(m => m.role === "user" && JSON.stringify(m.content).includes(next.text))).toHaveLength(1);
+        expect(session.pendingMessageCount).toBe(0);
+        expect(host.getPromptReceipt(next).state).toBe("accepted");
+      }
+      console.log("Steering while idle, at message_end, agent_end and agent_settled dispatched once and completed.");
+
+      const agentPrompt = session.agent.prompt;
+      const failedDispatch = Promise.withResolvers();
+      let dispatchEntered = false;
+      let failedStop;
+      const abort = host.abort.bind(host);
+      host.abort = address => failedStop = abort(address);
+      faux.setResponses([fauxAssistantMessage("response before SDK failure")]);
+      session.agent.prompt = async (...args) => {
+        await agentPrompt.apply(session.agent, args);
+        dispatchEntered = true;
+        await failedDispatch.promise;
+        throw new Error("SDK dispatch failed");
+      };
+      await host.prompt(input("failed-dispatch", "start failing run"));
+      await wait(() => dispatchEntered);
+      expect(await host.prompt(input("failed-steer", "preserve failed steering"))).toEqual({ disposition: "queued" });
+      const afterFailure = host.prompt(input("failed-follow-up", "preserve waiting follow-up", "followUp")).then(() => "sent", () => "cancelled");
+      failedDispatch.resolve();
+      await host.receipts.settled(chat.address);
+      await wait(() => session.pendingMessageCount === 0);
+      expect(failedStop).toBeDefined();
+      await failedStop;
+      expect(await afterFailure).toBe("cancelled");
+      expect(JSON.stringify(recovered())).toContain("preserve failed steering");
+      expect(JSON.stringify(recovered())).toContain("preserve waiting follow-up");
+      expect(recovered().some(r => r.requestId === "failed-steer")).toBe(true);
+      expect(ids()).toContain("failed-dispatch");
+      expect(host.getSessionSnapshot(chat.address).failure).toBe("SDK dispatch failed");
+      session.agent.prompt = agentPrompt;
+      faux.setResponses([fauxAssistantMessage("manual send after dispatch failure")]);
+      await host.prompt(input("after-dispatch-failure", "new instruction"));
+      await host.receipts.settled(chat.address);
+      expect(session.getLastAssistantText()).toBe("manual send after dispatch failure");
+      expect(session.messages.filter(m => m.role === "user").some(m => JSON.stringify(m.content).includes("preserve failed steering"))).toBe(false);
+      console.log("SDK failure cleared steering and follow-ups without replay; the same chat accepted a manual send.");
       await host.dispose(); await disposeSessions();
     `;
     const child = Bun.spawn([process.execPath, "--eval", script], {
