@@ -192,6 +192,23 @@ test("usage details popover in Edge: single, bridged, unpinned, keyboard", async
         s = await state();
         expect(s.count).toBe(1);
         expect(s.name).toBe("OpenAI Work");
+        expect(
+          await js<boolean>(`
+            const row=[...document.querySelectorAll('.provider-usage-row')].find(r=>r.getAttribute('aria-label').startsWith('OpenAI Work'));
+            const source=[...row.querySelectorAll('.provider-usage-window')];
+            const windows=[...document.querySelectorAll('.usage-popover-window')];
+            return windows.length===2&&windows.every((w,i)=>{
+              const track=w.querySelector('.usage-popover-track'),fill=track.querySelector('.usage-bar-quota'),frame=track.querySelector('.usage-bar-time');
+              const expected=source[i];
+              return w.style.getPropertyValue('--usage-quota')===expected.style.getPropertyValue('--usage-quota')
+                &&w.style.getPropertyValue('--usage-time')===expected.style.getPropertyValue('--usage-time')
+                &&track.getBoundingClientRect().height===8
+                &&Math.abs(fill.getBoundingClientRect().width/track.getBoundingClientRect().width*100-parseFloat(w.style.getPropertyValue('--usage-quota')))<1
+                &&parseFloat(getComputedStyle(track,'::after').borderTopWidth)>0
+                &&frame&&getComputedStyle(frame).clipPath!=='none'
+                &&getComputedStyle(fill).backgroundColor===getComputedStyle(expected.querySelector('.usage-bar-quota')).backgroundColor;
+            })`),
+        ).toBe(true);
         // Anchored to the new row (clamped to the viewport when tall).
         expect(s.top).toBeLessThanOrEqual(await rowTop("OpenAI Work"));
 
@@ -222,6 +239,11 @@ test("usage details popover in Edge: single, bridged, unpinned, keyboard", async
         // Scrolling the list closes it, like ActionsMenu.
         await move(await rowPoint("Anthropic"));
         expect((await state()).count).toBe(1);
+        expect(
+          await js<boolean>(
+            "return !!document.querySelector('.usage-popover-track .usage-bar-quota')&&!document.querySelector('.usage-popover-track .usage-bar-time')",
+          ),
+        ).toBe(true);
         await js("document.querySelector('.provider-usage-list').scrollTop=40");
         await Bun.sleep(60);
         expect((await state()).count).toBe(0);

@@ -43,13 +43,15 @@
 .provider-usage-list {
   --scrollbar-inset: var(--radius-sm);
   display: grid;
-  /* Ring columns size to their content so a long reset never forces a scrollbar. */
-  grid-template-columns: 12px minmax(0, 1fr) max-content max-content;
+  /* The bar column follows the sidebar width; the name column truncates. */
+  grid-template-columns: 12px minmax(0, 1fr) clamp(64px, 45%, 112px);
   column-gap: 5px;
   max-height: min(35vh, 286px);
   overflow: hidden auto;
   margin: 0;
-  padding: 0;
+  /* Inset here, not on the row: row padding shifts the icon out of its subgrid
+     track and eats the gap before the name. */
+  padding: 0 4px;
   border-radius: var(--radius-sm);
   list-style: none;
 }
@@ -58,8 +60,8 @@
   grid-column: 1 / -1;
   grid-template-columns: subgrid;
   align-items: center;
-  height: 22px;
-  padding: 0 4px;
+  min-height: 22px;
+  padding: 3px 0;
   border-radius: var(--radius-sm);
 }
 .provider-usage-row:hover,
@@ -133,23 +135,7 @@
   color: var(--ds-error);
 }
 .usage-popover-track {
-  height: 4px;
   margin-top: 6px;
-  overflow: hidden;
-  border-radius: var(--radius-full);
-  background: var(--ds-bg-chip);
-}
-.usage-popover-track > span {
-  display: block;
-  height: 100%;
-  border-radius: inherit;
-  background: var(--ds-text-secondary);
-}
-.usage-popover-window[data-level="warning"] .usage-popover-track > span {
-  background: var(--ds-warning);
-}
-.usage-popover-window[data-level="critical"] .usage-popover-track > span {
-  background: var(--ds-error);
 }
 .usage-popover-reset {
   display: flex;
@@ -188,44 +174,65 @@
 .provider-usage-row[data-stale] .provider-usage-name {
   color: var(--ds-text-muted);
 }
-/* Ring + its own reset, so short and long windows read apart without labels. */
+/* One line per window: framed bar + %. Fill = quota, frame = time to reset. */
+.provider-usage-windows {
+  display: grid;
+  gap: 2px;
+}
+.provider-usage-window,
+.usage-popover-window {
+  --usage-tone: var(--ds-text-secondary);
+}
 .provider-usage-window {
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 4.5ch;
   align-items: center;
-  gap: 3px;
-  min-width: 0;
+  column-gap: 4px;
+  height: 11px;
 }
-.provider-usage-ring {
-  flex: none;
-  fill: none;
+.provider-usage-window[data-level="warning"],
+.usage-popover-window[data-level="warning"] {
+  --usage-tone: var(--ds-warning);
 }
-.usage-ring-track {
-  stroke: var(--ds-bg-chip);
-  stroke-width: 1.5;
+.provider-usage-window[data-level="critical"],
+.usage-popover-window[data-level="critical"] {
+  --usage-tone: var(--ds-error);
 }
-.usage-ring-track[data-inner] {
-  stroke-width: 2.3;
+.provider-usage-bar,
+.usage-popover-track {
+  position: relative;
+  height: 8px;
+  overflow: hidden;
+  border-radius: 2px;
+  background: var(--ds-bg-chip);
 }
-.usage-ring-time {
-  stroke: var(--ds-text-muted);
-  stroke-width: 1.5;
+.provider-usage-bar::after,
+.usage-popover-track::after,
+.usage-bar-time {
+  position: absolute;
+  inset: 0;
+  border: 1.5px solid color-mix(in srgb, var(--ds-text-muted) 22%, transparent);
+  border-radius: inherit;
+  content: "";
 }
-.usage-ring-quota {
-  stroke: var(--ds-text-secondary);
-  stroke-width: 2.3;
+.usage-bar-quota {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: var(--usage-quota);
+  background: color-mix(in srgb, var(--usage-tone) 42%, transparent);
 }
-.provider-usage-ring[data-level="warning"] .usage-ring-quota {
-  stroke: var(--ds-warning);
-}
-.provider-usage-ring[data-level="critical"] .usage-ring-quota {
-  stroke: var(--ds-error);
+/* Drawn over the base frame and trimmed from the right as the window runs out. */
+.usage-bar-time {
+  z-index: 1;
+  border-color: var(--ds-text-secondary);
+  clip-path: inset(0 calc(100% - var(--usage-time)) 0 0);
 }
 .provider-usage-value {
   grid-column: 3 / -1;
   justify-content: flex-end;
 }
 .provider-usage-value,
-.provider-usage-reset {
+.provider-usage-percent {
   display: inline-flex;
   min-width: 0;
   font-size: var(--text-4xs);
@@ -238,33 +245,8 @@
   text-align: right;
   text-overflow: ellipsis;
 }
-.provider-usage-reset {
-  color: var(--ds-text-muted);
-}
-.provider-usage-reset[data-level="warning"] {
-  color: var(--ds-warning);
-}
-.provider-usage-reset[data-level="critical"] {
-  color: var(--ds-error);
-}
-.provider-usage-reset[data-date] {
-  display: grid;
-  grid-template-columns: 2ch 1ch 2ch;
-  justify-content: start;
-  text-align: right;
-}
-.provider-usage-reset[data-date] > :last-child {
-  text-align: left;
-}
-/* The app narrows its sidebar on small windows. Keep identity and rings readable;
-   resets remain in the row tooltip instead of adding horizontal scroll. */
-@container (max-width: 180px) {
-  .provider-usage-list {
-    grid-template-columns: 12px minmax(0, 1fr) 18px 18px;
-    column-gap: 4px;
-  }
-  .provider-usage-reset,
-  .provider-usage-reset[data-date] {
-    display: none;
-  }
+.provider-usage-percent {
+  justify-content: flex-end;
+  color: var(--usage-tone);
+  line-height: 1;
 }

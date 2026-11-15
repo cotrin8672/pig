@@ -34,7 +34,7 @@ const displayArg = {
 
 /** The setting drives every preview on the page, as it will in the app. */
 export const Implemented = {
-  name: "Implemented / 18px sidebar dock",
+  name: "Implemented / sidebar dock",
   ...displayArg,
   render: ({ display }: Args) => (
     <div

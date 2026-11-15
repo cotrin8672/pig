@@ -6,6 +6,7 @@ import {
   RefreshCw,
 } from "lucide-react";
 import {
+  type CSSProperties,
   type FocusEvent,
   type PointerEvent,
   type ReactNode,
@@ -34,7 +35,11 @@ import { useT } from "./i18n";
 import { ProviderIcon } from "./ProviderIcon";
 import "./provider-usage.css";
 
-export function UsageRing({
+/**
+ * One line per window: fill = quota, frame = time left until reset (it is
+ * trimmed from the right as the window runs out). Resets live in the popover.
+ */
+function UsageBar({
   window,
   display,
   now,
@@ -44,43 +49,28 @@ export function UsageRing({
   now: number;
 }) {
   const time = timeRemaining(window, now);
-  const quota = clampPercent(usagePercent(window.usedPercent, display));
+  const percent = usagePercent(window.usedPercent, display);
   return (
-    <svg
-      className="provider-usage-ring"
-      viewBox="0 0 18 18"
-      width="18"
-      height="18"
-      aria-hidden="true"
+    <span
+      className="provider-usage-window"
       data-level={usageLevel(window.usedPercent)}
+      style={
+        {
+          "--usage-quota": `${clampPercent(percent)}%`,
+          "--usage-time": `${time ?? 0}%`,
+        } as CSSProperties
+      }
     >
-      <circle className="usage-ring-track" cx="9" cy="9" r="7.8" />
-      {time !== undefined && (
-        <circle
-          className="usage-ring-time"
-          cx="9"
-          cy="9"
-          r="7.8"
-          pathLength="100"
-          strokeDasharray={`${time} 100`}
-          transform="rotate(-90 9 9) translate(0 18) scale(1 -1)"
-        />
-      )}
-      <circle className="usage-ring-track" data-inner cx="9" cy="9" r="4.2" />
-      <circle
-        className="usage-ring-quota"
-        cx="9"
-        cy="9"
-        r="4.2"
-        pathLength="100"
-        strokeDasharray={`${quota} 100`}
-        transform="rotate(-90 9 9) translate(0 18) scale(1 -1)"
-      />
-    </svg>
+      <span className="provider-usage-bar" aria-hidden="true">
+        <span className="usage-bar-quota" />
+        {time !== undefined && <span className="usage-bar-time" />}
+      </span>
+      <span className="provider-usage-percent">{Math.round(percent)}%</span>
+    </span>
   );
 }
-/** Shortest window first so ring order means the same on every row. */
-function ringWindows(entry: ProviderUsage) {
+/** Shortest window first so line order means the same on every row. */
+function usageWindows(entry: ProviderUsage) {
   return [...(entry.data?.windows ?? [])]
     .sort(
       (a, b) =>
@@ -88,29 +78,6 @@ function ringWindows(entry: ProviderUsage) {
         (b.durationMs ?? Number.POSITIVE_INFINITY),
     )
     .slice(0, 2);
-}
-/** Each ring carries its own reset; "2h 13m" vs "11/18" tells the windows apart. */
-function Reset({ window, now }: { window: UsageWindow; now: number }) {
-  const reset =
-    window.resetsAt !== undefined ? resetCountdown(window.resetsAt, now) : "—";
-  const [month, day] = reset.split("/");
-  return (
-    <span
-      className="provider-usage-reset"
-      data-date={!!day || undefined}
-      data-level={usageLevel(window.usedPercent)}
-    >
-      {day ? (
-        <>
-          <span>{month}</span>
-          <span>/</span>
-          <span>{day}</span>
-        </>
-      ) : (
-        reset
-      )}
-    </span>
-  );
 }
 /**
  * One details popover per dock (docs/ui-guidelines.md 「情報量の多いホバー表示」):
@@ -204,11 +171,13 @@ function UsageDetails({
   entry,
   display,
   mode,
+  now,
   problem,
 }: {
   entry: ProviderUsage;
   display: UsageDisplay;
   mode: string;
+  now: number;
   problem?: string;
 }) {
   const t = useT();
@@ -227,15 +196,22 @@ function UsageDetails({
           {problem}
         </p>
       )}
-      {ringWindows(entry)
+      {usageWindows(entry)
         .concat(entry.data?.windows.slice(2) ?? [])
         .map((window) => {
           const percent = usagePercent(window.usedPercent, display);
+          const time = timeRemaining(window, now);
           return (
             <div
               key={window.id}
               className="usage-popover-window"
               data-level={usageLevel(window.usedPercent)}
+              style={
+                {
+                  "--usage-quota": `${clampPercent(percent)}%`,
+                  "--usage-time": `${time ?? 0}%`,
+                } as CSSProperties
+              }
             >
               <div className="usage-popover-figures">
                 <span>{window.label}</span>
@@ -244,7 +220,8 @@ function UsageDetails({
                 </span>
               </div>
               <div className="usage-popover-track" aria-hidden="true">
-                <span style={{ width: `${clampPercent(percent)}%` }} />
+                <span className="usage-bar-quota" />
+                {time !== undefined && <span className="usage-bar-time" />}
               </div>
               {window.resetsAt !== undefined && (
                 <div className="usage-popover-reset">
@@ -281,13 +258,15 @@ function tooltip(
   entry: ProviderUsage,
   display: UsageDisplay,
   mode: string,
+  now: number,
   problem?: string,
 ) {
   const lines = [entry.label];
   if (problem) lines.push(problem);
+  // The row shows only the bar and its %; the reset countdown lives here.
   for (const window of entry.data?.windows ?? [])
     lines.push(
-      `${window.label}: ${mode} ${Math.round(usagePercent(window.usedPercent, display))}%${window.resetsAt ? ` · ${new Date(window.resetsAt).toLocaleString()}` : ""}`,
+      `${window.label}: ${mode} ${Math.round(usagePercent(window.usedPercent, display))}%${window.resetsAt ? ` · ${resetCountdown(window.resetsAt, now)}` : ""}`,
     );
   for (const balance of entry.data?.balances ?? [])
     lines.push(`${balance.label}: ${balance.currency} ${balance.amount}`);
@@ -365,10 +344,10 @@ export function ProviderUsageView({
       {!collapsed && (
         <ul className="provider-usage-list">
           {sorted.map((entry) => {
-            const windows = ringWindows(entry);
+            const windows = usageWindows(entry);
             const balance = entry.data?.balances[0];
             const problem = entry.problem && problems[entry.problem];
-            const detail = tooltip(entry, display, mode, problem);
+            const detail = tooltip(entry, display, mode, now, problem);
             return (
               <li
                 key={entry.key}
@@ -390,12 +369,16 @@ export function ProviderUsageView({
                   {names.get(entry.key)}
                 </span>
                 {windows.length ? (
-                  windows.map((w) => (
-                    <span key={w.id} className="provider-usage-window">
-                      <UsageRing window={w} now={now} display={display} />
-                      <Reset window={w} now={now} />
-                    </span>
-                  ))
+                  <span className="provider-usage-windows">
+                    {windows.map((w) => (
+                      <UsageBar
+                        key={w.id}
+                        window={w}
+                        now={now}
+                        display={display}
+                      />
+                    ))}
+                  </span>
                 ) : (
                   <span
                     className="provider-usage-value"
@@ -426,6 +409,7 @@ export function ProviderUsageView({
               entry={activeEntry}
               display={display}
               mode={mode}
+              now={now}
               problem={activeEntry.problem && problems[activeEntry.problem]}
             />
           ),
