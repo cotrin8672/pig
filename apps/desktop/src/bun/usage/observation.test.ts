@@ -37,6 +37,30 @@ test("Codex header IDs align with HTTP snapshots and use response-relative reset
     usedPercent: 80,
   });
 });
+test("Codex headers omit placeholder windows in either slot and preserve real zero usage", () => {
+  for (const duration of [undefined, "", "0", "-1", "invalid"]) {
+    for (const absent of ["primary", "secondary"]) {
+      const valid = absent === "primary" ? "secondary" : "primary";
+      const headers: Record<string, string> = {
+        [`x-codex-${valid}-used-percent`]: "0",
+        [`x-codex-${valid}-window-minutes`]: "10080",
+        [`x-codex-${absent}-used-percent`]: "0",
+        [`x-codex-${absent}-reset-after-seconds`]: "0",
+      };
+      if (duration !== undefined)
+        headers[`x-codex-${absent}-window-minutes`] = duration;
+      const result = usageFromHeaders("openai-codex", headers, 1000);
+      expect(result.windows).toHaveLength(1);
+      expect(result.windows[0]).toMatchObject({
+        id: `Codex/${valid}_window`,
+        label: "Codex / 7d",
+        usedPercent: 0,
+        durationMs: 604800000,
+      });
+    }
+  }
+  expect(usageFromHeaders("openai-codex", {}, 1000).windows).toEqual([]);
+});
 test("monitoring hook preserves caller hooks, captures account at dispatch and cannot throw into chat", async () => {
   let notify:
     | ((
