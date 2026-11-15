@@ -2774,8 +2774,8 @@ input:not([type="range"]) {
 .user-turn .user-bubble {
   max-width: 100%;
 }
-/* Steering: one right-aligned line in the agent's work, translucent like a
-   tool row. Quieter (color, not opacity) until the agent has read it. */
+/* Steering not yet read: one right-aligned line, translucent like a tool row,
+   quieter by color (not opacity). Once read it renders as a normal bubble. */
 .user-steer {
   display: flex;
   justify-content: flex-end;
@@ -2790,13 +2790,11 @@ input:not([type="range"]) {
   place-items: center;
   color: var(--ds-text-faint);
 }
-.user-steer[data-steer="read"] .user-steer-state {
-  color: var(--ds-success);
-}
 .user-steer .user-bubble {
+  display: block;
   min-width: 0;
   max-width: 100%;
-  padding: 4px 12px;
+  padding: 4px 14px 4px 16px;
   border-radius: var(--radius-lg);
   background: var(--ds-tool-row-bg);
   color: var(--ds-text-muted);
@@ -2808,10 +2806,13 @@ input:not([type="range"]) {
   white-space: nowrap;
   cursor: pointer;
 }
-.user-steer[data-steer="read"] .user-bubble {
-  color: var(--ds-text-primary);
+.user-steer-text {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
-.user-steer .user-bubble[aria-expanded="true"] {
+.user-steer .user-bubble[aria-expanded="true"] .user-steer-text {
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
