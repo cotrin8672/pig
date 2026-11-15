@@ -12,7 +12,7 @@ const edge =
   process.env.PIG_UI_BROWSER ??
   "C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe";
 test.skipIf(!existsSync(edge) && !process.env.PIG_REQUIRE_UI_TESTS)(
-  "provider usage in Edge: real 18px rings, sidebar widths, preference, alpha and scroll",
+  "provider usage in Edge: framed bars, sidebar widths, preference, alpha and scroll",
   async () => {
     if (!existsSync(edge)) throw new Error("Required UI browser is missing");
     const dir = await mkdtemp(join(tmpdir(), "pig-usage-ui-"));
@@ -42,15 +42,29 @@ test.skipIf(!existsSync(edge) && !process.env.PIG_REQUIRE_UI_TESTS)(
           const viewport=card.querySelector('.provider-usage-list');
           check(viewport.scrollWidth<=viewport.clientWidth+1,'narrow dock must not require horizontal scrolling');
           check(getComputedStyle(viewport).overflowX==='hidden','usage list never shows a horizontal scrollbar');
-          check(card.querySelector('.provider-usage-name').getBoundingClientRect().width>35,'account identity must retain readable space');
-          check([...card.querySelectorAll('.provider-usage-row')].every(r=>r.getBoundingClientRect().height===22),'row height');
-          check([...card.querySelectorAll('.provider-usage-ring')].every(r=>r.getBoundingClientRect().width===18&&r.getBoundingClientRect().height===18),'18px rings');
-          check(card.textContent.includes('1h 12m'),'compact reset independent of language');
+          const firstName=card.querySelector('.provider-usage-name').getBoundingClientRect();
+          const firstIcon=card.querySelector('.provider-usage-row svg').getBoundingClientRect();
+          check(firstName.width>35,'account identity must retain readable space');
+          check(firstName.left-firstIcon.right>=4,'icon and account name keep a gap');
+          const rows=[...card.querySelectorAll('.provider-usage-row')];
+          check(rows.every(r=>r.getBoundingClientRect().height>=22),'row height');
+          const bars=[...card.querySelectorAll('.provider-usage-bar')];
+          check(bars.every(b=>b.getBoundingClientRect().height===8),'8px bars');
+          check(bars.every(b=>b.getBoundingClientRect().width>20),'bars keep a readable width in every dock width');
+          const percents=[...card.querySelectorAll('.provider-usage-percent')];
+          const percentText=p=>p.textContent;
+          check(percents.length===bars.length&&percents.every(p=>percentText(p).endsWith('%')&&Number.isFinite(parseFloat(percentText(p)))),'every bar carries its own percentage');
+          check(percents.every(p=>p.scrollWidth<=p.clientWidth+1),'percentages are never clipped');
+          check(!card.querySelector('.provider-usage-reset'),'reset time is drawn by the frame, not written in the row');
+          check([...card.querySelectorAll('.provider-usage-window')].every(w=>w.textContent.trim()===w.querySelector('.provider-usage-percent').textContent.trim()),'a line holds only its bar and percentage');
           const labels=()=>[...document.querySelectorAll('.provider-usage-row')].map(r=>r.getAttribute('aria-label')).join('|');
           check(labels().includes('12%'),'remaining is default');
-          check(!/d%/.test(card.textContent),'percent lives in the tooltip, not the row');
+          check(labels().includes('1h 12m'),'reset countdown stays available to assistive tech');
           const codex=[...card.querySelectorAll('.provider-usage-row')].find(r=>r.querySelector('.provider-usage-name').textContent==='Work');
-          if(width>180)check([...codex.querySelectorAll('.provider-usage-reset')].map(r=>r.textContent).join('|')==='1h 12m|11/17','shortest window first, each ring with its own reset');
+          check(codex.querySelectorAll('.provider-usage-window').length===2,'two limits take two lines');
+          check(codex.getBoundingClientRect().height>rows.find(r=>r.querySelectorAll('.provider-usage-window').length===1).getBoundingClientRect().height,'two-limit rows grow by exactly one line');
+          const codexQuota=[...codex.querySelectorAll('.provider-usage-window')].map(w=>w.style.getPropertyValue('--usage-quota'));
+          check(codexQuota.join('|')==='12%|64%','shortest window first, quota follows the display preference');
           check(card.querySelector('.provider-usage-toggle').textContent===(language==='en'?'Usage':'使用量'),'heading must not show display mode or summary');
           check(!card.querySelector('.provider-usage-heading small'),'heading must not show an age timer');
           const names=[...card.querySelectorAll('.provider-usage-name')].map(n=>n.textContent);
@@ -73,40 +87,24 @@ test.skipIf(!existsSync(edge) && !process.env.PIG_REQUIRE_UI_TESTS)(
         }
         render(usageFixtures,'remaining',240);
         const mistralRow=[...document.querySelectorAll('.provider-usage-row')].find(r=>r.querySelector('.provider-usage-name').textContent==='Mistral Vibe');
-        const timeRing=mistralRow.querySelector('.usage-ring-time');
         const mistral=usageFixtures.find(e=>e.provider==='mistral');
         const monthly=mistral.data.windows[0];
-        check(timeRing&&Math.abs(parseFloat(timeRing.getAttribute('stroke-dasharray'))-(monthly.resetsAt-usageFixtureTime)/monthly.durationMs*100)<0.001,'Mistral outer ring shows remaining monthly time');
-        const timeDash=timeRing.getAttribute('stroke-dasharray');
-        for(const ring of document.querySelectorAll('.usage-ring-time,.usage-ring-quota')){
-          const matrix=ring.transform.baseVal.consolidate().matrix;
-          const start=ring.getPointAtLength(0).matrixTransform(matrix);
-          const quarter=ring.getPointAtLength(ring.getTotalLength()/4).matrixTransform(matrix);
-          check(Math.abs(start.x-9)<0.05&&start.y<9,'rings start at twelve oclock');
-          check(quarter.x<9&&Math.abs(quarter.y-9)<0.05,'both rings run counterclockwise');
-        }
+        const mistralTime=parseFloat(mistralRow.querySelector('.provider-usage-window').style.getPropertyValue('--usage-time'));
+        check(Math.abs(mistralTime-(monthly.resetsAt-usageFixtureTime)/monthly.durationMs*100)<0.001,'Mistral frame shows remaining monthly time');
         render(usageFixtures,'used',240);
-        check([...document.querySelectorAll('.provider-usage-row')].find(r=>r.querySelector('.provider-usage-name').textContent==='Mistral Vibe').querySelector('.usage-ring-time').getAttribute('stroke-dasharray')===timeDash,'quota preference must not reverse time');
-        const dates=[new Date(2027,0,9).getTime(),new Date(2026,10,18).getTime(),new Date(2026,11,1).getTime()];
-        const dateEntries=dates.map((resetsAt,i)=>({...mistral,key:'date-'+i,label:'Date '+i,data:{windows:[{...monthly,resetsAt}],balances:[]}}));
-        for(const width of [156,210,240,320]){
-          render(dateEntries,'remaining',width);
-          const resets=[...document.querySelectorAll('.provider-usage-reset')];
-          if(width<=180){
-            check(resets.every(r=>getComputedStyle(r).display==='none'),'date grid stays hidden in narrow dock');
-            continue;
-          }
-          check(resets.map(r=>r.textContent).join('|')==='1/9|11/18|12/1','date format remains unpadded');
-          const slashes=resets.map(r=>r.children[1].getBoundingClientRect().x);
-          check(Math.max(...slashes)-Math.min(...slashes)<0.1,'date slash columns align for one and two digit months and days');
-        }
+        const usedRow=[...document.querySelectorAll('.provider-usage-row')].find(r=>r.querySelector('.provider-usage-name').textContent==='Mistral Vibe');
+        check(parseFloat(usedRow.querySelector('.provider-usage-window').style.getPropertyValue('--usage-time'))===mistralTime,'quota preference must not reverse time');
+        check(usedRow.querySelector('.provider-usage-percent').textContent==='52%','used preference flips the percentage in the row');
+        // A reset further away than the window is long clamps instead of overflowing the frame.
         const work=usageFixtures.find(e=>e.label==='OpenAI Work');
         const longReset={...work,data:{...work.data,windows:work.data.windows.map(w=>({...w,resetsAt:usageFixtureTime+(18*60+44)*60000}))}};
         for(const width of [156,210,240,320]){
           render([longReset,...usageFixtures.filter(e=>e!==work)],'remaining',width);
           const list=document.querySelector('.provider-usage-list');
           check(list.scrollWidth<=list.clientWidth+1,'long resets must fit without horizontal scrolling');
-          if(width>180)check([...list.querySelectorAll('.provider-usage-reset')].every(r=>r.scrollWidth<=r.clientWidth+1),'long resets are not clipped');
+          const times=[...list.querySelectorAll('.provider-usage-window')].map(w=>parseFloat(w.style.getPropertyValue('--usage-time')));
+          check(times.every(t=>t>=0&&t<=100),'frame time is clamped to the bar');
+          check([...list.querySelectorAll('.provider-usage-percent')].every(p=>p.scrollWidth<=p.clientWidth+1),'percentages are not clipped');
         }
         let refreshes=0;
         const refresh=()=>{refreshes++};

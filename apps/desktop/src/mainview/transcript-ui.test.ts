@@ -279,15 +279,16 @@ test.skipIf(!existsSync(edge) && !process.env.PIG_REQUIRE_UI_TESTS)(
         check(Math.abs(after-expected)<=2,"wheel distance must match native scrolling: "+JSON.stringify(measurement));
         if(row) check(row.isConnected && Math.abs(row.getBoundingClientRect().top-rowTop+after-before)<=2,"record geometry must move with the native scroll position");
       }
-      // Production usage dock: sidebar width, fixed 18px rings, display preference, stale data and scrolling.
+      // Production usage dock: sidebar width, 8px framed bars, display preference, stale data and scrolling.
       for(const width of [240,210]){
         await render(<div style={{width}}><ProviderUsageView entries={usageFixtures} now={usageFixtureTime}/></div>);
         const card=document.querySelector('.provider-usage-card');
         const rows=[...card.querySelectorAll('.provider-usage-row')];
         check(card.getBoundingClientRect().width===width,'usage dock must follow available sidebar width');
-        check(rows.every(row=>row.getBoundingClientRect().height===22),'usage rows must remain compact and fixed height');
-        check([...card.querySelectorAll('.provider-usage-ring')].every(r=>r.getBoundingClientRect().width===18 && r.getBoundingClientRect().height===18),'usage rings must be 18px');
-        check(card.textContent.includes('1h 12m'),'usage countdown must be language-independent with spaced units');
+        check(rows.every(row=>row.getBoundingClientRect().height>=22),'usage rows must remain compact');
+        check([...card.querySelectorAll('.provider-usage-bar')].every(b=>b.getBoundingClientRect().height===8),'usage bars must be 8px tall');
+        check([...card.querySelectorAll('.provider-usage-percent')].every(p=>p.textContent.endsWith('%')&&Number.isFinite(parseFloat(p.textContent))),'usage rows must show only the bar and its percentage');
+        check(!card.querySelector('.provider-usage-reset'),'usage reset time must stay out of the row text');
         check(!card.textContent.includes('NaN'),'unknown reset/duration must not be invented');
         await render(<div style={{width}}><ProviderUsageView entries={usageFixtures} now={usageFixtureTime} display="used"/></div>);
         check([...document.querySelectorAll('.provider-usage-row')].some(r=>r.getAttribute('aria-label').includes('88%')),'usage preference must change the reported percentage');
