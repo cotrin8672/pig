@@ -1,11 +1,16 @@
 # AGENTS.md
 
+## Git workflow
+
+変更は `dev` ブランチ上で行う。`main` には必要なコミットだけを選択して取り込み、
+`dev` 全体を一括マージしない。
+
 ## Launching the app (Windows)
 
-Use `mise run dev`. It focuses the existing development window without rebuilding,
-or starts `pnpm dev` in the background if the app is not running. Startup logs are
-in `%TEMP%/pig-dev.stdout.log` and `%TEMP%/pig-dev.stderr.log`.
-Do not start another `pnpm dev` while the development app is running.
+Use `mise run dev`. It runs `pnpm dev` in the foreground, with logs in the current
+terminal (including Nushell). Stop it with Ctrl+C before launching another dev
+session. Do not start another `mise run dev` or `pnpm dev` while the development
+app is running.
 
 ## UI rules (required)
 
