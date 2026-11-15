@@ -30,6 +30,24 @@ test("failure events retain actionable details without an assistant message", ()
   expect(next.failure).toBe("No model configured");
   expect(next.transcript.records).toHaveLength(0);
 });
+
+test("IPC catalogs share display metadata across chats but account/project differences remain distinct", () => {
+  const models = [{ provider: "fixture", id: "model", name: "Model" }];
+  const first = hydrateChatSnapshot({ ...snapshot(), modelCatalog: models });
+  const other = hydrateChatSnapshot({
+    ...snapshot(),
+    address: { ...snapshot().address, sessionId: "other" },
+    modelCatalog: structuredClone(models),
+  });
+  expect(other.modelCatalog).toBe(first.modelCatalog);
+  const changed = hydrateChatSnapshot({
+    ...other,
+    modelCatalog: [{ ...models[0], name: "Project override" }],
+  });
+  expect(changed.modelCatalog).not.toBe(first.modelCatalog);
+  expect(first.modelCatalog?.[0].name).toBe("Model");
+  expect(other.address.sessionId).toBe("other");
+});
 test("abort events are distinct from failures", () => {
   const next = applyChatEvent(snapshot(), { ...event(), aborted: true });
   expect(next.aborted).toBe(true);

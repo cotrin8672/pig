@@ -179,3 +179,59 @@ test("worker failure releases every waiter and stops the failed worker", async (
   expect(queue.stats().pending).toBe(0);
   expect(worker.stopped).toBe(true);
 });
+
+test("a later request replaces a crashed worker and ignores all retired worker events", async () => {
+  const workers: FakeWorker[] = [];
+  const queue = createRenderWorkerQueue<string, string>(async () => {
+    const worker = new FakeWorker();
+    workers.push(worker);
+    return worker;
+  });
+  const first = queue.run("one").catch((error) => error.message);
+  await tick();
+  workers[0].dispatchEvent(new Event("messageerror"));
+  expect(await first).toBe("Render worker reply could not be decoded");
+  const next = queue.run("two");
+  await tick();
+  expect(workers).toHaveLength(2);
+  const id = workers[1].sent[0].id;
+  workers[0].reply(id, "stale");
+  workers[0].dispatchEvent(new Event("error"));
+  expect(queue.stats()).toMatchObject({ running: true, failed: false });
+  workers[1].reply(id, "new");
+  expect(await next).toBe("new");
+  expect(workers[0].stopped).toBe(true);
+  expect(workers[1].stopped).toBe(false);
+});
+
+test("startup recovery is bounded, including synchronous and asynchronous failures", async () => {
+  let attempts = 0;
+  const queue = createRenderWorkerQueue<string, string>(() => {
+    attempts++;
+    if (attempts % 2) throw new Error("blocked");
+    return Promise.reject(new Error("blocked"));
+  });
+  for (let i = 0; i < 10; i++)
+    await expect(queue.run("source")).rejects.toThrow("blocked");
+  expect(attempts).toBe(3);
+});
+
+test("successful recovery resets the consecutive failure budget", async () => {
+  const workers: FakeWorker[] = [];
+  const queue = createRenderWorkerQueue<string, string>(async () => {
+    const worker = new FakeWorker();
+    workers.push(worker);
+    return worker;
+  });
+  for (let i = 0; i < 4; i++) {
+    const failed = queue.run("fail").catch(() => {});
+    await tick();
+    workers.at(-1)?.dispatchEvent(new Event("error"));
+    await failed;
+    const recovered = queue.run("recover");
+    await tick();
+    const worker = workers.at(-1) as FakeWorker;
+    worker.reply(worker.sent[0].id, "ok");
+    expect(await recovered).toBe("ok");
+  }
+});

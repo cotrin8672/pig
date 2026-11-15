@@ -1,8 +1,10 @@
 import { expect, mock, test } from "bun:test";
 import { fileURLToPath } from "node:url";
+import { fauxAssistantMessage } from "@earendil-works/pi-ai";
 import { createRuntimeDeltaEncoder } from "../bun/snapshot-delta";
 import { packSnapshot } from "../bun/transcript-wire";
 import type { Snapshot } from "../shared/rpc-schema";
+import type { SessionAddress } from "../shared/runtime-contract";
 import type { RuntimeWireEvent } from "../shared/snapshot-delta";
 import { emptyTranscript } from "../shared/transcript";
 
@@ -27,6 +29,7 @@ if (process.env.PIG_SNAPSHOT_DELTA_CHILD !== "1") {
   let receive!: (event: RuntimeWireEvent) => void;
   const reads: ReturnType<typeof Promise.withResolvers<Snapshot>>[] = [];
   let sends = 0;
+  let resetBase: ((address: SessionAddress) => void) | undefined;
   mock.module("electrobun/view", () => ({
     Electroview: class {
       constructor(readonly options: unknown) {}
@@ -44,7 +47,8 @@ if (process.env.PIG_SNAPSHOT_DELTA_CHILD !== "1") {
             openSession: () => {
               sends++;
             },
-            getSessionSnapshot: () => {
+            getSessionSnapshot: (address: SessionAddress) => {
+              resetBase?.(address);
               const read = Promise.withResolvers<Snapshot>();
               reads.push(read);
               return read.promise;
@@ -250,5 +254,74 @@ if (process.env.PIG_SNAPSHOT_DELTA_CHILD !== "1") {
     expect(useStore.getState().snapshots["lost-ready"].snapshotSeq).toBe(3);
     expect(useStore.getState().snapshots.chat.address.epoch).toBe(2);
     expect(sends).toBe(0);
+  });
+
+  test("lost live text recovers once through full RPC and then resumes append delivery", async () => {
+    const encode = createRuntimeDeltaEncoder();
+    resetBase = (address) => encode.reset(address);
+    const startReads = reads.length;
+    const base: Snapshot = {
+      address: { hostId: "delta-rpc", sessionId: "live-stream", epoch: 1 },
+      snapshotSeq: 1,
+      info: { id: "live-stream", cwd: "fixture", title: "Chat", modified: 1 },
+      effort: "off",
+      effortLevels: [],
+      transcript: {
+        ...emptyTranscript(),
+        history: { revision: "live-stream" },
+        current: "live",
+        running: true,
+        records: [],
+      },
+    };
+    const snapshot = (seq: number): Snapshot => ({
+      ...base,
+      snapshotSeq: seq,
+      transcript: {
+        ...base.transcript,
+        records: [
+          {
+            id: "live",
+            parentId: null,
+            branchId: "live-stream",
+            order: 0,
+            kind: "message",
+            message: fauxAssistantMessage("a".repeat(1000 + seq)),
+          },
+        ],
+      },
+    });
+    const deliver = (seq: number, type: "ready" | "snapshot" = "snapshot") =>
+      receive(
+        JSON.parse(JSON.stringify(encode({ type, snapshot: snapshot(seq) }))),
+      );
+    try {
+      deliver(1, "ready");
+      deliver(2);
+      const current = useStore.getState().snapshots["live-stream"];
+      encode({ type: "snapshot", snapshot: snapshot(3) }); // Lost in transit.
+      deliver(4);
+      await Bun.sleep(0);
+      expect(reads).toHaveLength(startReads + 1);
+      expect(useStore.getState().snapshots["live-stream"]).toBe(current);
+      reads[startReads].resolve(packSnapshot(snapshot(5)));
+      await Bun.sleep(0);
+      expect(useStore.getState().snapshots["live-stream"].snapshotSeq).toBe(5);
+      deliver(6); // Self-contained after the RPC reset.
+      deliver(7); // Back to appends, with no second recovery read.
+      expect(useStore.getState().snapshots["live-stream"].snapshotSeq).toBe(7);
+      const record =
+        useStore.getState().snapshots["live-stream"].transcript.records[0];
+      if (record.kind !== "message" || record.message.role !== "assistant")
+        throw new Error("Missing assistant");
+      expect(record.message.content).toEqual([
+        { type: "text", text: "a".repeat(1007) },
+      ]);
+      expect(reads).toHaveLength(startReads + 1);
+      expect(sends).toBe(0);
+    } finally {
+      resetBase = undefined;
+      receive({ type: "closed", address: base.address, reason: "close" });
+    }
   });
 }

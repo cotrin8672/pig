@@ -1,5 +1,6 @@
 import { expect, test } from "bun:test";
 import type { Snapshot } from "../shared/rpc-schema";
+import type { PromptAccepted } from "../shared/runtime-contract";
 import { emptyTranscript, type TranscriptRecord } from "../shared/transcript";
 import { DraftStore, emptyContent } from "./draft-store";
 import { SendController } from "./send-controller";
@@ -102,4 +103,80 @@ test("reconciliation reads no history without a matching accepted send, then rel
   expect(sends.optimistic(address)).toHaveLength(0);
   for (let i = 0; i < 100; i++) sends.reconcile(snapshot);
   expect(reads).toBe(1);
+});
+
+test.each([
+  "sending",
+  "checking",
+  "unknown",
+] as const)("confirmed history resolves a %s send even when its receipt cannot be read", async (status) => {
+  const address = { hostId: "lost-receipt", sessionId: "chat", epoch: 1 };
+  const drafts = new DraftStore();
+  drafts.edit(address, () => ({ ...emptyContent(), text: "日本語で答えて" }));
+  const response = Promise.withResolvers<PromptAccepted>();
+  let calls = 0;
+  const sends = new SendController(
+    drafts,
+    {
+      syncDraft: async (params) => ({
+        applied: true,
+        draft: { ...params.content, revision: params.expectedRevision + 1 },
+      }),
+      prompt: () => {
+        calls++;
+        return response.promise;
+      },
+      getPromptReceipt: async (key) => {
+        if (status === "unknown") throw new Error("Receipt disconnected");
+        return { ...key, state: "pending" };
+      },
+    },
+    () => {},
+  );
+  const sending = sends.send(address);
+  while (!calls) await Bun.sleep(0);
+  if (status !== "sending") {
+    response.reject(new Error("Prompt response lost"));
+    await sending;
+    if (status === "unknown") {
+      await sends.lookup(address);
+      await sends.lookup(address);
+    }
+  }
+  expect(sends.read(address)?.state).toBe(status);
+  const key = sends.read(address)?.key;
+  if (!key) throw new Error("missing send");
+  const snapshot: Snapshot = {
+    address,
+    snapshotSeq: 2,
+    info: { id: address.sessionId, cwd: "project", title: "Chat", modified: 1 },
+    effort: "off",
+    effortLevels: [],
+    transcript: {
+      ...emptyTranscript(),
+      records: [record("saved", key.requestId)],
+    },
+  };
+  // Different requests/epochs cannot confirm this send.
+  sends.reconcile({
+    ...snapshot,
+    transcript: { ...snapshot.transcript, records: [record("other", "other")] },
+  });
+  sends.reconcile({ ...snapshot, address: { ...address, epoch: 2 } });
+  expect(sends.read(address)?.state).toBe(status);
+  drafts.edit(address, () => ({ ...emptyContent(), text: "new draft" }));
+  sends.reconcile(snapshot);
+  expect(sends.read(address)?.state).toBe("accepted");
+  expect(sends.optimistic(address)).toEqual([]);
+  expect(sends.retained()).toEqual([]);
+  expect(drafts.read(address).content.text).toBe("new draft");
+  await sends.wait(address);
+  // An obsolete RPC failure must not resurrect an already committed message.
+  if (status === "sending") {
+    response.reject(new Error("late disconnected response"));
+    await sending;
+  }
+  expect(sends.read(address)?.state).toBe("accepted");
+  expect(drafts.read(address).content.text).toBe("new draft");
+  expect(calls).toBe(1);
 });

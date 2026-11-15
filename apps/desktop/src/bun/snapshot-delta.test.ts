@@ -235,3 +235,193 @@ test("branch, epoch, replacement and close reset the encoder; new/live records a
     "replaced",
   );
 });
+
+function streaming(seq: number, text: string, output: string): Snapshot {
+  const message = fauxAssistantMessage(text);
+  message.timestamp = seq;
+  message.content.unshift({
+    type: "thinking",
+    thinking: "Thinking ".repeat(100),
+    thinkingSignature: String(seq),
+  });
+  return {
+    address: { hostId: "delta", sessionId: "chat", epoch: 1 },
+    info: { id: "chat", cwd: "fixture", title: "Chat", modified: 1 },
+    effort: "off",
+    effortLevels: [],
+    snapshotSeq: seq,
+    transcript: {
+      ...emptyTranscript(),
+      history: { revision: "stream" },
+      running: true,
+      current: "live",
+      records: [
+        {
+          id: "live",
+          parentId: null,
+          branchId: "stream",
+          order: 0,
+          kind: "message",
+          message,
+        },
+      ],
+      tools: {
+        partial: {
+          status: "running",
+          result: {
+            content: [{ type: "text", text: output }],
+            details: { progress: seq, nested: [seq] },
+          },
+        },
+      },
+    },
+  };
+}
+
+test("live answer, thinking and partial tool output send only appended strings with authoritative metadata", () => {
+  const encode = createRuntimeDeltaEncoder();
+  let expected = streaming(
+    1,
+    "a".repeat(1024 * 1024),
+    "log\n".repeat(128 * 1024),
+  );
+  const ready = clone(encode({ type: "ready", snapshot: expected }));
+  if (ready.type !== "ready") throw new Error("Expected ready");
+  let current = hydrateChatSnapshot(ready.snapshot);
+  let text = "a".repeat(1024 * 1024);
+  let output = "log\n".repeat(128 * 1024);
+  for (let seq = 2; seq <= 20; seq++) {
+    text += `追加 "${seq}"\n🙂`;
+    output += `line ${seq}\n`;
+    expected = streaming(seq, text, output);
+    const wire = clone(encode({ type: "snapshot", snapshot: expected }));
+    if (wire.type !== "snapshotDelta") throw new Error("Expected live delta");
+    expect(wire.appends?.baseSeq).toBe(seq - 1);
+    const bytes = Buffer.byteLength(JSON.stringify(wire));
+    expect(bytes).toBeLessThan(4000);
+    const expanded = expandSnapshotDelta(wire, current);
+    expect(expanded).toEqual(
+      hydrateChatSnapshot(clone(packSnapshot(expected))),
+    );
+    if (!expanded) throw new Error("Missing live base");
+    current = newerSnapshot(current, expanded);
+  }
+  const fullBytes = Buffer.byteLength(JSON.stringify(packSnapshot(expected)));
+  const deltaBytes = Buffer.byteLength(
+    JSON.stringify(
+      encode({
+        type: "snapshot",
+        snapshot: streaming(21, text, output),
+      }),
+    ),
+  );
+  console.log(
+    "Live append synthetic bytes",
+    JSON.stringify({ fullBytes, deltaBytes }),
+  );
+});
+
+test("lost, duplicate and out-of-order live deltas cannot append to another sequence; full RPC reset resumes delivery", () => {
+  const encode = createRuntimeDeltaEncoder();
+  const initial = streaming(1, "a".repeat(1000), "b".repeat(1000));
+  encode({ type: "ready", snapshot: initial });
+  const current = clone(initial);
+  const second = encode({
+    type: "snapshot",
+    snapshot: streaming(2, "a".repeat(1001), "b".repeat(1001)),
+  });
+  const third = encode({
+    type: "snapshot",
+    snapshot: streaming(3, "a".repeat(1002), "b".repeat(1002)),
+  });
+  if (second.type !== "snapshotDelta" || third.type !== "snapshotDelta")
+    throw new Error("Expected appends");
+  expect(expandSnapshotDelta(third, current)).toBeUndefined();
+  const next = expandSnapshotDelta(clone(second), current);
+  expect(next).toBeDefined();
+  expect(expandSnapshotDelta(second, next)).toBeUndefined();
+  expect(expandSnapshotDelta(third, next)).toBeDefined();
+  encode({ type: "snapshot", snapshot: initial }); // A stale publication must not replace the base.
+  const fourth = encode({
+    type: "snapshot",
+    snapshot: streaming(4, "a".repeat(1003), "b".repeat(1003)),
+  });
+  if (fourth.type !== "snapshotDelta") throw new Error("Expected appends");
+  expect(fourth.appends?.baseSeq).toBe(3);
+  const recovered = streaming(5, "a".repeat(1004), "b".repeat(1004));
+  encode.reset(recovered.address);
+  const sixth = encode({
+    type: "snapshot",
+    snapshot: streaming(6, "a".repeat(1005), "b".repeat(1005)),
+  });
+  expect(sixth.type).toBe("snapshot");
+  const seventh = encode({
+    type: "snapshot",
+    snapshot: streaming(7, "a".repeat(1006), "b".repeat(1006)),
+  });
+  if (sixth.type !== "snapshot" || seventh.type !== "snapshotDelta")
+    throw new Error("Expected reset then appends");
+  expect(expandSnapshotDelta(clone(seventh), clone(sixth.snapshot))).toEqual(
+    hydrateChatSnapshot(
+      clone(packSnapshot(streaming(7, "a".repeat(1006), "b".repeat(1006)))),
+    ),
+  );
+});
+
+test("correction, tool completion and arbitrary tool payloads replace rather than append", () => {
+  const encode = createRuntimeDeltaEncoder();
+  const initial = streaming(1, "a".repeat(1000), "b".repeat(1000));
+  encode({ type: "ready", snapshot: initial });
+  const corrected = streaming(2, "corrected", "short");
+  corrected.transcript.tools.partial = {
+    status: "done",
+    result: { changed: true },
+  };
+  const wire = encode({ type: "snapshot", snapshot: corrected });
+  if (wire.type !== "snapshotDelta")
+    throw new Error("Thinking can still be referenced");
+  expect(wire.appends?.tools).toEqual({});
+  const expanded = expandSnapshotDelta(clone(wire), clone(initial));
+  expect(expanded).toEqual(clone(corrected));
+});
+
+test("invalid live append targets and lengths request recovery without mutating the base", () => {
+  const encode = createRuntimeDeltaEncoder();
+  const initial = streaming(1, "a".repeat(1000), "b".repeat(1000));
+  encode({ type: "ready", snapshot: initial });
+  const event = encode({
+    type: "snapshot",
+    snapshot: streaming(2, "a".repeat(1001), "b".repeat(1001)),
+  });
+  if (event.type !== "snapshotDelta" || !event.appends)
+    throw new Error("Expected appends");
+  const malformed: SnapshotDeltaEvent[] = [];
+  const change = (mutate: (wire: SnapshotDeltaEvent) => void) => {
+    const wire = clone(event);
+    mutate(wire);
+    malformed.push(wire);
+  };
+  change((wire) => {
+    if (wire.appends) wire.appends.baseSeq = 0;
+  });
+  change((wire) => {
+    if (wire.appends) wire.appends.records.live[0].from = 999;
+  });
+  change((wire) => {
+    if (wire.appends) wire.appends.records.missing = wire.appends.records.live;
+  });
+  change((wire) => {
+    if (wire.appends) wire.appends.tools.missing = wire.appends.tools.partial;
+  });
+  change((wire) => {
+    wire.snapshot.transcript.tools.partial.status = "done";
+  });
+  change((wire) => {
+    wire.snapshot.transcript.records[0].entryId = "live";
+  });
+  for (const wire of malformed)
+    expect(expandSnapshotDelta(wire, initial)).toBeUndefined();
+  const original = clone(initial);
+  expect(expandSnapshotDelta(clone(event), initial)).toBeDefined();
+  expect(initial).toEqual(original);
+});

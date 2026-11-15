@@ -1,6 +1,11 @@
+import { createModelCatalogCache } from "../shared/model-catalog-cache";
 import type { Snapshot, WireEvent } from "../shared/rpc-schema";
 import type { SessionAddress } from "../shared/runtime-contract";
-import type { Transcript } from "../shared/transcript";
+import type { Transcript, TranscriptRecord } from "../shared/transcript";
+import {
+  indexTranscriptTail,
+  transcriptIndex,
+} from "../shared/transcript-index";
 import { unpackTranscript } from "../shared/transcript-wire";
 import { shareTranscript } from "./transcript-sharing";
 
@@ -10,14 +15,23 @@ export const addressKey = (address: SessionAddress) =>
 export const sameAddress = (a: SessionAddress, b: SessionAddress) =>
   a.hostId === b.hostId && a.sessionId === b.sessionId && a.epoch === b.epoch;
 
+const shareModelCatalog = createModelCatalogCache();
 export function hydrateChatSnapshot(snapshot: Snapshot): ChatSnapshot {
   const transcript = unpackTranscript(snapshot.transcript);
-  return transcript === snapshot.transcript
+  const modelCatalog = snapshot.modelCatalog
+    ? shareModelCatalog(snapshot.modelCatalog)
+    : undefined;
+  return transcript === snapshot.transcript &&
+    modelCatalog === snapshot.modelCatalog
     ? snapshot
-    : { ...snapshot, transcript };
+    : { ...snapshot, transcript, ...(modelCatalog ? { modelCatalog } : {}) };
 }
 
 /** Keep explicitly loaded history when the host publishes only its recent tail. */
+const retainedPrefixes = new WeakMap<
+  Transcript,
+  { firstId: string; firstOrder: number; records: TranscriptRecord[] }
+>();
 function retainHistory(current: Transcript, incoming: Transcript): Transcript {
   if (
     !current.history ||
@@ -26,20 +40,33 @@ function retainHistory(current: Transcript, incoming: Transcript): Transcript {
     return incoming;
   const first = incoming.records[0];
   if (!first) return incoming;
-  const ids = new Set(current.records.map((record) => record.id));
-  if (
-    !incoming.records.some((record) => ids.has(record.id)) &&
-    current.records.at(-1)?.entryId !== first.parentId
-  )
-    return incoming;
-  const prefix = current.records.filter((record) => record.order < first.order);
+  const retained = retainedPrefixes.get(current);
+  let prefix: TranscriptRecord[];
+  if (retained?.firstId === first.id && retained.firstOrder === first.order)
+    prefix = retained.records;
+  else {
+    const previous = transcriptIndex(current.records);
+    if (
+      !incoming.records.some((record) => previous.get(record.id)) &&
+      current.records.at(-1)?.entryId !== first.parentId
+    )
+      return incoming;
+    prefix = current.records.filter((record) => record.order < first.order);
+  }
   if (!prefix.length) return incoming;
-  return {
+  const transcript = {
     ...incoming,
     records: [...prefix, ...incoming.records],
     tools: { ...current.tools, ...incoming.tools },
     history: current.history,
   };
+  indexTranscriptTail(transcript.records, prefix, incoming.records);
+  retainedPrefixes.set(transcript, {
+    firstId: first.id,
+    firstOrder: first.order,
+    records: prefix,
+  });
+  return transcript;
 }
 
 export function prependHistory(
