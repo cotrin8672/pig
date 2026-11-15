@@ -1,5 +1,5 @@
 import type { Database } from "bun:sqlite";
-import { expect, test } from "bun:test";
+import { expect, spyOn, test } from "bun:test";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -51,6 +51,93 @@ async function fixture(
     await rm(directory, { recursive: true, force: true });
   }
 }
+
+test("image garbage collection runs only after removing references and preserves shared images", async () => {
+  await fixture(async ({ store, owner, bridge }) => {
+    const db = Reflect.get(store, "db") as Database;
+    const exec = db.exec.bind(db);
+    let sweeps = 0;
+    const spy = spyOn(db, "exec").mockImplementation((sql) => {
+      if (sql.startsWith("DELETE FROM images")) sweeps++;
+      return exec(sql);
+    });
+    try {
+      bridge.sync({ ...address, expectedRevision: 0, content: content() });
+      expect(sweeps).toBe(0);
+      const withImage = {
+        ...content("with image"),
+        images: [
+          {
+            id: "shared",
+            image: {
+              type: "image" as const,
+              mimeType: "image/png",
+              data: "YWJj",
+            },
+          },
+        ],
+      };
+      bridge.sync({ ...address, expectedRevision: 1, content: withImage });
+      const other = { ...address, sessionId: "other" };
+      store.draft(other, { ...withImage, revision: 1 }, owner);
+      expect(sweeps).toBe(0);
+      bridge.sync({
+        ...address,
+        expectedRevision: 2,
+        keepImages: true,
+        content: content("text only"),
+      });
+      expect(sweeps).toBe(0);
+      bridge.sync({ ...address, expectedRevision: 3, content: content() });
+      expect(sweeps).toBe(1);
+      expect(db.query("SELECT count(*) AS n FROM images").get()).toEqual({
+        n: 1,
+      });
+      store.draft(other, { ...content(), revision: 2 }, owner);
+      expect(sweeps).toBe(2);
+      expect(db.query("SELECT count(*) AS n FROM images").get()).toEqual({
+        n: 0,
+      });
+    } finally {
+      spy.mockRestore();
+    }
+  });
+});
+
+test("invalid saved JSON reports recovery failure without rewriting the saved draft", async () => {
+  await fixture(async ({ store, owner, bridge }) => {
+    bridge.sync({
+      ...address,
+      expectedRevision: 0,
+      content: {
+        ...content("saved"),
+        images: [
+          {
+            id: "image",
+            image: { type: "image", mimeType: "image/png", data: "YWJj" },
+          },
+        ],
+      },
+    });
+    const db = Reflect.get(store, "db") as Database;
+    db.query("UPDATE drafts SET content = ?").run("{broken");
+    expect(() => store.snapshot([owner], "new-host")).toThrow(
+      "existing data preserved",
+    );
+    expect(() =>
+      bridge.sync({
+        ...address,
+        expectedRevision: 1,
+        keepImages: true,
+        content: content("must not overwrite"),
+      }),
+    ).toThrow("existing data preserved");
+    expect(db.query("SELECT content, revision FROM drafts").get()).toEqual({
+      content: "{broken",
+      revision: 1,
+    });
+  });
+});
 
 test("acceptance and draft consumption survive a lost clear/renderer; completed payloads are absent", async () => {
   await fixture(async ({ owner, store, bridge, ledger }) => {

@@ -1,4 +1,5 @@
 import { expect, test } from "bun:test";
+import type { Snapshot } from "../shared/rpc-schema";
 import type {
   DraftSyncParams,
   PromptAccepted,
@@ -7,6 +8,7 @@ import type {
   SendIntent,
   SendKey,
 } from "../shared/runtime-contract";
+import { emptyTranscript } from "../shared/transcript";
 import { DraftStore, emptyContent } from "./draft-store";
 import { isSendUnconfirmed, SendController } from "./send-controller";
 
@@ -99,6 +101,44 @@ test("accepted lookup clears only unchanged revision and never resends model err
   await f.sends.lookup(address);
   expect(calls).toBe(1);
 });
+test("matching history resolves an unknown send after an explicit ownership transfer", async () => {
+  const f = fixture(
+    async () => {
+      throw new Error("Prompt reply lost");
+    },
+    async (key) => ({ ...key, state: "unknown", reason: "not-found" }),
+  );
+  await f.sends.send(address);
+  const requestId = f.sends.read(address)?.key.requestId;
+  const next = { ...address, epoch: address.epoch + 1 };
+  f.drafts.transfer(address, next);
+  f.sends.transfer(address, next);
+  const snapshot: Snapshot = {
+    address: next,
+    snapshotSeq: 1,
+    info: { id: address.sessionId, cwd: "project", title: "Chat", modified: 1 },
+    effort: "off",
+    effortLevels: [],
+    transcript: {
+      ...emptyTranscript(),
+      records: [
+        {
+          id: "confirmed",
+          requestId,
+          parentId: null,
+          branchId: "root",
+          order: 0,
+          kind: "message",
+          message: { role: "user", content: "Hello", timestamp: 1 },
+        },
+      ],
+    },
+  };
+  f.sends.reconcile(snapshot);
+  expect(f.sends.read(next)?.state).toBe("accepted");
+  expect(f.sends.retained()).toEqual([]);
+  await f.sends.wait(next);
+});
 test.each([
   "unchanged",
   "newer draft",
@@ -183,7 +223,7 @@ test("preaccept rejection retains text and images, shows backend error", async (
   expect(f.drafts.read(address).content.text).toBe("Hello");
   expect(f.drafts.read(address).content.images).toHaveLength(1);
 });
-test("unknown acceptance retains the draft without warnings, automatic retry or a confirmation gate", async () => {
+test("unknown acceptance retains the payload without a phantom bubble, automatic retry or a confirmation gate", async () => {
   const ids: string[] = [];
   const f = fixture(
     async (params) => {
@@ -204,9 +244,36 @@ test("unknown acceptance retains the draft without warnings, automatic retry or 
   await f.sends.send(address);
   expect(ids).toHaveLength(2);
   expect(ids[0]).not.toBe(ids[1]);
-  expect(f.sends.optimistic(address).map((send) => send.content?.text)).toEqual(
-    ["Hello", "new message"],
+  expect(f.sends.optimistic(address)).toEqual([]);
+  expect(f.sends.retained().map((send) => send.content?.text)).toEqual([
+    "Hello",
+    "new message",
+  ]);
+});
+test("repeated receipt failures stop showing active input without dropping it or retransmitting", async () => {
+  let calls = 0;
+  const f = fixture(
+    async () => {
+      calls++;
+      throw new Error("transport disconnected");
+    },
+    async () => {
+      throw new Error("receipt service disconnected");
+    },
   );
+  await f.sends.send(address);
+  expect(f.sends.read(address)?.state).toBe("checking");
+  expect(f.sends.optimistic(address)).toHaveLength(1);
+  await f.sends.lookup(address);
+  await f.sends.lookup(address);
+  expect(f.sends.read(address)?.state).toBe("unknown");
+  expect(f.sends.optimistic(address)).toEqual([]);
+  expect(f.sends.retained()[0].content?.text).toBe("Hello");
+  expect(f.sends.retained()[0].content?.images).toHaveLength(1);
+  const callbacks = f.callbacks.length;
+  await f.sends.lookup(address);
+  expect(f.callbacks).toHaveLength(callbacks);
+  expect(calls).toBe(1);
 });
 test("late acceptance preserves edits made during pending prompt", async () => {
   let finish: (value: PromptAccepted) => void = () => {};
@@ -558,7 +625,8 @@ test("a lost preflight CAS ACK is checked independently and never dispatches pro
   expect({ prompts, lookups }).toEqual({ prompts: 0, lookups: 1 });
   expect(sends.read(address)?.state).toBe("unknown");
   expect(drafts.read(address).content.text).toBe("");
-  expect(sends.optimistic(address)[0].content?.text).toBe("not dispatched");
+  expect(sends.optimistic(address)).toEqual([]);
+  expect(sends.retained()[0].content?.text).toBe("not dispatched");
 });
 
 test("checking an old unknown ID after a new send does not query or overwrite the current operation", async () => {
@@ -651,4 +719,56 @@ test("same and fresh controllers both restore retired queued payloads without ro
     expect(sends.read(address)?.state).toBe("accepted");
   }
   expect(prompts).toBe(1);
+});
+
+test.each([
+  "accepted",
+  "rejected",
+] as const)("retired unknown input survives a late %s response without crossing into the recovered chat", async (result) => {
+  for (const next of [address, { ...address, epoch: address.epoch + 1 }]) {
+    const response = Promise.withResolvers<PromptAccepted>();
+    let prompts = 0;
+    const f = fixture(
+      () => {
+        prompts++;
+        return response.promise;
+      },
+      async (key) => ({ ...key, state: "unknown", reason: "not-found" }),
+    );
+    const original = structuredClone(f.drafts.read(address).content);
+    const sending = f.sends.send(address);
+    while (!prompts) await Bun.sleep(0);
+    await f.sends.lookup(address);
+    expect(f.sends.read(address)?.state).toBe("unknown");
+    const key = f.sends.read(address)?.key as SendKey;
+    await f.sends.stop(address, async () => {});
+    // Ownership events can beat the fork RPC response.
+    f.drafts.transfer(address, next);
+    f.sends.transfer(address, next);
+    f.sends.retire(address);
+    f.drafts.edit(next, () => ({ ...emptyContent(), text: "recovered draft" }));
+    if (result === "accepted") response.resolve(accepted);
+    else response.reject(new Error("late failure"));
+    await sending;
+    f.sends.restore([
+      {
+        receipt: { ...key, state: "pending", stage: "dispatched" },
+        draftRevision: 1,
+        content: original,
+        hash: "retired",
+        owner: { cwd: "project", sessionFile: null, branchId: null },
+        delivery: "steer",
+      },
+    ]);
+    expect(f.sends.read(next)).toBeUndefined();
+    expect(f.sends.optimistic(next)).toEqual([]);
+    expect(f.sends.queued(next)).toEqual([]);
+    expect(f.sends.retained()[0]).toMatchObject({
+      detached: true,
+      content: original,
+    });
+    expect(f.drafts.read(next).content.text).toBe("recovered draft");
+    await f.sends.wait(next);
+    expect(prompts).toBe(1);
+  }
 });

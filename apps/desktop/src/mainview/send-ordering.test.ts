@@ -139,6 +139,55 @@ test("Stop before a queued send reaches the host needs no host withdrawal", asyn
   expect(f.drafts.read(address).content.text).toBe("local only");
 });
 
+test("recovery cancels an unknown send whose draft ACK arrives after the history change", async () => {
+  const ack = Promise.withResolvers<void>();
+  const drafts = new DraftStore();
+  let prompts = 0;
+  let withdrawals = 0;
+  const sends = new SendController(
+    drafts,
+    {
+      syncDraft: async (params) => {
+        await ack.promise;
+        return {
+          applied: true,
+          draft: { ...params.content, revision: params.expectedRevision + 1 },
+        };
+      },
+      prompt: async () => {
+        prompts++;
+        return { disposition: "started" };
+      },
+      getPromptReceipt: async (key) => ({
+        ...key,
+        state: "unknown",
+        reason: "not-found",
+      }),
+      cancelPrompt: async () => {
+        withdrawals++;
+      },
+    },
+    () => {},
+  );
+  drafts.edit(address, () => text("late old input"));
+  const sending = sends.send(address);
+  await Bun.sleep(0);
+  await sends.lookup(address);
+  expect(sends.read(address)?.state).toBe("unknown");
+  await sends.stop(address, async () => {});
+  sends.retire(address);
+  const next = { ...address, epoch: 2 };
+  drafts.transfer(address, next);
+  sends.transfer(address, next);
+  drafts.edit(next, () => text("new branch draft"));
+  ack.resolve();
+  await sending;
+  expect(prompts).toBe(0);
+  expect(withdrawals).toBe(1);
+  expect(drafts.read(next).content.text).toBe("new branch draft");
+  expect(sends.retained()[0].content?.text).toBe("late old input");
+});
+
 test("a send made while stopping is accepted immediately and dispatched after Stop finishes", async () => {
   const f = fixture();
   const stopped = Promise.withResolvers<void>();
