@@ -1,12 +1,15 @@
 import {
+  recordEnvelope,
   recordPayload,
   type Transcript,
   type TranscriptRecord,
 } from "../shared/transcript";
+import { transcriptIndex } from "../shared/transcript-index";
 
-function shallowEqual(a: object, b: object) {
-  const left = a as Record<string, unknown>;
-  const right = b as Record<string, unknown>;
+function shallowEqual(
+  left: Readonly<Record<string, unknown>>,
+  right: Readonly<Record<string, unknown>>,
+) {
   const keys = Object.keys(left);
   return (
     keys.length === Object.keys(right).length &&
@@ -16,19 +19,7 @@ function shallowEqual(a: object, b: object) {
 
 function sameEnvelope(a: TranscriptRecord, b: TranscriptRecord) {
   // Reuse the whole record only when every envelope field is unchanged.
-  const {
-    message: _am,
-    data: _ad,
-    details: _ax,
-    ...left
-  } = a as unknown as Record<string, unknown>;
-  const {
-    message: _bm,
-    data: _bd,
-    details: _bx,
-    ...right
-  } = b as unknown as Record<string, unknown>;
-  return shallowEqual(left, right);
+  return shallowEqual(recordEnvelope(a), recordEnvelope(b));
 }
 
 /** Restore identities lost to IPC, without deep-comparing large output strings. */
@@ -41,9 +32,7 @@ export function shareTranscript(
     current.history.revision !== incoming.history?.revision
   )
     return incoming;
-  const previous = new Map(
-    current.records.map((record) => [record.id, record]),
-  );
+  const previous = transcriptIndex(current.records);
   const tools = { ...incoming.tools };
   let changed = false;
   const records = incoming.records.map((record) => {
@@ -91,7 +80,7 @@ export function shareTranscript(
           prior?.result &&
           typeof prior.result === "object" &&
           shallowEqual(metadata, priorMetadata) &&
-          shallowEqual(canonical, prior.result)
+          shallowEqual(canonical, prior.result as Record<string, unknown>)
             ? prior
             : { ...state, result: canonical };
         changed ||= tools[id] !== state;

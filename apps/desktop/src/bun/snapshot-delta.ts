@@ -1,17 +1,31 @@
-import type { RuntimeEvent } from "../shared/runtime-contract";
+import {
+  type ContentBase,
+  contentBase,
+  encodeContentAppend,
+} from "../shared/content-append";
+import type { RuntimeEvent, SessionAddress } from "../shared/runtime-contract";
 import {
   type RecordPayloadRef,
   type RuntimeWireEvent,
+  type SnapshotDeltaEvent,
   snapshotAddressKey,
 } from "../shared/snapshot-delta";
-import type { TranscriptRecord } from "../shared/transcript";
+import { recordEnvelope, type TranscriptRecord } from "../shared/transcript";
 import { packRuntimeEvent } from "./transcript-wire";
 
-/** Cache only IDs/revisions, never transcript bodies. Full RPC/reconnect replies
- * stay self-contained. Every live metadata field and record order is still sent. */
+type Base = {
+  revision: string;
+  seq: number;
+  entries: Set<string>;
+  records: Map<string, ContentBase>;
+  tools: Map<string, ContentBase>;
+};
+
+/** Retain IDs and the latest live text only, never saved bodies or SDK objects.
+ * Full RPC/reconnect replies stay self-contained and reset the streaming base. */
 export function createRuntimeDeltaEncoder() {
-  const bases = new Map<string, { revision: string; entries: Set<string> }>();
-  return (event: RuntimeEvent): RuntimeWireEvent => {
+  const bases = new Map<string, Base>();
+  const encode = (event: RuntimeEvent): RuntimeWireEvent => {
     if (event.type === "closed") {
       bases.delete(snapshotAddressKey(event.address));
       return event;
@@ -34,34 +48,101 @@ export function createRuntimeDeltaEncoder() {
       bases.delete(key);
       return packed;
     }
-    bases.set(key, {
+    if (previous && snapshot.snapshotSeq <= previous.seq) return packed;
+    const base: Base = {
       revision,
+      seq: snapshot.snapshotSeq,
       entries: new Set(
         snapshot.transcript.records.filter(eligible).map((record) => record.id),
       ),
-    });
+      records: new Map(),
+      tools: new Map(),
+    };
+    for (const record of snapshot.transcript.records) {
+      if (
+        record.entryId ||
+        record.kind !== "message" ||
+        record.message.role !== "assistant"
+      )
+        continue;
+      const content = contentBase(record.message.content);
+      if (content) base.records.set(record.id, content);
+    }
+    for (const [id, tool] of Object.entries(snapshot.transcript.tools)) {
+      if (tool.status !== "running") continue;
+      const content = contentBase(
+        (tool.result as { content?: unknown } | undefined)?.content,
+      );
+      if (content) base.tools.set(id, content);
+    }
+    bases.set(key, base);
     if (event.type !== "snapshot" || previous?.revision !== revision)
       return packed;
     let referenced = false;
+    const appends: NonNullable<SnapshotDeltaEvent["appends"]> = {
+      baseSeq: previous.seq,
+      records: Object.create(null),
+      tools: Object.create(null),
+    };
     const records = snapshot.transcript.records.map((record) => {
-      if (!eligible(record) || !previous.entries.has(record.id)) return record;
-      const {
-        message: _message,
-        data: _data,
-        details: _details,
-        ...envelope
-      } = record as unknown as Record<string, unknown>;
+      if (!eligible(record) || !previous.entries.has(record.id)) {
+        if (
+          !record.entryId &&
+          record.kind === "message" &&
+          record.message.role === "assistant"
+        ) {
+          const encoded = encodeContentAppend(
+            record.message.content,
+            previous.records.get(record.id),
+          );
+          if (encoded) {
+            appends.records[record.id] = encoded.appends;
+            return {
+              ...record,
+              message: { ...record.message, content: encoded.content },
+            };
+          }
+        }
+        return record;
+      }
       referenced = true;
-      return { ...envelope, payloadRef: record.id } as RecordPayloadRef;
+      return {
+        ...recordEnvelope(record),
+        entryId: record.id,
+        payloadRef: record.id,
+      } as RecordPayloadRef;
     });
-    return referenced
+    const tools = { ...snapshot.transcript.tools };
+    for (const [id, tool] of Object.entries(tools)) {
+      if (tool.status !== "running") continue;
+      const result = tool.result as { content?: unknown[] } | undefined;
+      if (!Array.isArray(result?.content)) continue;
+      const encoded = encodeContentAppend(
+        result.content,
+        previous.tools.get(id),
+      );
+      if (!encoded) continue;
+      appends.tools[id] = encoded.appends;
+      tools[id] = { ...tool, result: { ...result, content: encoded.content } };
+    }
+    const appended =
+      Object.keys(appends.records).length > 0 ||
+      Object.keys(appends.tools).length > 0;
+    return referenced || appended
       ? {
           type: "snapshotDelta",
+          ...(appended ? { appends } : {}),
           snapshot: {
             ...snapshot,
-            transcript: { ...snapshot.transcript, records },
+            transcript: { ...snapshot.transcript, records, tools },
           },
         }
       : packed;
   };
+  return Object.assign(encode, {
+    reset(address?: SessionAddress) {
+      if (address) bases.delete(snapshotAddressKey(address));
+      else bases.clear();
+    },
+  });
 }

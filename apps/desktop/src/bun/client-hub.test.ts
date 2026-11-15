@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 import type { Snapshot } from "../shared/rpc-schema";
 import type { RuntimeWireEvent } from "../shared/snapshot-delta";
-import { emptyTranscript } from "../shared/transcript";
+import { emptyTranscript, type TranscriptRecord } from "../shared/transcript";
 import { ClientHub, type ClientSender } from "./client-hub";
 
 function client() {
@@ -11,8 +11,8 @@ function client() {
   };
   return { received, send };
 }
-function snapshot(): Snapshot {
-  const record = {
+function snapshot(seq = 1): Snapshot {
+  const record: TranscriptRecord = {
     id: "entry",
     entryId: "entry",
     kind: "message",
@@ -23,13 +23,13 @@ function snapshot(): Snapshot {
   };
   return {
     address: { hostId: "host", sessionId: "chat", epoch: 1 },
-    snapshotSeq: 1,
+    snapshotSeq: seq,
     info: { id: "chat", cwd: "fixture", title: "Chat", modified: 1 },
     transcript: {
       ...emptyTranscript(),
       history: { revision: "r1" },
       records: [record],
-    } as unknown as Snapshot["transcript"],
+    },
     effort: "off",
     effortLevels: [],
   };
@@ -43,12 +43,12 @@ test("each window gets its own delta base and one transcript per publication", (
   const hub = new ClientHub();
   const first = client();
   hub.add("first", first.send);
-  hub.runtime({ type: "snapshot", snapshot: snapshot() });
-  hub.runtime({ type: "snapshot", snapshot: snapshot() });
+  hub.runtime({ type: "snapshot", snapshot: snapshot(1) });
+  hub.runtime({ type: "snapshot", snapshot: snapshot(2) });
   // A window opened later must not receive deltas against bases it never saw.
   const second = client();
   hub.add("second", second.send);
-  hub.runtime({ type: "snapshot", snapshot: snapshot() });
+  hub.runtime({ type: "snapshot", snapshot: snapshot(3) });
   expect(runtimeEvents(first.received)).toEqual([
     "snapshot",
     "snapshotDelta",
@@ -57,9 +57,38 @@ test("each window gets its own delta base and one transcript per publication", (
   expect(runtimeEvents(second.received)).toEqual(["snapshot"]);
   // A reloaded page starts again from a self-contained snapshot.
   hub.reset("first");
-  hub.runtime({ type: "snapshot", snapshot: snapshot() });
+  hub.runtime({ type: "snapshot", snapshot: snapshot(4) });
   expect(runtimeEvents(first.received).at(-1)).toBe("snapshot");
   expect(runtimeEvents(second.received).at(-1)).toBe("snapshotDelta");
+});
+
+test("full RPC reads reset the owner's base in every window without resetting other chats", () => {
+  const hub = new ClientHub();
+  const first = client();
+  const second = client();
+  hub.add("first", first.send);
+  hub.add("second", second.send);
+  const other: Snapshot = {
+    ...snapshot(),
+    address: { ...snapshot().address, sessionId: "other" },
+    info: { ...snapshot().info, id: "other" },
+  };
+  hub.runtime({ type: "snapshot", snapshot: snapshot(1) });
+  hub.runtime({ type: "snapshot", snapshot: other });
+  hub.resetRuntime(snapshot().address);
+  hub.runtime({ type: "snapshot", snapshot: snapshot(2) });
+  hub.runtime({ type: "snapshot", snapshot: { ...other, snapshotSeq: 2 } });
+  for (const target of [first, second])
+    expect(runtimeEvents(target.received)).toEqual([
+      "snapshot",
+      "snapshot",
+      "snapshot",
+      "snapshotDelta",
+    ]);
+  hub.resetRuntime();
+  hub.runtime({ type: "snapshot", snapshot: snapshot(3) });
+  expect(runtimeEvents(first.received).at(-1)).toBe("snapshot");
+  expect(runtimeEvents(second.received).at(-1)).toBe("snapshot");
 });
 
 test("broadcast survives a failing window; targeted messages reach one window", () => {

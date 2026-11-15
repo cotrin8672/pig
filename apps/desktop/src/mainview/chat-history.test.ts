@@ -91,3 +91,52 @@ test("rewind or replacement drops old pages; reconnect gaps are not silently joi
     nextOwner.transcript,
   );
 });
+
+test("100 streaming updates do not reindex or filter the loaded 10k-record prefix", () => {
+  let current = snapshot(history(0, 10080));
+  let reads = 0;
+  for (const record of current.transcript.records.slice(0, 10000)) {
+    const { id, order } = record;
+    Object.defineProperties(record, {
+      id: {
+        enumerable: true,
+        get: () => {
+          reads++;
+          return id;
+        },
+      },
+      order: {
+        enumerable: true,
+        get: () => {
+          reads++;
+          return order;
+        },
+      },
+    });
+  }
+  const publish = (seq: number) =>
+    newerSnapshot(current, {
+      ...snapshot(history(10000, 10080)),
+      snapshotSeq: seq,
+    });
+  current = publish(2);
+  expect(reads).toBeGreaterThan(0); // First publication establishes the boundary/index.
+  reads = 0;
+  for (let seq = 3; seq < 103; seq++) current = publish(seq);
+  expect(reads).toBe(0);
+  expect(current.transcript.records).toHaveLength(10080);
+  expect(current.transcript.records[0].id).toBe("entry:0");
+  expect(current.transcript.history?.before).toBeUndefined();
+  // A moving tail and another explicit page must establish their own boundary.
+  current = newerSnapshot(current, {
+    ...snapshot(history(10001, 10081)),
+    snapshotSeq: 103,
+  });
+  expect(current.transcript.records).toHaveLength(10081);
+  const rewound = newerSnapshot(current, {
+    ...snapshot(history(0, 10, "other")),
+    snapshotSeq: 104,
+  });
+  expect(rewound.transcript.records).toHaveLength(10);
+  expect(rewound.transcript.history?.revision).toBe("other");
+});

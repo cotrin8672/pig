@@ -1,5 +1,5 @@
 import type { RPCSchema } from "../shared/rpc-schema";
-import type { RuntimeEvent } from "../shared/runtime-contract";
+import type { RuntimeEvent, SessionAddress } from "../shared/runtime-contract";
 import { createRuntimeDeltaEncoder } from "./snapshot-delta";
 
 export type ClientMessages = RPCSchema["webview"]["messages"];
@@ -28,6 +28,10 @@ export class ClientHub {
   reset(id: string) {
     const client = this.clients.get(id);
     if (client) client.encode = createRuntimeDeltaEncoder();
+  }
+  /** A full RPC read can be newer than a client's last publication. */
+  resetRuntime(address?: SessionAddress) {
+    for (const client of this.clients.values()) client.encode.reset(address);
   }
   get size() {
     return this.clients.size;

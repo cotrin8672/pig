@@ -23,9 +23,14 @@ export function createRenderWorkerQueue<I, O>(
   let nextId = 0;
   let running: number | undefined;
   let failed: Error | undefined;
+  let failures = 0;
+  let generation = 0;
   const jobs = new Map<number, Job<I, O>>();
   const counts = { posted: 0, completed: 0, cancelled: 0 };
-  const fail = (error: Error) => {
+  const fail = (error: Error, owner = generation) => {
+    if (owner !== generation) return;
+    generation++;
+    failures++;
     failed = error;
     for (const job of jobs.values()) {
       job.input = undefined;
@@ -34,14 +39,19 @@ export function createRenderWorkerQueue<I, O>(
     }
     jobs.clear();
     running = undefined;
-    void worker?.then(
+    const stopped = worker;
+    worker = undefined;
+    void stopped?.then(
       (value) => value.terminate(),
       () => {},
     );
   };
   const getWorker = () => {
-    worker ??= create().then((value) => {
+    if (worker) return worker;
+    const owner = ++generation;
+    worker = create().then((value) => {
       value.addEventListener("message", (event) => {
+        if (owner !== generation) return;
         const reply = event.data as { id: number; result?: O; error?: string };
         if (!reply || typeof reply.id !== "number" || reply.id !== running)
           return;
@@ -52,16 +62,19 @@ export function createRenderWorkerQueue<I, O>(
           job.cleanup();
           counts.completed++;
           if (reply.error) job.reject(new Error(reply.error));
-          else job.resolve(reply.result);
+          else {
+            failures = 0;
+            job.resolve(reply.result);
+          }
         }
         pump();
       });
       value.addEventListener("error", (event) => {
         event.preventDefault();
-        fail(new Error("Render worker failed"));
+        fail(new Error("Render worker failed"), owner);
       });
       value.addEventListener("messageerror", () =>
-        fail(new Error("Render worker reply could not be decoded")),
+        fail(new Error("Render worker reply could not be decoded"), owner),
       );
       return value;
     });
@@ -79,8 +92,10 @@ export function createRenderWorkerQueue<I, O>(
       fail(error instanceof Error ? error : new Error(String(error)));
       return;
     }
+    const owner = generation;
     void started
       .then((value) => {
+        if (owner !== generation) return;
         if (!jobs.has(job.id)) {
           running = undefined;
           pump();
@@ -93,7 +108,7 @@ export function createRenderWorkerQueue<I, O>(
         job.input = undefined;
       })
       .catch((error) =>
-        fail(error instanceof Error ? error : new Error(String(error))),
+        fail(error instanceof Error ? error : new Error(String(error)), owner),
       );
   };
   // Keep cancellation closures outside run(): otherwise their lexical scope can
@@ -119,7 +134,10 @@ export function createRenderWorkerQueue<I, O>(
   return {
     run(input: I, signal?: AbortSignal): Promise<O | undefined> {
       if (signal?.aborted) return Promise.resolve(undefined);
-      if (failed) return Promise.reject(failed);
+      // A later request may replace a crashed worker. Never replay a posted job
+      // (its input is released), or loop forever when the host blocks workers.
+      if (failed && failures >= 3) return Promise.reject(failed);
+      failed = undefined;
       const { promise, resolve, reject } = Promise.withResolvers<
         O | undefined
       >();
