@@ -8,3 +8,4 @@ artifacts/
 apps/desktop/rtk/
 /rtk/
 apps/desktop/src/bun/rtk/
+.pi/openai-codex-images/
