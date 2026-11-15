@@ -1,7 +1,7 @@
 import type { ImageContent, TextContent } from "@earendil-works/pi-ai";
 import type { ChatRendererProps } from "@pig/chat-renderers";
 import type { Root } from "hast";
-import { Check, Clock, Copy, Pencil } from "lucide-react";
+import { Check, Copy, Pencil } from "lucide-react";
 import {
   Fragment,
   memo,
@@ -220,50 +220,17 @@ const imageSources = (content: Content) =>
         .filter(isImage)
         .map((image) => `data:${image.mimeType};base64,${image.data}`);
 
-/**
- * Steering waiting for the next step boundary: one quiet right-aligned line,
- * ellipsized; click to read it all. Once the agent reads it, it is a normal bubble.
- */
-function SteerLine({ body }: { body: string }) {
-  const t = useT();
-  const [open, setOpen] = useState(false);
-  return (
-    <div className="user-steer">
-      <span
-        className="user-steer-state"
-        role="img"
-        aria-label={t["Steering pending"]}
-      >
-        <Clock size={13} aria-hidden="true" />
-      </span>
-      <button
-        type="button"
-        className="user-bubble"
-        aria-expanded={open}
-        aria-description={open ? undefined : body}
-        onClick={() => setOpen(!open)}
-      >
-        {/* Ellipsis needs a block child; the shared button style is inline-flex. */}
-        <span className="user-steer-text">{body}</span>
-      </button>
-    </div>
-  );
-}
-
 /** User turns: images above a plain-text bubble, like ChatGPT. */
 export const UserMessage = memo(function UserMessage({
   message,
   sessionId,
   entryId,
   disabled,
-  steer,
 }: {
   message: Extract<Message, { role: "user" }>;
   sessionId: string;
   entryId?: string;
   disabled: boolean;
-  /** Sent while the agent was working and not yet read at a step boundary. */
-  steer?: boolean;
 }) {
   const { content } = message;
   const t = useT();
@@ -350,12 +317,9 @@ export const UserMessage = memo(function UserMessage({
           </div>
         </form>
       ) : (
-        attachments.body &&
-        (steer ? (
-          <SteerLine body={attachments.body} />
-        ) : (
+        attachments.body && (
           <div className="user-bubble">{attachments.body}</div>
-        ))
+        )
       )}
       <div className="response-actions user-actions">
         <time dateTime={new Date(message.timestamp).toISOString()}>

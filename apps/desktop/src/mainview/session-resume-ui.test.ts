@@ -67,7 +67,7 @@ for (const action of ["fork", "rewind"]) {
       {id:'answer',entryId:'answer',parentId:'recovered-user',branchId:'root',order:1,kind:'message',message:fauxAssistantMessage('recovered response')},
     ]}};
     await render();
-    check(!document.querySelector('.user-steer')&&!document.querySelector('.send-button.waiting'),'recovered chat must have no stuck steering or send spinner');
+    check(!document.querySelector('.message-queue-steer')&&!document.querySelector('.send-button.waiting'),'recovered chat must have no stuck steering or send spinner');
     check(document.querySelector('.send-button').getAttribute('aria-label')==='Send','recovered chat must be usable for the next send');
     check(requests.length===2,'recovery must never replay the failed input');
     root.unmount();
@@ -109,21 +109,21 @@ test.skipIf(!existsSync(fixtureEdge) && !process.env.PIG_REQUIRE_UI_TESTS)(
     await render();
     drafts.edit(address,content=>({...content,text:'Keep this instruction'}));
     const rejected=sends.send(address);
-    await until(()=>requests.length===1&&document.querySelector('.user-steer'),'in-flight steering must be visible');
+    await until(()=>requests.length===1&&document.querySelector('.message-queue-steer'),'in-flight steering must be visible');
     pending[0].reject(new Error('Send failed'));await rejected;await wait();
-    check(!document.querySelector('.user-steer'),'rejected steering must disappear');
+    check(!document.querySelector('.message-queue-steer'),'rejected steering must disappear');
     check(drafts.read(address).content.text==='Keep this instruction','confirmed rejection must restore the input');
     check(button().getAttribute('aria-label')==='Send'&&!button().disabled,'a rejected send must not disable the composer');
     const queued=sends.send(address);
     await until(()=>requests.length===2,'a manual retry must send a new request');
     pending[1].resolve({disposition:'queued'});await queued;await wait();
-    check(document.querySelector('.user-steer'),'accepted steering must remain visible until consumed or cancelled');
+    check(document.querySelector('.message-queue-steer'),'accepted steering must remain visible until consumed or cancelled');
     const recovered={id:'cancelled',requestId:requests[1].requestId,parentId:null,branchId:'root',order:0,kind:'message',
       customType:'Cancelled queued prompt',display:true,
       message:{role:'custom',customType:'Cancelled queued prompt',display:true,content:[{type:'text',text:'Keep this instruction'}],details:{requestId:requests[1].requestId},timestamp:1}};
     snapshot={...snapshot,failure:'SDK dispatch failed',transcript:{...snapshot.transcript,running:false,records:[recovered]}};
     await render();
-    check(!document.querySelector('.user-steer')&&!document.querySelector('.message.user'),'cancelled steering must not leave a ghost message');
+    check(!document.querySelector('.message-queue-steer')&&!document.querySelector('.message.user'),'cancelled steering must not leave a ghost message');
     check(sends.optimistic(address).length===0,'recovered request identity must release the optimistic queue');
     check(snapshot.transcript.records[0].message.content[0].text==='Keep this instruction','cancelled input must remain preserved');
     check(requests.length===2,'neither rejection nor cancellation may resend automatically');
@@ -136,7 +136,7 @@ test.skipIf(!existsSync(fixtureEdge) && !process.env.PIG_REQUIRE_UI_TESTS)(
       message:{role:'user',content:'continue',timestamp:2},
     }]}};
     await render();await until(()=>button().getAttribute('aria-label')==='Stop'&&!button().disabled,'resumed chat must restore Stop');
-    check(requests.length===3&&!document.querySelector('.user-steer'),'resuming must not resurrect failed steering');
+    check(requests.length===3&&!document.querySelector('.message-queue-steer'),'resuming must not resurrect failed steering');
     root.unmount();
   `,
       { realRpc: true },
@@ -173,7 +173,7 @@ test.skipIf(!existsSync(fixtureEdge) && !process.env.PIG_REQUIRE_UI_TESTS)(
     await render();
     drafts.edit(address,content=>({...content,text:'作業を続けて'}));
     const sending=sends.send(address);
-    await until(()=>requests.length===1&&document.querySelector('.user-steer'),'pending input must initially appear as steering');
+    await until(()=>requests.length===1&&document.querySelector('.message-queue-steer'),'pending input must initially appear as steering');
     gate.reject(new Error('Prompt response disconnected'));await sending;
     await sends.lookup(address);await sends.lookup(address);
     snapshot={...snapshot,failure:'Request failed',transcript:{...snapshot.transcript,running:false}};
@@ -287,7 +287,7 @@ test.skipIf(!existsSync(fixtureEdge) && !process.env.PIG_REQUIRE_UI_TESTS)(
     check(JSON.stringify(bounds(button()))===actionBounds,'pending send must keep the same action slot');
     pending[1].resolve({disposition:'queued'});
     await until(()=>button().getAttribute('aria-label')==='Stop'&&!button().disabled,'queued steering must restore an enabled Stop before entering history');
-    check(document.querySelector('.user-steer')?.textContent.includes('While responding'),'accepted steering must remain visible while queued');
+    check(document.querySelector('.message-queue-steer')?.textContent.includes('While responding'),'accepted steering must remain visible while queued');
     check(JSON.stringify(bounds(button()))===actionBounds&&JSON.stringify(bounds(document.querySelector('.composer-pickers')))===pickerBounds,'queue acceptance must not shift the action or pickers');
     flushSync(()=>drafts.edit(address,content=>({...content,text:'Another instruction'})));await wait();
     check(button().getAttribute('aria-label')==='Send'&&!button().disabled,'queued steering must not block the next instruction');

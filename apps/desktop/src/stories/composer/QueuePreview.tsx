@@ -7,7 +7,11 @@ import "../../mainview/composer.css";
 import "./queue.css";
 
 type Item = { id: string; content: DraftContent };
-export type QueueArgs = { count: number; sending: boolean };
+export type QueueArgs = {
+  count: number;
+  steering: number;
+  sending: boolean;
+};
 const content = (
   text: string,
   extra: Partial<DraftContent> = {},
@@ -72,21 +76,40 @@ const fixtures: Item[] = [
 ];
 
 /** Working composer around the shipped queue, not a separate queue implementation. */
-export function QueuePreview({ count, sending }: QueueArgs) {
-  const [state, setState] = useState({
-    count,
-    items: fixtures.slice(0, count),
-  });
+const steerFixtures: Item[] = [
+  {
+    id: "s1",
+    content: content(
+      "どんだけ時間かけてるの。テストは greeting だけに絞って先に結果を見せて",
+    ),
+  },
+  { id: "s2", content: content("fr のケースも一緒に見て") },
+];
+const initial = (count: number, steering: number) => ({
+  key: `${count}/${steering}`,
+  items: fixtures.slice(0, count),
+  steering: steerFixtures.slice(0, steering),
+});
+
+export function QueuePreview({ count, steering, sending }: QueueArgs) {
+  const [state, setState] = useState(() => initial(count, steering));
   const [draft, setDraft] = useState("");
   const serial = useRef(0);
-  if (state.count !== count)
-    setState({ count, items: fixtures.slice(0, count) });
+  if (state.key !== `${count}/${steering}`) setState(initial(count, steering));
   const items = state.items;
-  const setItems = (next: Item[]) => setState({ count, items: next });
-  const take = (id: string) => {
+  const setItems = (next: Item[], steered?: Item) =>
+    setState({
+      ...state,
+      items: next,
+      steering: steered ? [...state.steering, steered] : state.steering,
+    });
+  const take = (id: string, steer = false) => {
     if (sending && items[0]?.id === id) return;
     const item = items.find((item) => item.id === id);
-    setItems(items.filter((item) => item.id !== id));
+    setItems(
+      items.filter((item) => item.id !== id),
+      steer ? item : undefined,
+    );
     return item;
   };
   const send = () => {
@@ -105,12 +128,13 @@ export function QueuePreview({ count, sending }: QueueArgs) {
         テストを実行しています…
         <button
           type="button"
-          onClick={() => setItems(fixtures.slice(0, count))}
+          onClick={() => setState(initial(count, steering))}
         >
-          キューを戻す
+          元に戻す
         </button>
       </div>
       <MessageQueue
+        steering={state.steering}
         items={items.map((item, index) => ({
           ...item,
           locked: sending && index === 0,
@@ -124,7 +148,7 @@ export function QueuePreview({ count, sending }: QueueArgs) {
         onMove={(ids) => {
           setItems(ids.flatMap((id) => items.filter((item) => item.id === id)));
         }}
-        onSteer={(id) => void take(id)}
+        onSteer={(id) => void take(id, true)}
       />
       <div className="composer">
         <textarea
