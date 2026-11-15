@@ -32,6 +32,7 @@ export function customPresentation(record: TranscriptRecord) {
       content: record.data,
       details: undefined,
       hidden:
+        record.customType === "desktop.import" ||
         record.customType === "pig.rewind" ||
         record.customType === "piris.rewind",
     };
@@ -40,7 +41,7 @@ export function customPresentation(record: TranscriptRecord) {
       label: record.entryType,
       content: record.data,
       details: undefined,
-      hidden: true,
+      hidden: record.entryType !== "compaction",
     };
   const message = record.message;
   if (message.role === "custom")

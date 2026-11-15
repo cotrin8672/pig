@@ -2,6 +2,7 @@ import type { ChatRendererProps } from "@pig/chat-renderers";
 import type { ReactNode } from "react";
 import type { TranscriptRecord } from "../shared/transcript";
 import { ChatContent } from "./ChatContent";
+import { CompactionRecord } from "./CompactionRenderer";
 import { customImageSources, customPresentation } from "./custom-data";
 import { ImageGallery } from "./ImageGallery";
 import { RecordData } from "./RecordData";
@@ -24,6 +25,8 @@ export function CustomRecord({
   renderer?: (record: TranscriptRecord) => ReactNode;
 }) {
   const view = customPresentation(record);
+  if (record.kind === "session-entry" && record.entryType === "compaction")
+    return <CompactionRecord record={record} />;
   if (renderer)
     return (
       <RecordData
