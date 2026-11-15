@@ -82,11 +82,7 @@ export function MessageQueue({
   }
   return (
     <details className="message-queue" data-ui-surface="card" open>
-      <summary
-        ref={summary}
-        aria-label={t["Send after response"]}
-        title={t["Send after response"]}
-      >
+      <summary ref={summary} aria-label={t["Send after response"]}>
         <ListEnd size={14} aria-hidden="true" />
         <ChevronDown
           className="message-queue-chevron"
@@ -147,7 +143,6 @@ export function MessageQueue({
                     <button
                       type="button"
                       className="message-queue-grip"
-                      title={t["Reorder queued message"]}
                       aria-label={`${index + 1}. ${t["Reorder queued message"]}`}
                       disabled={!!busy}
                       onKeyDown={(event) => keyMove(event, index, id)}
@@ -157,13 +152,12 @@ export function MessageQueue({
                   )}
                 </span>
               )}
-              <p title={text}>{text || t.Message}</p>
+              <p aria-description={text}>{text || t.Message}</p>
               {attachments > 0 && (
                 <span
                   className="message-queue-attachments"
                   role="img"
                   aria-label={`${t.Attachments}: ${attachments}`}
-                  title={`${t.Attachments}: ${attachments}`}
                 >
                   <Paperclip size={12} aria-hidden="true" />
                 </span>
@@ -173,7 +167,6 @@ export function MessageQueue({
                   <button
                     type="button"
                     className="message-queue-action"
-                    title={t["Steer with queued message"]}
                     aria-label={t["Steer with queued message"]}
                     disabled={!!busy || locked}
                     onClick={() => void act(id, onSteer, true)}
@@ -184,7 +177,6 @@ export function MessageQueue({
                 <button
                   type="button"
                   className="message-queue-action"
-                  title={t["Edit queued message"]}
                   aria-label={t["Edit queued message"]}
                   disabled={!!busy}
                   onClick={() => void act(id, onEdit)}
@@ -194,7 +186,6 @@ export function MessageQueue({
                 <button
                   type="button"
                   className="message-queue-action"
-                  title={t["Delete queued message"]}
                   aria-label={t["Delete queued message"]}
                   disabled={!!busy}
                   onClick={() => void act(id, onDelete, true)}

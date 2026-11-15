@@ -11,11 +11,13 @@ import {
   showError,
   useStore,
 } from "./store";
+import { useTooltip } from "./Tooltip";
 import "./notifications.css";
 
 export function NotificationCenter() {
   const t = useT();
   const { ref, close } = usePicker();
+  const tooltip = useTooltip();
   const titleId = useId();
   const [unreadOnly, setUnreadOnly] = useState(false);
   const history = useStore((s) => s.noticeHistory);
@@ -33,7 +35,7 @@ export function NotificationCenter() {
       <summary
         className="picker-trigger notification-bell"
         aria-label={`${t.Notifications} (${unread})`}
-        title={t.Notifications}
+        {...tooltip({ tier: "label", side: "top", label: t.Notifications })}
       >
         <Bell size={16} aria-hidden="true" />
         {unread > 0 && (
@@ -47,7 +49,6 @@ export function NotificationCenter() {
           <strong id={titleId}>{t.Notifications}</strong>
           <button
             type="button"
-            title={t["Mark all as read"]}
             aria-label={t["Mark all as read"]}
             disabled={!unread}
             onClick={() => markNoticeRead()}
@@ -56,7 +57,6 @@ export function NotificationCenter() {
           </button>
           <button
             type="button"
-            title={t["Clear notifications"]}
             aria-label={t["Clear notifications"]}
             disabled={!history.length}
             onClick={clearNotices}

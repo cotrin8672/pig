@@ -233,7 +233,6 @@ function SteerLine({ body }: { body: string }) {
         className="user-steer-state"
         role="img"
         aria-label={t["Steering pending"]}
-        title={t["Steering pending"]}
       >
         <Clock size={13} aria-hidden="true" />
       </span>
@@ -241,7 +240,7 @@ function SteerLine({ body }: { body: string }) {
         type="button"
         className="user-bubble"
         aria-expanded={open}
-        title={open ? undefined : body}
+        aria-description={open ? undefined : body}
         onClick={() => setOpen(!open)}
       >
         {/* Ellipsis needs a block child; the shared button style is inline-flex. */}
@@ -279,7 +278,7 @@ export const UserMessage = memo(function UserMessage({
   const focusEditor = useCallback((element: HTMLTextAreaElement | null) => {
     element?.focus();
   }, []);
-  const sources = imageSources(content);
+  const sources = useMemo(() => imageSources(content), [content]);
   const original =
     typeof content === "string"
       ? content
@@ -364,7 +363,6 @@ export const UserMessage = memo(function UserMessage({
         </time>
         <button
           type="button"
-          title={copied ? t.Copied : t["Copy message"]}
           aria-label={copied ? t.Copied : t["Copy message"]}
           disabled={!text}
           onClick={async () => {
@@ -380,7 +378,6 @@ export const UserMessage = memo(function UserMessage({
         </button>
         <button
           type="button"
-          title={t["Edit message"]}
           aria-label={t["Edit message"]}
           disabled={!entryId || disabled || !!edit}
           onClick={() => setDraft(parsed.body)}
@@ -403,7 +400,7 @@ export const MessageContent = memo(function MessageContent({
 }) {
   const blocks =
     typeof content === "string" ? [{ type: "text", text: content }] : content;
-  const sources = imageSources(content);
+  const sources = useMemo(() => imageSources(content), [content]);
   const firstImage = blocks.findIndex(isImage);
   return (
     <div className={`message-content ${markdown ? "prose" : "literal"}`}>

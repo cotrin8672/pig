@@ -282,7 +282,6 @@ function SearchDialog({ initialQuery }: { initialQuery: string }) {
               <span
                 role="img"
                 className="search-kind"
-                title={t.searchKind(item.kind)}
                 aria-label={t.searchKind(item.kind)}
               >
                 <Icon size={14} aria-hidden="true" />

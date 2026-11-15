@@ -26,7 +26,6 @@ function Reset({ onClick }: { onClick: () => void }) {
       type="button"
       className="model-setting-reset"
       aria-label={t["Reset to default"]}
-      title={t["Reset to default"]}
       onClick={onClick}
     >
       <RotateCcw size={12} />

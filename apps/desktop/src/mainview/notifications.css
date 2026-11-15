@@ -69,6 +69,8 @@
 }
 .notification-panel {
   position: absolute;
+  /* Above positioned sidebar content such as usage bar frames. */
+  z-index: 10;
   bottom: calc(100% + 8px);
   left: 0;
   width: min(340px, calc(100vw - 36px));

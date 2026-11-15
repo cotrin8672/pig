@@ -231,7 +231,6 @@ function TerminalModal(props: TerminalDialogProps) {
         <button
           type="button"
           aria-label={t.Close}
-          title={t.Close}
           onClick={() => {
             dialog.current?.close();
             callbacks.current.onDismiss?.();

@@ -32,12 +32,12 @@ export function Notifications() {
           >
             <Icon size={14} aria-hidden="true" />
             <div className="notification-content">
-              <div title={notice.message}>{notice.message}</div>
+              <div aria-description={notice.message}>{notice.message}</div>
               {session && (
                 <button
                   type="button"
                   className="notification-session"
-                  title={snapshots[session.id]?.info.title}
+                  aria-description={snapshots[session.id]?.info.title}
                   onClick={() => {
                     markNoticeRead(notice.id);
                     dismissNotice(notice.id);

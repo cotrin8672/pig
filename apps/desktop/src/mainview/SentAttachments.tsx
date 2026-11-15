@@ -36,7 +36,7 @@ function SentAttachment({ path }: { path: string }) {
   return src ? (
     <ImageGallery sources={[src]} />
   ) : (
-    <div className="sent-attachment" title={path}>
+    <div className="sent-attachment" aria-description={path}>
       <Icon size={24} aria-hidden="true" />
       <span>{name}</span>
     </div>

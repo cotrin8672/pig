@@ -7,6 +7,8 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import tailwindcss from "@tailwindcss/vite";
 import { build } from "vite";
 import { fixtureBrowser } from "../../scripts/ui-browser";
+import { codexUsage } from "../bun/usage/adapters/subscriptions";
+import { usageFromHeaders } from "../bun/usage/observation";
 
 const edge =
   process.env.PIG_UI_BROWSER ??
@@ -105,6 +107,46 @@ test.skipIf(!existsSync(edge) && !process.env.PIG_REQUIRE_UI_TESTS)(
           const times=[...list.querySelectorAll('.provider-usage-window')].map(w=>parseFloat(w.style.getPropertyValue('--usage-time')));
           check(times.every(t=>t>=0&&t<=100),'frame time is clamped to the bar');
           check([...list.querySelectorAll('.provider-usage-percent')].every(p=>p.scrollWidth<=p.clientWidth+1),'percentages are not clipped');
+        }
+        // Both API snapshots and live response headers omit non-existent Codex limits.
+        const codexSources=${JSON.stringify([
+          codexUsage({
+            rate_limit: {
+              primary_window: {
+                used_percent: 79,
+                limit_window_seconds: 604800,
+              },
+              secondary_window: {
+                used_percent: 0,
+                limit_window_seconds: 0,
+              },
+            },
+          }),
+          usageFromHeaders(
+            "openai-codex",
+            {
+              "x-codex-primary-used-percent": "79",
+              "x-codex-primary-window-minutes": "10080",
+              "x-codex-secondary-used-percent": "0",
+              "x-codex-secondary-window-minutes": "0",
+              "x-codex-secondary-reset-after-seconds": "0",
+            },
+            0,
+          ),
+        ])};
+        for(const data of codexSources){
+          render([{...work,data}],'remaining',240);
+          const row=document.querySelector('.provider-usage-row');
+          check(row.querySelectorAll('.provider-usage-window').length===1,'absent Codex window must not create a second bar');
+          check(row.querySelector('.provider-usage-percent').textContent==='21%','valid weekly quota stays visible');
+          check(!row.getAttribute('aria-label').includes('secondary'),'absent slot must not leak into the tooltip label');
+          await new Promise(resolve=>setTimeout(resolve,30));
+          flushSync(()=>row.dispatchEvent(new PointerEvent('pointerover',{bubbles:true})));
+          await new Promise(resolve=>setTimeout(resolve,30));
+          const popup=document.querySelector('.usage-popover');
+          check(popup?.querySelectorAll('.usage-popover-window').length===1 && !popup.textContent.includes('secondary'),'popover must also omit the placeholder: '+(popup?.textContent??'not open'));
+          document.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape'}));
+          await new Promise(resolve=>setTimeout(resolve,30));
         }
         let refreshes=0;
         const refresh=()=>{refreshes++};

@@ -1,5 +1,5 @@
 import { Archive, ChevronRight, Folder, Pin, SquarePen } from "lucide-react";
-import { memo, useId, useState } from "react";
+import { memo, useId, useMemo, useState } from "react";
 import { useShallow } from "zustand/react/shallow";
 import { visibleProjects } from "../shared/projects";
 import { InlineRename } from "./InlineRename";
@@ -10,7 +10,7 @@ import { openChat, rpc } from "./rpc";
 import { SessionList } from "./SessionList";
 import { type SessionStatus, sessionStatusLabels } from "./session-status";
 import { useStore } from "./store";
-import { selectProjectActivity } from "./ui-selectors";
+import { createProjectActivitySelector } from "./ui-selectors";
 
 const basename = (path: string) =>
   path.split(/[\\/]/).filter(Boolean).pop() || path;
@@ -34,7 +34,6 @@ export const SidebarSessions = memo(function SidebarSessions() {
           <button
             type="button"
             aria-label={t["New chat"]}
-            title={t["New chat"]}
             disabled={!generalCwd}
             onClick={() => void openChat(generalCwd)}
           >
@@ -49,7 +48,6 @@ export const SidebarSessions = memo(function SidebarSessions() {
           <button
             type="button"
             aria-label={t["Add project"]}
-            title={t["Add project"]}
             onClick={() => rpc.send.addProject()}
           >
             <FolderPlusCorner size={14} aria-hidden="true" />
@@ -86,7 +84,8 @@ function ProjectSessions({ cwd }: { cwd: string }) {
   const [expanded, setExpanded] = useState(true);
   const [renaming, setRenaming] = useState(false);
   const listId = useId();
-  const activity = useStore(useShallow((s) => selectProjectActivity(s, cwd)));
+  const selectActivity = useMemo(createProjectActivitySelector, []);
+  const activity = useStore(useShallow((s) => selectActivity(s, cwd)));
   const counts = { waiting: 0, running: 0, completed: 0, failed: 0 };
   let unread = 0;
   for (let index = 0; index < activity.length; index += 2) {
@@ -127,7 +126,7 @@ function ProjectSessions({ cwd }: { cwd: string }) {
             type="button"
             aria-expanded={expanded}
             aria-controls={listId}
-            title={cwd}
+            aria-description={cwd}
             onClick={() => setExpanded(!expanded)}
           >
             <ChevronRight
@@ -147,7 +146,6 @@ function ProjectSessions({ cwd }: { cwd: string }) {
             className="project-activity"
             role="img"
             aria-label={`${t[sessionStatusLabels[leading]]}: ${counts[leading]}`}
-            title={`${t[sessionStatusLabels[leading]]}: ${counts[leading]}`}
           >
             <span className={`session-dot ${leading}`} />
             {counts[leading]}
@@ -158,13 +156,11 @@ function ProjectSessions({ cwd }: { cwd: string }) {
             className="project-unread"
             role="img"
             aria-label={`${t["Unread chats"]}: ${unread}`}
-            title={`${t["Unread chats"]}: ${unread}`}
           />
         )}
         <div className="project-actions">
           <button
             type="button"
-            title={t["New chat"]}
             aria-label={t.newChatIn(displayName)}
             onClick={() => {
               setExpanded(true);

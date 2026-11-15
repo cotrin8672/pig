@@ -38,7 +38,7 @@ export function ChatWidthHandles({
           type="button"
           className={`chat-width-handle ${side === -1 ? "left" : "right"}`}
           aria-label={t.resizeEdge(side === -1)}
-          title={
+          aria-description={
             t["Drag to resize · Arrow keys to adjust · Double-click to reset"]
           }
           onPointerDown={(event) => {

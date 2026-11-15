@@ -1,0 +1,160 @@
+/*
+  Shared tooltip surface (docs/ui-guidelines.md「ツールチップ」).
+  Accent-tinted glass. A light blur keeps the backdrop visible: blur(20px)
+  melts small text behind into a flat colour and reads as opaque. Mixing in
+  the opaque accent raises alpha, so the face is pinned back to 50%.
+*/
+.ui-tooltip {
+  border: 1px solid color-mix(in srgb, var(--ds-accent) 40%, transparent);
+  background: rgb(
+    from color-mix(in srgb, var(--ds-accent) 28%, var(--ds-bg-popover)) r g b /
+    0.5
+  );
+  backdrop-filter: blur(4px) saturate(140%);
+  box-shadow: var(--ds-shadow-dialog);
+  color: var(--ds-text-primary);
+  animation: tooltip-in 120ms ease-out;
+}
+/* Switching between gapless neighbours keeps the surface open: it glides to
+   the new anchor (a fresh open sets its position from `auto`, which does not
+   transition) and only the content cross-fades. */
+.ui-tooltip-follow {
+  transition:
+    left 140ms var(--motion-ease-out),
+    top 140ms var(--motion-ease-out);
+}
+/* Re-keyed per anchor, so only a switch replays it. */
+.ui-tooltip-swap {
+  animation: tooltip-swap 140ms ease-out;
+}
+.tooltip-content {
+  display: flex;
+  flex-direction: inherit;
+  align-items: inherit;
+  gap: inherit;
+  min-width: 0;
+}
+@keyframes tooltip-swap {
+  from {
+    opacity: 0;
+  }
+}
+/* Entry motion for every tooltip surface; `data-side` is where it sits. */
+@keyframes tooltip-in {
+  from {
+    opacity: 0;
+    translate: var(--tooltip-from, 0 0);
+  }
+}
+.ui-tooltip[data-side="top"] {
+  --tooltip-from: 0 3px;
+}
+.ui-tooltip[data-side="bottom"] {
+  --tooltip-from: 0 -3px;
+}
+.ui-tooltip[data-side="right"] {
+  --tooltip-from: -3px 0;
+}
+.ui-tooltip[data-side="left"] {
+  --tooltip-from: 3px 0;
+}
+@media (prefers-reduced-motion: reduce) {
+  .ui-tooltip,
+  .ui-tooltip-swap {
+    animation: none;
+  }
+  .ui-tooltip-follow {
+    transition: none;
+  }
+}
+/* Optional heading/label emphasis inside a tooltip. */
+.ui-tooltip-title {
+  color: var(--ds-accent-hover);
+}
+
+/* ---- structure shared by every tooltip (Tooltip.tsx) ---- */
+.tooltip {
+  position: fixed;
+  inset: auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  box-sizing: border-box;
+  max-width: 280px;
+  margin: 0;
+  padding: 4px 8px;
+  border-radius: var(--radius-xs);
+  font-family: var(--font-sans);
+  font-size: var(--text-sm);
+  line-height: var(--leading-normal);
+  white-space: nowrap;
+  pointer-events: none;
+}
+.tooltip-tier-detail,
+.tooltip-tier-rich {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 3px;
+  padding: 7px 10px;
+  white-space: normal;
+}
+.tooltip-tier-rich {
+  width: 250px;
+}
+.tooltip-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  font-weight: var(--font-weight-medium);
+}
+.tooltip-head .tooltip-label {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.tooltip-desc {
+  color: var(--ds-text-muted);
+  font-size: var(--text-xs);
+}
+.tooltip-rows {
+  display: grid;
+  gap: 2px;
+  margin: 4px 0 0;
+  padding-top: 6px;
+  border-top: 1px solid var(--ds-border-strong);
+  font-size: var(--text-xs);
+}
+.tooltip-rows > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+}
+.tooltip-rows dt {
+  flex: none;
+  color: var(--ds-text-muted);
+}
+.tooltip-rows dd {
+  min-width: 0;
+  margin: 0;
+  overflow: hidden;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.tooltip-keys {
+  display: inline-flex;
+  gap: 3px;
+}
+.tooltip-keys kbd {
+  min-width: 18px;
+  padding: 0 5px;
+  border: 1px solid var(--ds-border-strong);
+  border-radius: var(--radius-3xs);
+  background: var(--ds-tile);
+  color: var(--ds-text-muted);
+  font-family: var(--font-mono);
+  font-size: var(--text-3xs);
+  line-height: 16px;
+  text-align: center;
+}

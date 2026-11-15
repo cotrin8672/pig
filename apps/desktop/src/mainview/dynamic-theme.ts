@@ -91,7 +91,8 @@ export function createThemeTokens(
     "--ds-border-strong": `${hex(scheme.outline)}60`,
     "--ds-elevation-stroke": `0 0 0 0.5px ${ink}1a`,
     "--ds-field-inset-bg": `${ink}0d`,
-    "--ds-focus": primary(90),
+    // Accent tone (not the near-white 90) so focus rings read as the theme.
+    "--ds-focus": hex(scheme.primary),
     "--ds-placeholder-ink": neutral(72),
     "--ds-raised": card(25),
     "--ds-shadow-composer": `0 6px 18px ${neutral(3)}3d, inset 0 1px 0 ${ink}08`,

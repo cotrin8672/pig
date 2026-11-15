@@ -1,0 +1,232 @@
+/* App-wide tooltip surface proposals (Storybook only). */
+
+/* ---- page (windowPreview: full width, own scroll) ---- */
+.tt-page {
+  flex: 1;
+  min-width: 0;
+  overflow: auto;
+  padding: 24px;
+}
+
+/* ---- comparison matrix ---- */
+.tt-matrix {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 12px;
+  max-width: 1200px;
+  color: var(--ds-text-primary);
+}
+.tt-matrix figure {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+}
+.tt-matrix-head {
+  align-self: center;
+  color: var(--ds-text-secondary);
+  font-size: var(--text-sm);
+}
+.tt-cell {
+  position: relative;
+  display: grid;
+  place-items: center;
+  min-height: 132px;
+  overflow: hidden;
+  border-radius: var(--radius-sm);
+}
+
+/* ---- backdrops that make translucency visible ---- */
+.tt-bg {
+  position: absolute;
+  inset: 0;
+  margin: 0;
+}
+.tt-bg-text {
+  padding: 8px 10px;
+  color: var(--ds-text-secondary);
+  font-size: var(--text-md);
+  line-height: var(--leading-body);
+}
+.tt-bg-code {
+  padding: 8px 10px;
+  background: var(--ds-tile);
+  color: var(--ds-accent);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  line-height: var(--leading-relaxed);
+  white-space: pre;
+}
+.tt-bg-image {
+  background:
+    radial-gradient(40% 60% at 20% 30%, #ff8a5c 0%, transparent 70%),
+    radial-gradient(40% 60% at 75% 70%, #5b7cfa 0%, transparent 70%),
+    repeating-linear-gradient(45deg, #ffffff22 0 6px, transparent 6px 14px),
+    linear-gradient(120deg, #1f9e8a, #b56bff);
+}
+
+/* ---- interactive miniature window ---- */
+.tt-app {
+  display: grid;
+  grid-template-columns: 44px minmax(0, 1fr);
+  grid-template-rows: 36px minmax(0, 1fr);
+  max-width: 760px;
+  min-height: 420px;
+  overflow: hidden;
+  border: 1px solid var(--ds-border-strong);
+  border-radius: var(--radius-md);
+  background: var(--ds-tile);
+  color: var(--ds-text-primary);
+}
+.tt-titlebar {
+  display: flex;
+  grid-column: 1 / -1;
+  align-items: center;
+  gap: 4px;
+  padding: 0 8px;
+  border-bottom: 1px solid var(--ds-border-strong);
+}
+.tt-rail {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 8px 0;
+  border-right: 1px solid var(--ds-border-strong);
+}
+.tt-chat {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 0 16px 16px 6px;
+}
+.tt-chat-body {
+  position: relative;
+  flex: 1;
+  min-height: 200px;
+  overflow: hidden;
+}
+.tt-row {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+.tt-composer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 10px 10px 14px;
+  border: 1px solid var(--ds-border-strong);
+  border-radius: var(--radius-lg);
+  background: var(--ds-tile);
+}
+.tt-placeholder {
+  color: var(--ds-text-faint);
+  font-size: var(--text-md);
+}
+.tt-icon {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-xs);
+  background: transparent;
+  color: var(--ds-text-secondary);
+  cursor: pointer;
+}
+.tt-icon:hover {
+  background: var(--ds-tile-hover);
+  color: var(--ds-text-primary);
+}
+.tt-cell > .tooltip {
+  position: relative;
+  animation: none;
+}
+
+/* ---- row-to-row switch proposals (TooltipSwitchLab) ---- */
+.tt-lab {
+  display: grid;
+  /* Each lane leaves room on its right for the tooltip it opens. */
+  grid-template-columns: repeat(auto-fill, 220px);
+  gap: 32px 300px;
+  padding-right: 300px;
+  color: var(--ds-text-primary);
+}
+.tt-lab figure {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+}
+.tt-lab figcaption {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: var(--text-sm);
+}
+.tt-lab figcaption span {
+  color: var(--ds-text-muted);
+  font-size: var(--text-xs);
+}
+.tt-lab-lane {
+  position: relative;
+}
+.tt-lab-list {
+  margin: 0;
+  padding: 4px;
+  list-style: none;
+  border-radius: var(--radius-md);
+  background: var(--ds-tile);
+}
+/* Gapless rows, like the sidebar session list. */
+.tt-lab-row {
+  overflow: hidden;
+  padding: 0 8px;
+  border-radius: var(--radius-xs);
+  color: var(--ds-text-secondary);
+  font-size: var(--text-sm);
+  line-height: 28px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: default;
+}
+.tt-lab-row:hover {
+  background: var(--ds-tile-hover);
+  color: var(--ds-text-primary);
+}
+.tt-lab-tip {
+  position: absolute;
+  z-index: 10;
+  width: max-content;
+  transform: translateY(-50%);
+}
+.tt-lab-body {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.tt-lab-tip[data-leaving] {
+  animation: tt-lab-out 120ms ease-in forwards;
+}
+@keyframes tt-lab-out {
+  to {
+    opacity: 0;
+    translate: var(--tooltip-from, 0 0);
+  }
+}
+/* C: one surface glides between rows; only the text cross-fades. */
+.tt-lab-lane[data-mode="C"] .tt-lab-tip {
+  transition:
+    top 140ms var(--motion-ease-out),
+    left 140ms var(--motion-ease-out);
+}
+.tt-lab-lane[data-mode="C"] .tt-lab-body {
+  animation: tt-lab-swap 140ms ease-out;
+}
+@keyframes tt-lab-swap {
+  from {
+    opacity: 0;
+  }
+}

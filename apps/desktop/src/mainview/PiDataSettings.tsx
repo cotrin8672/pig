@@ -24,7 +24,7 @@ export function PiDataSettings() {
         {rows.map(([label, value]) => (
           <div key={label} className="settings-row">
             <div className="settings-label">{label}</div>
-            <code className="settings-path" title={value}>
+            <code className="settings-path" aria-description={value}>
               {value}
             </code>
           </div>

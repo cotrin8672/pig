@@ -43,7 +43,6 @@ export function ActionsMenu({
         aria-haspopup="menu"
         aria-expanded={open}
         aria-label={label}
-        title={label}
         disabled={disabled}
         onClick={() => {
           if (menu.current?.matches(":popover-open")) return;

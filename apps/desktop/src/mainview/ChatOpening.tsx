@@ -221,7 +221,6 @@ export function OpeningComposer({ preview }: { preview?: Snapshot }) {
                   type="button"
                   className="composer-attachment-remove"
                   aria-label={`${t["Remove attachment"]}: ${t.imageN(index + 1, images.length)}`}
-                  title={t["Remove attachment"]}
                   onClick={() =>
                     setImages((current) =>
                       current.filter((item) => item.id !== id),

@@ -152,7 +152,7 @@ export function ProjectMenu({
           <ConfirmButton
             role="menuitem"
             className="session-menu-delete"
-            title={
+            aria-description={
               t[
                 "Only removes this project from pig’s list. Files on disk and its chats are NOT deleted."
               ]
