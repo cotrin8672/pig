@@ -1,140 +1,275 @@
-import type {
-  ChatRenderData,
-  ChatRenderer,
-  ChatRendererProps,
-} from "@pig/chat-renderers";
+// biome-ignore-all lint/suspicious/noArrayIndexKey: Graph rows, chain steps and line numbers are positional and may repeat.
+import type { ChatRenderer, ChatRendererProps } from "@pig/chat-renderers";
 import {
+  Aperture,
+  ArrowRight,
+  Box,
+  Brackets,
+  CircleCheck,
+  CircleMinus,
+  CirclePlus,
+  CircleX,
+  CornerDownRight,
+  Crosshair,
+  FileCog,
   FileText,
-  ListTree,
-  Pencil,
-  Search,
-  Settings2,
-  ShieldCheck,
+  Flame,
+  Folder,
+  Ghost,
+  Hash,
+  Import,
+  Info,
+  Lightbulb,
+  LogIn,
+  type LucideIcon,
+  Network,
+  RefreshCw,
+  Replace,
+  SquareFunction,
+  TriangleAlert,
+  Type,
+  Variable,
 } from "lucide-react";
+import type { CSSProperties, ReactNode } from "react";
+import { CodeText } from "./HighlightedCode";
+import { useT } from "./i18n";
 import { ToolResultContent } from "./MessageContent";
+import {
+  baseName,
+  type LensBody,
+  type LensItem,
+  piLensBody,
+  piLensSummary,
+} from "./pi-lens-view";
+import { languageFromPath } from "./syntax-highlighting";
 import { ToolRow, toolTone } from "./ToolBlock";
+import "./pi-lens.css";
 
-// Exact registered names from pi-lens 4.4.11, not package-name/prefix guesses.
-const tools = {
-  read_symbol: FileText,
-  read_enclosing: FileText,
-  ast_grep_search: Search,
-  ast_grep_replace: Pencil,
-  ast_grep_outline: ListTree,
-  lsp_navigation: Search,
-  lens_diagnostics: ShieldCheck,
-  lens_diagnostic_mark: ShieldCheck,
-  symbol_search: Search,
-  module_report: ListTree,
-  project_report: ListTree,
-  effective_config: Settings2,
-  pi_lens_activate_tools: Settings2,
-} as const;
-const object = (value: unknown): Record<string, unknown> =>
-  value && typeof value === "object" && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : {};
-const text = (value: unknown) => (typeof value === "string" ? value : "");
+export { piLensSummary };
 
-export function piLensSummary(data: ChatRenderData["tool"]) {
-  const args = object(data.call.arguments);
-  const details = object(object(data.state?.result).details);
-  const path =
-    text(args.path) ||
-    text(args.file) ||
-    text(args.filePath) ||
-    (Array.isArray(args.paths)
-      ? args.paths
-          .filter((value): value is string => typeof value === "string")
-          .join(", ")
-      : "");
-  const operation =
-    data.call.name === "lsp_navigation"
-      ? text(details.operation) || text(args.operation) || data.call.name
-      : data.call.name;
-  const subject =
-    text(args.symbol) ||
-    text(args.query) ||
-    text(args.pattern) ||
-    text(args.rule);
-  const target = [path, subject].filter(Boolean).join(" · ");
-  const meta: string[] = [];
-  if (
-    Number.isInteger(details.startLine) &&
-    Number.isInteger(details.endLine) &&
-    Number(details.startLine) > 0 &&
-    Number(details.endLine) >= Number(details.startLine)
-  )
-    meta.push(`L${details.startLine}–${details.endLine}`);
-  const fields: Record<string, readonly (readonly [string, string])[]> = {
-    ast_grep_search: [["matchCount", "matches"]],
-    ast_grep_replace: [["matchCount", "matches"]],
-    lsp_navigation: [["resultCount", "results"]],
-    symbol_search: [["count", "files"]],
-    module_report: [
-      ["symbols", "symbols"],
-      ["exports", "exports"],
-    ],
-    project_report: [
-      ["hubs", "hubs"],
-      ["entryPoints", "entry points"],
-    ],
-    lens_diagnostics: [
-      ["totalDiagnostics", "diagnostics"],
-      ["totalErrors", "errors"],
-      ["totalWarnings", "warnings"],
-      ["actionableWarnings", "actionable"],
-      ["qualityIssues", "quality"],
-      ["projectDiagnostics", "project"],
-      ["unconfirmedFiles", "unconfirmed"],
-      ["uncheckedFileCount", "unchecked"],
-    ],
-  };
-  for (const [key, label] of fields[data.call.name] ?? []) {
-    const value = details[key];
-    if (typeof value === "number" && Number.isFinite(value) && value >= 0)
-      meta.push(`${value} ${label}`);
-  }
-  // Zero cached findings is not evidence of a successful/complete LSP check.
-  if (
-    details.unconfirmed === true ||
-    details.timedOut === true ||
-    (typeof details.incompleteFiles === "number" && details.incompleteFiles > 0)
-  )
-    meta.push("unconfirmed");
-  if (details.available === false || details.supported === false)
-    meta.push("unavailable");
-  if (details.found === false) meta.push("not found");
-  if (details.stalePreview === true) meta.push("stale preview");
-  if (
-    data.call.name === "ast_grep_replace" &&
-    typeof details.applied === "boolean"
-  )
-    meta.push(details.applied ? "applied" : "preview");
-  if (details.validateOnly === true && typeof details.valid === "boolean")
-    meta.push(details.valid ? "valid" : "invalid");
-  const validation = text(details.validationStatus);
-  if (validation) meta.push(validation);
-  return { operation, target, meta: meta.join(" · ") };
+// Exact registered names from pi-lens 4.4.x, not package-name/prefix guesses.
+const tools = new Set([
+  "read_symbol",
+  "read_enclosing",
+  "ast_grep_search",
+  "ast_grep_replace",
+  "ast_grep_outline",
+  "lsp_navigation",
+  "lens_diagnostics",
+  "lens_diagnostic_mark",
+  "symbol_search",
+  "module_report",
+  "project_report",
+  "effective_config",
+  "pi_lens_activate_tools",
+]);
+
+/** One glyph per symbol kind, severity or role; the class carries its colour. */
+const glyphs: Record<string, LucideIcon> = {
+  function: SquareFunction,
+  method: SquareFunction,
+  class: Box,
+  struct: Type,
+  type: Type,
+  interface: Type,
+  constant: Variable,
+  variable: Variable,
+  import: Import,
+  error: CircleX,
+  warning: TriangleAlert,
+  info: Info,
+  hint: Lightbulb,
+  ref: CornerDownRight,
+  origin: Crosshair,
+  match: Brackets,
+  change: Replace,
+  file: FileText,
+  next: ArrowRight,
+  on: CircleCheck,
+  off: CircleMinus,
+  added: CirclePlus,
+  config: FileCog,
+  HUBS: Network,
+  "ENTRY POINTS": LogIn,
+  DIRECTORIES: Folder,
+  cycle: RefreshCw,
+  "RISK HOTSPOTS": Flame,
+  "DEAD WEIGHT": Ghost,
+};
+const glyphClass = (item: LensItem) =>
+  `lens-glyph lens-g-${item.tone ?? item.glyph.toLowerCase().replace(/\s+/g, "-")}`;
+function Glyph({ item }: { item: LensItem }) {
+  const Icon = glyphs[item.glyph] ?? Hash;
+  return <Icon size={12} className={glyphClass(item)} aria-hidden="true" />;
 }
 
+const ROW = 24;
+/** CSS custom properties are typed as plain style keys. */
+const place = (vars: Record<string, string>) => vars as CSSProperties;
+const curve = (x1: number, y1: number, x2: number, y2: number) =>
+  `M${x1} ${y1} C${(x1 + x2) / 2} ${y1} ${(x1 + x2) / 2} ${y2} ${x2} ${y2}`;
+
+/** origin → group → result, one result per row. */
+function Graph({ body }: { body: Extract<LensBody, { type: "graph" }> }) {
+  // A lone group is skipped unless it is a file the origin does not already name.
+  const lone = body.groups[0];
+  const tiered =
+    body.groups.length > 1 ||
+    (lone?.isFile === true && !body.root.startsWith(baseName(lone.title)));
+  const rows = body.groups.reduce((sum, g) => sum + g.items.length, 0);
+  const height = rows * ROW;
+  const leafX = tiered ? 58 : 34;
+  let row = 0;
+  const placed = body.groups.map((group) => {
+    const ys = group.items.map(() => row++ * ROW + ROW / 2);
+    return { group, ys, y: (ys[0] + ys[ys.length - 1]) / 2 };
+  });
+  // The root stays within the first ~8 rows, so a graph that scrolls still shows its origin.
+  const rootY = Math.min(height / 2, 4 * ROW);
+  return (
+    <div className="lens-frame">
+      <div className="lens-graph" style={place({ "--lens-h": `${height}px` })}>
+        <svg
+          viewBox={`0 0 100 ${height}`}
+          preserveAspectRatio="none"
+          aria-hidden="true"
+        >
+          {placed.flatMap(({ group, ys, y }, g) => [
+            tiered && <path key={`g${g}`} d={curve(26, rootY, 32, y)} />,
+            ...group.items.map((item, i) => (
+              <path
+                key={`${g}-${i}`}
+                className={glyphClass(item)}
+                d={
+                  tiered
+                    ? curve(54, y, leafX, ys[i])
+                    : curve(26, rootY, leafX, ys[i])
+                }
+              />
+            )),
+          ])}
+        </svg>
+        <span
+          className="lens-node lens-root"
+          style={place({ "--lens-y": `${rootY}px` })}
+        >
+          <Aperture size={12} aria-hidden="true" />
+          <span>{body.root}</span>
+        </span>
+        {placed.map(({ group, ys, y }, g) => (
+          <div key={g}>
+            {tiered && (
+              <span
+                className="lens-node lens-group"
+                style={place({ "--lens-y": `${y}px` })}
+                aria-description={group.title}
+              >
+                <span>
+                  {group.isFile ? baseName(group.title) : group.title}
+                </span>
+                <small>{group.items.length}</small>
+              </span>
+            )}
+            {group.items.map((item, i) => (
+              <span
+                key={i}
+                className={`lens-node lens-leaf ${tiered ? "tiered" : ""}`}
+                style={place({ "--lens-y": `${ys[i]}px` })}
+                aria-description={item.file ?? item.text}
+              >
+                <Glyph item={item} />
+                <span>{item.file ? baseName(item.file) : item.text}</span>
+                {item.loc && <small>{item.loc}</small>}
+              </span>
+            ))}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function Chain({ steps }: { steps: ReactNode[] }) {
+  return (
+    <div className="lens-chain">
+      {steps.map((step, i) => (
+        <span key={i} className="lens-step">
+          {i > 0 && <ArrowRight size={12} aria-hidden="true" />}
+          <span className="lens-node">{step}</span>
+        </span>
+      ))}
+    </div>
+  );
+}
+
+function Code({ body }: { body: Extract<LensBody, { type: "code" }> }) {
+  const lines = body.code.split("\n");
+  return (
+    <>
+      <Chain
+        steps={[
+          <code key="path">{body.path}</code>,
+          <span key="symbol" className="lens-symbol">
+            <Glyph item={{ glyph: body.kind, text: body.name }} />
+            {body.name}
+          </span>,
+          `L${body.start}–${body.end}`,
+        ]}
+      />
+      <pre className="lens-code">
+        <span className="lens-gutter" aria-hidden="true">
+          {lines.map((_, i) => (
+            <span
+              key={i}
+              className={body.start + i === body.mark ? "marked" : undefined}
+            >
+              {body.start + i}
+            </span>
+          ))}
+        </span>
+        <code>
+          <CodeText text={body.code} language={languageFromPath(body.path)} />
+        </code>
+      </pre>
+    </>
+  );
+}
+
+function Body({ body }: { body: LensBody }) {
+  if (body.type === "graph") return <Graph body={body} />;
+  if (body.type === "code") return <Code body={body} />;
+  return (
+    <div className="lens-frame">
+      <Chain steps={body.steps} />
+      {body.note && <p className="lens-note">{body.note}</p>}
+    </div>
+  );
+}
+
+/** pi-lens: one lens mark for every tool, results drawn as a relation map. */
 export function PiLensRenderer({ data }: ChatRendererProps<"tool">) {
-  const { operation, target, meta } = piLensSummary(data);
-  const Icon = tools[data.call.name as keyof typeof tools];
+  const t = useT().piLens;
+  const { verb, target, meta } = piLensSummary(data, t);
   const status =
-    object(data.state?.result).isError === true
+    (data.state?.result as { isError?: unknown } | undefined)?.isError === true
       ? "error"
       : toolTone(data.state, data.live);
+  const body = status === "done" ? piLensBody(data, t) : undefined;
   return (
     <ToolRow
-      icon={<Icon size={14} />}
-      verb={`pi-lens · ${operation}`}
+      defaultOpen={body !== undefined}
+      icon={<Aperture size={14} className="lens-mark" aria-label="pi-lens" />}
+      verb={verb}
       target={target}
       meta={meta}
       state={data.state}
       status={status}
     >
-      <ToolResultContent result={data.state?.result} />
+      {body ? (
+        <Body body={body} />
+      ) : (
+        <ToolResultContent result={data.state?.result} />
+      )}
     </ToolRow>
   );
 }
@@ -142,6 +277,6 @@ export function PiLensRenderer({ data }: ChatRendererProps<"tool">) {
 export const piLensRenderer: ChatRenderer<"tool"> = {
   id: "builtin:pi-lens",
   kind: "tool",
-  match: (data) => !data.card && Object.hasOwn(tools, data.call.name),
+  match: (data) => !data.card && tools.has(data.call.name),
   component: PiLensRenderer,
 };
