@@ -485,6 +485,60 @@ function GraphFamily({ view }: { view: LensView }) {
   );
 }
 
+/* ------------------------- 2b. compact graph ------------------------- */
+
+/**
+ * The same graph, one row per group: only root → group is drawn as a tree,
+ * results wrap as chips beside their group. Height follows the group count.
+ */
+function CompactGraphFamily({ view }: { view: LensView }) {
+  if (view.body.type !== "list") return <GraphFamily view={view} />;
+  const groups = groupsOf(view.body).filter((g) => g.items.length > 0);
+  const tiered = groups.length > 1;
+  return (
+    <div className="lf-frame">
+      <div className="lr-cgraph">
+        <span
+          className="lr-node lr-node-root lr-croot"
+          style={vars({ "--c": "var(--lf-hue)" })}
+        >
+          <Aperture size={12} aria-hidden="true" />
+          <span className="lf-text">{crumb(view) || view.verb}</span>
+        </span>
+        <div className="lr-cbranches">
+          {groups.map((g, gi) => (
+            <div key={gi} className="lr-cbranch">
+              {tiered && (
+                <span className="lr-node lr-node-group lr-cgroup">
+                  <span className="lf-text">
+                    {g.isFile ? baseName(g.title) : g.title}
+                  </span>
+                  <small>{g.items.length}</small>
+                </span>
+              )}
+              <span className="lr-cleaves">
+                {g.items.map((m, i) => (
+                  <span
+                    key={i}
+                    className="lr-node lr-cleaf"
+                    style={vars({ "--c": m.color })}
+                  >
+                    <Glyph item={m} />
+                    <span className="lf-text">
+                      {m.file && m.text === m.file ? baseName(m.file) : m.text}
+                    </span>
+                    {m.loc && <small>{m.loc}</small>}
+                  </span>
+                ))}
+              </span>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /* ------------------------------ 3. gauges ------------------------------ */
 
 function Tiles({ view }: { view: LensView }) {
@@ -752,7 +806,7 @@ function TreemapFamily({ view }: { view: LensView }) {
 /* ------------------------------ wiring ------------------------------ */
 
 type RichVariant = {
-  key: "minimap" | "graph" | "gauge" | "split" | "treemap";
+  key: "minimap" | "graph" | "graphCompact" | "gauge" | "split" | "treemap";
   title: string;
   fit: string;
   Body: (props: { view: LensView }) => ReactNode;
@@ -793,6 +847,12 @@ const rich: RichVariant[] = [
     title: "関係図",
     fit: "起点 → グループ → 結果のつながりをノードと線で描く。参照の広がり、モジュールの公開APIと参照元、設定の採用関係を同じ図法で見せる。",
     Body: GraphFamily,
+  },
+  {
+    key: "graphCompact",
+    title: "関係図（コンパクト）",
+    fit: "関係図の縦長を抑えた版。線で結ぶのは起点 → グループだけにし、結果はグループの横にチップとして折り返す。高さは結果の件数ではなくグループ数で決まる。",
+    Body: CompactGraphFamily,
   },
   {
     key: "gauge",

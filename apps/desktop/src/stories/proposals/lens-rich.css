@@ -221,6 +221,101 @@
   overflow: hidden;
 }
 
+/* ---------- 2b. compact graph: a CSS tree, one row per group ---------- */
+.lr-cgraph {
+  --lr-line: color-mix(in srgb, var(--ds-text-faint) 55%, transparent);
+  --lr-mid: 10px;
+  display: grid;
+  grid-template-columns: minmax(0, max-content) minmax(0, 1fr);
+  gap: 0 16px;
+  align-items: center;
+  min-width: 0;
+}
+.lr-croot {
+  position: relative;
+  max-width: 12rem;
+}
+.lr-croot::after {
+  position: absolute;
+  top: 50%;
+  left: 100%;
+  width: 16px;
+  border-top: 1px solid var(--lr-line);
+  content: "";
+}
+.lr-cbranches {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+/* Each branch draws its share of the trunk and an elbow into its row. */
+.lr-cbranch {
+  position: relative;
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  min-width: 0;
+  padding-left: 14px;
+}
+.lr-cbranch::before,
+.lr-cbranch::after {
+  position: absolute;
+  left: 0;
+  content: "";
+}
+.lr-cbranch::before {
+  top: -2px;
+  bottom: -2px;
+  border-left: 1px solid var(--lr-line);
+}
+.lr-cbranch:first-child::before {
+  top: var(--lr-mid);
+}
+.lr-cbranch:last-child::before {
+  bottom: auto;
+  height: var(--lr-mid);
+}
+.lr-cbranch:first-child:last-child::before {
+  display: none;
+}
+.lr-cbranch::after {
+  top: var(--lr-mid);
+  width: 12px;
+  border-top: 1px solid var(--lr-line);
+}
+.lr-cgroup {
+  flex: none;
+  width: 8.5rem;
+}
+.lr-cleaves {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  min-width: 0;
+}
+.lr-cleaf {
+  max-width: 16rem;
+}
+/* Narrow transcripts: the root moves above the tree instead of taking a column. */
+.lf-frame:has(> .lr-cgraph) {
+  container-type: inline-size;
+}
+@container (max-width: 520px) {
+  .lr-cgraph {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 4px;
+  }
+  .lr-croot {
+    justify-self: start;
+  }
+  .lr-croot::after {
+    display: none;
+  }
+  .lr-cgroup {
+    width: 6rem;
+  }
+}
+
 /* ---------- 3. gauges ---------- */
 .lr-tiles {
   display: flex;
