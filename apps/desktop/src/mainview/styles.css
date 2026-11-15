@@ -835,6 +835,11 @@ details[open] > summary .tool-chevron,
   margin: 4px 0 8px 6px;
   padding: 2px 0 2px 14px;
   border-left: 2px solid #ffffff1c;
+  font-style: italic;
+}
+/* Code keeps its upright face, so slanted glyphs never misalign columns. */
+.thinking-body :is(code, pre) {
+  font-style: normal;
 }
 .thinking-body p {
   margin: 4px 0;
