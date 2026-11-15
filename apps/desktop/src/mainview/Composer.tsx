@@ -1,5 +1,6 @@
 import {
   BookOpen,
+  ClipboardPaste,
   FileArchive,
   FileAudio,
   FileCode,
@@ -12,6 +13,7 @@ import {
   X,
 } from "lucide-react";
 import {
+  type RefObject,
   useEffect,
   useId,
   useMemo,
@@ -48,6 +50,7 @@ import { ImagePreview } from "./ImageGallery";
 import { useT } from "./i18n";
 import { MessageQueue } from "./MessageQueue";
 import { ModelPicker } from "./ModelPicker";
+import { createModelPickerSelector } from "./model-picker-view";
 import { rpc, sends } from "./rpc";
 import { subscribeOwnership } from "./runtime-events";
 import { SessionIndicators } from "./SessionIndicators";
@@ -83,8 +86,16 @@ const attachmentReads = new AttachmentReads(drafts, showError);
 subscribeOwnership((previous, next) =>
   attachmentReads.transfer(previous, next),
 );
-export function Composer({ snapshot }: { snapshot: Snapshot }) {
+export function Composer({
+  snapshot,
+  annotationRoot,
+}: {
+  snapshot: Snapshot;
+  annotationRoot?: RefObject<HTMLElement | null>;
+}) {
   const t = useT();
+  const selectPicker = useMemo(createModelPickerSelector, []);
+  const pickerSnapshot = selectPicker(snapshot);
   const { address, transcript } = snapshot;
   const key = addressKey(address);
   const keybindings = useStore((s) => s.settings.keybindings);
@@ -114,6 +125,7 @@ export function Composer({ snapshot }: { snapshot: Snapshot }) {
   const loading = loads.some((load) => load.state === "pending");
   const previews = loads.filter((load) => load.preview);
   const { text, images, pastes, files = [], annotations = [] } = draft.content;
+  const shownPastes = pastes.filter((paste) => text.includes(paste.marker));
   const imageSources = useMemo(
     () =>
       images.map(({ image }) => `data:${image.mimeType};base64,${image.data}`),
@@ -133,7 +145,7 @@ export function Composer({ snapshot }: { snapshot: Snapshot }) {
   const nextPaste = useRef(1);
   const expanded = useMemo(() => expandedDraft(draft.content), [draft.content]);
   useSyncExternalStore(sends.subscribe, sends.getTick);
-  // Sent but not started yet: the host has the message, the response has not begun.
+  // Queued steering is already accepted; do not wait for it to enter history.
   const waiting =
     sendState?.state === "sending" ||
     sendState?.state === "checking" ||
@@ -142,6 +154,7 @@ export function Composer({ snapshot }: { snapshot: Snapshot }) {
       .some(
         (send) =>
           send.state !== "unknown" &&
+          send.disposition !== "queued" &&
           !transcriptRequestIds(transcript.records).has(send.key.requestId),
       );
   const hasContent = !!expanded || images.length > 0 || loading;
@@ -356,20 +369,23 @@ export function Composer({ snapshot }: { snapshot: Snapshot }) {
   }
   return (
     <ComposerFrame>
-      <AnnotationPopover
-        onAdd={(annotation, range) => {
-          const id = crypto.randomUUID();
-          rememberAnnotationRange(id, range);
-          drafts.edit(address, (content) => ({
-            ...content,
-            annotations: [
-              ...(content.annotations ?? []),
-              { id, ...annotation },
-            ],
-          }));
-          textareaRef.current?.focus();
-        }}
-      />
+      {annotationRoot && (
+        <AnnotationPopover
+          selectionRoot={annotationRoot}
+          onAdd={(annotation, range) => {
+            const id = crypto.randomUUID();
+            rememberAnnotationRange(id, range);
+            drafts.edit(address, (content) => ({
+              ...content,
+              annotations: [
+                ...(content.annotations ?? []),
+                { id, ...annotation },
+              ],
+            }));
+            textareaRef.current?.focus();
+          }}
+        />
+      )}
       <MessageQueue
         items={sends.queued(address).flatMap((item) =>
           item.content
@@ -440,21 +456,6 @@ export function Composer({ snapshot }: { snapshot: Snapshot }) {
           send();
         }}
       >
-        {pastes.some((p) => text.includes(p.marker)) && (
-          <button
-            type="button"
-            onClick={() => {
-              drafts.edit(address, (content) => ({
-                ...content,
-                text: unfoldPastes(content.text, content.pastes),
-                pastes: [],
-              }));
-              textareaRef.current?.focus();
-            }}
-          >
-            {t.editPastes}
-          </button>
-        )}
         <AnnotationDrafts
           annotations={annotations}
           onRemove={(id) =>
@@ -466,8 +467,52 @@ export function Composer({ snapshot }: { snapshot: Snapshot }) {
             }))
           }
         />
-        {images.length + files.length + previews.length > 0 && (
+        {images.length + files.length + previews.length + shownPastes.length >
+          0 && (
           <div className="composer-attachments">
+            {shownPastes.map((paste) => {
+              const body = paste.text.replace(/\r\n/g, "\n");
+              return (
+                <div className="composer-attachment file paste" key={paste.id}>
+                  <button
+                    type="button"
+                    className="composer-paste-expand"
+                    aria-label={t.editPastes}
+                    onClick={() => {
+                      drafts.edit(address, (content) => ({
+                        ...content,
+                        text: unfoldPastes(content.text, [paste]),
+                        pastes: content.pastes.filter(
+                          (item) => item.id !== paste.id,
+                        ),
+                      }));
+                      textareaRef.current?.focus();
+                    }}
+                  >
+                    <ClipboardPaste size={24} aria-hidden />
+                    <span>
+                      {t.pasteSize(body.split("\n").length, body.length)}
+                    </span>
+                  </button>
+                  <button
+                    type="button"
+                    className="composer-attachment-remove"
+                    aria-label={t.removePaste}
+                    onClick={() =>
+                      drafts.edit(address, (content) => ({
+                        ...content,
+                        text: content.text.split(paste.marker).join(""),
+                        pastes: content.pastes.filter(
+                          (item) => item.id !== paste.id,
+                        ),
+                      }))
+                    }
+                  >
+                    <X size={14} />
+                  </button>
+                </div>
+              );
+            })}
             {images.map(({ id }, index) => (
               <div className="composer-attachment" key={id}>
                 <ImagePreview
@@ -479,7 +524,6 @@ export function Composer({ snapshot }: { snapshot: Snapshot }) {
                   type="button"
                   className="composer-attachment-remove"
                   aria-label={`${t["Remove attachment"]}: ${t.imageN(index + 1, images.length)}`}
-                  title={t["Remove attachment"]}
                   onClick={() =>
                     drafts.edit(address, (content) => ({
                       ...content,
@@ -494,14 +538,17 @@ export function Composer({ snapshot }: { snapshot: Snapshot }) {
             {files.map(({ id, name, path }) => {
               const Icon = fileIcon(name);
               return (
-                <div className="composer-attachment file" key={id} title={path}>
+                <div
+                  className="composer-attachment file"
+                  key={id}
+                  aria-description={path}
+                >
                   <Icon size={28} aria-hidden />
                   <span>{name}</span>
                   <button
                     type="button"
                     className="composer-attachment-remove"
                     aria-label={`${t["Remove attachment"]}: ${name}`}
-                    title={t["Remove attachment"]}
                     onClick={() =>
                       drafts.edit(address, (content) => ({
                         ...content,
@@ -518,7 +565,7 @@ export function Composer({ snapshot }: { snapshot: Snapshot }) {
               <div
                 className={`composer-attachment pending ${load.kind === "file" ? "file" : ""}`}
                 key={load.id}
-                title={load.name}
+                aria-description={load.name}
                 aria-busy="true"
               >
                 <LoaderCircle size={22} className="spinner" aria-hidden />
@@ -527,7 +574,6 @@ export function Composer({ snapshot }: { snapshot: Snapshot }) {
                   type="button"
                   className="composer-attachment-remove"
                   aria-label={`${t["Remove attachment"]}: ${load.name}`}
-                  title={t["Remove attachment"]}
                   onClick={() => attachmentReads.cancel(load.id)}
                 >
                   <X size={14} />
@@ -568,20 +614,19 @@ export function Composer({ snapshot }: { snapshot: Snapshot }) {
                       <span
                         role="img"
                         className="slash-category"
-                        title={t[option.category]}
                         aria-label={t[option.category]}
                       >
                         <Icon size={14} aria-hidden="true" />
                       </span>
                     );
                   })()}
-                <span className="slash-name" title={option.label}>
+                <span className="slash-name" aria-description={option.label}>
                   {option.label}
                 </span>
                 {option.description && (
                   <small
                     className="slash-description"
-                    title={option.description}
+                    aria-description={option.description}
                   >
                     {option.description}
                   </small>
@@ -773,7 +818,7 @@ export function Composer({ snapshot }: { snapshot: Snapshot }) {
           <SessionIndicators address={address} />
           <div className="composer-pickers">
             <ContextIndicator usage={snapshot.contextUsage} />
-            <ModelPicker snapshot={snapshot} />
+            <ModelPicker snapshot={pickerSnapshot} />
           </div>
           <div className="send-controls">
             <ComposerSubmit

@@ -12,7 +12,10 @@ export type AccountModel = { source: ModelSource; model: ModelInfo };
 /** Catalog and auth are account-scoped, visibility/effort preferences stay Provider-scoped. */
 export function accountModelSources(
   bootstrap: Bootstrap,
-  snapshot?: Snapshot,
+  snapshot?: Pick<
+    Snapshot,
+    "modelCatalog" | "sessionAccounts" | "model" | "accountId"
+  >,
 ): ModelSource[] {
   const providers = [...bootstrap.providers];
   for (const model of snapshot?.modelCatalog ?? bootstrap.models) {
@@ -57,7 +60,13 @@ export function accountModelSources(
     }),
   );
 }
-export function accountLocked(source: AccountSource, snapshot?: Snapshot) {
+export function accountLocked(
+  source: AccountSource,
+  snapshot?: Pick<
+    Snapshot,
+    "accountSwitchAllowed" | "sessionAccounts" | "model" | "accountId"
+  >,
+) {
   if (snapshot?.accountSwitchAllowed !== false) return false;
   const selected =
     snapshot.sessionAccounts?.[source.provider] ??

@@ -11,14 +11,15 @@ import {
   SquarePen,
   X,
 } from "lucide-react";
-import { memo, useEffect, useId, useRef, useState } from "react";
+import { memo, useEffect, useId, useMemo, useRef, useState } from "react";
 import {
   accountModelKey,
   accountSourceKey,
+  providerAccountSources,
   selectionKey,
 } from "../shared/account-models";
 import { effortLabels } from "../shared/effort";
-import type { ModelSelection, Snapshot } from "../shared/rpc-schema";
+import type { ModelSelection } from "../shared/rpc-schema";
 import {
   type AccountModel,
   accountLocked,
@@ -28,6 +29,7 @@ import { EffortChip } from "./EffortChip";
 import { EffortPicker } from "./EffortPicker";
 import { EffortSlider } from "./EffortSlider";
 import { useT } from "./i18n";
+import type { ModelPickerSnapshot } from "./model-picker-view";
 import { navigate } from "./navigation";
 import { changeSelection, usePicker } from "./Picker";
 import { ProviderIcon } from "./ProviderIcon";
@@ -41,16 +43,26 @@ export const ModelPicker = memo(function ModelPicker({
   selection,
   onSelect,
 }: {
-  snapshot?: Snapshot;
+  snapshot?: ModelPickerSnapshot;
   selection?: ModelSelection;
   onSelect?: (selection: ModelSelection) => void;
 }) {
   const t = useT();
   const current = selection ?? snapshot ?? { effort: "off", effortLevels: [] };
   const bootstrap = useStore((state) => state.bootstrap);
-  const sources = accountModelSources(bootstrap, snapshot);
-  const choices = sources.flatMap((source) =>
-    source.configured ? source.models.map((model) => ({ source, model })) : [],
+  const [open, setOpen] = useState(false);
+  const sources = useMemo(
+    () => (open ? accountModelSources(bootstrap, snapshot) : []),
+    [open, bootstrap, snapshot],
+  );
+  const choices = useMemo(
+    () =>
+      sources.flatMap((source) =>
+        source.configured
+          ? source.models.map((model) => ({ source, model }))
+          : [],
+      ),
+    [sources],
   );
   const choiceKey = ({ source, model }: AccountModel) =>
     accountModelKey(model, source.accountId);
@@ -63,17 +75,25 @@ export const ModelPicker = memo(function ModelPicker({
       source.key ===
       accountSourceKey(current.model?.provider ?? "", current.accountId),
   );
+  // The closed trigger needs an account label, never the model catalog.
+  const provider = bootstrap.providers.find(
+    (entry) => entry.id === current.model?.provider,
+  );
+  const currentLabel = provider
+    ? providerAccountSources(provider).find(
+        (entry) => entry.accountId === current.accountId,
+      )?.label
+    : current.model?.provider;
   const [query, setQuery] = useState("");
   const [source, setSource] = useState<string>();
   const [highlight, setHighlight] = useState(-1);
-  const [open, setOpen] = useState(false);
   const search = useRef<HTMLInputElement>(null);
   const list = useRef<HTMLDivElement>(null);
   const listId = useId();
   const { ref, close } = usePicker();
   const activeKey =
-    source === "recent" && recent.length
-      ? source
+    (!source || source === "recent") && recent.length
+      ? "recent"
       : sources.some((entry) => entry.key === source)
         ? source
         : (currentSource?.key ?? sources[0]?.key);
@@ -165,25 +185,14 @@ export const ModelPicker = memo(function ModelPicker({
       <summary
         className="picker-trigger"
         aria-label={t.chooseModel(
-          `${currentSource?.label ?? ""} ${current.model?.name ?? t.None}`.trim(),
+          `${currentLabel ?? ""} ${current.model?.name ?? t.None}`.trim(),
           effortLabels[current.effort],
         )}
-        title={[
-          currentSource?.label ?? current.accountId,
-          current.model?.name,
-          current.effortLevels.length > 1 && effortLabels[current.effort],
-        ]
-          .filter(Boolean)
-          .join(" / ")}
         onClick={() => {
           if (!ref.current?.open) {
             setQuery("");
             setHighlight(-1);
-            setSource(
-              recent.length
-                ? "recent"
-                : (currentSource?.key ?? sources[0]?.key),
-            );
+            setSource(undefined);
           }
         }}
       >
@@ -274,7 +283,6 @@ export const ModelPicker = memo(function ModelPicker({
             <button
               type="button"
               aria-label={t["Manage models"]}
-              title={t["Manage models"]}
               onClick={() => {
                 close();
                 navigate("providers");
@@ -316,7 +324,7 @@ export const ModelPicker = memo(function ModelPicker({
                       undefined
                     }
                     onClick={() => selectSource(entry.key)}
-                    title={entry.label}
+                    aria-description={entry.label}
                   >
                     <ProviderIcon provider={entry.provider} size={12} />
                     <span>{entry.label}</span>
@@ -406,7 +414,7 @@ export const ModelPicker = memo(function ModelPicker({
                           data-highlighted={index === activeIndex || undefined}
                           data-model-index={index}
                           id={`${listId}-${index}`}
-                          title={`${source.label}\n${model.name}\n${model.id}`}
+                          aria-description={`${source.label}\n${model.name}\n${model.id}`}
                           onPointerMove={() => setHighlight(index)}
                           onClick={() => select(choice)}
                         >
