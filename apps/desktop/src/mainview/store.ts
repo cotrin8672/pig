@@ -2,6 +2,7 @@ import type { AuthEvent, AuthPrompt } from "@earendil-works/pi-ai";
 import { create } from "zustand";
 import type { AppUpdateState } from "../shared/app-update";
 import { defaultAppearance } from "../shared/appearance";
+import type { ChatHistoryFileEvent } from "../shared/chat-history-import";
 import type { ExtensionStatus, UIRequest } from "../shared/extension-ui";
 import { dictionary } from "../shared/i18n";
 import type { AccountTarget } from "../shared/provider-accounts";
@@ -75,6 +76,7 @@ export type SettingsCategory =
   | "general"
   | "appearance"
   | "keyboard"
+  | "import"
   | "updates";
 export interface PendingOpen extends OpeningTarget {
   /** A local editor, not an in-flight SDK open. */
@@ -99,6 +101,8 @@ export const useStore = create<{
   settingsCategory: SettingsCategory;
   /** Settings row (`data-setting`) to reveal once the settings page renders. */
   settingsFocus?: string;
+  chatHistoryFile?: ChatHistoryFileEvent;
+  chatHistoryImporting: boolean;
   /** Message to reveal once its chat is shown; nonce re-triggers the same target. */
   jump?: { sessionId: string; entryId: string; nonce: number };
   hostId?: string;
@@ -172,6 +176,7 @@ export const useStore = create<{
   page: "chat",
   searchOpen: false,
   settingsCategory: "general",
+  chatHistoryImporting: false,
   installed: [],
   packageOps: {},
   notices: [],

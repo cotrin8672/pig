@@ -24,8 +24,10 @@ import type {
   SessionManager as SDKSessionManager,
 } from "@earendil-works/pi-coding-agent";
 import { withDraftFiles } from "../shared/attachments";
+import { IMPORTED_HISTORY_PROVIDER } from "../shared/chat-history-import";
 import { displayedEffort } from "../shared/effort";
 import type { ExtensionUIEvent, UIReply } from "../shared/extension-ui";
+import { createModelCatalogCache } from "../shared/model-catalog-cache";
 import { isModelEnabled } from "../shared/models";
 import { unfoldPastes } from "../shared/paste";
 import {
@@ -245,6 +247,7 @@ export class SessionHost {
   readonly drafts: ComposerBridge;
   private epoch = 0;
   private sessions = new Map<string, Managed>();
+  private readonly shareModelCatalog = createModelCatalogCache();
   private failedHistory = new Map<
     string,
     {
@@ -706,6 +709,9 @@ export class SessionHost {
         const available = await models.getAvailable();
         timing.mark("available-models");
         const context = target.sessionManager.buildSessionContext();
+        // Source model labels are provenance, not a destination provider/account.
+        if (context.model?.provider === IMPORTED_HISTORY_PROVIDER)
+          context.model = null;
         const branch = target.sessionManager.getBranch();
         const enabled = (candidate: Model<Api>) =>
           isModelEnabled(candidate, this.options.disabled?.() ?? []);
@@ -1385,7 +1391,9 @@ export class SessionHost {
     const catalogChanged = catalog && catalog !== m.catalogSource;
     if (catalogChanged) {
       m.catalogSource = catalog;
-      m.modelCatalog = catalog.map(this.options.modelInfo);
+      m.modelCatalog = this.shareModelCatalog(
+        catalog.map(this.options.modelInfo),
+      );
     }
     const snapshot: Snapshot = {
       ...(m.phase === "ready" ? {} : { ready: false }),
@@ -1637,8 +1645,14 @@ export class SessionHost {
           return { text: withAttachmentPaths(params.text, paths) };
         },
         (error) => {
-          if (addressKey(params) === addressKey(m.address))
+          if (addressKey(params) === addressKey(m.address)) {
             this.failure(m, error);
+            // SDK exceptions need the same queue recovery as terminal model errors.
+            if (m.phase !== "closing" && !m.stopping)
+              void this.abort(m.address).catch((error) =>
+                console.error("Stop after prompt failure failed", error),
+              );
+          }
         },
         (intent) =>
           this.drafts.consume(params, params.draftRevision, (consumed) =>

@@ -8,6 +8,8 @@ const desktop = fileURLToPath(new URL("..", import.meta.url));
 
 // Real SDK startup, native processes and large storage fixtures belong off the PR path.
 const integration = [
+  "chat-history-import",
+  "local-chat-history",
   "app-update-windows",
   "extension-ui",
   "fonts",
@@ -37,6 +39,7 @@ const integration = [
   "statistics-host",
 ].map((name) => `src/bun/${name}.test.ts`);
 const ui = [
+  "chat-history-import-ui",
   "statistics-ui",
   "transcript-ui",
   "grep-ui",

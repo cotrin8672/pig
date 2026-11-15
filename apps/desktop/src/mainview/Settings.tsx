@@ -1,5 +1,6 @@
 import {
   ChevronDown,
+  Import,
   Info,
   Keyboard,
   Palette,
@@ -18,6 +19,7 @@ import {
   resolveBindings,
 } from "../shared/keymap";
 import { AppUpdateSettings } from "./AppUpdateSettings";
+import { ChatHistoryImport } from "./ChatHistoryImportSettings";
 import { ChatRendererSettings } from "./ChatRendererSettings";
 import { ColorPicker } from "./ColorPicker";
 import { ContentPage } from "./ContentPage";
@@ -71,6 +73,7 @@ export function Settings() {
     general: Settings2,
     appearance: Palette,
     keyboard: Keyboard,
+    import: Import,
     updates: Info,
   };
   const categories = settingsCategories.map(({ id, label }) => ({
@@ -235,6 +238,7 @@ export function Settings() {
             </>
           )}
           {category === "keyboard" && <KeyboardSettings />}
+          {category === "import" && <ChatHistoryImport />}
           {category === "updates" && (
             <>
               <AppUpdateSettings />
@@ -374,7 +378,6 @@ function KeyboardSettings() {
                   type="button"
                   className="settings-icon-button"
                   aria-label={`${labels[action]}: ${t.Reset}`}
-                  title={`${labels[action]}: ${t.Reset}`}
                   disabled={!Object.hasOwn(settings.keybindings, action)}
                   onClick={() => bind(action, undefined)}
                 >
@@ -384,7 +387,6 @@ function KeyboardSettings() {
                   type="button"
                   className="settings-icon-button"
                   aria-label={`${labels[action]}: ${t.Clear}`}
-                  title={`${labels[action]}: ${t.Clear}`}
                   disabled={!bindings[action]}
                   onClick={() => bind(action, null)}
                 >

@@ -166,6 +166,17 @@ export const rpc = Electroview.defineRPC<RPCSchema>({
       },
     },
     messages: {
+      chatHistoryFile: (event) => {
+        if (useStore.getState().chatHistoryFile?.requestId !== event.requestId)
+          return;
+        useStore.setState({
+          chatHistoryFile: event.preview || event.error ? event : undefined,
+        });
+        if (event.error) showError(event.error);
+      },
+      chatsImported: ({ cwd }) => {
+        void refreshSessions(cwd).catch(showError);
+      },
       appUpdate: (appUpdate) => useStore.setState({ appUpdate }),
       packageOp: receivePackageOp,
       installed: (installed) =>
@@ -581,6 +592,8 @@ function receiveRecovery(state: RuntimeRecoveryState) {
   for (const item of state.retainedDrafts ?? [])
     drafts.recover(item.address, item.draft, item.owner);
   sends.restore(state.sendIntents ?? []);
+  for (const snapshot of Object.values(useStore.getState().snapshots))
+    sends.reconcile(snapshot);
   if (state.recoveryError && state.recoveryError !== recoveryError)
     showNotice({ level: "error", message: state.recoveryError });
   recoveryError = state.recoveryError;
@@ -914,12 +927,12 @@ export async function forkChat(sessionId: string, entryId: string) {
   // The branch keeps this chat's view; it never blanks into a loading screen.
   const settle = beginRewind(sessionId, { kind: "fork", entryId });
   try {
-    await sends.wait(previous);
+    await sends.stop(previous, () => rpc.request.abort(previous));
     await selections.flush(previous);
-    await rpc.request.abort(previous);
     const snapshot = await rpc.request.forkSession({ ...previous, entryId });
     if (!liveAddress(snapshot.address))
       throw new Error("The branch response belongs to a replaced session");
+    sends.retire(previous);
     receiveRuntime({ type: "replaced", previous, snapshot });
     const state = useStore.getState();
     if (
@@ -945,16 +958,15 @@ export async function regenerate(
   const settle = beginRewind(sessionId, { kind: "resend", entryId, user });
   let sending: Promise<void> | undefined;
   try {
-    await sends.wait(previous);
+    await sends.stop(previous, () => rpc.request.abort(previous));
     await selections.flush(previous);
-    await rpc.request.abort(previous);
     const snapshot = await rpc.request.rewindSession({
       ...previous,
       entryId,
     });
     if (!liveAddress(snapshot.address))
       throw new Error("The rewind response belongs to a replaced session");
-    sends.discard(previous);
+    sends.retire(previous);
     receiveRuntime({ type: "replaced", previous, snapshot });
     const state = useStore.getState();
     if (state.page === "chat" && state.active === sessionId)
