@@ -931,14 +931,20 @@ export const Chat = memo(function Chat({
           >
             {divider && (
               <div className="model-divider">
-                <span className="model-divider-model">
+                <span
+                  className="model-divider-model"
+                  title={`${divider.from.provider}/${divider.from.id}`}
+                >
                   <ProviderIcon provider={divider.from.provider} size={14} />
-                  {divider.from.provider}/{divider.from.id}
+                  {divider.from.id}
                 </span>
                 →
-                <span className="model-divider-model">
+                <span
+                  className="model-divider-model"
+                  title={`${divider.to.provider}/${divider.to.id}`}
+                >
                   <ProviderIcon provider={divider.to.provider} size={14} />
-                  {divider.to.provider}/{divider.to.id}
+                  {divider.to.id}
                 </span>
               </div>
             )}

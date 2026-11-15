@@ -71,18 +71,6 @@
   background: transparent;
   font-size: inherit;
 }
-.picker-account-label {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  flex: none;
-  max-width: 130px;
-  padding: 0 5px;
-  border-radius: 4px;
-  background: var(--ds-bg-chip);
-  color: var(--ds-text-secondary);
-  font-size: 10px;
-}
 .model-source-rail {
   min-width: 0;
   max-width: 160px;
