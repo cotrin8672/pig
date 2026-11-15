@@ -34,8 +34,10 @@ const integration = [
   "session-host-postfix",
   "session-host-stop",
   "steering-queue",
+  "statistics-host",
 ].map((name) => `src/bun/${name}.test.ts`);
 const ui = [
+  "statistics-ui",
   "transcript-ui",
   "grep-ui",
   "sidebar-update-dot-ui",

@@ -74,7 +74,10 @@ describe("SDK runtime production packaging", () => {
     expect(config.build.copy["build/sdk-runtime/node_modules"]).toBe(
       "node_modules",
     );
-    expect(config.scripts.preBuild).toBe("scripts/sdk-runtime-assets.ts");
+    expect(config.scripts.preBuild).toBe("scripts/pre-build.ts");
+    expect(config.build.copy["build/statistics/statistics-worker.js"]).toBe(
+      "bun/statistics-worker.js",
+    );
     expect(config.scripts.postBuild).toBe("scripts/post-build.ts");
     expect(config.build.win.bundleCEF).toBe(false);
   });
@@ -181,9 +184,31 @@ describe("SDK runtime production packaging", () => {
   test("Hutch-style import + default() stages a clean build (CopySourceMissing regression)", () => {
     const f = fixture();
     for (const name of SDK_RUNTIME_ROOTS) pkg(join(f.installRoot, name), name);
-    const script = join(f.projectDir, "scripts", "sdk-runtime-assets.ts");
+    const script = join(f.projectDir, "scripts", "pre-build.ts");
     mkdirSync(dirname(script), { recursive: true });
-    copyFileSync(join(import.meta.dir, "sdk-runtime-assets.ts"), script);
+    copyFileSync(join(import.meta.dir, "pre-build.ts"), script);
+    copyFileSync(
+      join(import.meta.dir, "sdk-runtime-assets.ts"),
+      join(dirname(script), "sdk-runtime-assets.ts"),
+    );
+    const workerDir = join(f.projectDir, "src/bun/statistics");
+    mkdirSync(workerDir, { recursive: true });
+    for (const name of [
+      "worker.ts",
+      "store.ts",
+      "contracts.ts",
+      "queries.ts",
+      "normalize.ts",
+    ])
+      copyFileSync(
+        join(import.meta.dir, "../src/bun/statistics", name),
+        join(workerDir, name),
+      );
+    mkdirSync(join(f.projectDir, "src/shared"), { recursive: true });
+    copyFileSync(
+      join(import.meta.dir, "../src/shared/statistics.ts"),
+      join(f.projectDir, "src/shared/statistics.ts"),
+    );
     const stage = join(f.projectDir, SDK_RUNTIME_STAGE);
     // Mirrors Hutch run_hook_helper.js: import the module, call its default.
     const hook = Bun.spawnSync(
@@ -197,6 +222,9 @@ describe("SDK runtime production packaging", () => {
     );
     expect(hook.exitCode, hook.stderr.toString()).toBe(0);
     expect(existsSync(join(stage, "node_modules"))).toBe(true);
+    expect(
+      existsSync(join(f.projectDir, "build/statistics/statistics-worker.js")),
+    ).toBe(true);
     expect(
       sdkStageMatches({ ...f, destination: stage, roots: SDK_RUNTIME_ROOTS }),
     ).toBe(true);

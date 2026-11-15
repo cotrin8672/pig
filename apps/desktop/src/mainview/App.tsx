@@ -1,5 +1,6 @@
 import type { ToolCall } from "@earendil-works/pi-ai";
 import {
+  ChartColumn,
   Check,
   CircleAlert,
   Copy,
@@ -73,6 +74,7 @@ import { SearchPalette } from "./SearchPalette";
 import { SessionPanel } from "./SessionPanel";
 import { Settings } from "./Settings";
 import { SidebarSessions } from "./SidebarSessions";
+import { Statistics } from "./Statistics";
 import { revealTarget } from "./search-target";
 import { initShortcuts } from "./shortcuts";
 import { isSteeredUser } from "./steered-records";
@@ -247,6 +249,18 @@ export function App() {
               >
                 <Puzzle size={16} aria-hidden="true" />
               </button>
+              <button
+                type="button"
+                className={`sidebar-icon ${state.page === "statistics" ? "active" : ""}`}
+                aria-label={t.Statistics}
+                title={t.Statistics}
+                aria-pressed={state.page === "statistics"}
+                onClick={() =>
+                  navigate(state.page === "statistics" ? "chat" : "statistics")
+                }
+              >
+                <ChartColumn size={16} aria-hidden="true" />
+              </button>
               <NotificationCenter />
             </div>
           </>
@@ -268,6 +282,8 @@ export function App() {
           <Extensions />
         ) : state.page === "settings" ? (
           <Settings />
+        ) : state.page === "statistics" ? (
+          <Statistics />
         ) : (
           <ConversationWorkspace />
         )}

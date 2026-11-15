@@ -9,7 +9,11 @@ export interface HistoryEntry {
 export function historyEntry(value: unknown): HistoryEntry {
   if (!value || typeof value !== "object") return { page: "chat" };
   const entry = value as HistoryEntry;
-  if (!["chat", "providers", "extensions", "settings"].includes(entry.page))
+  if (
+    !["chat", "providers", "extensions", "settings", "statistics"].includes(
+      entry.page,
+    )
+  )
     return { page: "chat" };
   return {
     page: entry.page,

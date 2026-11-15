@@ -85,6 +85,7 @@ import {
   disposeSessions,
   findSession,
   forkSession,
+  getStatistics,
   listProviders,
   listSessions,
   modelErrors,
@@ -333,6 +334,7 @@ const hostRequests = {
   appearance: () => appearance,
   settings: () => settings,
   providerUsage: () => usageService.snapshot(),
+  statistics: ({ period }) => getStatistics(period),
   refreshProviderUsage: () => usageService.refresh(true),
   listFontFamilies,
   bootstrap: async () => {
@@ -863,8 +865,8 @@ function confirmDraftsBeforeClose(targets = liveWindows()) {
   );
 }
 Electrobun.events.on("before-quit", (event) => {
-  // Native window destruction has already removed its WebView; only ACKed drafts survive that path.
-  if (quitReady || !liveWindows().length) {
+  // Even after the last WebView closes, await session shutdown and statistics flush.
+  if (quitReady) {
     dispose();
     return;
   }

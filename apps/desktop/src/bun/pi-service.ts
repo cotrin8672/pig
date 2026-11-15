@@ -1,4 +1,5 @@
 import "./runtime-profile";
+import { join } from "node:path";
 import {
   type Api,
   clampThinkingLevel,
@@ -21,7 +22,12 @@ import type {
   RuntimeEvent,
   SessionAddress,
 } from "../shared/runtime-contract";
+import {
+  type StatisticsPeriod,
+  validateStatisticsPeriod,
+} from "../shared/statistics";
 import type { TerminalHostEvent } from "../shared/terminal-ui";
+import { desktopConfigDir } from "./desktop-config";
 import { manualModelRefresh } from "./manual-model-refresh";
 import {
   applyRuntimeModelSettings,
@@ -38,6 +44,7 @@ import {
   type SessionAccountPersistence,
   SessionHost,
 } from "./session-host";
+import { StatisticsService } from "./statistics/service";
 import { reloadUserCatalog } from "./user-catalog";
 
 registerBunOAuthFlows();
@@ -240,7 +247,27 @@ export function configureSessionHost(
 export function setDisabledModels(hidden: readonly string[]) {
   disabled = hidden;
 }
+const statistics = new StatisticsService(
+  join(desktopConfigDir, "statistics.sqlite"),
+);
+const statisticsEnabled = process.env.PIG_STATISTICS !== "0";
+export async function getStatistics(period: StatisticsPeriod) {
+  const data = await statistics.snapshot(validateStatisticsPeriod(period));
+  data.coverage.collection = statisticsEnabled ? "active" : "disabled";
+  const names = new Map(
+    runtime
+      .getAllModels()
+      .map((model) => [
+        JSON.stringify([model.provider, model.id, null]),
+        model.name,
+      ]),
+  );
+  for (const model of data.models)
+    model.name = names.get(model.id) ?? model.name;
+  return data;
+}
 export const sessionHost = new SessionHost({
+  statistics: statisticsEnabled ? statistics : undefined,
   sessionAccounts: {
     read: (id) => sessionAccountPersistence?.read(id) ?? {},
     write: async (id, accounts) =>
@@ -288,5 +315,9 @@ export const sessionCwd = async (id: string) =>
   (await modelSelection(id)).info.cwd;
 export async function disposeSessions() {
   clearInterval(catalogRefreshTimer);
-  await sessionHost.dispose();
+  try {
+    await sessionHost.dispose();
+  } finally {
+    await statistics?.close();
+  }
 }
