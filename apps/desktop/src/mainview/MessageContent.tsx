@@ -221,33 +221,21 @@ const imageSources = (content: Content) =>
         .map((image) => `data:${image.mimeType};base64,${image.data}`);
 
 /**
- * Steering is a nudge inside the agent's work, not a new turn: one right-aligned
- * line, quieter until the agent has read it. Click to read the whole message.
+ * Steering waiting for the next step boundary: one quiet right-aligned line,
+ * ellipsized; click to read it all. Once the agent reads it, it is a normal bubble.
  */
-function SteerLine({
-  body,
-  state,
-}: {
-  body: string;
-  state: "pending" | "read";
-}) {
+function SteerLine({ body }: { body: string }) {
   const t = useT();
   const [open, setOpen] = useState(false);
-  const label =
-    state === "pending" ? t["Steering pending"] : t["Steering read"];
   return (
-    <div className="user-steer" data-steer={state}>
+    <div className="user-steer">
       <span
         className="user-steer-state"
         role="img"
-        aria-label={label}
-        title={label}
+        aria-label={t["Steering pending"]}
+        title={t["Steering pending"]}
       >
-        {state === "pending" ? (
-          <Clock size={13} aria-hidden="true" />
-        ) : (
-          <Check size={13} aria-hidden="true" />
-        )}
+        <Clock size={13} aria-hidden="true" />
       </span>
       <button
         type="button"
@@ -256,7 +244,8 @@ function SteerLine({
         title={open ? undefined : body}
         onClick={() => setOpen(!open)}
       >
-        {body}
+        {/* Ellipsis needs a block child; the shared button style is inline-flex. */}
+        <span className="user-steer-text">{body}</span>
       </button>
     </div>
   );
@@ -274,8 +263,8 @@ export const UserMessage = memo(function UserMessage({
   sessionId: string;
   entryId?: string;
   disabled: boolean;
-  /** Sent while the agent was working: waiting for, or read at, a step boundary. */
-  steer?: "pending" | "read";
+  /** Sent while the agent was working and not yet read at a step boundary. */
+  steer?: boolean;
 }) {
   const { content } = message;
   const t = useT();
@@ -364,7 +353,7 @@ export const UserMessage = memo(function UserMessage({
       ) : (
         attachments.body &&
         (steer ? (
-          <SteerLine body={attachments.body} state={steer} />
+          <SteerLine body={attachments.body} />
         ) : (
           <div className="user-bubble">{attachments.body}</div>
         ))

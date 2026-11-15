@@ -77,7 +77,6 @@ import { SidebarSessions } from "./SidebarSessions";
 import { Statistics } from "./Statistics";
 import { revealTarget } from "./search-target";
 import { initShortcuts } from "./shortcuts";
-import { isSteeredUser } from "./steered-records";
 import { type LoginState, showError, showNotice, useStore } from "./store";
 import { ThinkingBlock, ToolBlock, ToolGroup, WorkToggle } from "./ToolBlock";
 import {
@@ -934,11 +933,6 @@ export const Chat = memo(function Chat({
                     sessionId={info.id}
                     entryId={record.entryId}
                     disabled={readOnly || !snapshot.model}
-                    steer={
-                      isSteeredUser(transcript.records, index)
-                        ? "read"
-                        : undefined
-                    }
                   />
                 ) : message.role === "assistant" ? (
                   <>

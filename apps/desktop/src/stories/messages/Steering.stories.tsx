@@ -7,7 +7,7 @@ type Args = { phase: "pending" | "read" };
 const steer =
   "どんだけ時間かけてるの。テストは greeting だけに絞って先に結果を見せて";
 
-/** The built-in steering line: queued at the composer, then read at the next step. */
+/** The built-in steering line while queued; once read it is a normal user bubble. */
 function Steering({ phase }: Args) {
   return (
     <>
@@ -23,7 +23,7 @@ function Steering({ phase }: Args) {
           <UserMessage
             sessionId="preview"
             disabled
-            steer={phase}
+            steer={phase === "pending"}
             message={{
               role: "user",
               timestamp: Date.UTC(2026, 10, 12, 3, 30),
