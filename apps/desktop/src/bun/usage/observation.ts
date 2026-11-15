@@ -98,6 +98,8 @@ export function usageFromHeaders(
       const used = numeric(`x-codex-${id}-used-percent`);
       if (used === undefined || used < 0) continue;
       const duration = numeric(`x-codex-${id}-window-minutes`);
+      // Codex sends zero-duration placeholders for limits the account does not have.
+      if (duration === undefined || duration <= 0) continue;
       const after = numeric(`x-codex-${id}-reset-after-seconds`);
       windows.push({
         id: `Codex/${id}_window`,
@@ -109,7 +111,7 @@ export function usageFromHeaders(
               : id,
         usedPercent: used,
         resetsAt: after === undefined ? undefined : now + after * 1000,
-        durationMs: duration && duration > 0 ? duration * 60000 : undefined,
+        durationMs: duration * 60000,
       });
     }
   }

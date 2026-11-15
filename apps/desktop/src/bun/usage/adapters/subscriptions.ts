@@ -12,6 +12,7 @@ export function codexUsage(value: unknown): UsageData {
       const used = number(window.used_percent);
       if (used === undefined || used < 0) continue;
       const seconds = number(window.limit_window_seconds);
+      if (seconds === undefined || seconds <= 0) continue;
       windows.push({
         id: `${prefix}/${id}`,
         label:
@@ -22,7 +23,7 @@ export function codexUsage(value: unknown): UsageData {
               : `${prefix} / ${id}`,
         usedPercent: used,
         resetsAt: timestamp(window.reset_at),
-        durationMs: seconds && seconds > 0 ? seconds * 1000 : undefined,
+        durationMs: seconds * 1000,
       });
     }
   };

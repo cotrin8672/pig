@@ -19,6 +19,7 @@ export class UsageService {
   private pending?: Promise<void>;
   private timer?: ReturnType<typeof setInterval>;
   private controller?: AbortController;
+  private published?: ProviderUsage[];
   constructor(
     private readonly targets: (signal: AbortSignal) => Promise<UsageTarget[]>,
     private readonly publish: (entries: ProviderUsage[]) => void,
@@ -56,7 +57,15 @@ export class UsageService {
     return this.pending;
   }
   private emit() {
-    if (!this.disposed) this.publish(this.snapshot());
+    if (this.disposed) return;
+    const entries = this.snapshot();
+    if (
+      this.published?.length === entries.length &&
+      entries.every((entry, index) => entry === this.published?.[index])
+    )
+      return;
+    this.published = entries;
+    this.publish(entries);
   }
   private async run(force: boolean, signal: AbortSignal) {
     const targets = await this.targets(signal);
@@ -71,7 +80,10 @@ export class UsageService {
           ? {
               ...prior,
               target,
-              entry: { ...prior.entry, label: target.label },
+              entry:
+                prior.entry.label === target.label
+                  ? prior.entry
+                  : { ...prior.entry, label: target.label },
             }
           : {
               target,
@@ -164,6 +176,7 @@ export class UsageService {
           }
           this.emit();
         }
+        return undefined;
       }),
     );
   }
@@ -207,5 +220,6 @@ export class UsageService {
     clearInterval(this.timer);
     this.controller?.abort();
     this.states.clear();
+    this.published = undefined;
   }
 }

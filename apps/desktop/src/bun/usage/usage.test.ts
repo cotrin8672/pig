@@ -38,6 +38,58 @@ const target = (read: UsageTarget["read"], revision = "a"): UsageTarget => ({
   read,
 });
 
+test("no-op discovery does not republish; labels, order, owners and observations still do", async () => {
+  let reads = 0;
+  let now = 100_000;
+  let targets = [
+    target(async () => {
+      reads++;
+      return data;
+    }),
+  ];
+  const updates: ReturnType<UsageService["snapshot"]>[] = [];
+  const service = new UsageService(
+    async () => targets.map((entry) => ({ ...entry })),
+    (entries) => updates.push(entries),
+    () => now,
+  );
+  try {
+    await service.refresh();
+    const published = updates.length;
+    const original = service.snapshot()[0];
+    for (let i = 0; i < 10; i++) await service.refresh();
+    expect(reads).toBe(1);
+    expect(updates).toHaveLength(published);
+    expect(service.snapshot()[0]).toBe(original);
+    targets = [{ ...targets[0], label: "Renamed" }];
+    await service.refresh();
+    expect(updates).toHaveLength(published + 1);
+    expect(updates.at(-1)?.[0]).toMatchObject({
+      label: "Renamed",
+      observedAt: 100_000,
+    });
+    expect(original.label).toBe("Work");
+    service.observe("codex", data, "a");
+    expect(updates).toHaveLength(published + 2);
+    now += 120_000;
+    await service.refresh();
+    expect(reads).toBe(2);
+    expect(updates.at(-1)?.[0].observedAt).toBe(now);
+    targets = [{ ...targets[0], revision: "new-owner" }];
+    await service.refresh();
+    expect(reads).toBe(3);
+    expect(updates.at(-2)?.[0].status).toBe("loading");
+    targets = [];
+    await service.refresh();
+    expect(updates.at(-1)).toEqual([]);
+    const removed = updates.length;
+    await service.refresh();
+    expect(updates).toHaveLength(removed);
+  } finally {
+    service.dispose();
+  }
+});
+
 test("CLI discovery excludes Claude so Anthropic has only pig account rows", () => {
   expect(
     usageCommands.some(
@@ -60,7 +112,9 @@ test("Codex keeps bucket identity, duration, epoch units and reset ticket zero",
     additional_rate_limits: [
       {
         limit_name: "Spark",
-        rate_limit: { primary_window: { used_percent: 22 } },
+        rate_limit: {
+          primary_window: { used_percent: 22, limit_window_seconds: 18000 },
+        },
       },
     ],
     rate_limit_reset_credits: { available_count: 0 },
@@ -73,6 +127,27 @@ test("Codex keeps bucket identity, duration, epoch units and reset ticket zero",
   });
   expect(result.windows[1].id).toContain("Spark");
   expect(result.details).toContain("Reset tickets: 0");
+});
+test("Codex ignores absent or zero-duration windows, not real zero usage", () => {
+  for (const duration of [undefined, null, 0, -1]) {
+    for (const absent of ["primary_window", "secondary_window"]) {
+      const valid =
+        absent === "primary_window" ? "secondary_window" : "primary_window";
+      const result = codexUsage({
+        rate_limit: {
+          [valid]: { used_percent: 0, limit_window_seconds: 604800 },
+          [absent]: { used_percent: 0, limit_window_seconds: duration },
+        },
+      });
+      expect(result.windows).toHaveLength(1);
+      expect(result.windows[0]).toMatchObject({
+        id: `Codex/${valid}`,
+        label: "Codex / 7d",
+        usedPercent: 0,
+      });
+    }
+  }
+  expect(codexUsage({}).windows).toEqual([]);
 });
 test("Claude JSON is percent, not a 0–1 ratio; absent windows stay absent", () => {
   expect(
