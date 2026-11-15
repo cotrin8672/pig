@@ -30,9 +30,9 @@ import {
   groupBlocks,
   responseImages,
 } from "../shared/tool-view";
-import { ChatHeader } from "./ChatHeader";
 import { ChatEmpty, ChatLayout } from "./ChatLayout";
 import { ChatOpening, OpeningComposer, OpeningMessages } from "./ChatOpening";
+import { Compaction } from "./CompactionRenderer";
 import { Composer } from "./Composer";
 import { CustomRecord } from "./CustomRecord";
 import type { ChatSnapshot } from "./chat-snapshot";
@@ -84,6 +84,7 @@ import { revealTarget } from "./search-target";
 import { initShortcuts } from "./shortcuts";
 import { type LoginState, showError, showNotice, useStore } from "./store";
 import { ThinkingBlock, ToolBlock, ToolGroup, WorkToggle } from "./ToolBlock";
+import { TooltipLayer, useTooltip } from "./Tooltip";
 import {
   captureThreadAnchor,
   restoreThreadAnchor,
@@ -168,152 +169,194 @@ export function App() {
   const settingsLabel = updateVersion
     ? `${t.Settings}: ${t.appUpdateAvailable(updateVersion)}`
     : t.Settings;
-  return (
-    // biome-ignore lint/a11y/noStaticElementInteractions: Native drag handles; maximize is also available as a keyboard-accessible button.
-    <div
-      className={`app-shell${sidebarOpen ? "" : " sidebar-collapsed"}`}
-      onContextMenu={(event) => event.preventDefault()}
-      onMouseDown={(event) => {
-        // Do not start a second native move while double-clicking a drag handle.
-        if (event.detail === 2 && isWindowDragTarget(event.target))
-          event.stopPropagation();
-      }}
-      onDoubleClick={(event) => {
-        if (isWindowDragTarget(event.target))
-          rpc.send.windowControl({ action: "toggleMaximize" });
-      }}
-      style={
-        {
-          "--window-opacity": state.windowOpacity,
-        } as React.CSSProperties
+  // Open: top-right of the sidebar. Collapsed: left end of the Zen bar, so it
+  // never covers the pane winbar.
+  const sidebarToggle = (
+    <button
+      type="button"
+      className={
+        sidebarOpen
+          ? "sidebar-toggle electrobun-webkit-app-region-no-drag"
+          : undefined
       }
+      aria-label={t["Toggle sidebar"]}
+      aria-expanded={sidebarOpen}
+      aria-controls="app-sidebar"
+      hidden={!state.sidebarReady}
+      onClick={() => setSidebarOpen((open) => !open)}
     >
-      <DynamicTheme />
+      <PanelLeft size={16} aria-hidden="true" />
+    </button>
+  );
+  return (
+    <TooltipLayer>
+      {/* biome-ignore lint/a11y/noStaticElementInteractions: Native drag handles; maximize is also available as a keyboard-accessible button. */}
+      <div
+        className={`app-shell${sidebarOpen ? "" : " sidebar-collapsed"}`}
+        onContextMenu={(event) => event.preventDefault()}
+        onMouseDown={(event) => {
+          // Do not start a second native move while double-clicking a drag handle.
+          if (event.detail === 2 && isWindowDragTarget(event.target))
+            event.stopPropagation();
+        }}
+        onDoubleClick={(event) => {
+          if (isWindowDragTarget(event.target))
+            rpc.send.windowControl({ action: "toggleMaximize" });
+        }}
+        style={
+          {
+            "--window-opacity": state.windowOpacity,
+          } as React.CSSProperties
+        }
+      >
+        <DynamicTheme />
+        {sidebarOpen && sidebarToggle}
+        <aside id="app-sidebar" className="sidebar" inert={!sidebarOpen}>
+          <header className="electrobun-webkit-app-region-drag">
+            <strong className="sidebar-brand">
+              <img src={appIcon} alt="" width={20} height={20} />
+              pig
+            </strong>
+          </header>
+          {state.sidebarReady && (
+            <>
+              <SidebarSessions />
+              <ProviderUsage />
+              <SidebarFooter
+                page={state.page}
+                settingsLabel={settingsLabel}
+                updateVersion={updateVersion}
+                providerStatus={
+                  state.login?.error ||
+                  (state.login
+                    ? t["Signing in…"]
+                    : connected
+                      ? t.Connected
+                      : t["Not connected"])
+                }
+                providerDot={
+                  state.login?.error
+                    ? "error"
+                    : state.login
+                      ? "busy"
+                      : connected
+                        ? "connected"
+                        : ""
+                }
+              />
+            </>
+          )}
+        </aside>
+        <MainViewport busy={!state.initialized}>
+          {!state.initialized ? (
+            startupFailed && (
+              <div className="welcome" role="alert">
+                <p>{t.startupFailed}</p>
+                <button type="button" onClick={initialize}>
+                  {t.Retry}
+                </button>
+              </div>
+            )
+          ) : state.page === "providers" ? (
+            <Providers />
+          ) : state.page === "extensions" ? (
+            <Extensions />
+          ) : state.page === "settings" ? (
+            <Settings />
+          ) : state.page === "statistics" ? (
+            <Statistics />
+          ) : (
+            <ConversationWorkspace />
+          )}
+        </MainViewport>
+        <UIRequestBroker />
+        <SearchPalette />
+        <WindowTitlebar
+          maximized={state.maximized}
+          onAction={(action) => rpc.send.windowControl({ action })}
+          onSplit={createPane}
+          splitDisabled={!state.initialized || state.page !== "chat"}
+        >
+          {!sidebarOpen && (
+            <div className="window-controls window-sidebar-controls electrobun-webkit-app-region-no-drag">
+              {sidebarToggle}
+            </div>
+          )}
+        </WindowTitlebar>
+        {state.login && (
+          <OAuthLoginDialog key={state.login.loginId} login={state.login} />
+        )}
+        <Notifications />
+      </div>
+    </TooltipLayer>
+  );
+}
+
+function SidebarFooter({
+  page,
+  settingsLabel,
+  updateVersion,
+  providerStatus,
+  providerDot,
+}: {
+  page: string;
+  settingsLabel: string;
+  updateVersion?: string;
+  providerStatus: string;
+  providerDot: string;
+}) {
+  const t = useT();
+  const tooltip = useTooltip();
+  const tip = (label: string) => tooltip({ tier: "label", side: "top", label });
+  const toggle = (target: Parameters<typeof navigate>[0]) =>
+    navigate(page === target ? "chat" : target);
+  return (
+    <div className="sidebar-footer">
       <button
         type="button"
-        className="sidebar-toggle electrobun-webkit-app-region-no-drag"
-        aria-label={t["Toggle sidebar"]}
-        title={t["Toggle sidebar"]}
-        aria-expanded={sidebarOpen}
-        aria-controls="app-sidebar"
-        hidden={!state.sidebarReady}
-        onClick={() => setSidebarOpen((open) => !open)}
+        className={`sidebar-icon ${page === "settings" ? "active" : ""}`}
+        aria-label={settingsLabel}
+        onClick={() => toggle("settings")}
+        {...tip(t.Settings)}
       >
-        <PanelLeft size={16} aria-hidden="true" />
+        <SettingsIcon size={16} aria-hidden="true" />
+        {updateVersion && (
+          <span className="sidebar-update-dot" aria-hidden="true" />
+        )}
       </button>
-      <aside id="app-sidebar" className="sidebar" inert={!sidebarOpen}>
-        <header className="electrobun-webkit-app-region-drag">
-          <strong className="sidebar-brand">
-            <img src={appIcon} alt="" width={20} height={20} />
-            pig
-          </strong>
-        </header>
-        {state.sidebarReady && (
-          <>
-            <SidebarSessions />
-            <ProviderUsage />
-            <div className="sidebar-footer">
-              <button
-                type="button"
-                className={`sidebar-icon ${state.page === "settings" ? "active" : ""}`}
-                aria-label={settingsLabel}
-                title={settingsLabel}
-                onClick={() =>
-                  navigate(state.page === "settings" ? "chat" : "settings")
-                }
-              >
-                <SettingsIcon size={16} aria-hidden="true" />
-                {updateVersion && (
-                  <span className="sidebar-update-dot" aria-hidden="true" />
-                )}
-              </button>
-              <button
-                type="button"
-                className={`sidebar-icon ${state.page === "providers" ? "active" : ""}`}
-                aria-label={`${t.Providers}: ${state.login?.error || (state.login ? t["Signing in…"] : connected ? t.Connected : t["Not connected"])}`}
-                title={`${t.Providers}: ${state.login?.error || (state.login ? t["Signing in…"] : connected ? t.Connected : t["Not connected"])}`}
-                onClick={() =>
-                  navigate(state.page === "providers" ? "chat" : "providers")
-                }
-              >
-                <Settings2 size={16} aria-hidden="true" />
-                <span
-                  className={`sidebar-provider-dot ${state.login?.error ? "error" : state.login ? "busy" : connected ? "connected" : ""}`}
-                  aria-hidden="true"
-                />
-              </button>
-              <button
-                type="button"
-                className={`sidebar-icon ${state.page === "extensions" ? "active" : ""}`}
-                aria-label={t.Extensions}
-                title={t.Extensions}
-                onClick={() =>
-                  navigate(state.page === "extensions" ? "chat" : "extensions")
-                }
-              >
-                <Puzzle size={16} aria-hidden="true" />
-              </button>
-              <button
-                type="button"
-                className={`sidebar-icon ${state.page === "statistics" ? "active" : ""}`}
-                aria-label={t.Statistics}
-                title={t.Statistics}
-                aria-pressed={state.page === "statistics"}
-                onClick={() =>
-                  navigate(state.page === "statistics" ? "chat" : "statistics")
-                }
-              >
-                <ChartColumn size={16} aria-hidden="true" />
-              </button>
-              <NotificationCenter />
-            </div>
-          </>
-        )}
-      </aside>
-      <MainViewport busy={!state.initialized}>
-        {!state.initialized ? (
-          startupFailed && (
-            <div className="welcome" role="alert">
-              <p>{t.startupFailed}</p>
-              <button type="button" onClick={initialize}>
-                {t.Retry}
-              </button>
-            </div>
-          )
-        ) : state.page === "providers" ? (
-          <Providers />
-        ) : state.page === "extensions" ? (
-          <Extensions />
-        ) : state.page === "settings" ? (
-          <Settings />
-        ) : state.page === "statistics" ? (
-          <Statistics />
-        ) : (
-          <ConversationWorkspace />
-        )}
-      </MainViewport>
-      <UIRequestBroker />
-      <SearchPalette />
-      <WindowTitlebar
-        maximized={state.maximized}
-        onAction={(action) => rpc.send.windowControl({ action })}
-        onSplit={createPane}
-        splitDisabled={!state.initialized || state.page !== "chat"}
+      <button
+        type="button"
+        className={`sidebar-icon ${page === "providers" ? "active" : ""}`}
+        aria-label={`${t.Providers}: ${providerStatus}`}
+        onClick={() => toggle("providers")}
+        {...tip(t.Providers)}
       >
-        {state.showChatHeader && (
-          <ChatHeader
-            cwd={state.chatCwd}
-            title={
-              state.chatTitle ??
-              (state.openingExistingChat ? t["Opening chat…"] : t["New chat"])
-            }
-          />
-        )}
-      </WindowTitlebar>
-      {state.login && (
-        <OAuthLoginDialog key={state.login.loginId} login={state.login} />
-      )}
-      <Notifications />
+        <Settings2 size={16} aria-hidden="true" />
+        <span
+          className={`sidebar-provider-dot ${providerDot}`}
+          aria-hidden="true"
+        />
+      </button>
+      <button
+        type="button"
+        className={`sidebar-icon ${page === "extensions" ? "active" : ""}`}
+        aria-label={t.Extensions}
+        onClick={() => toggle("extensions")}
+        {...tip(t.Extensions)}
+      >
+        <Puzzle size={16} aria-hidden="true" />
+      </button>
+      <button
+        type="button"
+        className={`sidebar-icon ${page === "statistics" ? "active" : ""}`}
+        aria-label={t.Statistics}
+        aria-pressed={page === "statistics"}
+        onClick={() => toggle("statistics")}
+        {...tip(t.Statistics)}
+      >
+        <ChartColumn size={16} aria-hidden="true" />
+      </button>
+      <NotificationCenter />
     </div>
   );
 }
@@ -839,7 +882,7 @@ export const Chat = memo(function Chat({
         readOnly ? (
           <OpeningComposer preview={snapshot} />
         ) : (
-          <Composer snapshot={snapshot} />
+          <Composer snapshot={snapshot} annotationRoot={thread} />
         )
       }
       panel={
@@ -934,7 +977,7 @@ export const Chat = memo(function Chat({
               <div className="model-divider">
                 <span
                   className="model-divider-model"
-                  title={`${divider.from.provider}/${divider.from.id}`}
+                  aria-description={`${divider.from.provider}/${divider.from.id}`}
                 >
                   <ProviderIcon provider={divider.from.provider} size={14} />
                   {divider.from.id}
@@ -942,7 +985,7 @@ export const Chat = memo(function Chat({
                 →
                 <span
                   className="model-divider-model"
-                  title={`${divider.to.provider}/${divider.to.id}`}
+                  aria-description={`${divider.to.provider}/${divider.to.id}`}
                 >
                   <ProviderIcon provider={divider.to.provider} size={14} />
                   {divider.to.id}
@@ -1107,7 +1150,10 @@ export const Chat = memo(function Chat({
           !snapshot.failure &&
           (snapshot.aborted ? t.Stopped : t.responseComplete)}
       </span>
-      {transcript.running && (
+      {transcript.compaction && (
+        <Compaction active reason={transcript.compaction.reason} />
+      )}
+      {transcript.running && !transcript.compaction && (
         <RunningIndicator
           symbol={status?.workingSymbol}
           message={status?.workingMessage}

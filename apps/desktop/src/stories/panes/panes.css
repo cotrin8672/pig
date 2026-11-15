@@ -206,6 +206,9 @@
   display: grid;
   place-items: center;
 }
+.pane-preview-window.sidebar-collapsed .sidebar-toggle {
+  left: 12px;
+}
 .pane-preview-window.sidebar-collapsed .pane-preview-toolbar {
   padding-left: 44px;
 }

@@ -1,12 +1,26 @@
 import { useEffect, useState } from "react";
-import { ja } from "../../shared/i18n";
 import type { Proposal } from "./kit";
 import "./running.css";
 
 type Content = Record<string, Proposal<object>>;
 
-/** The same pool the app ships, so the sketches read like the real line. */
-const VERBS = ja.workingVerbs;
+/** Design candidates only; these words are not used by the app. */
+const VERBS = [
+  "考え中",
+  "思案中",
+  "検討中",
+  "組み立て中",
+  "コードを読み中",
+  "方針を練り中",
+  "手を動かし中",
+  "確かめ中",
+  "悩み中",
+  "ひらめき中",
+  "そろえ中",
+  "つつき中",
+  "鼻先で探り中",
+  "土を掘り中",
+];
 
 function shuffle(list: string[]) {
   const next = [...list];

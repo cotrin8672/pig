@@ -5,6 +5,7 @@ import { navigationRevision } from "./navigation";
 import {
   hasUnreadCompletion,
   interruptedSession,
+  type SessionStatus,
   sessionStatus,
 } from "./session-status";
 import type { useStore } from "./store";
@@ -54,9 +55,6 @@ export function selectConversationView(s: State) {
 }
 
 export function selectAppView(s: State) {
-  const { openingView, activeSnapshot, openingSnapshot } =
-    selectConversationView(s);
-  const displayed = openingView ? openingSnapshot : activeSnapshot;
   return {
     initialized: s.initialized,
     sidebarReady: s.initialized || s.cachedSidebar,
@@ -65,18 +63,6 @@ export function selectAppView(s: State) {
     // Seed previews update CSS independently, never re-render the conversation.
     windowOpacity: s.appearance.opacity[s.appearance.backdrop],
     connected: s.bootstrap.models.length > 0,
-    showChatHeader:
-      s.initialized && s.page === "chat" && !!(openingView || displayed),
-    chatCwd: displayed?.info.cwd ?? s.openingTarget?.cwd,
-    chatTitle: displayed
-      ? (s.extensionStatuses[addressKey(displayed.address)]?.title ??
-        displayed.info.title)
-      : s.openingTarget?.id
-        ? s.sessions[s.openingTarget.cwd]?.find(
-            (session) => session.id === s.openingTarget?.id,
-          )?.title
-        : undefined,
-    openingExistingChat: !!s.openingTarget?.id,
     maximized: s.maximized,
     login: s.login,
   };
@@ -178,4 +164,39 @@ export function selectProjectActivity(s: State, cwd: string) {
           hasUnreadCompletion(s.bootstrap.desktop.sessions[session.id]),
         ],
   );
+}
+
+/** Keep the 10k-row persisted list off the token-update path. Cache metadata
+ * only, never snapshots/transcripts; pending requests can exist before ready. */
+export function createProjectActivitySelector() {
+  let listed: SessionInfo[] | undefined;
+  let flags: State["bootstrap"]["desktop"]["sessions"] | undefined;
+  let project: string | undefined;
+  let statuses = new Map<string, SessionStatus>();
+  let result: ReturnType<typeof selectProjectActivity> = [];
+  return (s: State, cwd: string) => {
+    const ids = new Set([
+      ...Object.keys(s.snapshots),
+      ...s.pendingUI.map((request) => request.sessionId),
+    ]);
+    const next = new Map<string, SessionStatus>();
+    for (const id of ids) {
+      const status = selectSessionStatus(s, id);
+      if (status) next.set(id, status);
+    }
+    if (
+      project === cwd &&
+      listed === s.sessions[cwd] &&
+      flags === s.bootstrap.desktop.sessions &&
+      statuses.size === next.size &&
+      [...next].every(([id, status]) => statuses.get(id) === status)
+    )
+      return result;
+    project = cwd;
+    listed = s.sessions[cwd];
+    flags = s.bootstrap.desktop.sessions;
+    statuses = next;
+    result = selectProjectActivity(s, cwd);
+    return result;
+  };
 }
