@@ -199,7 +199,7 @@ test.skipIf(!existsSync(fixtureEdge) && !process.env.PIG_REQUIRE_UI_TESTS)(
     const {createRoot}=await import(${fixtureImport(import.meta.resolve("react-dom/client"))});
     const {flushSync}=await import(${fixtureImport(import.meta.resolve("react-dom"))});
     const {useStore}=await import(${fixtureImport(new URL("./store.ts", import.meta.url))});
-    const {openChat,startOpeningChat}=await import(${fixtureImport(new URL("./rpc.ts", import.meta.url))});
+    const {startOpeningChat}=await import(${fixtureImport(new URL("./rpc.ts", import.meta.url))});
     const {createPane,focusPane}=await import(${fixtureImport(new URL("./pane-state.ts", import.meta.url))});
     const {PaneWorkspace}=await import(${fixtureImport(new URL("./PaneWorkspace.tsx", import.meta.url))});
     const {WindowTitlebar}=await import(${fixtureImport(new URL("./WindowTitlebar.tsx", import.meta.url))});
@@ -235,7 +235,8 @@ test.skipIf(!existsSync(fixtureEdge) && !process.env.PIG_REQUIRE_UI_TESTS)(
     flushSync(()=>root.render(<><Workspace/><WindowTitlebar maximized={false} onAction={()=>{}} onSplit={createPane}/></>));
     const pane=id=>document.querySelector('[data-pane-id="'+id+'"]');
     const closeButton=id=>pane(id).querySelector('.pane-close');
-    flushSync(()=>{void openChat('fixture');});
+    check(pane(1).querySelector('.pane-new-chat'),'a single pane must offer a new-chat control');
+    flushSync(()=>pane(1).querySelector('.pane-new-chat').click());
     check(pane(1).querySelector('textarea')&&pane(1).textContent.includes('What shall we build?'),'new chat must render synchronously');
     const firstId=useStore.getState().panes[1].openId;
     const firstKey=openingDraftKey(useStore.getState().pendingOpens[firstId]);
@@ -281,6 +282,10 @@ test.skipIf(!existsSync(fixtureEdge) && !process.env.PIG_REQUIRE_UI_TESTS)(
     for(const id of [1,2,third]){
       const button=closeButton(id),rect=button.getBoundingClientRect(),bounds=pane(id).getBoundingClientRect();
       check(!button.disabled&&Math.abs(bounds.right-rect.right-12)<1&&Math.abs(rect.top-bounds.top-36)<1,'each pane must retain its own top-right close control, separate from the text-only winbar');
+      const newChat=pane(id).querySelector('.pane-new-chat'),newRect=newChat.getBoundingClientRect();
+      check(newChat.querySelector('.lucide-square-pen'),'new chat must reuse the sidebar SquarePen icon');
+      check(newRect.top===rect.top&&newRect.height===rect.height&&rect.left-newRect.right===4,'new chat must align immediately left of close without shifting it');
+      check(document.elementFromPoint((newRect.left+newRect.right)/2,(newRect.top+newRect.bottom)/2)?.closest('.pane-new-chat')===newChat,'new-chat controls must remain clickable below the Zen bar');
       check(pane(id).querySelector('.pane-winbar-title').textContent==='New chat','unsent panes must also show a winbar');
       check(document.elementFromPoint((rect.left+rect.right)/2,(rect.top+rect.bottom)/2)?.closest('.pane-close')===button,'Zen bar must not cover pane-close controls');
     }
@@ -321,6 +326,13 @@ test.skipIf(!existsSync(fixtureEdge) && !process.env.PIG_REQUIRE_UI_TESTS)(
     check(useStore.getState().panes[2].sessionId==='created','only the submitted pane is promoted to a real chat');
     flushSync(()=>useStore.setState(s=>({snapshots:{...s.snapshots,created:{...s.snapshots.created,transcript:{...s.snapshots.created.transcript,running:true}}}})));
     const retained=useStore.getState().snapshots.created;
+    flushSync(()=>useStore.setState(s=>({bootstrap:{...s.bootstrap,generalCwd:'another-project'}})));
+    flushSync(()=>pane(2).querySelector('.pane-new-chat').click());await wait();
+    const replacement=useStore.getState().panes[2].openId;
+    check(useStore.getState().activePane===2&&useStore.getState().pendingOpens[replacement]?.cwd==='fixture','new chat must target its own pane and project even when inactive');
+    check(pane(2).querySelector('textarea')?.value===''&&calls.length===2,'new chat must render an empty local editor without starting an SDK session');
+    check(useStore.getState().snapshots.created===retained&&retained.transcript.running&&drafts.read(snapshot.address).content.text==='keep after send','new chat must retain the original running session and draft');
+    check(pane(1).querySelector('textarea')===editorA&&editorA.value==='draft one','new chat must leave other panes and drafts unchanged');
     flushSync(()=>focusPane(2));flushSync(()=>closeButton(2).click());
     check(!pane(2)&&useStore.getState().activePane===1&&!closeButton(1),'closing a session pane must focus the remaining pane and remove its final close button');
     check(useStore.getState().snapshots.created===retained&&retained.transcript.running&&drafts.read(snapshot.address).content.text==='keep after send','closing a pane must retain its running session and draft');

@@ -30,6 +30,20 @@ export function focusPane(id: number) {
   else navigate("chat", pane.sessionId ?? null);
 }
 
+export function newChatInPane(id: number) {
+  const state = useStore.getState();
+  const pane = state.panes[id];
+  if (state.page !== "chat" || !state.initialized || !pane) return;
+  const cwd =
+    (pane.sessionId && state.snapshots[pane.sessionId]?.info.cwd) ||
+    state.pendingOpens[pane.openId ?? ""]?.cwd ||
+    state.bootstrap.generalCwd;
+  if (!cwd) return;
+  focusPane(id);
+  void openChat(cwd);
+  focusEditor(id);
+}
+
 export function createPane(axis: SplitAxis) {
   let state = useStore.getState();
   if (state.page !== "chat" || !state.initialized) return;
