@@ -1,7 +1,54 @@
 import type { ThemedToken } from "shiki/core";
 
-const sameStyle = (a: ThemedToken, b: ThemedToken) =>
+type TokenStyle = Pick<ThemedToken, "color" | "bgColor" | "fontStyle">;
+const sameStyle = (a: TokenStyle, b: TokenStyle) =>
   a.color === b.color && a.bgColor === b.bgColor && a.fontStyle === b.fontStyle;
+
+type CodeRun = TokenStyle & {
+  key: string;
+  parts: { key: string; text: string }[];
+};
+
+/** Keep separate text leaves so appending a line never replaces an earlier selection. */
+export function codeRuns(
+  text: string,
+  tokens: readonly (readonly ThemedToken[] | undefined)[],
+): CodeRun[] {
+  const runs: CodeRun[] = [];
+  const append = (key: string, value: string, style: TokenStyle) => {
+    if (!value) return;
+    let run = runs.at(-1);
+    if (!run || !sameStyle(run, style)) {
+      run = {
+        key,
+        color: style.color,
+        bgColor: style.bgColor,
+        fontStyle: style.fontStyle,
+        parts: [],
+      };
+      runs.push(run);
+    }
+    run.parts.push({ key, text: value });
+  };
+  const lines = text.split("\n");
+  for (let index = 0; index < lines.length; index++) {
+    const line = tokens[index] ?? [{ content: lines[index], offset: 0 }];
+    for (const [part, token] of tokenRuns(line).entries())
+      append(`${index}:${part}`, token.content, token);
+    if (index === lines.length - 1) continue;
+    const previous = runs.at(-1);
+    const next = tokens[index + 1]?.find((token) => token.content);
+    // A newline must not acquire a background or decoration from its neighbours.
+    const bridge =
+      previous &&
+      next &&
+      !previous.bgColor &&
+      !previous.fontStyle &&
+      sameStyle(previous, next);
+    append(`${index}:newline`, "\n", bridge ? previous : {});
+  }
+  return runs;
+}
 /** Adjacent lexical tokens with identical visible styling need one DOM span,
  * not one span per punctuation/space. Text and style boundaries stay exact. */
 export function tokenRuns(tokens: readonly ThemedToken[]): ThemedToken[] {

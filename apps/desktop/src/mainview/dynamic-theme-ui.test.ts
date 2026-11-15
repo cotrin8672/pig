@@ -7,6 +7,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import tailwindcss from "@tailwindcss/vite";
 import { build } from "vite";
 import { renderWorkerFixturePlugin } from "../../scripts/render-worker-fixture";
+import { syntaxFixture } from "../../scripts/syntax-fixture";
 import {
   fixtureBrowser,
   removeFixtureDirectory,
@@ -37,11 +38,12 @@ test.skipIf(!existsSync(edge) && !process.env.PIG_REQUIRE_UI_TESTS)(
         import {useStore} from ${source("./store.ts")};
         import {defaultThemeColor} from ${source("../shared/theme-color.ts")};
         import ${source("./styles.css")};
+        ${syntaxFixture}
         const text='const greeting: string = "Hello"; // theme-aware code';
         useStore.setState(s=>({settings:{...s.settings,language:'en'}}));
         const root=createRoot(document.getElementById('root'));
         flushSync(()=>root.render(<><DynamicTheme/><div className="app-shell"><main className="content-page"><div className="content-page-shell"><h1>Appearance</h1><AppearanceSettings/><pre id="syntax"><CodeText text={text} language="ts"/></pre><pre id="ansi"><TerminalOutput text={'\\u001b[38;2;12;34;56mExplicit ANSI color\\u001b[0m'}/></pre><button id="outside" type="button">Outside</button></div></main></div></>));
-        window.fixture={store:useStore,defaultThemeColor,seed:color=>flushSync(()=>useStore.setState(s=>({appearance:{...s.appearance,themeColor:color}}))),cached:()=>cachedHighlight(text,'ts'),unmount:()=>flushSync(()=>root.unmount())};
+        window.fixture={store:useStore,defaultThemeColor,seed:color=>flushSync(()=>useStore.setState(s=>({appearance:{...s.appearance,themeColor:color}}))),cached:()=>cachedHighlight(text,'ts'),color:element=>syntaxStyle(element.firstChild,0).color,ready:syntaxReady,unmount:()=>flushSync(()=>root.unmount())};
         window.__ready=true;
       `,
       );
@@ -139,7 +141,7 @@ test.skipIf(!existsSync(edge) && !process.env.PIG_REQUIRE_UI_TESTS)(
         for (let i = 0; i < 400; i++) {
           if (
             await browser.evaluate(
-              "!!window.__ready && !!document.querySelector('#syntax .syntax-token') && !!document.querySelector('#ansi .syntax-token')",
+              "!!window.__ready && !!document.querySelector('#syntax .syntax-text') && fixture.ready() && !!document.querySelector('#ansi .syntax-token')",
             )
           )
             break;
@@ -149,7 +151,7 @@ test.skipIf(!existsSync(edge) && !process.env.PIG_REQUIRE_UI_TESTS)(
           check(window.__ready,'fixture initialized');
           check(document.querySelector('.color-picker-trigger').textContent.includes('#8FAEE8'),'saved theme appears in settings');
           check(!document.querySelector('.color-picker-plane'),'closed picker is not rendered');
-          window.oldCode=document.querySelector('#syntax .syntax-token');window.oldCache=fixture.cached();window.oldSyntax=getComputedStyle(oldCode).color;
+          window.oldCode=document.querySelector('#syntax .syntax-text');window.oldCache=fixture.cached();window.oldSyntax=fixture.color(oldCode);
           window.oldAnsi=getComputedStyle(document.querySelector('#ansi .syntax-token')).color;
           window.oldRows=[...document.querySelectorAll('.settings-row')].map(e=>e.getBoundingClientRect().toJSON());
           document.querySelector('.color-picker-trigger').click();await wait();
@@ -162,8 +164,8 @@ test.skipIf(!existsSync(edge) && !process.env.PIG_REQUIRE_UI_TESTS)(
           check(style.opacity==='1'&&style.backgroundColor.startsWith('rgba('),'translucent paint, opaque contents');
           const pink=document.querySelector('[aria-label="#DC91B6"]');pink.click();await wait();
           check(fixture.store.getState().appearance.themeColor==='#dc91b6','preset changes persisted appearance seed');
-          check(document.querySelector('#syntax .syntax-token')===oldCode&&fixture.cached()===oldCache,'theme must retain code DOM and token cache');
-          check(getComputedStyle(oldCode).color!==oldSyntax,'existing syntax recolours via variables');
+          check(document.querySelector('#syntax .syntax-text')===oldCode&&fixture.cached()===oldCache,'theme must retain code DOM and token cache');
+          check(fixture.color(oldCode)!==oldSyntax,'existing syntax recolours via variables');
           check(getComputedStyle(document.querySelector('#ansi .syntax-token')).color===oldAnsi,'explicit ANSI RGB stays unchanged');
           check(JSON.stringify(oldRows)===JSON.stringify([...document.querySelectorAll('.settings-row')].map(e=>e.getBoundingClientRect().toJSON())),'picker/preview must not move settings');
           window.oldBackground=getComputedStyle(document.querySelector('.app-shell')).backgroundImage;

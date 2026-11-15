@@ -20,6 +20,8 @@ let state: RendererState = {
 };
 const listeners = new Set<() => void>();
 let builtins: readonly ChatRenderer[] = [];
+export const isBuiltinChatRenderer = (renderer: unknown) =>
+  builtins.some((entry) => entry === renderer);
 export function registerBuiltinChatRenderers(
   renderers: readonly ChatRenderer[],
 ) {
