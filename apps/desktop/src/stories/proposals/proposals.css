@@ -1,5 +1,34 @@
 /* biome-ignore-all lint/style/noDescendingSpecificity: Every proposal has its own pp- root; selectors across proposals do not compete. */
 /* Shared tokens only. Each proposal owns its layout because each answers a different question. */
+.pp-tool-description {
+  margin-bottom: 36px;
+  color: var(--ds-text-secondary);
+  font-size: var(--text-md);
+  line-height: 1.6;
+}
+.pp-tool-description > h2 {
+  margin: 0 0 8px;
+  color: var(--ds-text-primary);
+  font-family: var(--font-mono);
+  font-size: var(--text-lg);
+  overflow-wrap: anywhere;
+}
+.pp-tool-description > p {
+  margin: 0 0 12px;
+}
+.pp-tool-description > dl {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 6px 12px;
+  margin: 0;
+}
+.pp-tool-description dt {
+  color: var(--ds-text-faint);
+}
+.pp-tool-description dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
 .pp-specimen {
   --pp-line: #ffffff14;
   --pp-inset: #11162230;

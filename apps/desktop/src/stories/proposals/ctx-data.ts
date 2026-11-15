@@ -18,6 +18,14 @@ function tool(name: string, args: Record<string, unknown>, text: string): Tool {
 
 /** The common case: code that prints only the answer. */
 export const ctxExecute: ToolFixture = {
+  description: {
+    purpose:
+      "コードやコマンドを別プロセスで実行し、大量の生データを会話に流さず必要な答えだけ取り出すツール。大きな出力は索引化して後から検索できる。",
+    input:
+      "実行言語とコード、必要に応じて対象ファイルや抽出意図。この例はテスト結果JSONを読み、集計と失敗したテスト名だけを出力する。",
+    output:
+      "実行状態とコードが印字した結果。この例は成功・失敗件数と失敗テスト2件。",
+  },
   tool: tool(
     "ctx_execute",
     {
@@ -45,6 +53,14 @@ export const ctxExecute: ToolFixture = {
 
 /** Large output with intent: a summary line, the matching sections and a search handle. */
 export const ctxExecuteLarge: ToolFixture = {
+  description: {
+    purpose:
+      "コードやコマンドの大量出力を索引化し、指定した意図に合う部分だけ返す ctx_execute の例。出力全文は会話に載せず後から検索できる。",
+    input:
+      "実行言語・コマンド・抽出意図。この例は git log --stat -200 の結果から i18n changes に関係する部分を探す。",
+    output:
+      "終了コード・出力バイト数・一致した抜粋と、保存した出力を ctx_search で再検索するためのハンドル。",
+  },
   tool: tool(
     "ctx_execute",
     {
@@ -66,6 +82,14 @@ export const ctxExecuteLarge: ToolFixture = {
 };
 
 export const ctxBatch: ToolFixture = {
+  description: {
+    purpose:
+      "複数のコマンド実行と、その出力に対する複数の検索を1回にまとめるツール。関連する調査結果をまとめて取り出す。",
+    input:
+      "コマンド一覧と質問一覧。この例はテストとGit履歴を実行し、失敗テストと最近のコミットを調べる。",
+    output:
+      "質問ごとの一致箇所、元コマンドの情報、保存した出力を追加検索するためのハンドル。",
+  },
   tool: tool(
     "ctx_batch",
     {
@@ -90,6 +114,14 @@ export const ctxBatch: ToolFixture = {
 };
 
 export const ctxSearch: ToolFixture = {
+  description: {
+    purpose:
+      "ctx_index で保存した資料や過去の実行出力などを検索し、必要な部分を会話に戻すツール。Web検索やコマンドの再実行ではない。",
+    input:
+      "検索語の配列。必要に応じて対象範囲・ソース・続きの位置を指定する。この例は fallback locale と Template type を探す。",
+    output:
+      "質問ごとの抜粋、出典とチャンク番号、重複の案内、続きを読むための検索方法。",
+  },
   tool: tool(
     "ctx_search",
     { queries: ["fallback locale", "Template type"] },
@@ -109,6 +141,14 @@ export const ctxSearch: ToolFixture = {
 };
 
 export const ctxIndex: ToolFixture = {
+  description: {
+    purpose:
+      "ローカルファイル・フォルダー・テキスト・URLの内容を保存し、ctx_search で繰り返し検索できるようにするツール。",
+    input:
+      "保存するパス・テキスト・URLのいずれか。この例では docs/ui-guidelines.md を登録する。",
+    output:
+      "登録したソース数、分割したチャンク数、ソースのラベル。資料の全文や検索回答を返す操作ではない。",
+  },
   tool: tool(
     "ctx_index",
     { path: "docs/ui-guidelines.md" },

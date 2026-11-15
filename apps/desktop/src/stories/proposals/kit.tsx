@@ -13,7 +13,11 @@ export type Proposal<P> = {
   View: ComponentType<P>;
 };
 /** Each tool fails in its own way, so fixtures carry their own error text. */
-export type ToolFixture = { tool: Tool; error: string };
+export type ToolFixture = {
+  tool: Tool;
+  error: string;
+  description?: { purpose: string; input: string; output: string };
+};
 
 export function atPhase({ tool, error }: ToolFixture, phase: Phase): Tool {
   if (phase === "done") return tool;
@@ -66,6 +70,7 @@ export function stories<K extends string, P extends object, A>(
   proposals: Record<K, Proposal<P>>,
   Default: ComponentType<P>,
   props: (args: A) => P,
+  fixture?: ToolFixture,
 ) {
   const entries = Object.entries(proposals) as [K, Proposal<P>][];
   const result = {} as Record<K | "Default" | "Compare", Story<A>>;
@@ -88,6 +93,21 @@ export function stories<K extends string, P extends object, A>(
     name: "Compare all",
     render: (args) => (
       <div className="pp-compare">
+        {fixture?.description && (
+          <section
+            className="pp-tool-description"
+            aria-label={`${fixture.tool.call.name} の説明`}
+          >
+            <h2>{fixture.tool.call.name}</h2>
+            <p>{fixture.description.purpose}</p>
+            <dl>
+              <dt>入力</dt>
+              <dd>{fixture.description.input}</dd>
+              <dt>出力</dt>
+              <dd>{fixture.description.output}</dd>
+            </dl>
+          </section>
+        )}
         <Specimen index="00" title="Default" fit="現在の組み込みレンダラー。">
           <Default {...props(args)} />
         </Specimen>
@@ -119,6 +139,7 @@ export function toolStories<K extends string>(
       tool: atPhase(fixture, phase),
       phase,
     }),
+    fixture,
   );
 }
 export function contentStories<K extends string>(

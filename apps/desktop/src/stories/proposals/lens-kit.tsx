@@ -47,6 +47,7 @@ export function lensStories<K extends string>(
       tool: atPhase(fixture, phase),
       phase,
     }),
+    fixture,
   );
 }
 
