@@ -7,11 +7,13 @@ import "./content-page.css";
 export function ContentPage({
   title,
   description,
+  actions,
   className,
   children,
 }: {
   title: string;
   description?: ReactNode;
+  actions?: ReactNode;
   className: string;
   children: ReactNode;
 }) {
@@ -27,7 +29,14 @@ export function ContentPage({
           >
             <ArrowLeft size={14} aria-hidden="true" /> {t["Back to chat"]}
           </button>
-          <h1>{title}</h1>
+          {actions ? (
+            <div className="content-page-title-row">
+              <h1>{title}</h1>
+              <div className="content-page-actions">{actions}</div>
+            </div>
+          ) : (
+            <h1>{title}</h1>
+          )}
           {description && (
             <p className="muted page-description">{description}</p>
           )}

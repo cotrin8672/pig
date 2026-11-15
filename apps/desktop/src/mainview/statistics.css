@@ -1,7 +1,20 @@
 /* Statistics overview: one screen, dense, shared UI tokens. */
-.stats-container {
+.statistics-overview .content-page-shell {
+  display: grid;
+  grid-template-columns: minmax(0, 3fr) minmax(280px, 2fr);
+  grid-template-rows: auto auto minmax(160px, 1fr) auto;
+  grid-template-areas:
+    "header header"
+    "summary summary"
+    "daily side"
+    "models side";
+  gap: 8px;
+  max-width: none;
   height: 100%;
   container-type: size;
+}
+.statistics-overview .content-page-header {
+  grid-area: header;
 }
 .statistics-page {
   /* Categorical pastels: distinct hues, softened fills, no status-colour semantics. */
@@ -16,20 +29,7 @@
   --model-2: var(--series-2);
   --model-3: var(--series-3);
   --model-4: var(--series-4);
-  --scrollbar-inset: var(--radius-sm);
-  display: grid;
-  grid-template-columns: minmax(0, 3fr) minmax(280px, 2fr);
-  grid-template-rows: auto auto minmax(160px, 1fr) auto;
-  grid-template-areas:
-    "header header"
-    "summary summary"
-    "daily side"
-    "models side";
-  gap: 8px;
-  height: 100%;
-  min-height: 0;
-  padding: 12px 16px 16px;
-  overflow: auto;
+  display: contents;
 }
 [data-model="0"] {
   --color: var(--model-0);
@@ -51,16 +51,10 @@
 }
 
 .stats-header {
-  grid-area: header;
   display: flex;
   align-items: center;
   gap: 10px;
   min-height: 28px;
-}
-.stats-header h1 {
-  margin: 0;
-  font-size: var(--text-lg);
-  font-weight: var(--font-weight-semibold);
 }
 .stats-header .muted {
   font-size: var(--text-xs);
@@ -246,21 +240,19 @@
   font-variant-numeric: tabular-nums;
   text-align: center;
 }
+/* Surface and motion come from the shared ui-tooltip (tooltip.css). */
 .stats-tip {
   position: fixed;
   inset: auto;
   margin: 0;
-  display: grid;
-  gap: 3px;
   min-width: 160px;
   padding: 6px 8px;
-  border: 1px solid var(--ds-border-strong);
   border-radius: var(--radius-xs);
-  background: var(--ds-bg-popover);
-  box-shadow: var(--ds-shadow-dialog);
-  backdrop-filter: blur(20px);
   font-size: var(--text-xs);
-  color: var(--ds-text-primary);
+}
+.stats-tip > .ui-tooltip-swap {
+  display: grid;
+  gap: 3px;
 }
 .stats-tip span {
   display: flex;
@@ -268,7 +260,8 @@
   gap: 6px;
   color: var(--ds-text-secondary);
 }
-.stats-tip span[data-model]::before {
+.stats-tip span[data-model]::before,
+.stats-tip span[data-slice]::before {
   content: "";
   width: 8px;
   height: 8px;
@@ -308,10 +301,12 @@
   }
 }
 .stats-composition {
+  display: grid;
   flex: 1;
-  flex-direction: row;
-  gap: 4px;
-  min-height: 150px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-rows: auto minmax(72px, 1fr) auto;
+  row-gap: 8px;
+  min-height: min-content;
   padding: 8px 0;
 }
 /* The same pastel palette is shared by bars, donut slices and their legends. */
@@ -346,15 +341,15 @@
   --color: var(--series-5);
 }
 .stats-donut {
-  display: flex;
-  flex: 1;
-  flex-direction: column;
+  display: grid;
+  grid-row: span 3;
+  grid-template-rows: subgrid;
   min-width: 0;
   margin: 0;
   padding: 0 12px;
 }
 .stats-donut + .stats-donut {
-  border-left: 1px solid var(--ds-border-strong);
+  box-shadow: -1px 0 var(--ds-border-strong);
 }
 .stats-donut figcaption {
   display: grid;
@@ -369,18 +364,14 @@
   font-weight: var(--font-weight-normal);
 }
 .stats-donut-body {
-  display: flex;
-  flex: 1;
-  flex-direction: column;
-  justify-content: center;
-  gap: 8px;
-  min-height: 0;
+  display: contents;
 }
 .stats-donut-ring {
   position: relative;
   display: grid;
   place-items: center;
-  flex: 1;
+  align-self: center;
+  height: 100%;
   min-height: 72px;
   max-height: 168px;
 }
@@ -395,6 +386,16 @@
 }
 .stats-donut-ring .track {
   stroke: var(--ds-tile);
+}
+/* Hovering a slice or legend row fades the other slices back. */
+.stats-donut-ring circle[data-slice] {
+  transition: opacity var(--motion-duration-fast) var(--motion-ease-out);
+}
+.stats-donut-ring svg:has([data-active]) circle[data-slice]:not([data-active]) {
+  opacity: 0.4;
+}
+.stats-donut-legend li[data-active] {
+  color: var(--ds-text-primary);
 }
 .stats-donut-ring > span {
   position: absolute;
@@ -545,10 +546,21 @@
 
 /* Narrow panes: stack, the page may scroll as a last resort. */
 @container (max-width: 760px) {
-  .statistics-page {
-    grid-template-columns: minmax(0, 1fr);
-    grid-template-rows: auto auto 200px auto auto;
-    grid-template-areas: "header" "summary" "daily" "models" "side";
+  .statistics-overview .content-page-shell {
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-rows:
+      max-content max-content 200px max-content
+      minmax(min-content, 1fr);
+    grid-template-areas:
+      "header header"
+      "summary summary"
+      "daily daily"
+      "models models"
+      "side side";
+  }
+  .stats-tools {
+    flex: none;
+    max-height: none;
   }
   .stats-summary {
     grid-template-columns: repeat(3, minmax(0, 1fr));
