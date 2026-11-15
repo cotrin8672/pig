@@ -1,5 +1,4 @@
 import {
-  ChevronDown,
   GripVertical,
   ListEnd,
   LoaderCircle,
@@ -22,15 +21,30 @@ type QueueItem = {
 };
 type Action = (id: string) => unknown;
 
-/** Waiting input stays beside the editor, not in the agent's conversation. */
+const preview = (content: DraftContent) =>
+  unfoldPastes(content.text, content.pastes);
+const attachmentCount = (content: DraftContent) =>
+  content.images.length +
+  (content.files?.length ?? 0) +
+  (content.annotations?.length ?? 0);
+
+/**
+ * Everything still waiting to reach the agent, in one compact tray on the
+ * composer: steering (read at the next step boundary) first, then follow-ups
+ * (sent after the response). Same one-line row for both; the leading icon tells
+ * the timing. Waiting input stays beside the editor, not in the conversation.
+ */
 export function MessageQueue({
   items,
+  steering = [],
   onEdit,
   onDelete,
   onMove,
   onSteer,
 }: {
   items: QueueItem[];
+  /** Accepted steering not yet read by the agent; the SDK cannot withdraw it. */
+  steering?: { id: string; content: DraftContent }[];
   onEdit: Action;
   onDelete: Action;
   /** Receives the full new order of the queue. */
@@ -38,18 +52,18 @@ export function MessageQueue({
   onSteer?: Action;
 }) {
   const t = useT();
-  const summary = useRef<HTMLElement>(null);
+  const root = useRef<HTMLElement>(null);
   const list = useRef<HTMLOListElement>(null);
   const [busy, setBusy] = useState<string>();
   const [drag, setDrag] = useState<{ id: string; over?: number }>();
-  if (!items.length) return null;
+  if (!items.length && !steering.length) return null;
   // A started head cannot be passed; everything after it can move.
   const first = items.findIndex((item) => !item.locked);
   async function act(id: string, action: Action, refocus = false) {
     setBusy(id);
     try {
       await action(id);
-      if (refocus) summary.current?.focus();
+      if (refocus) root.current?.focus();
     } catch (error) {
       showError(error);
     } finally {
@@ -80,28 +94,56 @@ export function MessageQueue({
         [to - first]?.focus(),
     );
   }
+  const attachments = (content: DraftContent) => {
+    const count = attachmentCount(content);
+    return (
+      count > 0 && (
+        <span
+          className="message-queue-attachments"
+          role="img"
+          aria-label={`${t.Attachments}: ${count}`}
+        >
+          <Paperclip size={12} aria-hidden="true" />
+        </span>
+      )
+    );
+  };
   return (
-    <details className="message-queue" data-ui-surface="card" open>
-      <summary ref={summary} aria-label={t["Send after response"]}>
-        <ListEnd size={14} aria-hidden="true" />
-        <ChevronDown
-          className="message-queue-chevron"
-          size={14}
-          aria-hidden="true"
-        />
-      </summary>
+    <section
+      ref={root}
+      className="message-queue"
+      data-ui-surface="card"
+      aria-label={t["Waiting messages"]}
+      tabIndex={-1}
+    >
       <ol ref={list}>
+        {steering.map(({ id, content }) => {
+          const text = preview(content);
+          return (
+            <li key={id} className="message-queue-steer">
+              <span className="message-queue-handle">
+                <SendHorizontal
+                  size={13}
+                  className="message-queue-mode"
+                  role="img"
+                  aria-label={t["Steering pending"]}
+                />
+              </span>
+              <p aria-description={text}>{text || t.Message}</p>
+              {attachments(content)}
+            </li>
+          );
+        })}
         {items.map(({ id, content, locked }, index) => {
-          const text = unfoldPastes(content.text, content.pastes);
-          const attachments =
-            content.images.length +
-            (content.files?.length ?? 0) +
-            (content.annotations?.length ?? 0);
+          const text = preview(content);
           const movable = !!onMove && !locked && items.length - first > 1;
           return (
             <li
               key={id}
               aria-busy={busy === id || undefined}
+              data-group-start={
+                (index === 0 && steering.length > 0) || undefined
+              }
               data-dragging={drag?.id === id || undefined}
               data-drop={
                 drag && drag.id !== id && drag.over === index
@@ -129,39 +171,45 @@ export function MessageQueue({
               }}
               onDragEnd={() => setDrag(undefined)}
             >
-              {onMove && (
-                <span className="message-queue-handle">
-                  {locked && (
-                    <LoaderCircle
-                      size={14}
-                      className="spinner message-queue-started"
-                      role="img"
-                      aria-label={t["Already sending"]}
+              <span className="message-queue-handle">
+                {locked ? (
+                  <LoaderCircle
+                    size={14}
+                    className="spinner message-queue-started"
+                    role="img"
+                    aria-label={t["Already sending"]}
+                  />
+                ) : movable ? (
+                  // The timing icon turns into the grip on hover/focus, in place.
+                  <button
+                    type="button"
+                    className="message-queue-grip"
+                    aria-label={`${index + 1}. ${t["Reorder queued message"]}`}
+                    disabled={!!busy}
+                    onKeyDown={(event) => keyMove(event, index, id)}
+                  >
+                    <ListEnd
+                      size={13}
+                      className="message-queue-grip-idle"
+                      aria-hidden="true"
                     />
-                  )}
-                  {movable && (
-                    <button
-                      type="button"
-                      className="message-queue-grip"
-                      aria-label={`${index + 1}. ${t["Reorder queued message"]}`}
-                      disabled={!!busy}
-                      onKeyDown={(event) => keyMove(event, index, id)}
-                    >
-                      <GripVertical size={14} aria-hidden="true" />
-                    </button>
-                  )}
-                </span>
-              )}
+                    <GripVertical
+                      size={14}
+                      className="message-queue-grip-active"
+                      aria-hidden="true"
+                    />
+                  </button>
+                ) : (
+                  <ListEnd
+                    size={13}
+                    className="message-queue-mode"
+                    role="img"
+                    aria-label={t["Send after response"]}
+                  />
+                )}
+              </span>
               <p aria-description={text}>{text || t.Message}</p>
-              {attachments > 0 && (
-                <span
-                  className="message-queue-attachments"
-                  role="img"
-                  aria-label={`${t.Attachments}: ${attachments}`}
-                >
-                  <Paperclip size={12} aria-hidden="true" />
-                </span>
-              )}
+              {attachments(content)}
               <div className="message-queue-actions">
                 {onSteer && (
                   <button
@@ -197,6 +245,6 @@ export function MessageQueue({
           );
         })}
       </ol>
-    </details>
+    </section>
   );
 }

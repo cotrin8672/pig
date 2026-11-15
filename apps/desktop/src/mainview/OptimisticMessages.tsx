@@ -4,6 +4,7 @@ import { RESUME_REQUEST_PREFIX } from "../shared/runtime-contract";
 import { expandedDraft } from "./draft-store";
 import { UserMessage } from "./MessageContent";
 import { sends } from "./rpc";
+import { isPendingSteer } from "./send-controller";
 import { transcriptRequestIds } from "./transcript-requests";
 
 /** Reconcile by request identity, never by matching text or timestamps. */
@@ -30,6 +31,8 @@ export function OptimisticMessages({
     .filter(
       (send) =>
         !send.key.requestId.startsWith(RESUME_REQUEST_PREFIX) &&
+        // Unread steering waits in the composer's queue tray instead.
+        !isPendingSteer(send, snapshot.transcript.running) &&
         !transcriptRequestIds(snapshot.transcript.records).has(
           send.key.requestId,
         ),
@@ -41,13 +44,6 @@ export function OptimisticMessages({
             <UserMessage
               sessionId={snapshot.info.id}
               disabled
-              steer={
-                // Queued by the SDK until the next step boundary.
-                send.delivery === "steer" &&
-                (send.disposition === "queued" ||
-                  (send.disposition === undefined &&
-                    snapshot.transcript.running))
-              }
               message={{
                 role: "user",
                 timestamp: send.timestamp ?? 0,

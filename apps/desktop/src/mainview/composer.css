@@ -190,48 +190,50 @@
   white-space: nowrap;
 }
 
+/* A tray tucked under the composer's top edge: steering, then follow-ups,
+   one low row each. The composer paints over the tray's bottom 9px. */
 .message-queue {
-  margin: 0 2px 8px;
+  width: calc(min(100%, var(--chat-width, 768px)) - 36px);
+  margin: 0 18px -9px;
+  padding-bottom: 9px;
   border: 1px solid var(--ds-border);
-  border-radius: var(--radius-md);
+  border-bottom: 0;
+  border-radius: var(--radius-md) var(--radius-md) 0 0;
   background: var(--ds-tile);
   color: var(--ds-text-secondary);
   font-size: 12px;
 }
-.message-queue summary {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  min-height: 28px;
-  padding: 0 10px;
-  cursor: pointer;
-  list-style: none;
-}
-.message-queue summary::-webkit-details-marker {
-  display: none;
-}
-.message-queue-chevron {
-  margin-left: auto;
-  transition: transform 120ms;
-}
-.message-queue:not([open]) .message-queue-chevron {
-  transform: rotate(-90deg);
+.message-queue:focus {
+  outline: none;
 }
 .message-queue ol {
   --scrollbar-inset: var(--radius-md);
-  max-height: 180px;
+  max-height: 100px;
   overflow-y: auto;
   margin: 0;
-  padding: 0 6px 2px;
+  padding: 2px 6px 0;
   list-style: none;
 }
 .message-queue li {
   display: flex;
   align-items: center;
   gap: 8px;
-  min-height: 36px;
-  padding: 4px;
+  min-height: 30px;
+  padding: 0 2px 0 4px;
   border-top: 1px solid var(--ds-border);
+}
+.message-queue li:first-child {
+  border-top: 0;
+}
+/* Steering ends and follow-ups begin. */
+.message-queue li[data-group-start] {
+  border-top: 1px dashed var(--ds-border-strong);
+}
+.message-queue-mode {
+  color: var(--ds-text-muted);
+}
+.message-queue-steer .message-queue-mode {
+  color: var(--ds-accent);
 }
 /* Same column whether or not the row can move, so locking never shifts it. */
 .message-queue-handle {
@@ -245,11 +247,23 @@
   display: grid;
   place-items: center;
   width: 20px;
-  height: 28px;
+  height: 26px;
   padding: 0;
   border-radius: var(--radius-xs);
-  color: var(--ds-text-faint);
+  color: var(--ds-text-muted);
   cursor: grab;
+}
+/* Both icons share one cell, so swapping them never moves the row. */
+.message-queue-grip > svg {
+  grid-area: 1 / 1;
+}
+.message-queue
+  li:not(:hover)
+  .message-queue-grip:not(:focus-visible)
+  .message-queue-grip-active,
+.message-queue li:hover .message-queue-grip-idle,
+.message-queue .message-queue-grip:focus-visible .message-queue-grip-idle {
+  visibility: hidden;
 }
 .message-queue-started {
   color: var(--ds-accent);
@@ -279,7 +293,7 @@
   color: var(--ds-text-primary);
   overflow: hidden;
   display: -webkit-box;
-  -webkit-line-clamp: 2;
+  -webkit-line-clamp: 1;
   -webkit-box-orient: vertical;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
@@ -293,8 +307,8 @@
 .message-queue-action {
   display: grid;
   place-items: center;
-  width: 30px;
-  height: 30px;
+  width: 26px;
+  height: 26px;
   padding: 0;
   border-radius: var(--radius-sm);
   color: var(--ds-text-secondary);
@@ -307,10 +321,5 @@
   .message-queue-action {
     width: 44px;
     height: 44px;
-  }
-}
-@media (prefers-reduced-motion: reduce) {
-  .message-queue-chevron {
-    transition: none;
   }
 }

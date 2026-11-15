@@ -355,6 +355,33 @@ test("steering a queued message moves it from the queue into the conversation", 
   expect(r.texts()).toEqual(["later"]);
 });
 
+test("unread steering leads the same tray as read-only rows", () => {
+  const html = renderToStaticMarkup(
+    <MessageQueue
+      steering={[{ id: "s", content: message("steer now") }]}
+      items={[{ id: "one", content: message("later") }]}
+      onEdit={() => {}}
+      onDelete={() => {}}
+    />,
+  );
+  const [steer, queued] = html.split("</li>");
+  expect(steer).toContain('class="message-queue-steer"');
+  expect(steer).toContain('aria-label="Steering · waiting for the next step"');
+  expect(steer).toContain("steer now");
+  expect(steer).not.toContain("<button");
+  expect(queued).toContain("data-group-start");
+  expect(
+    renderToStaticMarkup(
+      <MessageQueue
+        steering={[{ id: "s", content: message("only steering") }]}
+        items={[]}
+        onEdit={() => {}}
+        onDelete={() => {}}
+      />,
+    ),
+  ).toContain("only steering");
+});
+
 test("queue rows offer reorder and steer only when wired, and a started row cannot move or steer", () => {
   const html = renderToStaticMarkup(
     <MessageQueue

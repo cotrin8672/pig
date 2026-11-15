@@ -2726,51 +2726,6 @@ input:where(:not([type="range"], [type="checkbox"], [type="radio"])) {
 .user-turn .user-bubble {
   max-width: 100%;
 }
-/* Steering not yet read: one right-aligned line, translucent like a tool row,
-   quieter by color (not opacity). Once read it renders as a normal bubble. */
-.user-steer {
-  display: flex;
-  justify-content: flex-end;
-  align-items: center;
-  gap: 6px;
-  max-width: 100%;
-  min-width: 0;
-}
-.user-steer-state {
-  display: grid;
-  flex: none;
-  place-items: center;
-  color: var(--ds-text-faint);
-}
-.user-steer .user-bubble {
-  display: block;
-  min-width: 0;
-  max-width: 100%;
-  padding: 4px 14px 4px 16px;
-  border-radius: var(--radius-lg);
-  background: var(--ds-tool-row-bg);
-  color: var(--ds-text-muted);
-  font: inherit;
-  font-size: var(--text-sm);
-  text-align: left;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  cursor: pointer;
-}
-.user-steer-text {
-  display: block;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.user-steer .user-bubble[aria-expanded="true"] .user-steer-text {
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-}
-.user-steer .user-bubble:hover {
-  background: var(--ds-tile-hover);
-}
 .user-turn .sent-attachments {
   justify-content: flex-end;
 }

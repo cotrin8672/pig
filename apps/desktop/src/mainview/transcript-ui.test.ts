@@ -1243,7 +1243,8 @@ test.skipIf(!existsSync(edge) && !process.env.PIG_REQUIRE_UI_TESTS)(
       await click(document.querySelector('.message-queue button[aria-label="Edit queued message in composer"]'));
       await click(document.querySelector('.message-queue button[aria-label="Delete queued message"]'));
       check(JSON.stringify(queueActions)==='["edit:one","delete:one"]',"queue edit/delete controls must target the correct message");
-      await click(document.querySelector(".message-queue summary"));check(!document.querySelector(".message-queue").open,"queue must collapse to its compact summary");
+      await render(<div style={{width:340}}><MessageQueue steering={[{id:"s",content:{...queueContent,text:"Steer now"}}]} items={[{id:"one",content:queueContent}]} onEdit={()=>{}} onDelete={()=>{}}/></div>);
+      {const rows=document.querySelectorAll(".message-queue li");check(rows.length===2&&rows[0].classList.contains("message-queue-steer")&&!rows[0].querySelector("button")&&rows[1].hasAttribute("data-group-start")&&rows[0].getBoundingClientRect().height===rows[1].getBoundingClientRect().height,"steering must lead the same tray as read-only rows of the queue's height");}
       metrics.composerKeys=true;await render(<div/>);
       metrics.stage="model-picker-height";
       const originalBootstrap=useStore.getState().bootstrap;
@@ -1569,7 +1570,7 @@ test.skipIf(!existsSync(edge) && !process.env.PIG_REQUIRE_UI_TESTS)(
         ["provider-filters",'<fieldset class="provider-filters audit-scroller" data-axis="x"></fieldset>'],
         ["settings-nav",'<nav class="settings-nav audit-scroller" data-axis="x"></nav>'],
         ["slash-options",'<div class="slash-options audit-scroller"></div>'],
-        ["queue",'<details class="message-queue" open><ol class="audit-scroller"></ol></details>'],
+        ["queue",'<div class="message-queue"><ol class="audit-scroller"></ol></div>'],
         ["models",'<div class="picker-panel model-panel" style="position:static;width:100%"><div class="model-results audit-scroller"></div></div>'],
         ["fonts",'<div class="font-picker-panel" style="padding:6px"><div class="font-picker-list audit-scroller"></div></div>'],
         ["notification-history",'<div class="notification-panel" style="position:static;width:100%"><div class="notification-history audit-scroller"></div></div>'],

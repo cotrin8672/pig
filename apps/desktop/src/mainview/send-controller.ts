@@ -32,6 +32,14 @@ export type SendState = {
   delivery?: PromptDelivery;
   stage?: Extract<PromptReceipt, { state: "pending" }>["stage"];
 };
+/** Steering the SDK holds until the next step boundary: shown in the queue tray. */
+export function isPendingSteer(state: SendState, running: boolean) {
+  return (
+    state.delivery === "steer" &&
+    (state.disposition === "queued" ||
+      (state.disposition === undefined && running))
+  );
+}
 export function isSendUnconfirmed(state: SendState | undefined) {
   return !!state && ["sending", "checking", "unknown"].includes(state.state);
 }

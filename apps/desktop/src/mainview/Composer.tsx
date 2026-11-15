@@ -30,7 +30,10 @@ import {
   unfoldPastes,
 } from "../shared/paste";
 import type { SlashCommand, Snapshot } from "../shared/rpc-schema";
-import type { PromptDelivery } from "../shared/runtime-contract";
+import {
+  type PromptDelivery,
+  RESUME_REQUEST_PREFIX,
+} from "../shared/runtime-contract";
 import { AnnotationDrafts } from "./AnnotationCards";
 import { AnnotationPopover } from "./AnnotationPopover";
 import { rememberAnnotationRange } from "./annotation-highlights";
@@ -54,6 +57,7 @@ import { createModelPickerSelector } from "./model-picker-view";
 import { rpc, sends } from "./rpc";
 import { subscribeOwnership } from "./runtime-events";
 import { SessionIndicators } from "./SessionIndicators";
+import { isPendingSteer } from "./send-controller";
 import { interruptedSession } from "./session-status";
 import {
   applySlashCompletion,
@@ -387,6 +391,15 @@ export function Composer({
         />
       )}
       <MessageQueue
+        steering={sends.optimistic(address).flatMap((send) =>
+          send.content &&
+          isPendingSteer(send, transcript.running) &&
+          !send.key.requestId.startsWith(RESUME_REQUEST_PREFIX) &&
+          // Scanned only for pending steering, never on an idle render.
+          !transcriptRequestIds(transcript.records).has(send.key.requestId)
+            ? [{ id: send.key.requestId, content: send.content }]
+            : [],
+        )}
         items={sends.queued(address).flatMap((item) =>
           item.content
             ? [
