@@ -986,7 +986,17 @@ export class SessionHost {
         });
       },
       onError: (error) => {
-        if (m.runtime?.session === session) this.failure(m, error.error);
+        // Keep the SDK's attribution: without the extension and event, the error is not actionable.
+        if (m.runtime?.session === session)
+          this.failure(
+            m,
+            [
+              `Extension ${error.extensionPath} failed in ${error.event}: ${error.error}`,
+              error.stack,
+            ]
+              .filter(Boolean)
+              .join("\n"),
+          );
       },
       commandContextActions: {
         waitForIdle: () => session.waitForIdle(),
