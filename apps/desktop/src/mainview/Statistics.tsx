@@ -85,7 +85,7 @@ export function Statistics() {
           t.failed
         ) : (
           <span
-            title={t.coverage(
+            aria-description={t.coverage(
               data.coverage.unknownUsage,
               data.coverage.dropped,
             )}
@@ -96,9 +96,9 @@ export function Statistics() {
                 ? t.loading
                 : data.coverage.unknownUsage || data.coverage.dropped
                   ? t.partial
-                  : data.collectingSince
-                    ? t.since(data.collectingSince)
-                    : t.noRecords}
+                  : !data.collectingSince
+                    ? t.noRecords
+                    : null}
           </span>
         )
       }

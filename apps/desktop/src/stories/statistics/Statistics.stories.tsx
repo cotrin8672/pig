@@ -1,6 +1,5 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
-import { ChartColumn } from "lucide-react";
-import { lazy, useState } from "react";
+import { lazy, useEffect } from "react";
 import { useStore } from "../../mainview/store";
 import {
   installPreview,
@@ -20,7 +19,7 @@ const Chat = lazy(() =>
   import("../../mainview/App").then((module) => ({ default: module.Chat })),
 );
 
-/** Proposal only: the production App has no statistics page or RPC yet. */
+/** Production page and navigation with fixture data and no statistics requests. */
 function StatisticsScreen({
   data,
   open: initial,
@@ -28,22 +27,13 @@ function StatisticsScreen({
   data: StatisticsFixture;
   open: boolean;
 }) {
-  const [open, setOpen] = useState(initial);
+  const open = useStore((state) => state.page === "statistics");
   const snapshot = useStore((state) => state.snapshots[state.active ?? ""]);
+  useEffect(() => {
+    useStore.setState({ page: initial ? "statistics" : "chat" });
+  }, [initial]);
   return (
     <SidebarPreview
-      extraIcon={
-        <button
-          type="button"
-          className={`sidebar-icon ${open ? "active" : ""}`}
-          aria-label="統計"
-          title="統計"
-          aria-pressed={open}
-          onClick={() => setOpen((value) => !value)}
-        >
-          <ChartColumn size={16} aria-hidden="true" />
-        </button>
-      }
       main={
         open ? <StatisticsPage data={data} /> : <Chat snapshot={snapshot} />
       }
@@ -58,7 +48,7 @@ const meta = {
     docs: {
       description: {
         component:
-          "本番のStatisticsViewをサンプルデータで表示。日別モデルグラフ・モデル内訳とtoken/s・ツール使用率と成功率・平均の種類内訳・初期コンテキストを一画面に並べる。Storybookの期間切替は表示のみ。本番画面ではローカルSQLiteの集計RPCへ接続する。",
+          "設定・Provider画面と共通のContentPageを使う本番のStatisticsViewをサンプルデータで表示。本文は利用可能な幅・高さに追従し、期間タブは見出しと同じ行、円グラフは同じ直径・位置に揃える。Storybookの期間切替は表示のみ。",
       },
     },
   },

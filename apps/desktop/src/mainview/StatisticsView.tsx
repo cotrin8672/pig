@@ -1,19 +1,13 @@
 import { RefreshCw } from "lucide-react";
-import {
-  type ReactNode,
-  useCallback,
-  useEffect,
-  useId,
-  useLayoutEffect,
-  useRef,
-  useState,
-} from "react";
+import { type PointerEvent, type ReactNode, useRef } from "react";
 import {
   type StatisticsPeriod as Period,
   type StatisticsData,
   type TokenSplit,
   tokenKinds,
 } from "../shared/statistics";
+import { ContentPage } from "./ContentPage";
+import { type TipPlacement, useFollowTip } from "./follow-tip";
 import { useT } from "./i18n";
 import "./statistics.css";
 
@@ -59,7 +53,7 @@ function Summary({ data }: { data: StatisticsData }) {
         </div>
       ))}
       <div>
-        <dt title={t.cacheRateHint}>{t.cacheRate}</dt>
+        <dt aria-description={t.cacheRateHint}>{t.cacheRate}</dt>
         <dd>{pct(all.cacheRead, inputSide)}</dd>
       </div>
     </dl>
@@ -69,48 +63,13 @@ function Summary({ data }: { data: StatisticsData }) {
 /** Daily total tokens stacked by model; the model table is the legend. */
 function DailyChart({ data }: { data: StatisticsData }) {
   const t = useT().statisticsText;
-  const tooltipId = useId();
-  const popup = useRef<HTMLDivElement>(null);
-  const anchor = useRef<HTMLButtonElement | null>(null);
-  const timer = useRef<ReturnType<typeof setTimeout>>(undefined);
-  const [active, setActive] = useState<number | null>(null);
-  const close = useCallback(() => {
-    clearTimeout(timer.current);
-    setActive(null);
-  }, []);
-  const leave = () => {
-    clearTimeout(timer.current);
-    timer.current = setTimeout(close, 150);
-  };
-  const open = (index: number, button: HTMLButtonElement) => {
-    clearTimeout(timer.current);
-    anchor.current = button;
-    setActive(index);
-  };
-  useEffect(() => {
-    const dismiss = (e: KeyboardEvent) => {
-      if (e.key === "Escape") close();
-    };
-    window.addEventListener("resize", close);
-    document.addEventListener("scroll", close, true);
-    document.addEventListener("keydown", dismiss);
-    return () => {
-      clearTimeout(timer.current);
-      window.removeEventListener("resize", close);
-      document.removeEventListener("scroll", close, true);
-      document.removeEventListener("keydown", dismiss);
-    };
-  }, [close]);
-  useLayoutEffect(() => {
-    const panel = popup.current;
-    const button = anchor.current;
-    if (active === null || !panel || !button) return;
-    panel.showPopover();
-    const box = button.getBoundingClientRect();
-    const bounds = panel.getBoundingClientRect();
-    panel.style.left = `${Math.max(8, Math.min(box.left + box.width / 2 - bounds.width / 2, innerWidth - bounds.width - 8))}px`;
-    panel.style.top = `${Math.max(8, Math.min(box.top + 8, innerHeight - bounds.height - 8))}px`;
-  }, [active]);
+  // Centred on the column, just inside its top.
+  const tip = useFollowTip<number>((box, size) => ({
+    left: box.left + box.width / 2 - size.width / 2,
+    top: box.top + 8,
+    side: "bottom",
+  }));
+  const { active, open, leave } = tip;
   const step = Math.max(1, Math.ceil(data.days.length / 14));
   const columns = data.days
     .filter((_, d) => d % step === 0)
@@ -153,12 +112,16 @@ function DailyChart({ data }: { data: StatisticsData }) {
                   type="button"
                   className="stats-bar-area"
                   aria-label={`${c.range}: ${tokens(c.total)}`}
-                  aria-describedby={active === index ? tooltipId : undefined}
-                  onPointerEnter={(e) => open(index, e.currentTarget)}
+                  aria-describedby={tip.describedBy(index)}
+                  onPointerEnter={(e) => {
+                    const el = e.currentTarget;
+                    open(index, () => el.getBoundingClientRect());
+                  }}
                   onPointerLeave={leave}
                   onFocus={(e) => {
-                    if (e.currentTarget.matches(":focus-visible"))
-                      open(index, e.currentTarget);
+                    const el = e.currentTarget;
+                    if (el.matches(":focus-visible"))
+                      open(index, () => el.getBoundingClientRect());
                   }}
                   onBlur={leave}
                 >
@@ -185,25 +148,22 @@ function DailyChart({ data }: { data: StatisticsData }) {
       )}
       {active !== null && columns[active] && (
         <div
-          ref={popup}
-          id={tooltipId}
-          popover="manual"
-          className="stats-tip"
-          role="tooltip"
-          onPointerEnter={() => clearTimeout(timer.current)}
-          onPointerLeave={leave}
+          {...tip.panelProps}
+          className="stats-tip ui-tooltip ui-tooltip-follow"
         >
-          <strong>{columns[active].range}</strong>
-          {columns[active].parts.map((p) => (
-            <span key={p.model.id} data-model={p.color}>
-              {p.model.name}
-              <b>{tokens(p.value)}</b>
+          <div key={active} className="ui-tooltip-swap">
+            <strong>{columns[active].range}</strong>
+            {columns[active].parts.map((p) => (
+              <span key={p.model.id} data-model={p.color}>
+                {p.model.name}
+                <b>{tokens(p.value)}</b>
+              </span>
+            ))}
+            <span className="stats-tip-total">
+              {t.totalLabel}
+              <b>{tokens(columns[active].total)}</b>
             </span>
-          ))}
-          <span className="stats-tip-total">
-            {t.totalLabel}
-            <b>{tokens(columns[active].total)}</b>
-          </span>
+          </div>
         </div>
       )}
     </section>
@@ -231,7 +191,7 @@ function ModelTable({ data }: { data: StatisticsData }) {
                 ))}
                 <th scope="col">{t.totalColumn}</th>
                 <th scope="col">{t.modelShare}</th>
-                <th scope="col" title={t.speedHint}>
+                <th scope="col" aria-description={t.speedHint}>
                   token/s
                 </th>
               </tr>
@@ -239,7 +199,7 @@ function ModelTable({ data }: { data: StatisticsData }) {
             <tbody>
               {data.models.map((m, i) => (
                 <tr key={m.id}>
-                  <th scope="row" title={m.id}>
+                  <th scope="row" aria-description={m.id}>
                     <span className="stats-swatch" data-model={i % 6} />
                     {m.name}
                   </th>
@@ -248,7 +208,12 @@ function ModelTable({ data }: { data: StatisticsData }) {
                   ))}
                   <td className="strong">{tokens(sum(m.tokens))}</td>
                   <td>{pct(sum(m.tokens), total)}</td>
-                  <td title={t.speedSamples(m.measuredRequests, m.requests)}>
+                  <td
+                    aria-description={t.speedSamples(
+                      m.measuredRequests,
+                      m.requests,
+                    )}
+                  >
                     {m.tokensPerSecond === null
                       ? "—"
                       : Math.round(m.tokensPerSecond)}
@@ -283,7 +248,7 @@ function ToolTable({ data }: { data: StatisticsData }) {
                 <th scope="col">{t.share}</th>
                 <th scope="col">{t.failures}</th>
                 <th scope="col">{t.success}</th>
-                <th scope="col" title={t.definitionHint}>
+                <th scope="col" aria-description={t.definitionHint}>
                   {t.definition}
                 </th>
               </tr>
@@ -298,7 +263,7 @@ function ToolTable({ data }: { data: StatisticsData }) {
                       <th scope="row">
                         <code>{t.tool}</code>
                       </th>
-                      <td title={`${t.calls.toLocaleString()}`}>
+                      <td aria-description={`${t.calls.toLocaleString()}`}>
                         <span className="stats-share">
                           <span className="stats-share-bar">
                             <span
@@ -334,7 +299,27 @@ function ToolTable({ data }: { data: StatisticsData }) {
 
 type Slice = { id: string; label: string; value: number; color: string };
 
-/** Donut with its legend and values next to it: no hover needed to read it. */
+const RING_R = 15.9155; // viewBox 42, circumference 100
+const RING_WIDTH = 3.2;
+// Above the hovered point (a slice's midpoint), like the shared Tooltip.
+const above = (box: DOMRect, size: DOMRect): TipPlacement =>
+  box.top - size.height - 8 < 8
+    ? {
+        left: box.left - size.width / 2,
+        top: box.bottom + 8,
+        side: "bottom",
+      }
+    : {
+        left: box.left - size.width / 2,
+        top: box.top - size.height - 8,
+        side: "top",
+      };
+
+/**
+ * Donut with its legend and values next to it: no hover needed to read it.
+ * Hovering a slice or its legend row highlights both and opens the shared
+ * follow tooltip at the slice; moving on glides it to the next slice.
+ */
 function Donut({
   title,
   note,
@@ -349,10 +334,57 @@ function Donut({
   centerLabel: string;
 }) {
   const total = slices.reduce((n, s) => n + s.value, 0);
-  const r = 15.9155; // circumference 100
+  const r = RING_R;
   let offset = 25;
   // A small gap separates slices like the 1px seams elsewhere in the UI.
   const gap = slices.filter((s) => s.value > 0).length > 1 ? 1 : 0;
+  const ring = useRef<SVGSVGElement>(null);
+  const tip = useFollowTip<string>(above);
+  // Clockwise from 12 o'clock, in percent of the circumference.
+  let start = 0;
+  const arcs = slices.map((s) => {
+    const length = total ? (s.value / total) * 100 : 0;
+    const arc = { slice: s, start, length };
+    start += length;
+    return arc;
+  });
+  /** The ring's drawn centre and scale (the SVG keeps its square aspect). */
+  const frame = () => {
+    const box = ring.current?.getBoundingClientRect();
+    if (!box) return;
+    const scale = Math.min(box.width, box.height) / 42;
+    return {
+      x: box.left + box.width / 2,
+      y: box.top + box.height / 2,
+      scale,
+    };
+  };
+  const midpoint = (arc: (typeof arcs)[number]) => () => {
+    const f = frame();
+    if (!f) return new DOMRect();
+    const angle = ((arc.start + arc.length / 2) / 100) * 2 * Math.PI;
+    return new DOMRect(
+      f.x + Math.sin(angle) * r * f.scale,
+      f.y - Math.cos(angle) * r * f.scale,
+    );
+  };
+  const hit = (event: PointerEvent) => {
+    const f = frame();
+    if (!f) return;
+    const dx = event.clientX - f.x;
+    const dy = event.clientY - f.y;
+    // Slightly wider than the stroke so thin slices remain hoverable.
+    if (Math.abs(Math.hypot(dx, dy) / f.scale - r) > RING_WIDTH / 2 + 1) {
+      if (tip.active !== null) tip.leave();
+      return;
+    }
+    const at = ((Math.atan2(dx, -dy) / (2 * Math.PI)) * 100 + 100) % 100;
+    const arc = arcs.find(
+      (a) => a.length > 0 && at >= a.start && at < a.start + a.length,
+    );
+    if (arc) tip.open(arc.slice.id, midpoint(arc));
+  };
+  const shown = arcs.find((a) => a.slice.id === tip.active);
   return (
     <figure className="stats-donut">
       <figcaption>
@@ -362,7 +394,13 @@ function Donut({
       {total ? (
         <div className="stats-donut-body">
           <div className="stats-donut-ring">
-            <svg viewBox="0 0 42 42" aria-hidden="true">
+            <svg
+              ref={ring}
+              viewBox="0 0 42 42"
+              aria-hidden="true"
+              onPointerMove={hit}
+              onPointerLeave={tip.leave}
+            >
               <circle cx="21" cy="21" r={r} className="track" />
               {slices.map((s) => {
                 const length = (s.value / total) * 100;
@@ -373,6 +411,7 @@ function Donut({
                     cy="21"
                     r={r}
                     data-slice={s.color}
+                    data-active={tip.active === s.id || undefined}
                     strokeDasharray={`${Math.max(length - gap, 0)} ${100 - Math.max(length - gap, 0)}`}
                     strokeDashoffset={offset}
                   />
@@ -387,8 +426,17 @@ function Donut({
             </span>
           </div>
           <ul className="stats-donut-legend">
-            {slices.map((s) => (
-              <li key={s.id} data-slice={s.color}>
+            {arcs.map(({ slice: s, ...arc }) => (
+              <li
+                key={s.id}
+                data-slice={s.color}
+                data-active={tip.active === s.id || undefined}
+                onPointerEnter={() => {
+                  if (arc.length > 0)
+                    tip.open(s.id, midpoint({ slice: s, ...arc }));
+                }}
+                onPointerLeave={tip.leave}
+              >
                 <span>{s.label}</span>
                 <b>{tokens(s.value)}</b>
                 <small>{pct(s.value, total)}</small>
@@ -398,6 +446,21 @@ function Donut({
         </div>
       ) : (
         <Empty />
+      )}
+      {shown && (
+        <div
+          {...tip.panelProps}
+          className="stats-tip ui-tooltip ui-tooltip-follow"
+        >
+          <div key={shown.slice.id} className="ui-tooltip-swap">
+            <span data-slice={shown.slice.color}>
+              {shown.slice.label}
+              <b>
+                {tokens(shown.slice.value)} · {pct(shown.slice.value, total)}
+              </b>
+            </span>
+          </div>
+        </div>
       )}
     </figure>
   );
@@ -485,16 +548,12 @@ export function StatisticsView({
   const text = t.statisticsText;
   const periods = ["today", "7d", "30d", "all"] as const;
   return (
-    <div className="stats-container">
-      <div className="statistics-page" aria-busy={busy}>
-        <header className="stats-header">
-          <h1>{t.Statistics}</h1>
-          <span className="muted">
-            {status ??
-              (data.collectingSince
-                ? text.since(data.collectingSince)
-                : text.noRecords)}
-          </span>
+    <ContentPage
+      title={t.Statistics}
+      className="statistics-overview"
+      actions={
+        <div className="stats-header">
+          {status && <span className="muted">{status}</span>}
           <fieldset className="stats-periods" aria-label={text.period}>
             {periods.map((p) => (
               <button
@@ -514,13 +573,15 @@ export function StatisticsView({
               className="stats-refresh sidebar-icon"
               onClick={onRefresh}
               disabled={busy}
-              title={text.refresh}
               aria-label={text.refresh}
             >
               <RefreshCw size={14} aria-hidden="true" />
             </button>
           )}
-        </header>
+        </div>
+      }
+    >
+      <div className="statistics-page" aria-busy={busy}>
         <Summary data={data} />
         <DailyChart data={data} />
         <div className="stats-side">
@@ -529,6 +590,6 @@ export function StatisticsView({
         </div>
         <ModelTable data={data} />
       </div>
-    </div>
+    </ContentPage>
   );
 }
