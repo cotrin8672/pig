@@ -43,11 +43,13 @@ import { GrepOutput } from "./GrepOutput";
 import {
   CodeText,
   HighlightedDiff as Diff,
+  SavedOutputContext,
   TerminalOutput,
 } from "./HighlightedCode";
 import { useT } from "./i18n";
 import { DisclosureContext, DisclosureScope } from "./LazyDetails";
 import { Markdown, MessageContent, ToolResultContent } from "./MessageContent";
+import { SyntaxRangesContext } from "./SyntaxText";
 import { languageFromPath, terminalText } from "./syntax-highlighting";
 
 type ToolState = Transcript["tools"][string] | undefined;
@@ -408,16 +410,23 @@ function CardBlock({ block }: { block: ToolCardBlock }) {
 const ICON = 14;
 
 export const ToolBlock = memo(function ToolBlock(data: ChatRenderData["tool"]) {
+  const saved = useContext(SavedOutputContext);
+  const ranges = useContext(SyntaxRangesContext);
+  const final = data.state?.status === "done" || data.state?.status === "error";
   return (
     <ToolCallContext.Provider value={data.call.id}>
-      <DisclosureScope id={`tool:${data.call.id}`}>
-        <ChatContent
-          kind="tool"
-          data={data}
-          contentKey={data.call.id}
-          builtin={BuiltinTool}
-        />
-      </DisclosureScope>
+      <SyntaxRangesContext.Provider value={ranges && !data.card}>
+        <SavedOutputContext.Provider value={saved && final && !data.card}>
+          <DisclosureScope id={`tool:${data.call.id}`}>
+            <ChatContent
+              kind="tool"
+              data={data}
+              contentKey={data.call.id}
+              builtin={BuiltinTool}
+            />
+          </DisclosureScope>
+        </SavedOutputContext.Provider>
+      </SyntaxRangesContext.Provider>
     </ToolCallContext.Provider>
   );
 });

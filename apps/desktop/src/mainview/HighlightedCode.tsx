@@ -1,7 +1,10 @@
 import {
+  createContext,
   Fragment,
   memo,
+  type ReactNode,
   startTransition,
+  useContext,
   useEffect,
   useMemo,
   useState,
@@ -12,13 +15,54 @@ import {
   retainedHighlight,
 } from "./retained-highlighting";
 import {
+  SyntaxRangesContext,
+  SyntaxText,
+  syntaxRangesAvailable,
+} from "./SyntaxText";
+import {
   cachedHighlight,
   canHighlight,
+  codeLanguage,
   highlightCode,
   languageFromPath,
   terminalText,
 } from "./syntax-highlighting";
-import { sameTokens, terminalRuns, tokenRuns } from "./token-runs";
+import { codeRuns, sameTokens, terminalRuns, tokenRuns } from "./token-runs";
+
+export const SavedOutputContext = createContext(false);
+
+function renderToken(
+  key: string | number,
+  token: Pick<ThemedToken, "color" | "bgColor" | "fontStyle">,
+  children: ReactNode,
+  plain = false,
+) {
+  if (plain) return <Fragment key={key}>{children}</Fragment>;
+  return (
+    <span
+      key={key}
+      className={[
+        "syntax-token",
+        token.fontStyle && token.fontStyle & 1 ? "syntax-italic" : "",
+        token.fontStyle && token.fontStyle & 2 ? "syntax-bold" : "",
+        token.fontStyle && token.fontStyle & 4 ? "syntax-underline" : "",
+        token.fontStyle && token.fontStyle & 8 ? "syntax-strike" : "",
+      ]
+        .filter(Boolean)
+        .join(" ")}
+      style={{ color: token.color, backgroundColor: token.bgColor }}
+    >
+      {children}
+    </span>
+  );
+}
+
+function plainToken(
+  token: Pick<ThemedToken, "color" | "bgColor" | "fontStyle">,
+  whitespace: boolean,
+) {
+  return !token.bgColor && !token.fontStyle && (!token.color || whitespace);
+}
 
 function useHighlightedLines(text: string, language?: string) {
   const [result, setResult] = useState<HighlightSnapshot | undefined>(() => {
@@ -46,32 +90,26 @@ const TokenLine = memo(
   function TokenLine({
     tokens,
     text,
+    compact = false,
   }: {
     tokens?: ThemedToken[];
     text: string;
+    compact?: boolean;
   }) {
     if (!tokens) return text;
-    return tokenRuns(tokens).map((token, index) => (
-      <span
-        // biome-ignore lint/suspicious/noArrayIndexKey: Tokens retain source order.
-        key={index}
-        className={[
-          "syntax-token",
-          token.fontStyle && token.fontStyle & 1 ? "syntax-italic" : "",
-          token.fontStyle && token.fontStyle & 2 ? "syntax-bold" : "",
-          token.fontStyle && token.fontStyle & 4 ? "syntax-underline" : "",
-          token.fontStyle && token.fontStyle & 8 ? "syntax-strike" : "",
-        ]
-          .filter(Boolean)
-          .join(" ")}
-        style={{ color: token.color, backgroundColor: token.bgColor }}
-      >
-        {token.content}
-      </span>
-    ));
+    return tokenRuns(tokens).map((token, index) =>
+      renderToken(
+        index,
+        token,
+        token.content,
+        compact && plainToken(token, !token.content.trim()),
+      ),
+    );
   },
   (previous, next) =>
-    previous.text === next.text && sameTokens(previous.tokens, next.tokens),
+    previous.text === next.text &&
+    previous.compact === next.compact &&
+    sameTokens(previous.tokens, next.tokens),
 );
 
 /** Inline contents only: callers keep their original pre/code and scrolling. */
@@ -82,8 +120,40 @@ export const CodeText = memo(function CodeText({
   text: string;
   language?: string;
 }) {
+  const saved = useContext(SavedOutputContext);
+  const enabled = useContext(SyntaxRangesContext);
+  const [ranges] = useState(
+    () =>
+      enabled &&
+      !!codeLanguage(language) &&
+      canHighlight(text) &&
+      syntaxRangesAvailable(),
+  );
+  // Never switch a mounted streaming output to a different DOM representation.
+  const [compact] = useState(saved);
   const tokens = useHighlightedLines(text, language);
+  if (ranges)
+    return (
+      <SyntaxText
+        text={codeLanguage(language) === "ansi" ? terminalText(text) : text}
+        tokens={tokens}
+      />
+    );
   if (!tokens) return text;
+  if (compact)
+    return codeRuns(text, tokens).map((run) =>
+      renderToken(
+        run.key,
+        run,
+        run.parts.map((part) => (
+          <Fragment key={part.key}>{part.text}</Fragment>
+        )),
+        plainToken(
+          run,
+          run.parts.every((part) => !part.text.trim()),
+        ),
+      ),
+    );
   return text.split("\n").map((line, index, lines) => (
     // biome-ignore lint/suspicious/noArrayIndexKey: Source lines are ordered.
     <Fragment key={index}>
@@ -167,16 +237,31 @@ const DiffRow = memo(
     line,
     tokens,
     newline,
+    compact,
+    highlighted,
   }: {
     line: DiffLine;
     tokens?: ThemedToken[];
     newline: boolean;
+    compact: boolean;
+    highlighted: boolean;
   }) {
+    const enabled = useContext(SyntaxRangesContext);
+    const [ranges] = useState(
+      () => enabled && highlighted && syntaxRangesAvailable(),
+    );
     return (
       <>
         <span className={line.tone ?? ""}>
           {line.prefix}
-          <TokenLine tokens={tokens} text={line.text} />
+          {ranges ? (
+            <SyntaxText
+              text={line.text}
+              tokens={tokens ? [tokens] : undefined}
+            />
+          ) : (
+            <TokenLine tokens={tokens} text={line.text} compact={compact} />
+          )}
         </span>
         {newline ? "\n" : ""}
       </>
@@ -187,6 +272,8 @@ const DiffRow = memo(
     a.line.text === b.line.text &&
     a.line.tone === b.line.tone &&
     a.newline === b.newline &&
+    a.compact === b.compact &&
+    a.highlighted === b.highlighted &&
     sameTokens(a.tokens, b.tokens),
 );
 
@@ -199,6 +286,8 @@ function DiffHunk({
   language?: string;
   last: boolean;
 }) {
+  const saved = useContext(SavedOutputContext);
+  const [compact] = useState(saved);
   const [beforeText, afterText] = useMemo(
     () => [
       lines
@@ -230,6 +319,8 @@ function DiffHunk({
         key={index}
         line={line}
         tokens={tokens}
+        compact={compact}
+        highlighted={!!language}
         newline={!last || index < lines.length - 1}
       />
     );

@@ -7,6 +7,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import tailwindcss from "@tailwindcss/vite";
 import { build as buildStyles } from "vite";
 import { renderWorkerFixturePlugin } from "../../scripts/render-worker-fixture";
+import { syntaxFixture } from "../../scripts/syntax-fixture";
 import { titlebarChatFixture } from "../../scripts/titlebar-chat-fixture";
 import {
   fixtureHelpers,
@@ -231,6 +232,7 @@ test.skipIf(!existsSync(edge) && !process.env.PIG_REQUIRE_UI_TESTS)(
       import {normalizeMath} from ${source("../shared/math.ts")};
       import {markdownUrl} from ${source("./markdown-url.ts")};
       import {CodeText,TerminalOutput} from ${source("./HighlightedCode.tsx")};
+      import {SyntaxRangesContext} from ${source("./SyntaxText.tsx")};
       import {sizeEditor} from ${source("./ComposerEditor.tsx")};
       import {highlightCode} from ${source("./syntax-highlighting.ts")};
       import {prepareMarkdown} from ${source("./markdown-processing.ts")};
@@ -239,6 +241,7 @@ test.skipIf(!existsSync(edge) && !process.env.PIG_REQUIRE_UI_TESTS)(
       import {installChatRenderers} from ${source("./chat-renderer-registry.ts")};
       import {useStore} from ${source("./store.ts")};
       const root=createRoot(document.getElementById("root"));
+      ${syntaxFixture}
       const wait=()=>new Promise(resolve=>{const timer=setTimeout(resolve,100);requestAnimationFrame(()=>requestAnimationFrame(()=>{clearTimeout(timer);resolve();}));});
       const pause=ms=>new Promise(resolve=>setTimeout(resolve,ms));
       const check=(value,message)=>{if(!value) throw new Error(message);};
@@ -773,11 +776,11 @@ test.skipIf(!existsSync(edge) && !process.env.PIG_REQUIRE_UI_TESTS)(
       await render(<ToolBlock call={{id:"syntax-write",name:"write",arguments:{path:"file.ts",content:syntaxCode}}} state={{status:"done"}} live={false}/>);
       check(document.querySelector("details").open && visible(document.querySelector(".tool-code")),"writes must start expanded");
       checkPreviewRows(document.querySelector(".tool-code"));
-      await until(()=>document.querySelector(".tool-code .syntax-token"),"file writes must eventually highlight");
+      await until(()=>document.querySelector(".tool-code .syntax-source")&&syntaxReady(),"file writes must eventually highlight");
       check(document.querySelector(".tool-code").textContent===syntaxCode && !document.querySelector(".tool-code script"),"syntax tokens must preserve literal copied code, never HTML");
       const syntaxDiff='-1 /*\\n-2 old comment\\n-3 */\\n+1 const count = 42;\\n 4 const same = true;';
       await render(<ToolBlock call={{id:"syntax-edit",name:"edit",arguments:{path:"file.ts"}}} state={{status:"done",result:{details:{diff:syntaxDiff}}}} live={false}/>);
-      await until(()=>document.querySelector(".tool-diff .add .syntax-token") && document.querySelector(".tool-diff .del .syntax-token"),"both sides of edits must highlight");
+      await until(()=>document.querySelector(".tool-diff .add .syntax-source") && document.querySelector(".tool-diff .del .syntax-source")&&syntaxReady(),"both sides of edits must highlight");
       const syntaxLines=[...document.querySelectorAll(".tool-diff > span")];
       check(document.querySelector(".tool-diff").textContent===syntaxDiff && syntaxLines.length===5,"diff prefixes, line breaks and code must remain copyable");
       check(Math.abs(syntaxLines[1].getBoundingClientRect().top-syntaxLines[0].getBoundingClientRect().top-parseFloat(getComputedStyle(syntaxLines[0]).lineHeight))<2,"diff token spans must not add blank display lines");
@@ -788,15 +791,15 @@ test.skipIf(!existsSync(edge) && !process.env.PIG_REQUIRE_UI_TESTS)(
       check(document.querySelector(".tool-term-output").textContent==='PASS\\ncontinued plain\\nlink' && document.querySelector(".tool-peek").textContent==='continued plain\\nlink' && !document.querySelector(".tool-term-output a"),"ANSI controls must not leak into shell text or create links");
       await render(<CodeText text="old source" language="python"/>);
       await render(<CodeText text="print(42)" language="python"/>);
-      await until(()=>document.querySelector(".syntax-token"),"a changed source must eventually highlight");
+      await until(()=>syntaxReady(),"a changed source must eventually highlight");
       check(document.getElementById("root").textContent==="print(42)","an older asynchronous highlight must not overwrite new source");
       await render(<CodeText text="plain replacement" language="unknown"/>);
-      check(document.getElementById("root").textContent==="plain replacement" && !document.querySelector(".syntax-token"),"changing to an unsupported language must immediately discard old tokens");
+      check(document.getElementById("root").textContent==="plain replacement" && syntaxPainted(document.getElementById("root"),0,17).every(value=>!value),"changing to an unsupported language must immediately discard old tokens");
       // Inspect the synchronous commit, before asynchronous tokenization can hide a flash.
       async function verifyRetainedHighlight(makeNode,selector,initial,plain=text=>text){
         await render(makeNode(initial));
-        await until(()=>document.querySelector(selector+" .syntax-token"),"streaming fixture must initially highlight");
-        const host=document.querySelector(selector),token=host.querySelector(".syntax-token"),color=getComputedStyle(token).color;
+        await until(()=>{const part=document.querySelector(selector+" .syntax-token,"+selector+" .syntax-text");return part&&syntaxPainted(part,0,1).every(Boolean)&&syntaxPainted(part,0,1).length;},"streaming fixture must initially highlight");
+        const host=document.querySelector(selector),token=host.querySelector(".syntax-token,.syntax-text"),color=syntaxStyle(token.firstChild,0).color;
         const range=document.createRange();range.selectNodeContents(token);
         const selection=window.getSelection();selection.removeAllRanges();selection.addRange(range);
         const selected=selection.toString();
@@ -804,13 +807,13 @@ test.skipIf(!existsSync(edge) && !process.env.PIG_REQUIRE_UI_TESTS)(
         for(const suffix of [" = 78431;"," = 78432;"," = 78433;"]){
           latest=initial+suffix;
           flushSync(()=>root.render(makeNode(latest)));
-          check(document.querySelector(selector)===host && host.querySelector(".syntax-token")===token && getComputedStyle(token).color===color,"pending highlighting must preserve unchanged colored DOM: "+selector);
+          check(document.querySelector(selector)===host && host.querySelector(".syntax-token,.syntax-text")===token && syntaxStyle(token.firstChild,0).color===color,"pending highlighting must preserve unchanged colored DOM: "+selector);
           check(host.textContent===plain(latest),"pending highlighting must show only the latest source: "+selector);
           check(selection.toString()===selected && token.isConnected,"streaming must retain selection in unchanged tokens: "+selector);
-          check(![...host.querySelectorAll(".syntax-token")].filter(span=>span.style.color).map(span=>span.textContent).join("").includes(suffix),"new text must remain plain until its matching tokens arrive: "+selector);
+          check(syntaxPainted(host,host.textContent.length-suffix.length,host.textContent.length).every(value=>!value),"new text must remain plain until its matching tokens arrive: "+selector);
         }
         selection.removeAllRanges();
-        await until(()=>[...host.querySelectorAll(".syntax-token")].filter(span=>span.style.color).map(span=>span.textContent).join("").includes(" = 78433;"),"latest streaming source must eventually highlight: "+selector);
+        await until(()=>{const painted=syntaxPainted(host,host.textContent.lastIndexOf(" = 78433;"),host.textContent.length);return painted.length&&painted.every(Boolean);},"latest streaming source must eventually highlight: "+selector);
         check(host.textContent===plain(latest),"stale async results must never restore old source: "+selector);
       }
       await verifyRetainedHighlight(text=><pre><CodeText text={text} language="ts"/></pre>,"pre","const stableDirect = 1;\\nconst growingDirect");
@@ -860,13 +863,13 @@ test.skipIf(!existsSync(edge) && !process.env.PIG_REQUIRE_UI_TESTS)(
       await until(()=>document.querySelector("pre code.language-ts .syntax-token"),"Markdown code fences must eventually highlight");
       const complete=document.getElementById("root").innerHTML;
       const comparison=document.createElement("div");document.body.append(comparison);
-      const other=createRoot(comparison);flushSync(()=>other.render(<BuiltinMarkdown data={{text:final}} DefaultRenderer={()=>null}/>));
+      const other=createRoot(comparison);flushSync(()=>other.render(<SyntaxRangesContext.Provider value={false}><BuiltinMarkdown data={{text:final}} DefaultRenderer={()=>null}/></SyntaxRangesContext.Provider>));
       check(complete===comparison.innerHTML && document.querySelector("table td")?.textContent==="1" && document.querySelector('a[href="https://example.com"]') && document.querySelector("pre code.language-ts") && document.querySelector(".katex"),"final Markdown must preserve ordinary tables, references, code and math");
       await pause(130);check(document.getElementById("root").innerHTML===complete,"old streaming samples must not overwrite final Markdown");
       metrics.streamParses=parses-before;
       for(const text of [final,"A &amp; B &copy; &NotEqualTilde;","$x^2$\\n\\n$$ x = \\\\frac{-b \\\\pm \\\\sqrt{b^2 - 4ac}}{2a} $$","$\\\\notARealCommand{x}$","<script>alert(1)</script>\\n\\n[bad](javascript:alert) [chat](pi://session/opaque-session-id)"]){
         await render(<Markdown text={text}/>);await until(()=>!document.querySelector("#root .markdown-pending-source"),"worker Markdown must complete before independent DOM comparison");
-        flushSync(()=>other.render(<ReactMarkdown remarkPlugins={[remarkGfm,remarkMath]} rehypePlugins={[[rehypeKatex,{throwOnError:false}]]} components={markdownComponents} urlTransform={markdownUrl}>{normalizeMath(text)}</ReactMarkdown>));
+        flushSync(()=>other.render(<SyntaxRangesContext.Provider value={false}><ReactMarkdown remarkPlugins={[remarkGfm,remarkMath]} rehypePlugins={[[rehypeKatex,{throwOnError:false}]]} components={markdownComponents} urlTransform={markdownUrl}>{normalizeMath(text)}</ReactMarkdown></SyntaxRangesContext.Provider>));
         await until(()=>document.getElementById("root").innerHTML===comparison.innerHTML,"worker DOM must equal the original browser Markdown/GFM/KaTeX pipeline");
       }
       metrics.markdownDomParity=5;other.unmount();comparison.remove();installChatRenderers([]);

@@ -45,6 +45,7 @@ import {
   interleaveExtensionNotices,
 } from "./extension-notices";
 import { fontFamilyValue } from "./font-family";
+import { SavedOutputContext } from "./HighlightedCode";
 import { getT, useT } from "./i18n";
 import { DisclosureScope, LazyDetails } from "./LazyDetails";
 import { Markdown, MessageContent, UserMessage } from "./MessageContent";
@@ -948,124 +949,129 @@ export const Chat = memo(function Chat({
                 </span>
               </div>
             )}
-            <DisclosureScope id={id} values={view.details}>
-              {toggle}
-              <article className={`message ${message.role}`}>
-                {message.role === "user" ? (
-                  <UserMessage
-                    message={message}
-                    sessionId={info.id}
-                    entryId={record.entryId}
-                    disabled={readOnly || !snapshot.model}
-                  />
-                ) : message.role === "assistant" ? (
-                  <>
-                    {groupBlocks(
-                      folded
-                        ? message.content.filter(
-                            (block) => block.type === "text",
-                          )
-                        : message.content,
-                    ).map(({ start, blocks }) => {
-                      const content = blocks[0];
-                      return (
-                        <DisclosureScope
-                          key={`${content.type}-${start}`}
-                          id={`block:${start}`}
-                        >
-                          <div
-                            data-content-index={start}
-                            data-tool-call-id={
-                              blocks.length === 1 && content.type === "toolCall"
-                                ? content.id
-                                : undefined
-                            }
-                            tabIndex={-1}
+            <SavedOutputContext.Provider value={Boolean(record.entryId)}>
+              <DisclosureScope id={id} values={view.details}>
+                {toggle}
+                <article className={`message ${message.role}`}>
+                  {message.role === "user" ? (
+                    <UserMessage
+                      message={message}
+                      sessionId={info.id}
+                      entryId={record.entryId}
+                      disabled={readOnly || !snapshot.model}
+                    />
+                  ) : message.role === "assistant" ? (
+                    <>
+                      {groupBlocks(
+                        folded
+                          ? message.content.filter(
+                              (block) => block.type === "text",
+                            )
+                          : message.content,
+                      ).map(({ start, blocks }) => {
+                        const content = blocks[0];
+                        return (
+                          <DisclosureScope
+                            key={`${content.type}-${start}`}
+                            id={`block:${start}`}
                           >
-                            {blocks.length > 1 ? (
-                              <ToolGroup
-                                calls={blocks.filter(
-                                  (block): block is ToolCall =>
-                                    block.type === "toolCall",
-                                )}
-                                tools={transcript.tools}
-                                live={transcript.running}
-                                cards={snapshot.sessionUI?.toolCards}
-                              />
-                            ) : content.type === "text" ? (
-                              <div className="prose">
-                                <Markdown
-                                  text={content.text}
-                                  streaming={
-                                    live &&
-                                    transcript.current === id &&
-                                    !message.errorMessage
+                            <div
+                              data-content-index={start}
+                              data-tool-call-id={
+                                blocks.length === 1 &&
+                                content.type === "toolCall"
+                                  ? content.id
+                                  : undefined
+                              }
+                              tabIndex={-1}
+                            >
+                              {blocks.length > 1 ? (
+                                <ToolGroup
+                                  calls={blocks.filter(
+                                    (block): block is ToolCall =>
+                                      block.type === "toolCall",
+                                  )}
+                                  tools={transcript.tools}
+                                  live={transcript.running}
+                                  cards={snapshot.sessionUI?.toolCards}
+                                />
+                              ) : content.type === "text" ? (
+                                <div className="prose">
+                                  <Markdown
+                                    text={content.text}
+                                    streaming={
+                                      live &&
+                                      transcript.current === id &&
+                                      !message.errorMessage
+                                    }
+                                  />
+                                </div>
+                              ) : content.type === "thinking" ? (
+                                <ThinkingBlock
+                                  text={content.thinking}
+                                  label={
+                                    status?.hiddenThinkingLabel ?? t.Thinking
+                                  }
+                                  active={
+                                    live && start === message.content.length - 1
                                   }
                                 />
-                              </div>
-                            ) : content.type === "thinking" ? (
-                              <ThinkingBlock
-                                text={content.thinking}
-                                label={
-                                  status?.hiddenThinkingLabel ?? t.Thinking
-                                }
-                                active={
-                                  live && start === message.content.length - 1
-                                }
-                              />
-                            ) : content.type === "toolCall" ? (
-                              <ToolBlock
-                                call={content}
-                                state={transcript.tools[content.id]}
-                                live={transcript.running}
-                                card={
-                                  snapshot.sessionUI?.toolCards?.[content.id]
-                                }
-                              />
-                            ) : null}
-                          </div>
-                        </DisclosureScope>
-                      );
-                    })}
-                    {retried.has(id) ? (
-                      <RetryNotice
-                        attempt={retried.get(id) ?? 1}
-                        message={message.errorMessage ?? "Model request failed"}
-                        waiting={
-                          snapshot.retry?.attempt === retried.get(id) &&
-                          id === [...retried.keys()].at(-1)
-                            ? snapshot.retry
-                            : undefined
-                        }
-                      />
-                    ) : (
-                      (message.errorMessage ||
-                        message.stopReason === "error") && (
-                        <ResponseError
+                              ) : content.type === "toolCall" ? (
+                                <ToolBlock
+                                  call={content}
+                                  state={transcript.tools[content.id]}
+                                  live={transcript.running}
+                                  card={
+                                    snapshot.sessionUI?.toolCards?.[content.id]
+                                  }
+                                />
+                              ) : null}
+                            </div>
+                          </DisclosureScope>
+                        );
+                      })}
+                      {retried.has(id) ? (
+                        <RetryNotice
+                          attempt={retried.get(id) ?? 1}
                           message={
                             message.errorMessage ?? "Model request failed"
                           }
-                          stopReason={message.stopReason}
+                          waiting={
+                            snapshot.retry?.attempt === retried.get(id) &&
+                            id === [...retried.keys()].at(-1)
+                              ? snapshot.retry
+                              : undefined
+                          }
                         />
-                      )
-                    )}
-                    {images?.length ? (
-                      <MessageContent content={images} markdown={false} />
-                    ) : null}
-                  </>
-                ) : (
-                  <CustomRecord record={record} />
-                )}
-                {record.details !== undefined && (
-                  <DisclosureScope id="record-details">
-                    <LazyDetails name="details" summary="Details">
-                      {() => <pre>{dataText(record.details)}</pre>}
-                    </LazyDetails>
-                  </DisclosureScope>
-                )}
-              </article>
-              {footer(index)}
-            </DisclosureScope>
+                      ) : (
+                        (message.errorMessage ||
+                          message.stopReason === "error") && (
+                          <ResponseError
+                            message={
+                              message.errorMessage ?? "Model request failed"
+                            }
+                            stopReason={message.stopReason}
+                          />
+                        )
+                      )}
+                      {images?.length ? (
+                        <MessageContent content={images} markdown={false} />
+                      ) : null}
+                    </>
+                  ) : (
+                    <CustomRecord record={record} />
+                  )}
+                  {record.details !== undefined && (
+                    <DisclosureScope id="record-details">
+                      <LazyDetails name="details" summary="Details">
+                        {() => <pre>{dataText(record.details)}</pre>}
+                      </LazyDetails>
+                    </DisclosureScope>
+                  )}
+                </article>
+                {footer(index)}
+              </DisclosureScope>
+            </SavedOutputContext.Provider>
           </div>
         );
       })}
