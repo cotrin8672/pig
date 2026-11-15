@@ -31,6 +31,13 @@ const greetingSource = [
 ].join("\n");
 
 export const readSymbol: ToolFixture = {
+  description: {
+    purpose:
+      "名前がわかっている関数・クラス・型などの定義本文を、ファイル全体ではなくシンボル単位で読むツール。",
+    input:
+      "ファイルパスとシンボル名。この例では src/i18n/greeting.ts の greeting 関数を指定する。",
+    output: "シンボルの種類・位置・行範囲と、省略されていないソース本文。",
+  },
   tool: tool(
     "read_symbol",
     { path: "src/i18n/greeting.ts", symbol: "greeting" },
@@ -41,6 +48,13 @@ export const readSymbol: ToolFixture = {
 };
 
 export const readEnclosing: ToolFixture = {
+  description: {
+    purpose:
+      "指定した行を含む最小の関数やコールバックなどの本文を読むツール。名前がわからなくても、診断や検索の行番号から実装を確認できる。",
+    input:
+      "ファイルパスと行番号。この例では src/i18n/greeting.ts の14行目を指定する。",
+    output: "その行を囲むシンボルの名前・種類・行範囲とソース本文。",
+  },
   tool: tool(
     "read_enclosing",
     { path: "src/i18n/greeting.ts", line: 14 },
@@ -51,6 +65,14 @@ export const readEnclosing: ToolFixture = {
 };
 
 export const astOutline: ToolFixture = {
+  description: {
+    purpose:
+      "ソースを構文解析し、ファイルにどんな宣言があるかを俯瞰するツール。本文を読む前にファイルの構成を把握する。",
+    input:
+      "対象ファイルやディレクトリのパス。この例では src/i18n/greeting.ts を指定する。",
+    output:
+      "import・関数・型・クラスなどの種類、名前、行範囲、宣言の短い抜粋。",
+  },
   tool: tool(
     "ast_grep_outline",
     { paths: ["src/i18n/greeting.ts"] },
@@ -70,6 +92,13 @@ export const astOutline: ToolFixture = {
 };
 
 export const moduleReport: ToolFixture = {
+  description: {
+    purpose:
+      "1つのソースファイルの構成と他ファイルとの関係をまとめ、次に読むべきシンボルを案内するツール。本文そのものを読むツールではない。",
+    input: "対象のソースファイル。この例では src/i18n/greeting.ts を指定する。",
+    output:
+      "公開API・内部シンボル・import・参照元・推奨する読み取り先と、情報の由来や鮮度。",
+  },
   tool: tool(
     "module_report",
     { path: "src/i18n/greeting.ts" },
@@ -102,6 +131,14 @@ export const moduleReport: ToolFixture = {
 };
 
 export const symbolSearch: ToolFixture = {
+  description: {
+    purpose:
+      "識別子に近い検索語から、関連するソースファイルを順位付きで探すツール。実装がどこにあるかわからないときの入口になる。",
+    input:
+      "検索語と件数上限。この例では greeting locale fallback に関連するファイルを最大5件探す。",
+    output:
+      "候補ファイルと行番号、関連度スコアやヒット数、インデックスの対象ファイル数。",
+  },
   tool: tool(
     "symbol_search",
     { query: "greeting locale fallback", limit: 5 },
@@ -121,6 +158,14 @@ export const symbolSearch: ToolFixture = {
 };
 
 export const astSearch: ToolFixture = {
+  description: {
+    purpose:
+      "文字列ではなくコードの構文パターンで一致箇所を探すツール。変数名が違っても同じ形のコードをまとめて見つけられる。",
+    input:
+      "言語・構文パターン・検索範囲。この例では TypeScript の templates[$LOCALE] を src 配下で探す。",
+    output:
+      "一致したファイル・行・列・コードと、$LOCALE などのパターン変数に一致した値。",
+  },
   tool: tool(
     "ast_grep_search",
     { lang: "typescript", pattern: "templates[$LOCALE]", paths: ["src"] },
@@ -140,6 +185,14 @@ export const astSearch: ToolFixture = {
 };
 
 export const astReplace: ToolFixture = {
+  description: {
+    purpose:
+      "構文パターンに一致するコードを一括置換するツール。適用前のプレビューと、実際のファイル変更を切り替えられる。",
+    input:
+      "言語・検索パターン・置換後のコード・対象パス・適用フラグ。この例は templates.en の置換を apply=false で試す。",
+    output:
+      "置換件数、各箇所の変更前後、適用済みかプレビューだけかの状態。この例ではファイルは変更しない。",
+  },
   tool: tool(
     "ast_grep_replace",
     {
@@ -170,6 +223,14 @@ export const astReplace: ToolFixture = {
 };
 
 export const lspNavigation: ToolFixture = {
+  description: {
+    purpose:
+      "言語サーバーを使い、定義・参照・型情報などをIDEと同じ仕組みで調べるツール。操作によってはリネームなどの編集も扱う。",
+    input:
+      "操作名と対象ファイル・位置。この例では greeting 関数への参照を references で探す。",
+    output:
+      "操作に応じた位置一覧や型情報など。この例は参照先のファイル・行・列の一覧。",
+  },
   tool: tool(
     "lsp_navigation",
     {
@@ -193,6 +254,14 @@ export const lspNavigation: ToolFixture = {
 };
 
 export const lensDiagnostics: ToolFixture = {
+  description: {
+    purpose:
+      "言語サーバー等のエラー・警告を、セッションのキャッシュまたは能動的な検査から取得するツール。キャッシュが空でも正常とは限らない。",
+    input:
+      "情報源・検査範囲・対象パス。この例は source=lsp で src/i18n 配下を検査する。",
+    output:
+      "検査ファイル数、エラー・警告・ヒントの位置と内容、診断元、未確認ファイルの有無。",
+  },
   tool: tool(
     "lens_diagnostics",
     { source: "lsp", scope: "paths", paths: ["src/i18n"] },
@@ -262,6 +331,14 @@ export const lensDiagnostics: ToolFixture = {
 };
 
 export const diagnosticMark: ToolFixture = {
+  description: {
+    purpose:
+      "診断への判断と理由を記録するツール。たとえば意図的なコードへの指摘を抑制し、同じ行への繰り返し表示を防ぐ。",
+    input:
+      "ファイル・行・診断内容・ルール・判断・理由。この例では開発時に再代入する変数への useConst 指摘を suppress にする。",
+    output:
+      "記録した判断、対象行とアンカー、今後の表示への影響。ソースコード自体を修正する操作ではない。",
+  },
   tool: tool(
     "lens_diagnostic_mark",
     {
@@ -281,6 +358,14 @@ export const diagnosticMark: ToolFixture = {
 };
 
 export const projectReport: ToolFixture = {
+  description: {
+    purpose:
+      "プロジェクト全体の構造を参照グラフから俯瞰し、調査の入口や注意すべき場所を見つけるツール。",
+    input:
+      "注目する話題と各一覧の件数上限。この例は i18n fallback に関係する箇所を優先する。",
+    output:
+      "主要ファイル・入口・サブシステム・循環依存・リスク候補・未使用候補と、グラフの鮮度・網羅率。候補は断定ではない。",
+  },
   tool: tool(
     "project_report",
     { focus: "i18n fallback", limit: 3 },
@@ -315,6 +400,14 @@ export const projectReport: ToolFixture = {
 };
 
 export const effectiveConfig: ToolFixture = {
+  description: {
+    purpose:
+      "設定ファイルを重ねた結果、どの言語サーバーや解析器が使われるか、その理由と設定の由来を説明するツール。",
+    input:
+      "必要に応じて対象ファイル。この例では src/i18n/greeting.ts に適用される設定を調べる。",
+    output:
+      "参照した設定ファイル、言語、サーバーや解析器の採用・除外と理由。環境変数の値などの秘密情報は表示しない。",
+  },
   tool: tool(
     "effective_config",
     { path: "src/i18n/greeting.ts" },
@@ -362,6 +455,13 @@ export const effectiveConfig: ToolFixture = {
 };
 
 export const activateTools: ToolFixture = {
+  description: {
+    purpose:
+      "必要なときだけ公開する pi-lens の追加ツールを、次のターンから使えるようにするツール。指定したツールの実行自体は行わない。",
+    input:
+      "有効にするツール名の配列。この例は構文検索・アウトライン・LSP操作の3つを指定する。",
+    output: "認識したツール、有効になったツール、利用可能になるタイミング。",
+  },
   tool: tool(
     "pi_lens_activate_tools",
     { tools: ["ast_grep_search", "ast_grep_outline", "lsp_navigation"] },

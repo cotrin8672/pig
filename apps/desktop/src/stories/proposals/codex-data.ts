@@ -61,6 +61,14 @@ for (const answer of answers) {
 }
 
 export const codexSearch: ToolFixture = {
+  description: {
+    purpose:
+      "設定済みのChatGPT Codex接続を使ってWebを検索し、出典付きの回答を取得するツール。",
+    input:
+      "検索クエリの配列、情報の鮮度、取得量。この例はBunのWindows対応とElectrobunの透過を live で調べる。",
+    output:
+      "クエリごとの回答と引用元のタイトル・URL、検索の成功・失敗、所要時間など。",
+  },
   tool: {
     call: {
       id: "codex_search",
@@ -123,6 +131,14 @@ const art = btoa(
 );
 
 export const imagegen: ToolFixture = {
+  description: {
+    purpose:
+      "文章から画像を生成したり、参照画像を指定して編集したりするツール。過去の画像を自動で記憶するのではなく、編集元を毎回指定する。",
+    input:
+      "プロンプト、透過の指定、必要に応じて参照画像。この例は夕暮れの山と湖・帆船を横長のイラストとして生成する。",
+    output:
+      "生成画像のプレビュー、保存先、形式・サイズ・品質など。このStoryではネットワーク不要のサンプル画像を表示する。",
+  },
   tool: {
     call: {
       id: "imagegen",

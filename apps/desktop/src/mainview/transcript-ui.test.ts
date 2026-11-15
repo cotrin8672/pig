@@ -21,6 +21,61 @@ const edge =
   "C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe";
 
 test.skipIf(!existsSync(edge) && !process.env.PIG_REQUIRE_UI_TESTS)(
+  "extension Compare stories explain the tool before the renderer candidates",
+  () => {
+    const directory = fileURLToPath(
+      new URL("../stories/tools/extensions/", import.meta.url),
+    );
+    const imports = [
+      ...new Bun.Glob("**/*.stories.tsx").scanSync({
+        cwd: directory,
+        absolute: true,
+      }),
+    ].map((path) => `await import(${fixtureImport(pathToFileURL(path))})`);
+    return runUiFixture(
+      "extension-tool-descriptions",
+      `
+      const {createRoot}=await import(${fixtureImport(import.meta.resolve("react-dom/client"))});
+      const {flushSync}=await import(${fixtureImport(import.meta.resolve("react-dom"))});
+      await import(${fixtureImport(new URL("./styles.css", import.meta.url))});
+      const modules=[${imports.join(",")}];
+      ${fixtureHelpers}
+      const root=createFixtureRoot(createRoot);
+      let count=0;
+      for(const module of modules){
+        for(const [name,story] of Object.entries(module)){
+          if(!name.startsWith('Compare'))continue;
+          count++;
+          for(const width of [760,320]){
+            document.getElementById('root').style.width=width+'px';
+            for(const phase of ['done','running','error']){
+              flushSync(()=>root.render(story.render({phase})));
+              await wait();
+              const label=module.default.title+'/'+name+'/'+phase+'/'+width;
+              const comparison=document.querySelector('.pp-compare');
+              const description=comparison?.querySelector('.pp-tool-description');
+              check(description&&comparison.firstElementChild===description,label+': description precedes all candidates');
+              check(description.querySelector('h2')?.textContent===module.default.title.split('/').pop(),label+': tool name');
+              check(description.querySelector('p')?.textContent.trim().length>0,label+': purpose');
+              check([...description.querySelectorAll('dt')].map(el=>el.textContent).join(',')==='入力,出力',label+': input/output labels');
+              check(description.querySelectorAll('dd').length===2&&[...description.querySelectorAll('dd')].every(el=>el.textContent.trim().length>0),label+': input/output explanations');
+              check(description.scrollWidth===description.clientWidth,label+': no horizontal overflow');
+              const bounds=description.getBoundingClientRect();
+              check(bounds.height>0&&bounds.bottom<=comparison.querySelector('.pp-specimen').getBoundingClientRect().top,label+': visible without overlapping candidates');
+            }
+          }
+        }
+      }
+      check(count>0,'extension Compare stories must be covered');
+      await capturePixels();
+      `,
+      { viewport: { width: 900, height: 800 } },
+    );
+  },
+  120_000,
+);
+
+test.skipIf(!existsSync(edge) && !process.env.PIG_REQUIRE_UI_TESTS)(
   "compaction renders in the real chat, supports renderer overrides and respects reduced motion",
   () =>
     runUiFixture(
