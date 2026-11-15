@@ -4,6 +4,7 @@ import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { fauxAssistantMessage } from "@earendil-works/pi-ai";
 import tailwindcss from "@tailwindcss/vite";
 import { build as buildStyles } from "vite";
 import { renderWorkerFixturePlugin } from "../../scripts/render-worker-fixture";
@@ -18,6 +19,122 @@ import {
 const edge =
   process.env.PIG_UI_BROWSER ??
   "C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe";
+
+test.skipIf(!existsSync(edge) && !process.env.PIG_REQUIRE_UI_TESTS)(
+  "compaction renders in the real chat, supports renderer overrides and respects reduced motion",
+  () =>
+    runUiFixture(
+      "compaction",
+      `
+    const {createRoot}=await import(${fixtureImport(import.meta.resolve("react-dom/client"))});
+    const {flushSync}=await import(${fixtureImport(import.meta.resolve("react-dom"))});
+    const {Chat}=await import(${fixtureImport(new URL("./App.tsx", import.meta.url))});
+    const {useStore}=await import(${fixtureImport(new URL("./store.ts", import.meta.url))});
+    const {installChatRenderers}=await import(${fixtureImport(new URL("./chat-renderer-registry.ts", import.meta.url))});
+    await import(${fixtureImport(new URL("./styles.css", import.meta.url))});
+    ${fixtureHelpers}
+    flushSync(()=>useStore.setState(s=>({settings:{...s.settings,language:'ja'}})));
+    window.__requests={listSlashCommands:async()=>[]};
+    const root=createFixtureRoot(createRoot);
+    const base={address:{hostId:'ui',sessionId:'compaction',epoch:1},snapshotSeq:1,info:{id:'compaction',cwd:'fixture',title:'Compaction',modified:1},effort:'off',effortLevels:[],ready:true,modelCatalog:[]};
+    const user={id:'question',entryId:'question',parentId:null,branchId:'branch',order:0,kind:'message',message:{role:'user',content:'続きをお願いします',timestamp:1}};
+    const transcript={records:[user],tools:{},history:{revision:'branch'},current:null,running:true,liveToEntry:{}};
+    const render=async changes=>{flushSync(()=>root.render(<div className="chat-shell" style={{height:'100vh'}}><Chat snapshot={{...base,transcript:{...transcript,...changes}}}/></div>));await wait();};
+    for(const width of [760,320]){
+      document.getElementById('root').style.width=width+'px';
+      for(const running of [true,false]){
+        await render({running,compaction:{reason:running?'threshold':'manual'}});
+        const card=document.querySelector('.compaction-card[data-active]');
+        check(card?.textContent.includes('コンテキストを圧縮中…'),'manual and automatic compaction must be visible');
+        check(!document.querySelector('.running'),'normal working text must not duplicate compaction');
+        const css=getComputedStyle(card),alpha=Number(css.backgroundColor.match(/[\\d.]+(?=\\)$)/)?.[0]);
+        check(css.opacity==='1'&&alpha>0&&alpha<1,'card must use a translucent background without whole-card opacity');
+        check(card.scrollWidth===card.clientWidth,'narrow cards must not overflow');
+        const icon=card.querySelector('svg'),heading=card.querySelector('strong');
+        check(getComputedStyle(icon).flexShrink==='0'&&getComputedStyle(icon).width==='16px','icon stays aligned at narrow widths');
+        check(getComputedStyle(icon).animationName==='compaction-spin','only the active icon animates');
+        check(getComputedStyle(heading).opacity==='1','text stays fully visible');
+        await capturePixels();
+      }
+    }
+    await render({});
+    check(!document.querySelector('.compaction-card')&&document.querySelector('.running'),'normal work returns after compaction ends');
+    const saved={id:'saved-compaction',entryId:'saved-compaction',parentId:'question',branchId:'branch',order:1,kind:'session-entry',entryType:'compaction',data:{summary:'## 引き継ぎ\\n\\n次にテストを実行する。',tokensBefore:42000}};
+    await render({running:false,records:[user,saved]});
+    const card=document.querySelector('.compaction-card');
+    check(card?.textContent.includes('コンテキストを圧縮しました')&&card.textContent.includes('42,000'),'saved compaction must show completion and tokens before compaction');
+    check(!card.querySelector('.prose')&&!card.querySelector('details').open,'summary must be lazy and collapsed');
+    card.querySelector('summary').click();
+    await until(()=>card.querySelector('.prose')?.textContent.includes('次にテストを実行する。'),'summary must expand');
+    check(card.querySelectorAll('svg').length===1&&!card.querySelector('svg').getAnimations().length,'completed card must not animate');
+    const answer={...user,id:'answer',entryId:'answer',order:1,message:${JSON.stringify(fauxAssistantMessage("続きの応答"))}};
+    await render({running:false,records:[user,answer,{...saved,order:2}]});
+    check(document.querySelector('.compaction-card')&&!document.querySelector('.work-toggle'),'compaction alone must not turn a plain answer into folded work');
+    const workAnswer={...answer,message:{...answer.message,content:[{type:'thinking',thinking:'Preparing an answer'},...answer.message.content]}};
+    await render({running:false,records:[user,workAnswer,{...saved,order:2}]});
+    check(document.querySelector('.compaction-card'),'compaction must remain outside folded work');
+    document.getElementById('root').style.width='760px';
+    await capturePixels();
+    flushSync(()=>installChatRenderers([{id:'custom-compaction',kind:'compaction',component:({data,DefaultRenderer})=><div data-custom-compaction={data.active?'active':'saved'}><DefaultRenderer/></div>}]));
+    await render({compaction:{reason:'overflow'}});
+    check(document.querySelector('[data-custom-compaction="active"] .compaction-card[data-active]'),'active compaction must use the shared renderer contract');
+    await render({running:false,records:[user,saved]});
+    check(document.querySelector('[data-custom-compaction="saved"] .compaction-card'),'saved compaction must use the same renderer contract');
+    flushSync(()=>installChatRenderers([{id:'broken-compaction',kind:'compaction',component:()=>{throw Error('broken compaction renderer')}}]));
+    await wait();
+    check(document.querySelector('.compaction-card')?.textContent.includes('コンテキストを圧縮しました'),'broken custom renderer must retain built-in compaction');
+    flushSync(()=>installChatRenderers([]));
+    flushSync(()=>useStore.setState(s=>({settings:{...s.settings,language:'en'}})));
+    await render({compaction:{reason:'manual'}});
+    check(document.querySelector('.compaction-card')?.textContent.includes('Compacting context…'),'compaction must follow the app language');
+    window.__fixtureInput={method:'Emulation.setEmulatedMedia',params:{features:[{name:'prefers-reduced-motion',value:'reduce'}]}};
+    await until(()=>!window.__fixtureInput,'emulate reduced motion');
+    check(matchMedia('(prefers-reduced-motion: reduce)').matches&&getComputedStyle(document.querySelector('.compaction-heading svg')).animationName==='none','reduced motion must disable the active animation');
+    await render({running:false,records:[user,saved]});
+    document.querySelector('.compaction-card summary').click();await wait();
+    `,
+      { viewport: { width: 900, height: 800 } },
+    ),
+  60_000,
+);
+
+test.skipIf(!existsSync(edge) && !process.env.PIG_REQUIRE_UI_TESTS)(
+  "running status keeps the original static text and extension overrides in Edge",
+  () =>
+    runUiFixture(
+      "running-status",
+      `
+    const {createRoot}=await import(${fixtureImport(import.meta.resolve("react-dom/client"))});
+    const {flushSync}=await import(${fixtureImport(import.meta.resolve("react-dom"))});
+    const {RunningIndicator}=await import(${fixtureImport(new URL("./RunningIndicator.tsx", import.meta.url))});
+    const {useStore}=await import(${fixtureImport(new URL("./store.ts", import.meta.url))});
+    await import(${fixtureImport(new URL("./styles.css", import.meta.url))});
+    ${fixtureHelpers}
+    const root=createFixtureRoot(createRoot);
+    flushSync(()=>useStore.setState(s=>({settings:{...s.settings,language:'ja'}})));
+    flushSync(()=>root.render(<RunningIndicator/>));
+    await wait();
+    const line=document.querySelector('p.running[role="status"]');
+    check(line?.textContent==='処理中…' && line.childElementCount===0,'original plain label, no spinner');
+    check(line.getAnimations({subtree:true}).length===0,'no waiting animation');
+    const before=line.getBoundingClientRect().toJSON();
+    let changes=0;
+    const observer=new MutationObserver(()=>changes++);
+    observer.observe(line,{subtree:true,childList:true,characterData:true,attributes:true});
+    await new Promise(resolve=>setTimeout(resolve,2900));
+    observer.disconnect();
+    check(changes===0 && line.textContent==='処理中…','no rotating words or spinner frames');
+    check(JSON.stringify(line.getBoundingClientRect().toJSON())===JSON.stringify(before),'waiting must not move the line');
+    flushSync(()=>root.render(<RunningIndicator symbol="🐖" message="Shipping it"/>));
+    check(line.textContent==='🐖 Shipping it','extension message and symbol stay visible');
+    flushSync(()=>useStore.setState(s=>({settings:{...s.settings,language:'en'}})));
+    flushSync(()=>root.render(<RunningIndicator/>));
+    check(line.textContent==='Working…','language change uses the fixed translated label');
+    root.unmount();
+  `,
+    ),
+  60_000,
+);
 
 test.skipIf(!existsSync(edge) && !process.env.PIG_REQUIRE_UI_TESTS)(
   "sidebar chat selection keeps the row count and following project position stable",
@@ -42,8 +159,11 @@ test.skipIf(!existsSync(edge) && !process.env.PIG_REQUIRE_UI_TESTS)(
     flushSync(()=>root.render(<aside className="sidebar" style={{width:260,height:'100vh'}}><SidebarSessions/></aside>));
     await wait();
     const general=document.querySelector('.sidebar-section');
+    check(!document.querySelector('.sidebar [title]'),'sidebar controls and project paths must not render native tooltips');
     const project=document.querySelectorAll('.project')[0];
     const following=document.querySelectorAll('.project')[1];
+    const newChatButtons=[general.querySelector('.sidebar-section-heading button'),...document.querySelectorAll('.project-actions > button:first-child')];
+    check(newChatButtons.length===3 && newChatButtons.every(button=>!button.hasAttribute('title') && button.getAttribute('aria-label')),'sidebar new chat buttons must keep accessible labels without native tooltips');
     const measure=()=>({general:general.querySelectorAll('.thread-row').length,project:project.querySelectorAll('.thread-row').length,height:project.getBoundingClientRect().height,nextTop:following.getBoundingClientRect().top});
     const baseline=measure();
     check(baseline.general===5&&baseline.project===7,'initial recent slots must exclude pinned rows');
@@ -222,6 +342,8 @@ test.skipIf(!existsSync(edge) && !process.env.PIG_REQUIRE_UI_TESTS)(
       import {rememberAnnotationRange} from ${source("./annotation-highlights.ts")};
       import {drafts} from ${source("./draft-store.ts")};
       import {addressKey,newerSnapshot} from ${source("./chat-snapshot.ts")};
+      import {contentBase,encodeContentAppend} from ${source("../shared/content-append.ts")};
+      import {expandSnapshotDelta} from ${source("../shared/snapshot-delta.ts")};
       import {ToolBlock,ToolGroup,ThinkingBlock} from ${source("./ToolBlock.tsx")};
       import {DisclosureScope} from ${source("./LazyDetails.tsx")};
       import {Markdown,BuiltinMarkdown,markdownComponents} from ${source("./MessageContent.tsx")};
@@ -246,7 +368,7 @@ test.skipIf(!existsSync(edge) && !process.env.PIG_REQUIRE_UI_TESTS)(
       const pause=ms=>new Promise(resolve=>setTimeout(resolve,ms));
       const check=(value,message)=>{if(!value) throw new Error(message);};
       const until=async(predicate,message)=>{const end=performance.now()+3000;while(!predicate()){check(performance.now()<end,message);await wait();}};
-      const render=async node=>{flushSync(()=>root.render(node));await wait();};
+      const render=async node=>{flushSync(()=>root.render(node));await wait();check(!document.querySelector('#root [title]'),'chat UI must not render native title tooltips');};
       const metrics=window.__transcriptMetrics={wheels:[],loaded:[],stageTimes:[]};
       let currentStage='setup',stageStarted=performance.now();
       Object.defineProperty(metrics,'stage',{enumerable:true,get:()=>currentStage,set:next=>{
@@ -364,7 +486,7 @@ test.skipIf(!existsSync(edge) && !process.env.PIG_REQUIRE_UI_TESTS)(
             const labels=[...boundary.querySelectorAll('.model-divider-model')];
             check(labels.length===2&&labels.every(label=>label.querySelector('svg')),'model divider keeps both provider icons');
             check(labels[0].innerText.trim()==='claude-opus-5-5'&&labels[1].innerText.trim()==='gpt-6.1-sol','model divider shows model IDs without redundant provider prefixes');
-            check(labels[0].title==='anthropic/claude-opus-5-5'&&labels[1].title==='openai-codex/gpt-6.1-sol','full model identities remain in tooltips');
+            check(labels[0].getAttribute('aria-description')==='anthropic/claude-opus-5-5'&&labels[1].getAttribute('aria-description')==='openai-codex/gpt-6.1-sol','full model identities remain accessible without native tooltips');
           }
           const metaRect=meta.getBoundingClientRect(),actionsRect=actions.getBoundingClientRect();
           check(actionsRect.top>=metaRect.top-1 && actionsRect.bottom<=metaRect.bottom+3 && actionsRect.left>=metaRect.right-1,"response actions must share the metadata row, not reserve a hidden row or overlap metadata");
@@ -467,7 +589,7 @@ test.skipIf(!existsSync(edge) && !process.env.PIG_REQUIRE_UI_TESTS)(
         const result=record("perf-result-"+i,perfRecords.length,{role:"toolResult",toolCallId:call.id,toolName:call.name,content:[{type:"text",text:"output line\\n".repeat(i===0?20:8)}],isError:false,timestamp:i});result.entryId=result.id;perfRecords.push(result);
         perfTools[call.id]={status:"done",result:{content:result.message.content}};
       }
-      perfRecords.push(assistant("perf-live",perfRecords.length,[{type:"text",text:"Live"}]));
+      perfRecords.push(assistant("perf-live",perfRecords.length,[{type:"text",text:"Live ".repeat(50)}]));
       let perfSnapshot={...base,transcript:{...transcript(perfRecords),tools:perfTools,running:true,current:"perf-live"}};
       // The streaming answer folds the work; expand it to observe saved tools.
       await show(perfSnapshot);document.querySelector('.work-toggle')?.click();await pause(150);toolRenders=0;
@@ -488,7 +610,15 @@ test.skipIf(!existsSync(edge) && !process.env.PIG_REQUIRE_UI_TESTS)(
             incoming.transcript.records.splice(-1,0,appended);
             incoming.transcript.records.forEach((record,index)=>{record.branchId=appended.id;record.order=index;});
           }
-          perfSnapshot=newerSnapshot(perfSnapshot,incoming);await show(perfSnapshot);
+          const live=incoming.transcript.records.find(record=>record.id==="perf-live");
+          const previousLive=perfSnapshot.transcript.records.find(record=>record.id==="perf-live");
+          const encoded=encodeContentAppend(live.message.content,contentBase(previousLive.message.content));
+          check(encoded,'streaming replay must use text appends, not full live bodies');
+          const wire=structuredClone(incoming);
+          wire.transcript.records.find(record=>record.id==="perf-live").message.content=encoded.content;
+          const expanded=expandSnapshotDelta({type:"snapshotDelta",snapshot:wire,appends:{baseSeq:perfSnapshot.snapshotSeq,records:{"perf-live":encoded.appends},tools:{}}},perfSnapshot);
+          check(expanded && expanded.transcript.records.find(record=>record.id==="perf-live").message.content[0].text===live.message.content[0].text,'browser append expansion must reproduce every source character');
+          perfSnapshot=newerSnapshot(perfSnapshot,expanded);await show(perfSnapshot);
           check(toolRenders===0,'streaming and history appends must not rerender unchanged tools');
           check(savedOutput.isConnected && savedOutput===document.querySelector('.tool-term-output') && savedOutput.closest('details').open,'history append must preserve expanded tool DOM');
           check(savedOutput.scrollTop===savedTop && savedSelection.toString()===selectedOutput,'history append must preserve tool scrolling and native selection/copy text');
@@ -561,7 +691,7 @@ test.skipIf(!existsSync(edge) && !process.env.PIG_REQUIRE_UI_TESTS)(
       const threadHeight=thread.clientHeight,composerTop=document.querySelector(".composer-dock").getBoundingClientRect().top;
       await wheel(thread,-420);await wheel(thread,160);await wheel(thread,-200);await wheel(thread,120);
       const jump=document.querySelector(".thread-scroll-to-bottom");
-      check(visible(jump) && jump.getAttribute("aria-label")==="Scroll to bottom" && jump.title==="Scroll to bottom","reading earlier messages must show an accessible jump button");
+      check(visible(jump) && jump.getAttribute("aria-label")==="Scroll to bottom" && !jump.hasAttribute("title"),"reading earlier messages must show an accessible jump button without a native tooltip");
       const jumpRect=jump.getBoundingClientRect(),shellRect=document.querySelector(".chat-shell").getBoundingClientRect();
       check(jumpRect.bottom<=composerTop && jumpRect.top>=shellRect.top && Math.abs(jumpRect.left+jumpRect.width/2-shellRect.left-shellRect.width/2)<=1,"jump button must float above the composer at the center of the chat");
       check(thread.clientHeight===threadHeight && document.querySelector(".composer-dock").getBoundingClientRect().top===composerTop,"showing the jump button must not shift the conversation or composer: "+JSON.stringify({threadHeight,afterHeight:thread.clientHeight,composerTop,afterTop:document.querySelector(".composer-dock").getBoundingClientRect().top,editor:document.querySelector("textarea").value,editorHeight:document.querySelector("textarea").getBoundingClientRect().height}));
@@ -829,7 +959,7 @@ test.skipIf(!existsSync(edge) && !process.env.PIG_REQUIRE_UI_TESTS)(
       check(!document.querySelector(".tool-group-body"),"collapsed exploration groups must not mount child tools");
       await click(document.querySelector("summary"));
       metrics.groupCalls=document.querySelectorAll(".tool-group-body > details").length;
-      check(metrics.groupCalls===500 && !document.querySelector(".text-range") && document.querySelector('.tool-target[title="file499"]'),"expanded exploration group must keep every original tool row without paging or wrappers");
+      check(metrics.groupCalls===500 && !document.querySelector(".text-range") && document.querySelector('.tool-target[aria-description="file499"]'),"expanded exploration group must keep every original tool row without paging or wrappers");
       await click(document.querySelector('.tool-group-body > details > summary'));
       check(document.querySelector('.tool-group-body > details').open,"child tool must open");
       await click(document.querySelector('.tool-group > summary'));
@@ -1071,6 +1201,7 @@ test.skipIf(!existsSync(edge) && !process.env.PIG_REQUIRE_UI_TESTS)(
       const largeCatalog=Array.from({length:1000},(_,i)=>Object.defineProperty({...pickerModels[0],id:"large-"+i,name:"Large model "+i},"provider",{enumerable:true,get(){catalogReads++;return pickerProvider.id;}}));
       flushSync(()=>useStore.setState({bootstrap:{...pickerBootstrap,providers:[{...pickerProvider,accounts:undefined}],models:largeCatalog,accountCatalogs:undefined},openingTarget:{cwd:"perf-new-chat",selection:pickerSelection}}));
       const newChatStarted=performance.now();await render(<OpeningComposer/>);
+      check(!document.querySelector(".model-picker summary").hasAttribute("title") && !!document.querySelector(".model-picker summary").getAttribute("aria-label"),"model triggers must keep an accessible label without a native tooltip");
       check(!document.querySelector(".model-option"),"a new composer must not mount a thousand hidden model options");
       const newChatMountMs=performance.now()-newChatStarted;
       const newEditor=document.querySelector("textarea");newEditor.focus();catalogReads=0;
@@ -1079,10 +1210,29 @@ test.skipIf(!existsSync(edge) && !process.env.PIG_REQUIRE_UI_TESTS)(
       metrics.newChatInput={catalogModels:1000,catalogReadsDuringTyping:catalogReads,hiddenModelOptions:document.querySelectorAll(".model-option").length,mountMs:newChatMountMs};
       const readyInputSnapshot={...base,address:{...base.address,sessionId:"perf-ready-input"},info:{...base.info,id:"perf-ready-input"},ready:true,model:pickerModels[0],modelCatalog:largeCatalog,transcript:transcript([])};
       await render(<Composer snapshot={readyInputSnapshot}/>);catalogReads=0;
+      check(!document.querySelector(".model-picker summary").hasAttribute("title") && !!document.querySelector(".model-picker summary").getAttribute("aria-label"),"ready composer model triggers must keep an accessible label without a native tooltip");
       const readyEditor=document.querySelector("textarea");readyEditor.focus();
       for(let i=1;i<=12;i++)await type(readyEditor,"typing ready".slice(0,i));
       check(readyEditor.value==="typing ready" && catalogReads===0,"typing in a ready composer must not refilter its model catalog: "+catalogReads);
       metrics.newChatInput.readyCatalogReadsDuringTyping=catalogReads;
+      for(let token=0;token<100;token++){
+        await render(<Composer snapshot={{...readyInputSnapshot,snapshotSeq:token+2,transcript:{...readyInputSnapshot.transcript,running:true,records:[assistant("live",1000,[{type:"text",text:"Streaming "+token}])]}}}/>);
+      }
+      check(catalogReads===0,"closed model pickers must not scan catalogs during 100 snapshot updates: "+catalogReads);
+      check(document.querySelector("textarea")===readyEditor && readyEditor.value==="typing ready","streaming must preserve the editor and draft");
+      metrics.newChatInput.closedStreamingCatalogReads=catalogReads;
+      await click(document.querySelector(".model-picker summary"));
+      const streamingSearch=document.querySelector(".model-search input");
+      await type(streamingSearch,"Large model 9");
+      check(document.querySelector(".model-option"),"open streaming picker must have searchable results");
+      catalogReads=0;
+      for(let token=0;token<100;token++){
+        await render(<Composer snapshot={{...readyInputSnapshot,snapshotSeq:token+102,address:{...readyInputSnapshot.address},model:{...readyInputSnapshot.model},effortLevels:[...readyInputSnapshot.effortLevels],contextUsage:{tokens:token,contextWindow:1000,percent:token/10},transcript:{...readyInputSnapshot.transcript,running:true,records:[assistant("live",1000,[{type:"text",text:"Streaming "+token}])]}}}/>);
+      }
+      check(catalogReads===0,"an open picker must not rescan its catalog during 100 body/context updates: "+catalogReads);
+      check(document.querySelector(".model-search input")===streamingSearch && streamingSearch.value==="Large model 9" && document.activeElement===streamingSearch,"streaming must preserve open picker search, focus and DOM");
+      metrics.newChatInput.openStreamingCatalogReads=catalogReads;
+      await click(document.querySelector(".model-picker summary"));
       await render(<div/>);
       flushSync(()=>useStore.setState({bootstrap:pickerBootstrap,openingTarget:beforeNewChat.openingTarget,newChatDrafts:beforeNewChat.newChatDrafts}));
       await render(<div className="chat-shell" style={{height:500}}><div style={{marginTop:"auto",alignSelf:"flex-end"}}><ModelPicker selection={pickerSelection} onSelect={()=>{}}/></div></div>);

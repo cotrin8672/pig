@@ -82,6 +82,7 @@ export function installChatRenderers(value: unknown, file = "") {
         "thinking",
         "error",
         "retry",
+        "compaction",
       ].includes(entry.kind)
     )
       throw new Error(`Unknown renderer kind: ${entry.kind}`);

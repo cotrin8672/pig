@@ -3,6 +3,124 @@ import { fauxAssistantMessage } from "@earendil-works/pi-ai";
 import { SessionManager } from "./sdk";
 import { projectEntries, SDKProjector } from "./sdk-projector";
 
+test("manual and automatic compaction stay visible until compaction_end, not agent_end", () => {
+  for (const reason of ["manual", "threshold", "overflow"] as const) {
+    const manager = SessionManager.inMemory("fixture");
+    const projector = new SDKProjector(manager, 1);
+    if (reason !== "manual") projector.event({ type: "agent_start" });
+    projector.event({ type: "compaction_start", reason });
+    const during = projector.snapshot();
+    expect(during.compaction).toEqual({ reason });
+    expect(during.running).toBe(reason !== "manual");
+    projector.event({ type: "agent_end", messages: [], willRetry: false });
+    expect(projector.snapshot().compaction).toEqual({ reason });
+    const firstKeptEntryId = manager.appendMessage({
+      role: "user",
+      content: "Keep going",
+      timestamp: 1,
+    });
+    manager.appendCompaction("The summary", firstKeptEntryId, 42000);
+    projector.event({
+      type: "compaction_end",
+      reason,
+      result: { summary: "The summary", firstKeptEntryId, tokensBefore: 42000 },
+      aborted: false,
+      willRetry: reason === "overflow",
+    });
+    const after = projector.snapshot();
+    expect(after.compaction).toBeUndefined();
+    expect(after.records.at(-1)).toMatchObject({
+      kind: "session-entry",
+      entryType: "compaction",
+      data: { summary: "The summary", tokensBefore: 42000 },
+    });
+    expect(during.compaction).toEqual({ reason });
+  }
+});
+
+test("cancelled, failed, skipped and settled compactions never leave an active indicator", () => {
+  for (const outcome of [
+    "aborted",
+    "error",
+    "skipped",
+    "settled",
+    "failed",
+  ] as const) {
+    const projector = new SDKProjector(SessionManager.inMemory("fixture"), 1);
+    projector.event({ type: "compaction_start", reason: "manual" });
+    if (outcome === "settled")
+      projector.event({ type: "agent_settled", aborted: true });
+    else if (outcome === "failed") projector.fail(new Error("SDK failed"));
+    else
+      projector.event({
+        type: "compaction_end",
+        reason: "manual",
+        result: undefined,
+        aborted: outcome === "aborted",
+        willRetry: false,
+        errorMessage: outcome === "error" ? "Compaction failed" : undefined,
+      });
+    expect(projector.snapshot().compaction).toBeUndefined();
+    expect(projector.snapshot().records).toEqual([]);
+    if (outcome === "error")
+      expect(projector.failure).toBe("Compaction failed");
+  }
+});
+
+test("live snapshots isolate SDK mutations without copying large string payloads through native clone", () => {
+  const manager = SessionManager.inMemory("fixture");
+  const projector = new SDKProjector(manager, 1);
+  const text = "answer\n".repeat(128 * 1024);
+  const message = fauxAssistantMessage(text);
+  const arguments_ = { nested: { values: [1] } };
+  message.content.push({
+    type: "toolCall",
+    id: "live-tool",
+    name: "read",
+    arguments: arguments_,
+  });
+  const partial = {
+    content: [{ type: "text" as const, text }],
+    details: { progress: [1] },
+  };
+  projector.event({ type: "message_start", message });
+  projector.event({
+    type: "tool_execution_update",
+    toolCallId: "live-tool",
+    toolName: "read",
+    args: arguments_,
+    partialResult: partial,
+  });
+  projector.snapshot();
+  const native = spyOn(globalThis, "structuredClone");
+  let first: ReturnType<SDKProjector["snapshot"]>;
+  try {
+    first = projector.snapshot();
+    expect(native).not.toHaveBeenCalled();
+  } finally {
+    native.mockRestore();
+  }
+  const live = first.records.at(-1);
+  if (live?.kind !== "message" || live.message.role !== "assistant")
+    throw new Error("Missing live assistant");
+  const clonedCall = live.message.content[1];
+  if (clonedCall.type !== "toolCall") throw new Error("Missing tool call");
+  arguments_.nested.values.push(2);
+  partial.content[0].text = "new output";
+  partial.details.progress.push(2);
+  if (message.content[0].type === "text")
+    message.content[0].text += " appended";
+  expect(clonedCall.arguments).toEqual({ nested: { values: [1] } });
+  expect(live.message.content[0]).toMatchObject({ text });
+  expect(first.tools["live-tool"].result).toEqual({
+    content: [{ type: "text", text }],
+    details: { progress: [1] },
+  });
+  const next = projector.snapshot();
+  expect(next.tools["live-tool"].result).toEqual(partial);
+  expect(next.records.at(-1)).not.toBe(live);
+});
+
 test("saved metadata, custom entries/messages, tool details/images and opaque entry IDs survive", () => {
   const manager = SessionManager.inMemory("fixture");
   const userId = manager.appendMessage({

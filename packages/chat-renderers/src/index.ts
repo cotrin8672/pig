@@ -6,6 +6,13 @@ export interface ChatRenderData {
   image: { sources: string[]; alt?: string };
   thinking: { text: string; label: string; active: boolean };
   error: { message: string; stopReason?: string };
+  compaction: {
+    active: boolean;
+    reason?: "manual" | "threshold" | "overflow";
+    summary?: string;
+    /** Context size before compaction, not the size of the resulting summary. */
+    tokensBefore?: number;
+  };
   /** A failed attempt the SDK retried. `waiting` is set while the next attempt is pending. */
   retry: {
     attempt: number;

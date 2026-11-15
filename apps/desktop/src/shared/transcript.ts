@@ -1,4 +1,5 @@
 import type { Message as ModelMessage } from "@earendil-works/pi-ai";
+import { IMPORTED_HISTORY_PROVIDER } from "./chat-history-import";
 import type { WireEvent } from "./rpc-schema";
 export type Message =
   | ModelMessage
@@ -30,6 +31,15 @@ export type TranscriptRecord = {
   | { kind: "session-entry"; entryType: string; data: unknown }
 );
 /** Persisted bodies are immutable within a history revision; envelopes are not. */
+export function recordEnvelope(record: TranscriptRecord) {
+  if (record.kind === "message") {
+    const { message: _message, details: _details, ...envelope } = record;
+    return envelope;
+  }
+  const { data: _data, ...envelope } = record;
+  return envelope;
+}
+
 export function recordPayload(record: TranscriptRecord) {
   return record.kind === "message"
     ? {
@@ -51,6 +61,7 @@ export interface Transcript {
   >;
   current: string | null;
   running: boolean;
+  compaction?: { reason: "manual" | "threshold" | "overflow" };
   liveToEntry: Record<string, string>;
 }
 export const emptyTranscript = (): Transcript => ({
@@ -90,6 +101,7 @@ export function hydrate(messages: Message[]): Transcript {
 }
 
 export interface ResponseStats {
+  imported?: boolean;
   /** Turn index of the prompting user message, if it is in the transcript. */
   userIndex?: number;
   stopReason: string;
@@ -111,6 +123,7 @@ export function responseStats(
 ): ResponseStats | undefined {
   const last = turns[end]?.message;
   if (last?.role !== "assistant") return;
+  const imported = last.provider === IMPORTED_HISTORY_PROVIDER;
   let userIndex: number | undefined;
   let tools = 0;
   let totalTokens = 0;
@@ -127,8 +140,9 @@ export function responseStats(
     }
     if (message.role !== "assistant") continue;
     start = message.timestamp;
-    totalTokens += message.usage.totalTokens;
-    if (message.durationMs) {
+    if (message.provider !== IMPORTED_HISTORY_PROVIDER)
+      totalTokens += message.usage.totalTokens;
+    if (message.durationMs && message.provider !== IMPORTED_HISTORY_PROVIDER) {
       timedOutput += message.usage.output;
       timedMs += message.durationMs;
     }
@@ -141,9 +155,10 @@ export function responseStats(
   }
   const endedAt = last.timestamp + (last.durationMs ?? 0);
   return {
+    ...(imported ? { imported: true } : {}),
     userIndex,
     stopReason: last.stopReason,
-    durationMs: Math.max(0, endedAt - start),
+    durationMs: imported ? 0 : Math.max(0, endedAt - start),
     endedAt,
     timestamp: last.timestamp,
     tools,

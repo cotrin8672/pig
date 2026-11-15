@@ -13,6 +13,7 @@ import {
   type Transcript,
   type TranscriptRecord,
 } from "../shared/transcript";
+import { cloneProjection } from "./clone-projection";
 import {
   type RecoveredPrompt,
   type RunDiagnostic,
@@ -118,6 +119,7 @@ export class SDKProjector {
   private branchIds = new Set<string>();
   private page?: Transcript;
   running = false;
+  private compaction?: Transcript["compaction"];
   failure?: string;
   aborted = false;
   retry?: RetryWait;
@@ -233,6 +235,7 @@ export class SDKProjector {
         .join("\n");
   }
   fail(error: unknown) {
+    this.compaction = undefined;
     this.failure = error instanceof Error ? error.message : String(error);
     this.saveDiagnostic(this.running ? "running" : "failed");
   }
@@ -241,6 +244,7 @@ export class SDKProjector {
     // event before assigning another live ID, never by timestamp identity.
     this.commitLive();
     if (event.type === "agent_start") {
+      this.compaction = undefined;
       this.running = true;
       this.failure = undefined;
       this.aborted = false;
@@ -293,8 +297,12 @@ export class SDKProjector {
         // Own the completed payload; SDK/extension objects may still be mutated.
         result: structuredClone(event.result),
       };
-    if (event.type === "compaction_end" && event.errorMessage)
-      this.fail(event.errorMessage);
+    if (event.type === "compaction_start")
+      this.compaction = { reason: event.reason };
+    if (event.type === "compaction_end") {
+      this.compaction = undefined;
+      if (event.errorMessage) this.fail(event.errorMessage);
+    }
     if (event.type === "auto_retry_start") {
       // The failed attempt is superseded; only exhausted retries are a failure.
       this.failure = undefined;
@@ -314,6 +322,7 @@ export class SDKProjector {
       this.fail(event.finalError);
     // agent_end is not completion: before-settle hooks may still be executing.
     if (event.type === "agent_settled") {
+      this.compaction = undefined;
       this.running = false;
       this.aborted = event.aborted;
       this.commitLive();
@@ -480,7 +489,7 @@ export class SDKProjector {
         },
       });
     }
-    if (this.live) state.records.push(structuredClone(this.live));
+    if (this.live) state.records.push(cloneProjection(this.live));
     const calls = new Set(Object.keys(state.tools));
     for (const record of state.records)
       if (record.kind === "message" && record.message.role === "assistant")
@@ -490,11 +499,12 @@ export class SDKProjector {
       if (this.tools[id])
         state.tools[id] =
           this.tools[id].status === "running"
-            ? structuredClone(this.tools[id])
+            ? cloneProjection(this.tools[id])
             : this.tools[id];
     state.liveToEntry = { ...this.aliases };
     state.current = this.live?.id ?? null;
     state.running = this.running;
+    if (this.compaction) state.compaction = { ...this.compaction };
     return state;
   }
 }

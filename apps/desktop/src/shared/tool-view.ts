@@ -98,9 +98,15 @@ export function finishedWork(
   const result = new Map<number, WorkRange>();
   const close = (start: number, end: number, live = false) => {
     const shown: number[] = [];
-    for (let i = start; i <= end; i++)
-      if (visible(records[i]) && role(records[i]) !== "toolResult")
+    for (let i = start; i <= end; i++) {
+      const record = records[i];
+      if (
+        visible(record) &&
+        role(record) !== "toolResult" &&
+        !(record.kind === "session-entry" && record.entryType === "compaction")
+      )
         shown.push(i);
+    }
     const final = [...shown]
       .reverse()
       .find((i) => role(records[i]) === "assistant");
@@ -127,7 +133,12 @@ export function finishedWork(
           if (block.type === "toolCall") tools++;
     }
     const range = { key: records[shown[0]].id, first: shown[0], final, tools };
-    for (let i = start; i <= end; i++) result.set(i, range);
+    for (let i = start; i <= end; i++) {
+      const record = records[i];
+      if (record.kind === "session-entry" && record.entryType === "compaction")
+        continue;
+      result.set(i, range);
+    }
   };
   let start = from;
   for (let index = from; index < records.length; index++) {

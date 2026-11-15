@@ -24,6 +24,31 @@ function turn(id: string, message: Message): Turn {
 }
 const user = (id: string) =>
   turn(id, { role: "user", content: id, timestamp: 0 });
+
+test("compaction remains visible outside folded work and does not create work by itself", () => {
+  const compaction: TranscriptRecord = {
+    id: "compaction",
+    entryId: "compaction",
+    parentId: null,
+    branchId: "branch",
+    order: 0,
+    kind: "session-entry",
+    entryType: "compaction",
+    data: { summary: "Summary" },
+  };
+  const answer = turn("answer", fauxAssistantMessage("Done"));
+  expect(
+    finishedWork([user("user"), answer, compaction], false, isVisibleRecord),
+  ).toEqual(new Map());
+  const records: TranscriptRecord[] = response("with-work");
+  records.splice(2, 0, compaction);
+  const work = finishedWork(records, false, isVisibleRecord);
+  expect(work.size).toBeGreaterThan(0);
+  expect(work.has(2)).toBe(false);
+  expect(work.has(1)).toBe(true);
+  expect(work.has(records.length - 1)).toBe(true);
+});
+
 function assistant(id: string, live = false, text = id) {
   const message = fauxAssistantMessage(text);
   message.content.unshift({ type: "thinking", thinking: "working" });
