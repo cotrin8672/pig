@@ -1,11 +1,11 @@
-import { X } from "lucide-react";
+import { SquarePen, X } from "lucide-react";
 import { memo, type ReactNode, useMemo } from "react";
 import { useShallow } from "zustand/react/shallow";
 import { ChatOpening } from "./ChatOpening";
 import type { ChatSnapshot } from "./chat-snapshot";
 import { useT } from "./i18n";
 import { paneGeometry } from "./pane-layout";
-import { closePane, focusPane } from "./pane-state";
+import { closePane, focusPane, newChatInPane } from "./pane-state";
 import { ResizeDivider } from "./ResizeDivider";
 import { useStore } from "./store";
 import { selectPaneHeading } from "./ui-selectors";
@@ -62,18 +62,29 @@ export function PaneWorkspace({
           >
             {active === id ? children : null}
           </PaneContent>
-          {geometry.panes.length > 1 && (
+          <div className="pane-actions electrobun-webkit-app-region-no-drag">
             <button
               type="button"
-              className="pane-close electrobun-webkit-app-region-no-drag"
-              aria-label={`${t.paneClose}: Pane ${id}`}
-              title={t.paneClose}
-              onMouseDown={(event) => event.preventDefault()}
-              onClick={() => closePane(id)}
+              className="pane-action pane-new-chat"
+              aria-label={`${t["New chat"]}: Pane ${id}`}
+              title={t["New chat"]}
+              onClick={() => newChatInPane(id)}
             >
-              <X size={14} aria-hidden="true" />
+              <SquarePen size={14} aria-hidden="true" />
             </button>
-          )}
+            {geometry.panes.length > 1 && (
+              <button
+                type="button"
+                className="pane-action pane-close"
+                aria-label={`${t.paneClose}: Pane ${id}`}
+                title={t.paneClose}
+                onMouseDown={(event) => event.preventDefault()}
+                onClick={() => closePane(id)}
+              >
+                <X size={14} aria-hidden="true" />
+              </button>
+            )}
+          </div>
         </section>
       ))}
       {geometry.dividers.map((divider) => (

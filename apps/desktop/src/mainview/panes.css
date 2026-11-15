@@ -55,17 +55,21 @@
 .pane-content .chat-empty {
   padding-top: clamp(16px, 18cqh, 180px);
 }
-.pane-close {
+.pane-actions {
   position: absolute;
   top: 36px;
   right: 12px;
   z-index: 3;
+  display: flex;
+  gap: 4px;
+}
+.pane-action {
   width: 28px;
   height: 28px;
   padding: 0;
   color: var(--ds-text-muted);
 }
-.pane-close:hover:not(:disabled) {
+.pane-action:hover:not(:disabled) {
   color: var(--ds-text-primary);
 }
 .pane-preview-divider {

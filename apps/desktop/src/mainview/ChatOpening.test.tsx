@@ -527,7 +527,14 @@ if (process.env.PIG_CHAT_OPENING_CHILD !== "1") {
       const newChatButtons = [
         ...html.matchAll(/<button[^>]*title="New chat"[^>]*>/g),
       ];
-      expect(newChatButtons).toHaveLength(2);
+      // Both sidebar actions plus the required per-pane New chat action.
+      expect(newChatButtons).toHaveLength(3);
+      expect(
+        newChatButtons.filter(([button]) => button.includes("pane-new-chat")),
+      ).toHaveLength(1);
+      expect(
+        newChatButtons.filter(([button]) => !button.includes("pane-new-chat")),
+      ).toHaveLength(2);
       for (const [button] of newChatButtons)
         expect(button).not.toContain("disabled");
       expect(html).not.toContain("chat-opening-content");
