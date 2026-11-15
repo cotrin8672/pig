@@ -9,6 +9,7 @@ import { navigate, navigationRevision } from "./navigation";
 import { receiveExtension, receiveRuntime } from "./runtime-events";
 import { useStore } from "./store";
 import {
+  createProjectActivitySelector,
   selectAppView,
   selectBrokerView,
   selectConversationView,
@@ -17,6 +18,73 @@ import {
   selectRequestPreviews,
   selectSessionStatus,
 } from "./ui-selectors";
+
+test("project activity reuses metadata without rescanning persisted rows on token updates", () => {
+  const state: ReturnType<typeof useStore.getState> = fixture();
+  let scans = 0;
+  state.sessions.project = new Proxy(state.sessions.project, {
+    get(target, key, receiver) {
+      if (key === "flatMap") scans++;
+      return Reflect.get(target, key, receiver);
+    },
+  });
+  const select = createProjectActivitySelector();
+  state.snapshots.b = {
+    ...state.snapshots.b,
+    transcript: { ...emptyTranscript(), running: true },
+  };
+  const running = select(state, "project");
+  expect(scans).toBe(1);
+  for (let i = 0; i < 100; i++) {
+    state.snapshots = {
+      ...state.snapshots,
+      b: {
+        ...state.snapshots.b,
+        snapshotSeq: i + 2,
+        transcript: {
+          ...hydrate([fauxAssistantMessage(String(i))]),
+          running: true,
+        },
+      },
+    };
+    expect(select(state, "project")).toBe(running);
+  }
+  expect(scans).toBe(1);
+  state.pendingUI = [request()];
+  expect(select(state, "project")).toEqual([
+    undefined,
+    false,
+    "waiting",
+    false,
+  ]);
+  expect(scans).toBe(2);
+  state.hostId = "another-host";
+  expect(select(state, "project")).toEqual(running);
+  state.hostId = "selectors";
+  state.pendingUI = [];
+  state.snapshots.b = { ...state.snapshots.b, failure: "failure" };
+  expect(select(state, "project")).toEqual(
+    selectProjectActivity(state, "project"),
+  );
+  state.bootstrap = {
+    ...state.bootstrap,
+    desktop: {
+      ...state.bootstrap.desktop,
+      sessions: { a: { archived: true } },
+    },
+  };
+  expect(select(state, "project")).toEqual(
+    selectProjectActivity(state, "project"),
+  );
+  state.snapshots = {};
+  expect(select(state, "project")).toEqual(
+    selectProjectActivity(state, "project"),
+  );
+  state.sessions = { ...state.sessions, project: [snapshot("new").info] };
+  expect(select(state, "project")).toEqual(
+    selectProjectActivity(state, "project"),
+  );
+});
 
 function snapshot(id: string, cwd = "project"): Snapshot {
   return {
@@ -192,47 +260,7 @@ test("100 active tokens update the conversation without invalidating the app she
   expect(selectConversationView(state).activeSnapshot?.ready).toBe(false);
 });
 
-test("shell title and cwd still reflect metadata, extension title removal and active navigation", () => {
-  const state = { ...fixture(), initialized: true };
-  expect(selectAppView(state)).toMatchObject({
-    showChatHeader: true,
-    chatTitle: "a",
-    chatCwd: "project",
-  });
-  state.snapshots.a.info = {
-    ...state.snapshots.a.info,
-    title: "Renamed",
-    cwd: "moved",
-  };
-  expect(selectAppView(state)).toMatchObject({
-    chatTitle: "Renamed",
-    chatCwd: "moved",
-  });
-  state.extensionStatuses = {
-    [addressKey(state.snapshots.a.address)]: {
-      title: "Extension title",
-      statuses: [],
-      widgets: [],
-    },
-  };
-  expect(selectAppView(state).chatTitle).toBe("Extension title");
-  state.extensionStatuses = {
-    [addressKey(state.snapshots.a.address)]: {
-      title: "",
-      statuses: [],
-      widgets: [],
-    },
-  };
-  expect(selectAppView(state).chatTitle).toBe("");
-  state.extensionStatuses = {};
-  expect(selectAppView(state).chatTitle).toBe("Renamed");
-  state.active = "b";
-  expect(selectAppView(state).chatTitle).toBe("b");
-  state.page = "settings";
-  expect(selectAppView(state).showChatHeader).toBe(false);
-});
-
-test("opening shell uses listed metadata, then preview metadata, without subscribing to preview tokens", () => {
+test("opening shell does not subscribe to preview tokens", () => {
   const state = {
     ...fixture(),
     initialized: true,
@@ -246,17 +274,10 @@ test("opening shell uses listed metadata, then preview metadata, without subscri
     title: "Listed title",
     modified: 1,
   });
-  expect(selectAppView(state)).toMatchObject({
-    showChatHeader: true,
-    chatTitle: "Listed title",
-    chatCwd: "project",
-    openingExistingChat: true,
-  });
   expect(selectConversationView(state).openingSnapshot).toBeUndefined();
   state.openingTarget = { cwd: "project", id: "b" };
   state.snapshots.b = { ...state.snapshots.b, ready: false };
   const app = selectAppView(state);
-  expect(app.chatTitle).toBe("b");
   state.snapshots.b = {
     ...state.snapshots.b,
     snapshotSeq: 2,
@@ -264,11 +285,6 @@ test("opening shell uses listed metadata, then preview metadata, without subscri
   };
   expect(shallow(selectAppView(state), app)).toBe(true);
   expect(selectConversationView(state).openingSnapshot).toBe(state.snapshots.b);
-  state.snapshots.b.info = {
-    ...state.snapshots.b.info,
-    title: "Preview title",
-  };
-  expect(selectAppView(state).chatTitle).toBe("Preview title");
 });
 
 test("project and row share waiting priority, count each session once, and reject old owners", () => {

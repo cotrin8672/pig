@@ -8,6 +8,66 @@ import {
 } from "../../scripts/ui-fixture";
 
 test.skipIf(!existsSync(fixtureEdge) && !process.env.PIG_REQUIRE_UI_TESTS)(
+  "annotations belong only to the pane containing the selected response",
+  () =>
+    runUiFixture(
+      "pane-annotations",
+      `
+    const {createRoot}=await import(${fixtureImport(import.meta.resolve("react-dom/client"))});
+    const {flushSync}=await import(${fixtureImport(import.meta.resolve("react-dom"))});
+    const {fauxAssistantMessage}=await import(${fixtureImport(import.meta.resolve("@earendil-works/pi-ai"))});
+    const {App}=await import(${fixtureImport(new URL("./App.tsx", import.meta.url))});
+    const {useStore}=await import(${fixtureImport(new URL("./store.ts", import.meta.url))});
+    const {drafts}=await import(${fixtureImport(new URL("./draft-store.ts", import.meta.url))});
+    await import(${fixtureImport(new URL("./styles.css", import.meta.url))});
+    ${fixtureHelpers}
+    const root=createFixtureRoot(createRoot);
+    const snapshot=id=>({address:{hostId:'annotations',sessionId:id,epoch:1},snapshotSeq:1,
+      info:{id,cwd:'fixture',title:'Chat '+id,modified:1},effort:'off',effortLevels:[],
+      transcript:{records:[{id:'answer-'+id,parentId:null,branchId:id,order:0,kind:'message',
+        message:fauxAssistantMessage('Same passage in both panes')}],tools:{},current:null,running:false,liveToEntry:{}}});
+    const a=snapshot('a'),b=snapshot('b'),snapshots={a,b};
+    window.__requests={
+      listSlashCommands:async()=>[],
+      syncDraft:async params=>({applied:true,draft:{...params.content,revision:params.expectedRevision+1}}),
+    };
+    flushSync(()=>useStore.setState(s=>({
+      initialized:true,page:'chat',active:'a',activePane:1,
+      paneTree:{type:'split',axis:'columns',weights:[0.5,0.5],children:[{type:'pane',id:1},{type:'pane',id:2}]},
+      panes:{1:{sessionId:'a'},2:{sessionId:'b'}},snapshots,addresses:{a:a.address,b:b.address},sessions:{},
+      bootstrap:{...s.bootstrap,generalCwd:'fixture'},settings:{...s.settings,language:'en'},
+    })));
+    flushSync(()=>root.render(<App/>));
+    const pane=id=>document.querySelector('[data-pane-id="'+id+'"]');
+    await until(()=>pane(1)?.querySelector('.prose p')&&pane(2)?.querySelector('.prose p'),'both responses must mount');
+    const counts={a:0,b:0};
+    for(const id of [1,2,1]){
+      const session=id===1?'a':'b',other=id===1?'b':'a';
+      const source=pane(id).querySelector('.prose p');
+      source.dispatchEvent(new PointerEvent('pointerdown',{bubbles:true,button:0,pointerId:1}));
+      const range=document.createRange();range.selectNodeContents(source);
+      getSelection().removeAllRanges();getSelection().addRange(range);await wait();
+      check(!document.querySelector('.annotation-popover'),'dragging must not open a popover');
+      document.dispatchEvent(new PointerEvent('pointerup',{bubbles:true,button:0,pointerId:1}));
+      await until(()=>document.querySelector('.annotation-popover > button'),'selection must offer annotation');
+      check(document.querySelectorAll('.annotation-popover').length===1,'only the source pane may offer annotation');
+      document.querySelector('.annotation-popover > button').click();await wait();
+      check(document.querySelectorAll('.annotation-popover textarea').length===1,'only one comment editor may open');
+      document.querySelector('.annotation-popover button[type="submit"]').click();await wait();
+      counts[session]++;
+      check(drafts.read(snapshots[session].address).content.annotations?.length===counts[session],'annotation must reach its source draft');
+      check((drafts.read(snapshots[other].address).content.annotations?.length??0)===counts[other],'another pane must not receive the annotation');
+      check(document.activeElement===pane(id).querySelector('.composer textarea')&&useStore.getState().activePane===id,'adding must focus only the source composer');
+      check(!document.querySelector('.annotation-popover'),'adding must close the popover');
+    }
+    root.unmount();
+  `,
+      { realRpc: true },
+    ),
+  60_000,
+);
+
+test.skipIf(!existsSync(fixtureEdge) && !process.env.PIG_REQUIRE_UI_TESTS)(
   "pane winbars stay transparent and truncate long names at narrow widths and larger text sizes",
   () =>
     runUiFixture(
@@ -39,7 +99,7 @@ test.skipIf(!existsSync(fixtureEdge) && !process.env.PIG_REQUIRE_UI_TESTS)(
         for(const node of bar.querySelectorAll('.pane-winbar-project,.pane-winbar-title')){
           const bounds=node.getBoundingClientRect(),style=getComputedStyle(node);
           check(bounds.width>0&&bounds.left>=rect.left&&bounds.right<=rect.right,'both labels must remain inside narrow panes');
-          check(node.scrollWidth>node.clientWidth&&style.textOverflow==='ellipsis'&&node.title===node.textContent,'long names must truncate while retaining their full tooltip');
+          check(node.scrollWidth>node.clientWidth&&style.textOverflow==='ellipsis'&&node.getAttribute('aria-description')===node.textContent&&!node.hasAttribute('title'),'long names must truncate while retaining an accessible description without a native tooltip');
         }
         check(bar.scrollWidth===bar.clientWidth,'long labels must not overflow the winbar');
       }
@@ -163,9 +223,9 @@ test.skipIf(!existsSync(fixtureEdge) && !process.env.PIG_REQUIRE_UI_TESTS)(
       check(pane(2).textContent.includes('update 3')&&reads.a===0&&reads.b>0,'the new active pane must also isolate its updates: '+JSON.stringify(reads));
       check(shellReads===0,'the newly active pane must not render the app shell for token updates');
       flushSync(()=>useStore.setState(s=>({snapshots:{...s.snapshots,b:{...s.snapshots.b,info:{...s.snapshots.b.info,title:'Renamed active chat',cwd:'changed-project',modified:2}}}})));await wait();
-      check(document.querySelector('.chat-heading small')?.textContent==='Renamed active chat'&&document.querySelector('.chat-heading span')?.textContent==='changed-project','title and project metadata must still update the window header');
+      check(!document.querySelector('.window-titlebar').textContent.includes('Renamed active chat'),'session metadata must stay out of the window titlebar');
       check(winbar(2).querySelector('.pane-winbar-project').textContent==='changed-project'&&winbar(2).querySelector('.pane-winbar-title').textContent==='Renamed active chat','the active winbar must also follow title and project changes');
-      check(shellReads>0&&pane(2).querySelector('textarea')===editorB&&editorB.value==='draft b'&&document.activeElement===editorB,'metadata changes must update the shell without remounting or blurring the editor');
+      check(shellReads===0&&pane(2).querySelector('textarea')===editorB&&editorB.value==='draft b'&&document.activeElement===editorB,'metadata changes must update the winbar without rendering the shell, remounting or blurring the editor');
       const divider=document.querySelector('.pane-preview-divider');
       divider.dispatchEvent(new KeyboardEvent('keydown',{key:'ArrowLeft',bubbles:true,cancelable:true}));await wait();
       check(pane(1).querySelector('textarea')===editorA&&pane(2).querySelector('textarea')===editorB&&editorB.value==='draft b'&&document.activeElement===editorB,'resizing must retain drafts, editors and focus');
@@ -341,6 +401,69 @@ test.skipIf(!existsSync(fixtureEdge) && !process.env.PIG_REQUIRE_UI_TESTS)(
     await wait();
   `,
       { realRpc: true },
+    ),
+  60_000,
+);
+
+test.skipIf(!existsSync(fixtureEdge) && !process.env.PIG_REQUIRE_UI_TESTS)(
+  "focus ring follows rounded corners; collapsed sidebar toggle lives in the Zen bar",
+  () =>
+    runUiFixture(
+      "thread-focus-ring",
+      `
+    const {createRoot}=await import(${fixtureImport(import.meta.resolve("react-dom/client"))});
+    const {flushSync}=await import(${fixtureImport(import.meta.resolve("react-dom"))});
+    const {App}=await import(${fixtureImport(new URL("./App.tsx", import.meta.url))});
+    const {useStore}=await import(${fixtureImport(new URL("./store.ts", import.meta.url))});
+    await import(${fixtureImport(new URL("./styles.css", import.meta.url))});
+    ${fixtureHelpers}
+    const root=createFixtureRoot(createRoot);
+    window.__requests={listSlashCommands:async()=>[]};
+    const a={address:{hostId:'ring',sessionId:'a',epoch:1},snapshotSeq:1,
+      info:{id:'a',cwd:'fixture',title:'Chat a',modified:1},effort:'off',effortLevels:[],
+      transcript:{history:{revision:'a'},records:[],tools:{},current:null,running:false,liveToEntry:{}}};
+    flushSync(()=>useStore.setState(s=>({
+      initialized:true,page:'chat',active:'a',activePane:1,paneTree:{type:'pane',id:1},
+      panes:{1:{sessionId:'a'}},snapshots:{a},addresses:{a:a.address},sessions:{},
+      bootstrap:{...s.bootstrap,generalCwd:'fixture'},settings:{...s.settings,language:'en'},
+    })));
+    flushSync(()=>root.render(<App/>));
+    await until(()=>document.querySelector('.thread-scroll'),'the conversation must mount');
+    await wait();
+    const thread=document.querySelector('.thread-scroll'),clip=document.querySelector('.main-clip');
+    const t=thread.getBoundingClientRect(),c=clip.getBoundingClientRect();
+    check(Math.abs(t.bottom-c.bottom)<1&&Math.abs(t.left-c.left)<1&&Math.abs(t.right-c.right)<1,'the conversation must reach the clipped corners');
+    const radius=parseFloat(getComputedStyle(clip).borderBottomLeftRadius);
+    // A point on the clip's corner curve, inside the 2px ring band.
+    const d=(radius-1)*Math.SQRT1_2,corners=[[t.left+radius-d,t.bottom-radius+d],[t.right-radius+d,t.bottom-radius+d]];
+    const before=await capturePixels();
+    thread.focus();await wait();
+    check(thread.matches(':focus-visible'),'keyboard-style focus must show the ring');
+    const after=await capturePixels();
+    const pause=ms=>new Promise(resolve=>setTimeout(resolve,ms));
+    const toggle=()=>document.querySelector('[aria-controls="app-sidebar"]');
+    thread.blur();flushSync(()=>toggle().click());await pause(350);
+    const bar=document.querySelector('.window-titlebar');
+    check(bar.contains(toggle())&&!document.querySelector('.sidebar-toggle'),'a collapsed sidebar must move its toggle into the Zen bar');
+    check(getComputedStyle(toggle()).visibility==='hidden','the collapsed toggle must stay hidden with the Zen bar');
+    window.dispatchEvent(new MouseEvent('mousemove',{clientX:bar.getBoundingClientRect().left+100,clientY:2}));
+    await until(()=>bar.getBoundingClientRect().height===34,'the Zen bar must reveal');await pause(350);
+    const button=toggle().getBoundingClientRect(),minimize=bar.querySelector('[aria-label="Minimize"]').getBoundingClientRect();
+    check(Math.abs(button.left-bar.getBoundingClientRect().left)<1&&button.top===minimize.top&&button.height===minimize.height,'the toggle must sit at the left end of the Zen bar, aligned with window controls');
+    check(document.elementFromPoint((button.left+button.right)/2,(button.top+button.bottom)/2)?.closest('[aria-controls="app-sidebar"]')===toggle(),'the revealed toggle must be clickable');
+    window.dispatchEvent(new Event('blur'));await pause(350);
+    const winbar=document.querySelector('.pane-winbar').getBoundingClientRect();
+    check(document.elementFromPoint(winbar.left+4,(winbar.top+winbar.bottom)/2)?.closest('.pane-winbar'),'with the Zen bar closed, nothing may cover the start of the pane winbar');
+    window.dispatchEvent(new MouseEvent('mousemove',{clientX:bar.getBoundingClientRect().left+100,clientY:2}));
+    await until(()=>bar.getBoundingClientRect().height===34,'the Zen bar must reveal again');
+    flushSync(()=>toggle().click());await wait();
+    check(document.querySelector('.sidebar-toggle')===toggle()&&!bar.contains(toggle()),'reopening must return the toggle to the sidebar');
+    // Leave the collapsed, revealed state for the fixture's final screenshot.
+    flushSync(()=>toggle().click());
+    window.dispatchEvent(new MouseEvent('mousemove',{clientX:bar.getBoundingClientRect().left+100,clientY:2}));await pause(350);
+    for(const [x,y] of corners)
+      check(JSON.stringify(before(x,y))!==JSON.stringify(after(x,y)),'the ring must stay visible along the rounded corner at '+x+','+y);
+  `,
     ),
   60_000,
 );

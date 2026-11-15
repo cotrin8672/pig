@@ -3,20 +3,24 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { en } from "../shared/i18n";
 import { RunningIndicator } from "./RunningIndicator";
 
-test("the wait line pairs a spinner with a verb from the pool", () => {
+test("the wait line keeps the original static label without a spinner", () => {
   const html = renderToStaticMarkup(<RunningIndicator />);
-  expect(html).toContain('class="muted running-line"');
-  expect(html).toContain('class="running-glyph"');
-  expect(html).toContain(`${en.workingVerbs[0]}…`);
-  // The rotating text is decorative; the live region keeps the stable label.
-  expect(html).toContain(`<span class="sr-status">${en["Working…"]}</span>`);
+  expect(html).toBe(
+    `<p class="muted running" role="status">${en["Working…"]}</p>`,
+  );
 });
 
-test("an extension working message replaces the rotating verb", () => {
+test("an extension working message and symbol still override the label", () => {
   const html = renderToStaticMarkup(
     <RunningIndicator symbol="🐖" message="Shipping it" />,
   );
-  expect(html).toContain("🐖 Shipping it");
-  expect(html).not.toContain(`${en.workingVerbs[0]}…`);
-  expect(html).toContain('<span class="sr-status">Shipping it</span>');
+  expect(html).toBe(
+    '<p class="muted running" role="status">🐖 Shipping it</p>',
+  );
+});
+
+test("an extension symbol also accompanies the default label", () => {
+  expect(renderToStaticMarkup(<RunningIndicator symbol="🐖" />)).toContain(
+    `🐖 ${en["Working…"]}`,
+  );
 });

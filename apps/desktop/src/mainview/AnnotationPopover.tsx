@@ -1,6 +1,7 @@
 import { MessageSquareQuote } from "lucide-react";
 import {
   type CSSProperties,
+  type RefObject,
   useEffect,
   useLayoutEffect,
   useRef,
@@ -21,7 +22,7 @@ const annotationUI = [
 ].join(", ");
 
 /** Annotate response content, never UI labels (even inside a larger selection). */
-function responseSelection() {
+function responseSelection(root?: HTMLElement | null) {
   const selection = document.getSelection();
   if (!selection || selection.isCollapsed || !selection.rangeCount) return;
   const range = selection.getRangeAt(0);
@@ -32,6 +33,7 @@ function responseSelection() {
   const article = owner(range.startContainer);
   const quote = selection.toString().trim();
   if (!article || article !== owner(range.endContainer) || !quote) return;
+  if (root !== undefined && !root?.contains(article)) return;
   if (
     Array.from(article.querySelectorAll(annotationUI)).some((element) =>
       range.intersectsNode(element),
@@ -53,8 +55,10 @@ const margin = 8;
 /** Select text in an agent response, then attach a comment on it. */
 export function AnnotationPopover({
   onAdd,
+  selectionRoot,
 }: {
   onAdd(annotation: { quote: string; comment: string }, range: Range): void;
+  selectionRoot?: RefObject<HTMLElement | null>;
 }) {
   const t = useT();
   const [target, setTarget] = useState<Target>();
@@ -75,7 +79,7 @@ export function AnnotationPopover({
     let selecting = false;
     const update = () => {
       if (editingRef.current || selecting) return;
-      const found = responseSelection();
+      const found = responseSelection(selectionRoot?.current);
       setTarget(found && { ...found, rect: measure(found.range) });
     };
     const startSelection = (event: PointerEvent) => {
@@ -122,7 +126,7 @@ export function AnnotationPopover({
       window.removeEventListener("scroll", reposition, true);
       window.removeEventListener("resize", reposition);
     };
-  }, []);
+  }, [selectionRoot]);
 
   // Focusing the comment field drops the native selection; paint the range instead.
   useEffect(() => {
