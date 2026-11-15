@@ -410,14 +410,15 @@ export const ModelPicker = memo(function ModelPicker({
                           onPointerMove={() => setHighlight(index)}
                           onClick={() => select(choice)}
                         >
+                          {!searching && activeKey === "recent" && (
+                            <ProviderIcon
+                              provider={source.provider}
+                              size={12}
+                            />
+                          )}
                           <span className="model-option-name">
                             {model.name}
                           </span>
-                          {!searching && activeKey === "recent" && (
-                            <small className="picker-account-label">
-                              {source.label}
-                            </small>
-                          )}
                           <span className="model-capabilities">
                             {model.reasoning && (
                               <Brain size={12} aria-label={t.Reasoning} />

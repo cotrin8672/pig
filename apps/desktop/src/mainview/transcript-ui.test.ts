@@ -356,6 +356,12 @@ test.skipIf(!existsSync(edge) && !process.env.PIG_REQUIRE_UI_TESTS)(
           const footer=turn.querySelector(".response-footer"),meta=footer.querySelector(".response-meta"),actions=footer.querySelector(".response-actions");
           const next=document.querySelector('[data-record-id="r2"]');
           const boundary=next.querySelector(changed?".model-divider":".user-bubble");
+          if(changed){
+            const labels=[...boundary.querySelectorAll('.model-divider-model')];
+            check(labels.length===2&&labels.every(label=>label.querySelector('svg')),'model divider keeps both provider icons');
+            check(labels[0].innerText.trim()==='claude-opus-5-5'&&labels[1].innerText.trim()==='gpt-6.1-sol','model divider shows model IDs without redundant provider prefixes');
+            check(labels[0].title==='anthropic/claude-opus-5-5'&&labels[1].title==='openai-codex/gpt-6.1-sol','full model identities remain in tooltips');
+          }
           const metaRect=meta.getBoundingClientRect(),actionsRect=actions.getBoundingClientRect();
           check(actionsRect.top>=metaRect.top-1 && actionsRect.bottom<=metaRect.bottom+3 && actionsRect.left>=metaRect.right-1,"response actions must share the metadata row, not reserve a hidden row or overlap metadata");
           const gap=boundary.getBoundingClientRect().top-footer.getBoundingClientRect().bottom;

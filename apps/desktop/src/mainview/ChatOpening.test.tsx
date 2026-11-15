@@ -324,9 +324,16 @@ if (process.env.PIG_CHAT_OPENING_CHILD !== "1") {
       "openai-codex/gpt-6.1-sol",
     ]) {
       expect(divider).toContain(name);
-      expect(
-        divider.lastIndexOf("<svg", divider.indexOf(name)),
-      ).toBeGreaterThan(-1);
+      const start = divider.indexOf(`title="${name}"`);
+      expect(start).toBeGreaterThan(-1);
+      const label = divider.slice(
+        divider.indexOf(">", start) + 1,
+        divider.indexOf("</span>", start),
+      );
+      expect(label).toContain("<svg");
+      expect(label.slice(label.lastIndexOf("</svg>") + 6)).toBe(
+        name.slice(name.indexOf("/") + 1),
+      );
     }
     expect(divider.match(/<svg\b/g)).toHaveLength(2);
     expect(html.indexOf("First answer")).toBeLessThan(
