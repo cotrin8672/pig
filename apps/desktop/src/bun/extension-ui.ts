@@ -94,13 +94,13 @@ export function createExtensionUIHost(options: Options): ExtensionUIHost {
   const unsupported = (api: string): never => {
     throw new Error(diagnostic(api));
   };
+  const unavailable = () => disposed || suspended || cancelling;
   const live = () => {
-    if (disposed || suspended || cancelling)
+    if (unavailable())
       throw new DOMException("Extension UI host unavailable", "AbortError");
   };
   // The host stops before the SDK emits session_shutdown, so extensions that
   // clear their status there must not fail. Reload/close resets display state.
-  const displaying = () => !(disposed || suspended || cancelling);
   const publish = () =>
     emit({
       type: "status",
@@ -136,7 +136,8 @@ export function createExtensionUIHost(options: Options): ExtensionUIHost {
     value?: string,
   ) => {
     if (value !== undefined) checkText(value);
-    if (!displaying()) return;
+    // Display-only: drop while reloading/closing; rotate() resets the status anyway.
+    if (unavailable()) return;
     status[key] = value;
     publish();
   };
@@ -248,7 +249,7 @@ export function createExtensionUIHost(options: Options): ExtensionUIHost {
       checkText(message);
       if (!["info", "warning", "error"].includes(level))
         throw new TypeError("Invalid notification level");
-      if (!displaying()) return;
+      if (unavailable()) return;
       emit({ type: "notify", address: { ...address }, level, message });
     },
     onTerminalInput: (handler) => {
@@ -267,7 +268,7 @@ export function createExtensionUIHost(options: Options): ExtensionUIHost {
     setStatus: (key, text) => {
       checkText(key, 256);
       if (text !== undefined) checkText(text);
-      if (!displaying()) return;
+      if (unavailable()) return;
       status.statuses = status.statuses.filter((entry) => entry.key !== key);
       // Extensions color statuses with the terminal theme; the desktop shows plain text.
       if (text !== undefined)
@@ -286,7 +287,7 @@ export function createExtensionUIHost(options: Options): ExtensionUIHost {
         for (const line of content) checkText(line);
         checkText(content.join("\n"));
       }
-      if (!displaying()) return;
+      if (unavailable()) return;
       status.widgets = status.widgets.filter((entry) => entry.key !== key);
       if (content !== undefined)
         status.widgets.push({
