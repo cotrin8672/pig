@@ -33,6 +33,7 @@ if (process.env.PIG_LENS_RENDERER_TEST_CHILD !== "1") {
     regenerate: async () => {},
   }));
   const { piLensRenderer, piLensSummary } = await import("./PiLensRenderer");
+  const { dictionary } = await import("../shared/i18n");
   const { ToolBlock, WorkToggle } = await import("./ToolBlock");
   const { DisclosureScope } = await import("./LazyDetails");
   const { Markdown, UserMessage, ToolResultContent } = await import(
@@ -64,58 +65,79 @@ if (process.env.PIG_LENS_RENDERER_TEST_CHILD !== "1") {
     installChatRenderers([]);
     registerBuiltinChatRenderers([]);
   });
+  const trailer =
+    "\n\nresult ok\nusage tokens=42 elapsed-ms=180 bytes=90 truncated=false";
+  // Text and details follow what pi-lens 4.4.x returns.
   const cases = {
     references: fixture(
       "lsp_navigation",
       {
         operation: "references",
         path: "src/session.ts",
+        line: 12,
         symbol: "openSession",
       },
       { operation: "references", resultCount: 3, supported: true },
-      "src/App.tsx:84:11\nsrc/SessionList.tsx:52:7\nsrc/App.tsx:126:9\nusage tokens=42 elapsed-ms=180 bytes=90 truncated=false",
+      `src/session.ts:12:17\nsrc/App.tsx:84:11\nsrc/App.tsx:126:9${trailer}`,
     ),
     diagnostics: fixture(
       "lens_diagnostics",
-      { source: "lsp", paths: ["src/session.ts"] },
+      { source: "lsp", scope: "paths", paths: ["src"] },
       {
-        source: "lsp",
         totalDiagnostics: 2,
         totalErrors: 1,
         totalWarnings: 1,
-        filesChecked: 1,
+        diagnostics: [
+          {
+            file: "session.ts",
+            line: 41,
+            character: 8,
+            severity: 1,
+            source: "typescript",
+            message: "'session' is possibly 'undefined'.",
+          },
+          {
+            file: "session.ts",
+            line: 16,
+            character: 6,
+            severity: 2,
+            message: "'previous' is declared but its value is never read.",
+          },
+        ],
       },
-      "src/session.ts:42:9: error: session may be undefined\nsrc/session.ts:17:7: warning: unused variable previous",
+      "Primary findings (2):\nsession.ts:42:9: error[typescript] 'session' is possibly 'undefined'.",
     ),
     read: fixture(
-      "read_symbol",
-      { path: "src/session.ts", symbol: "openSession" },
-      {
-        found: true,
-        startLine: 12,
-        endLine: 19,
-        kind: "function",
-        name: "openSession",
-      },
-      '12  export async function openSession(id: string) {\n13    const saved = await storage.read(id);\n14    if (!saved) {\n15      throw new Error("Session not found");\n16    }\n17    const session = restore(saved);\n18    return session;\n19  }',
+      "read_enclosing",
+      { path: "src/session.ts", line: 14 },
+      { startLine: 12, endLine: 15, kind: "function", line: 14 },
+      `function openSession  session.ts:12-15\n\nexport async function openSession(id: string) {\n  const saved = await storage.read(id);\n  if (!saved) throw new Error("Session not found");\n}${trailer}`,
     ),
     search: fixture(
       "ast_grep_search",
       { pattern: "console.log($MSG)", lang: "typescript", paths: ["src"] },
       { matchCount: 2, totalMatches: 2 },
-      "src/session.ts:28:3\nconsole.log(session.id);\nsrc/storage.ts:41:5\nconsole.log(error);",
+      `src/session.ts:28:3: console.log(session.id)  [TypeScript]\n  $MSG=session.id\nsrc/storage.ts:41:5: console.log(error)  [TypeScript]\n  $MSG=error${trailer}`,
     ),
     replace: fixture(
       "ast_grep_replace",
-      { pattern: "var $X", rewrite: "let $X", apply: true },
-      { matchCount: 2, applied: false },
-      "Preview only\n- var sessions = new Map();\n+ let sessions = new Map();",
+      { pattern: "var $X", rewrite: "let $X", paths: ["src"], apply: false },
+      { matchCount: 1, applied: false },
+      "[DRY-RUN] 1 replacement(s):\n\nsrc/session.ts:3:1\n  - var sessions = new Map();\n  + let sessions = new Map();",
     ),
     module: fixture(
       "module_report",
       { path: "src/session.ts" },
-      { symbols: 3, exports: 1 },
-      "function openSession L12-19\nfunction restore L21-38\nclass SessionStore L40-80",
+      { symbols: 2, exports: 1 },
+      [
+        "src/session.ts jsts 80L [fresh] — 2 symbols, 1 exported",
+        "API:",
+        "  12-19   function  openSession(id: string)",
+        "INTERNAL:",
+        "  21-38   function  restore(saved: Saved)",
+        "USED BY:",
+        "  openSession  ← src/App.tsx:84, src/App.tsx:126",
+      ].join("\n"),
     ),
   };
 
@@ -150,35 +172,94 @@ if (process.env.PIG_LENS_RENDERER_TEST_CHILD !== "1") {
       }),
     ).toBeUndefined();
   });
-  test("pi-lens is identified by extension and operation, with code output but no raw Tool details", () => {
+
+  test("results render as a relation map under one lens mark, without trailers or raw details", () => {
     const html = render(cases.references);
     expect(html).toContain('class="tool-row done"');
-    expect(html).toContain('class="tool-body"');
+    expect(html).toContain('aria-label="pi-lens"');
+    expect(html).toContain('class="lens-graph"');
+    expect(html).toContain("References");
+    expect(html).toContain("session.ts › openSession");
     expect(html).toContain("3 results");
-    expect(html).toContain("src/App.tsx:84:11");
-    expect(html).toContain("usage tokens=42");
-    expect(html).toContain("pi-lens · references");
-    expect(html).toContain('class="message-content literal"');
+    expect(html).toContain("Declaration");
+    expect(html).toContain("App.tsx");
+    expect(html).toContain("84:11");
+    expect(html).not.toContain("usage tokens");
     expect(html).not.toContain("Tool details");
     expect(html).not.toContain("supported");
-    expect(
-      (cases.references.state?.result as { details: { supported: boolean } })
-        .details.supported,
-    ).toBe(true);
     expect(html).toContain('data-tool-call-id="fixture-lsp_navigation"');
     expect(html.replace(/<[^>]*>/g, "")).not.toContain(
       "fixture-lsp_navigation",
     );
   });
-  test("read ranges and preview/applied state come from actual result metadata", () => {
-    expect(render(cases.read)).toContain("L12–19");
+
+  test("each body type keeps the shared frame: groups, severities, changes and numbered source", () => {
+    const diagnostics = render(cases.diagnostics);
+    expect(diagnostics).toContain("lens-g-error");
+    expect(diagnostics).toContain("lens-g-warn");
+    expect(diagnostics).toContain("42:9");
+    expect(diagnostics).toContain("src/session.ts");
+    const search = render(cases.search);
+    expect(search).toContain("storage.ts");
+    expect(search).toContain("console.log(error)");
+    const replace = render(cases.replace);
+    expect(replace).toContain("var sessions = new Map(); → let sessions");
+    expect(replace).toContain("preview");
+    const module = render(cases.module);
+    expect(module).toContain("Public API");
+    expect(module).toContain("Used by");
+    expect(module).toContain("restore");
+    const read = render(cases.read);
+    expect(read).toContain('class="lens-code"');
+    expect(read).toContain("L12–15");
+    expect(read).toContain('<span class="marked">14</span>');
+  });
+
+  test("unreadable output keeps the literal tool output", () => {
+    const hover = render(
+      fixture(
+        "lsp_navigation",
+        { operation: "hover", path: "src/session.ts", line: 12 },
+        { operation: "hover" },
+        "function openSession(id: string): Promise<Session>",
+      ),
+    );
+    expect(hover).toContain("Hover");
+    expect(hover).toContain('class="message-content literal"');
+    expect(hover).not.toContain("lens-graph");
+    // Diagnostics without structured findings are shown as pi-lens wrote them.
+    const plain = render(
+      fixture(
+        "lens_diagnostics",
+        {},
+        { totalDiagnostics: 1 },
+        "a.ts:1:1: error x",
+      ),
+    );
+    expect(plain).toContain("a.ts:1:1: error x");
+    expect(plain).not.toContain("lens-graph");
+  });
+
+  test("ranges, preview/applied state and labels come from actual result metadata", () => {
     const preview = piLensSummary(cases.replace);
     expect(preview.meta).toContain("preview");
     expect(preview.meta).not.toContain("applied");
     expect(
       piLensSummary(fixture("ast_grep_replace", { apply: true })).meta,
     ).not.toContain("applied");
+    expect(piLensSummary(cases.read).meta).toBe("L12–15");
+    const ja = dictionary("ja").piLens;
+    expect(piLensSummary(cases.references, ja)).toMatchObject({
+      verb: "参照",
+      target: "session.ts › openSession",
+      meta: "3 件",
+    });
+    expect(piLensSummary(fixture("lsp_navigation")).verb).toBe("LSP");
+    expect(piLensSummary(fixture("lens_diagnostic_mark")).verb).toBe(
+      "Mark diagnostic",
+    );
   });
+
   test("unconfirmed, malformed and empty diagnostics never invent clean or zero counts", () => {
     const data = fixture(
       "lens_diagnostics",
@@ -200,29 +281,33 @@ if (process.env.PIG_LENS_RENDERER_TEST_CHILD !== "1") {
           { paths: [null, "src", 4] },
           { symbols: -1, exports: Infinity },
         ),
-      ).target,
-    ).toBe("src");
+      ),
+    ).toMatchObject({ target: "src", meta: "" });
   });
+
   test("native running, failure and interruption states are retained", () => {
-    const closed = render(cases.read, false);
+    // A readable result opens as a map; literal output keeps the closed row.
+    expect(render(cases.read, false)).toContain(
+      '</summary><div class="tool-body">',
+    );
+    const closed = render(fixture("read_symbol", {}, {}, "unreadable"), false);
     expect(closed).toMatch(
       /^<details [^>]*data-tool-call-id="fixture-read_symbol"[^>]*><summary>/,
     );
     expect(closed).not.toContain('class="tool-body"');
-    expect(render(cases.read)).toContain('</summary><div class="tool-body">');
-    expect(
-      render({
-        ...cases.read,
-        state: { status: "running", result: cases.read.state?.result },
-        live: true,
-      }),
-    ).toContain('class="tool-row running"');
-    expect(
-      render({
-        ...cases.read,
-        state: { status: "error", result: cases.read.state?.result },
-      }),
-    ).toContain('class="tool-row error"');
+    const running = render({
+      ...cases.read,
+      state: { status: "running", result: cases.read.state?.result },
+      live: true,
+    });
+    expect(running).toContain('class="tool-row running"');
+    expect(running).not.toContain("lens-code");
+    const failed = render({
+      ...cases.read,
+      state: { status: "error", result: cases.read.state?.result },
+    });
+    expect(failed).toContain('class="tool-row error"');
+    expect(failed).not.toContain("lens-code");
     expect(render({ ...cases.read, state: undefined, live: false })).toContain(
       'class="tool-row error"',
     );
@@ -230,6 +315,7 @@ if (process.env.PIG_LENS_RENDERER_TEST_CHILD !== "1") {
       render(fixture("read_symbol", {}, { found: false }, "Symbol not found")),
     ).toContain("not found");
   });
+
   test("user React definitions override the built-in pi-lens renderer", () => {
     registerBuiltinChatRenderers([piLensRenderer]);
     installChatRenderers([
@@ -274,33 +360,6 @@ if (process.env.PIG_LENS_RENDERER_TEST_CHILD !== "1") {
     expect(generic).toContain("Visible generic output");
     expect(generic).not.toContain("internalOnlyMarker");
     expect(JSON.stringify(result)).toBe(before);
-  });
-
-  test("every supported tool identifies pi-lens and LSP operation is not repeated in the target", () => {
-    for (const name of [
-      "read_symbol",
-      "read_enclosing",
-      "ast_grep_search",
-      "ast_grep_replace",
-      "ast_grep_outline",
-      "lens_diagnostics",
-      "lens_diagnostic_mark",
-      "symbol_search",
-      "module_report",
-      "project_report",
-      "effective_config",
-      "pi_lens_activate_tools",
-    ]) {
-      expect(render(fixture(name))).toContain(`pi-lens · ${name}`);
-    }
-    expect(piLensSummary(cases.references)).toMatchObject({
-      operation: "references",
-      target: "src/session.ts · openSession",
-    });
-    expect(
-      piLensSummary(fixture("lsp_navigation", { operation: "hover" }))
-        .operation,
-    ).toBe("hover");
   });
 
   if (process.env.PI_LENS_PREVIEW_OUTPUT && process.env.PI_LENS_PREVIEW_CSS) {
