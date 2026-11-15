@@ -11,6 +11,8 @@ import { defaultThemeColor, normalizeThemeColor } from "../shared/theme-color";
 
 /** Chroma for card-like surfaces: keeps the theme hue without saturating cards. */
 const cardChroma = 16;
+/** Chroma for the translucent window tint: a soft pastel wash, not a deep fill. */
+const shellChroma = 24;
 
 /** Stable spec/version; no image extraction, network requests or DOM needed. */
 export function createThemeTokens(
@@ -48,6 +50,14 @@ export function createThemeTokens(
   );
   const card = (tone: number) =>
     hct.chroma < 4 ? neutral(tone) : hex(cardPalette.tone(tone));
+  // The window tint covers the whole wallpaper; full primary chroma at low tone
+  // reads as a heavy navy. A lighter, low-chroma wash keeps it pastel.
+  const shellPalette = TonalPalette.fromHueAndChroma(
+    scheme.primaryPalette.hue,
+    Math.min(shellChroma, scheme.primaryPalette.chroma),
+  );
+  const shell = (tone: number) =>
+    hct.chroma < 4 ? neutral(tone) : hex(shellPalette.tone(tone));
   const ink = hex(scheme.onSurface);
   const success = extended("#249c64");
   const warning = extended("#d99a20");
@@ -74,8 +84,8 @@ export function createThemeTokens(
     "--ds-bg-sidebar": `${surface(6)}1f`,
     "--ds-bg-tertiary": card(23),
     "--ds-bg-under": surface(18),
-    "--ds-shell-start": surface(21),
-    "--ds-shell-end": surface(16),
+    "--ds-shell-start": shell(34),
+    "--ds-shell-end": shell(28),
     "--ds-border-default": "transparent",
     "--ds-border-subtle": "transparent",
     "--ds-border-strong": `${hex(scheme.outline)}60`,
