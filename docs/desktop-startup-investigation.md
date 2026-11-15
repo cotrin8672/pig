@@ -253,7 +253,7 @@ catalogの未取得と「認証なし」「0モデル」を混同しない。古
 
 native／Bun／WebViewの`performance.now()`は基準時刻が異なるため、数値を直接引かない。各process内のdurationと、起動ID付きの時刻対応・受渡しを記録する。会話・credential・拡張の機密出力は記録しない。
 
-通常起動、OS再起動後、同一OSセッションでの再起動、devのbuild込みを別条件にする。`mise run dev`は既存windowのfocusだけの場合があり、その時間をcold startupと扱わない。
+通常起動、OS再起動後、同一OSセッションでの再起動、devのbuild込みを別条件にする。`mise run dev`はフォアグラウンドでbuild・起動するため、通常起動とは区別する。
 
 ## 7. 検証と未実施
 

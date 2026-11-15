@@ -125,10 +125,9 @@ Only sessions in registered project folders can be opened. pig does not register
 OS-level URL activation on Windows/Linux, so links do not launch the app from
 other applications.
 
-On Windows, `mise run dev` focuses the running development app, or starts
-`pnpm dev` in the background. Logs are written to `%TEMP%/pig-dev.stdout.log`
-and `%TEMP%/pig-dev.stderr.log`. Close the development app before a fresh launch.
-For foreground logs, use `mise exec -- pnpm dev` instead.
+`mise run dev` runs `pnpm dev` in the foreground, with logs in the current
+terminal (including Nushell), just like `mise run storybook`.
+Stop it with Ctrl+C before starting another development session.
 
 `pnpm dev` builds the webview, starts Vite with HMR, and launches the app.
 Main-process changes automatically restart the app; do not launch a second Vite
