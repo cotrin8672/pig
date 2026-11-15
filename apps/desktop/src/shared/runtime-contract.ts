@@ -38,6 +38,7 @@ export type RuntimeEvent =
     }
   | { type: "snapshot"; snapshot: Snapshot };
 export type SendKey = SessionAddress & { requestId: string };
+export const RESUME_REQUEST_PREFIX = "resume:";
 export type PromptDelivery = "steer" | "followUp";
 export type PromptAccepted = { disposition: "started" | "queued" | "handled" };
 export type PromptReceipt = SendKey &

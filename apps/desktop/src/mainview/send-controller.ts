@@ -11,6 +11,7 @@ import type {
   SendKey,
   SessionAddress,
 } from "../shared/runtime-contract";
+import { RESUME_REQUEST_PREFIX } from "../shared/runtime-contract";
 import { addressKey, sameAddress } from "./chat-snapshot";
 import { type DraftStore, expandedDraft } from "./draft-store";
 import { transcriptRequestIds } from "./transcript-requests";
@@ -387,6 +388,7 @@ export class SendController {
     content?: DraftContent,
     attachments?: PendingAttachments,
     delivery: PromptDelivery = "steer",
+    resume = false,
   ) {
     const editor = this.drafts.read(address);
     const captured = content ? { ...editor, content } : editor;
@@ -406,7 +408,10 @@ export class SendController {
     }
     if (!content) this.drafts.clearForSend(address, captured.version);
     const state: SendState = {
-      key: { ...address, requestId: crypto.randomUUID() },
+      key: {
+        ...address,
+        requestId: `${resume ? RESUME_REQUEST_PREFIX : ""}${crypto.randomUUID()}`,
+      },
       version: captured.version,
       content: structuredClone(captured.content),
       state: "sending",

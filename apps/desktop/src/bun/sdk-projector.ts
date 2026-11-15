@@ -6,6 +6,7 @@ import type {
 import { unfoldPastes } from "../shared/paste";
 import type { RetryWait } from "../shared/rpc-schema";
 import type { SendIntent, SendKey } from "../shared/runtime-contract";
+import { RESUME_REQUEST_PREFIX } from "../shared/runtime-contract";
 import {
   emptyTranscript,
   type Message,
@@ -109,6 +110,7 @@ export class SDKProjector {
   private liveChecked?: SessionEntry;
   private aliases: Record<string, string> = {};
   private requestIds = new Map<string, string>();
+  private resumeEntries: Set<string>;
   private tools: Transcript["tools"] = {};
   private historyRevision = crypto.randomUUID();
   private branchLeaf?: SessionEntry;
@@ -129,6 +131,7 @@ export class SDKProjector {
     diagnostics?: SessionDiagnosticStore,
   ) {
     this.diagnostics = new SessionDiagnostics(manager, diagnostics);
+    this.resumeEntries = new Set(this.diagnostics.value.resumeEntries);
     const run = this.diagnostics.value.run;
     const branch = this.entries();
     if (
@@ -262,6 +265,10 @@ export class SDKProjector {
             kind: "message",
             message,
             requestId: message.role === "user" ? requestId : undefined,
+            ...(message.role === "user" &&
+            requestId?.startsWith(RESUME_REQUEST_PREFIX)
+              ? { display: false }
+              : {}),
           };
         } else this.live.message = message;
         if (message.role === "assistant" && message.stopReason === "error")
@@ -342,6 +349,11 @@ export class SDKProjector {
     if (saved) {
       this.aliases[live.id] = saved.id;
       if (live.requestId) this.requestIds.set(saved.id, live.requestId);
+      if (live.display === false && !this.resumeEntries.has(saved.id)) {
+        this.resumeEntries.add(saved.id);
+        this.diagnostics.value.resumeEntries = [...this.resumeEntries];
+        if (!this.diagnostics.save()) this.failure = this.diagnostics.error;
+      }
       this.live = undefined;
     }
   }
@@ -389,6 +401,11 @@ export class SDKProjector {
         getBranch: () => branch.slice(start, end),
       },
       start,
+    );
+    state.records = state.records.map((record) =>
+      this.resumeEntries.has(record.id)
+        ? { ...record, display: false }
+        : record,
     );
     // Release owned copies once persistence has the same payload. Do this only
     // when projecting a page, not on every streaming snapshot.

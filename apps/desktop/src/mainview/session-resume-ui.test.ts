@@ -17,7 +17,8 @@ test.skipIf(!existsSync(fixtureEdge) && !process.env.PIG_REQUIRE_UI_TESTS)(
       `
     const {createRoot}=await import(${fixtureImport(import.meta.resolve("react-dom/client"))});
     const {flushSync}=await import(${fixtureImport(import.meta.resolve("react-dom"))});
-    const {Composer}=await import(${local("./Composer.tsx")});
+    const {fauxAssistantMessage}=await import(${fixtureImport(import.meta.resolve("@earendil-works/pi-ai"))});
+    const {Chat}=await import(${local("./App.tsx")});
     const {SidebarSessions}=await import(${local("./SidebarSessions.tsx")});
     const {useStore}=await import(${local("./store.ts")});
     const {drafts}=await import(${local("./draft-store.ts")});
@@ -28,7 +29,7 @@ test.skipIf(!existsSync(fixtureEdge) && !process.env.PIG_REQUIRE_UI_TESTS)(
     const model={provider:'fixture',id:'fixture',name:'Fixture'};
     const address={hostId:'fixture',sessionId:'failed-chat',epoch:1};
     const info={id:address.sessionId,cwd:'project',title:'Failed chat',modified:2};
-    const assistant=stopReason=>({id:'answer-'+stopReason,parentId:null,branchId:'root',order:1,kind:'message',message:{role:'assistant',content:[],stopReason,errorMessage:stopReason==='error'?'WebSocket closed 1000':undefined}});
+    const assistant=stopReason=>({id:'answer-'+stopReason,parentId:null,branchId:'root',order:1,kind:'message',message:{...fauxAssistantMessage(''),stopReason,errorMessage:stopReason==='error'?'WebSocket closed 1000':undefined}});
     let snapshot={address,info,effort:'off',effortLevels:[],model,transcript:{records:[assistant('error')],tools:{},running:false,current:null,liveToEntry:{}}};
     const other={...snapshot,address:{...address,sessionId:'working'},info:{...info,id:'working',title:'Working',modified:1},transcript:{...snapshot.transcript,records:[],running:true}};
     const requests=[];
@@ -46,7 +47,7 @@ test.skipIf(!existsSync(fixtureEdge) && !process.env.PIG_REQUIRE_UI_TESTS)(
       flushSync(()=>{
         useStore.setState({snapshots:{[info.id]:snapshot,working:other}});
         sends.reconcile(snapshot);
-        root.render(<div style={{display:'flex',height:600}}><aside className="sidebar" style={{width:260}}><SidebarSessions/></aside><div className="chat-shell" style={{width:640}}><Composer snapshot={snapshot}/></div></div>);
+        root.render(<div style={{display:'flex',height:600}}><aside className="sidebar" style={{width:260}}><SidebarSessions/></aside><div className="chat-shell" style={{width:640}}><Chat snapshot={snapshot}/></div></div>);
       });await wait();
     };
     const button=()=>document.querySelector('.send-button');
@@ -68,16 +69,18 @@ test.skipIf(!existsSync(fixtureEdge) && !process.env.PIG_REQUIRE_UI_TESTS)(
     check(initial===JSON.stringify([bounds(button()),bounds(document.querySelector('.composer')),bounds(document.querySelector('.thread-row.active'))]),'reading must not shift row, composer or action');
     button().click();button().click();
     await until(()=>requests.length===1,'Resume must issue a prompt');
-    check(requests[0].text.includes('Continue from where you stopped')&&!requests[0].text.includes('WebSocket'),'Resume must continue, not replay the failed request');
+    check(requests[0].text==='continue','Resume must send only continue');
     check(requests[0].delivery==='steer'&&requests[0].requestId,'Resume must use normal receipt-backed delivery');
     check(!drafts.read(address).content.text,'Resume must capture and clear synchronously');
+    check(!document.querySelector('.message.user'),'pending Resume must not render a user turn');
     check(button().getAttribute('aria-busy')==='true'&&button().disabled,'pending Resume must use a disabled spinner');
     button().click();await wait();check(requests.length===1,'disabled spinner must not dispatch another send');
     pending[0].resolve({disposition:'started'});
-    snapshot={...snapshot,transcript:{...snapshot.transcript,running:true,records:[...snapshot.transcript.records,{id:'resumed-user',requestId:requests[0].requestId,parentId:null,branchId:'root',order:2,kind:'message',message:{role:'user',content:requests[0].text,timestamp:1}}]}};
+    snapshot={...snapshot,transcript:{...snapshot.transcript,running:true,records:[...snapshot.transcript.records,{id:'resumed-user',requestId:requests[0].requestId,display:false,parentId:null,branchId:'root',order:2,kind:'message',message:{role:'user',content:requests[0].text,timestamp:1}}]}};
     await render();
     await until(()=>button().getAttribute('aria-label')==='Stop','resumed response must show Stop');
     check(requests.length===1,'repeated Resume must not dispatch twice');
+    check(!document.querySelector('.message.user'),'committed Resume must not leave text or an empty turn');
     check(document.querySelector('.thread-row.active .session-dot.running'),'restart must clear stale historical failure');
     check(JSON.stringify(bounds(button()))===JSON.stringify(JSON.parse(initial)[0]),'Resume, waiting and Stop must share the same action slot');
     const actionBounds=JSON.stringify(bounds(button()));
@@ -112,6 +115,9 @@ test.skipIf(!existsSync(fixtureEdge) && !process.env.PIG_REQUIRE_UI_TESTS)(
     pending[2].resolve({disposition:'started'});
     await wait();
     check(document.querySelector('.composer-dock').lastElementChild.matches('form.composer'),'Resume must not add a footer message');
+    snapshot={...snapshot,aborted:false,transcript:{...snapshot.transcript,running:false,records:[{id:'typed-continue',parentId:null,branchId:'root',order:1,kind:'message',message:{role:'user',content:'continue',timestamp:3}}]}};
+    await render();
+    check(document.querySelector('.user-bubble')?.textContent==='continue','manually typed continue must remain visible');
   `,
       { realRpc: true },
     ),

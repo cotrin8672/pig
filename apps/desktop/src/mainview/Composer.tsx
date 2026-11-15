@@ -320,7 +320,13 @@ export function Composer({ snapshot }: { snapshot: Snapshot }) {
     }
     // In-flight attachments move with this message; it is sent once they load.
     void sends
-      .send(address, undefined, attachmentReads.claim(address), delivery)
+      .send(
+        address,
+        undefined,
+        attachmentReads.claim(address),
+        delivery,
+        resume,
+      )
       .catch(showError);
   }
   function attach(files: File[]) {
