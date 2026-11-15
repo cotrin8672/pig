@@ -61,7 +61,6 @@ function ActionExamples() {
               type="button"
               className="ds-review-icon-button"
               aria-label="サンプルを追加"
-              title="サンプルを追加"
               onClick={() => setCount(count + 1)}
             >
               <Plus size={18} aria-hidden="true" />

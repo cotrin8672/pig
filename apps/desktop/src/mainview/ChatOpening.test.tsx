@@ -112,9 +112,7 @@ if (process.env.PIG_CHAT_OPENING_CHILD !== "1") {
       expect(html).not.toContain("chat-opening-heading");
       expect(html).not.toContain("<kbd");
       expect(html.match(/<textarea\b/g)).toHaveLength(1);
-      expect(html.includes('title="Send" aria-label="Send" disabled=""')).toBe(
-        existing,
-      );
+      expect(html.includes('aria-label="Send" disabled=""')).toBe(existing);
       expect(html).not.toContain('aria-disabled="true"');
     }
   });
@@ -271,7 +269,7 @@ if (process.env.PIG_CHAT_OPENING_CHILD !== "1") {
       "openai-codex/gpt-6.1-sol",
     ]) {
       expect(divider).toContain(name);
-      const start = divider.indexOf(`title="${name}"`);
+      const start = divider.indexOf(`aria-description="${name}"`);
       expect(start).toBeGreaterThan(-1);
       const label = divider.slice(
         divider.indexOf(">", start) + 1,
@@ -323,7 +321,7 @@ if (process.env.PIG_CHAT_OPENING_CHILD !== "1") {
       />,
     );
     expect(html).toContain("What shall we build?");
-    expect(html).toContain('title="Working in project"');
+    expect(html).toContain('aria-description="Working in project"');
     expect(html).toContain("<span>project</span>");
     expect(html).not.toContain("Raw record");
     expect(html).not.toContain("a2ccf4cd");
@@ -472,7 +470,7 @@ if (process.env.PIG_CHAT_OPENING_CHILD !== "1") {
       expect(html).toContain('class="history-edge"');
       expect(html).not.toContain("Load earlier messages");
       const newChatButtons = [
-        ...html.matchAll(/<button[^>]*title="New chat"[^>]*>/g),
+        ...html.matchAll(/<button[^>]*aria-label="New chat[^"]*"[^>]*>/g),
       ];
       // Both sidebar actions plus the required per-pane New chat action.
       expect(newChatButtons).toHaveLength(3);
@@ -486,8 +484,8 @@ if (process.env.PIG_CHAT_OPENING_CHILD !== "1") {
         expect(button).not.toContain("disabled");
       expect(html).not.toContain("chat-opening-content");
       expect(html).not.toContain('aria-busy="true"');
-      expect(html).toContain('title="Send" aria-label="Send"');
-      expect(html).not.toContain('title="Send" aria-label="Send" disabled=""');
+      expect(html).toContain('aria-label="Send"');
+      expect(html).not.toContain('aria-label="Send" disabled=""');
     } finally {
       Object.assign(state, previous);
     }
