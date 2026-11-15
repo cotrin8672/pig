@@ -120,6 +120,10 @@ export function restoreOpeningSends(openId: string) {
             .filter(Boolean)
             .join("\n\n"),
         },
+        newChatImages: {
+          ...s.newChatImages,
+          [key]: [...send.content.images, ...(s.newChatImages[key] ?? [])],
+        },
       }));
     }
   }

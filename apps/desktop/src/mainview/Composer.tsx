@@ -32,7 +32,11 @@ import type { PromptDelivery } from "../shared/runtime-contract";
 import { AnnotationDrafts } from "./AnnotationCards";
 import { AnnotationPopover } from "./AnnotationPopover";
 import { rememberAnnotationRange } from "./annotation-highlights";
-import { AttachmentReads, maxImageBase64 } from "./attachment-reads";
+import {
+  AttachmentReads,
+  imageTypes,
+  maxImageBase64,
+} from "./attachment-reads";
 import { ComposerEditor, insertEditorNewline } from "./ComposerEditor";
 import { ComposerFrame } from "./ComposerFrame";
 import { ComposerSubmit } from "./ComposerSubmit";
@@ -75,12 +79,6 @@ const fileIcons: [RegExp, typeof GenericFile][] = [
 const fileIcon = (name: string) =>
   fileIcons.find(([pattern]) => pattern.test(name))?.[1] ?? GenericFile;
 
-const imageTypes = new Set([
-  "image/png",
-  "image/jpeg",
-  "image/gif",
-  "image/webp",
-]);
 const attachmentReads = new AttachmentReads(drafts, showError);
 subscribeOwnership((previous, next) =>
   attachmentReads.transfer(previous, next),

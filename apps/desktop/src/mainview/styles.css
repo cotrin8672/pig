@@ -3116,8 +3116,9 @@ input:not([type="range"]) {
   display: flex;
   flex-direction: column;
 }
+/* A light neutral dim, not the theme color: large saturated scrims strain the eyes. */
 .image-viewer::backdrop {
-  background: color-mix(in srgb, var(--ds-bg-primary) 80%, transparent);
+  background: rgb(32 32 32 / 45%);
 }
 .image-viewer button {
   display: inline-flex;
