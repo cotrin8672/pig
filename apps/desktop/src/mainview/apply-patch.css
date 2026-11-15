@@ -1,0 +1,59 @@
+/* apply_patch: one translucent card per file inside the shared tool body. */
+.patch-files {
+  display: grid;
+  gap: 6px;
+}
+.patch-file-card {
+  --patch-tone: var(--ds-info);
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+  padding: 6px 8px 8px;
+  border-radius: var(--radius-sm);
+  background: var(--ds-tool-row-bg);
+}
+.patch-file-card.add {
+  --patch-tone: var(--ds-success);
+}
+.patch-file-card.move {
+  --patch-tone: var(--ds-accent);
+}
+.patch-file-card.delete {
+  --patch-tone: var(--ds-error);
+  padding-bottom: 6px;
+}
+.patch-file-card > header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  font-size: var(--text-sm);
+}
+.patch-file-card > header > svg {
+  flex: none;
+  color: var(--patch-tone);
+}
+.patch-file-card > header > code {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--ds-text-secondary);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.patch-file-card.delete > header > code {
+  color: var(--ds-text-faint);
+  text-decoration: line-through;
+}
+.patch-file-from {
+  color: var(--ds-text-faint);
+}
+.patch-file-kind {
+  flex: none;
+  margin-left: auto;
+  padding: 0 6px;
+  border-radius: var(--radius-full);
+  background: color-mix(in srgb, var(--patch-tone) 14%, transparent);
+  color: var(--patch-tone);
+  font-size: var(--text-xs);
+  line-height: 18px;
+}
