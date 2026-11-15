@@ -330,8 +330,8 @@ if (process.env.PIG_EXTENSION_UI_TEST_CHILD !== "1") {
     ui.pasteToEditor(" pasted");
     expect(ui.getEditorText()).toBe("extension text pasted");
     expect(two.uiContext.getEditorText()).toBe("");
-    ui.setStatus("test", "active");
-    ui.setWidget("above", ["one"]);
+    ui.setStatus("test", "\x1b[38;2;163;190;140mactive\x1b[39m");
+    ui.setWidget("above", ["\x1b[1mone\x1b[22m"]);
     ui.setWidget("below", ["two"], { placement: "belowEditor" });
     ui.setTitle("Extension title");
     ui.setWorkingMessage("Working");
@@ -340,7 +340,10 @@ if (process.env.PIG_EXTENSION_UI_TEST_CHILD !== "1") {
     ui.notify("fixture notice", "warning");
     expect(one.getStatus()).toMatchObject({
       statuses: [{ key: "test", text: "active" }],
-      widgets: [{ placement: "aboveEditor" }, { placement: "belowEditor" }],
+      widgets: [
+        { lines: ["one"], placement: "aboveEditor" },
+        { placement: "belowEditor" },
+      ],
       title: "Extension title",
       workingMessage: "Working",
       workingSymbol: "●",
@@ -370,6 +373,30 @@ if (process.env.PIG_EXTENSION_UI_TEST_CHILD !== "1") {
     );
     one.rotate({ ...a, epoch: 2 });
     expect(one.getStatus()).toEqual({ statuses: [], widgets: [] });
+  });
+
+  test("display updates from session_shutdown handlers are dropped, not thrown, while the host is stopped", () => {
+    const f = fixture();
+    const host = f.create();
+    const ui = host.uiContext;
+    ui.setStatus("rtk", "on");
+    host.cancelAll("reload");
+    const before = f.events.length;
+    // pi-rtk clears its status in session_shutdown, which runs after the host stops.
+    expect(() => ui.setStatus("rtk", undefined)).not.toThrow();
+    expect(() => ui.setWidget("w", ["line"])).not.toThrow();
+    expect(() => ui.setTitle("title")).not.toThrow();
+    expect(() => ui.setWorkingMessage("busy")).not.toThrow();
+    expect(() => ui.notify("bye", "info")).not.toThrow();
+    expect(f.events.length).toBe(before);
+    // Arguments are still validated; editor mutations still refuse.
+    expect(() => ui.notify("x", "bogus" as "info")).toThrow("level");
+    expect(() => ui.setEditorText("x")).toThrow("unavailable");
+    host.rotate({ ...a, epoch: 2 });
+    ui.setStatus("rtk", "on");
+    expect(host.getStatus().statuses).toEqual([{ key: "rtk", text: "on" }]);
+    host.dispose();
+    expect(() => ui.setStatus("rtk", undefined)).not.toThrow();
   });
 
   test("terminal permission cancellation never guesses an approval value or executes the fixture tool", async () => {

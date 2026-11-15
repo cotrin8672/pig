@@ -1,3 +1,4 @@
+import { stripVTControlCharacters } from "node:util";
 import type {
   ExtensionUIContext,
   Theme,
@@ -97,6 +98,9 @@ export function createExtensionUIHost(options: Options): ExtensionUIHost {
     if (disposed || suspended || cancelling)
       throw new DOMException("Extension UI host unavailable", "AbortError");
   };
+  // The host stops before the SDK emits session_shutdown, so extensions that
+  // clear their status there must not fail. Reload/close resets display state.
+  const displaying = () => !(disposed || suspended || cancelling);
   const publish = () =>
     emit({
       type: "status",
@@ -131,8 +135,8 @@ export function createExtensionUIHost(options: Options): ExtensionUIHost {
     key: "title" | "workingMessage" | "workingSymbol" | "hiddenThinkingLabel",
     value?: string,
   ) => {
-    live();
     if (value !== undefined) checkText(value);
+    if (!displaying()) return;
     status[key] = value;
     publish();
   };
@@ -241,10 +245,10 @@ export function createExtensionUIHost(options: Options): ExtensionUIHost {
     },
     custom,
     notify: (message, level = "info") => {
-      live();
       checkText(message);
       if (!["info", "warning", "error"].includes(level))
         throw new TypeError("Invalid notification level");
+      if (!displaying()) return;
       emit({ type: "notify", address: { ...address }, level, message });
     },
     onTerminalInput: (handler) => {
@@ -261,15 +265,16 @@ export function createExtensionUIHost(options: Options): ExtensionUIHost {
       };
     },
     setStatus: (key, text) => {
-      live();
       checkText(key, 256);
       if (text !== undefined) checkText(text);
+      if (!displaying()) return;
       status.statuses = status.statuses.filter((entry) => entry.key !== key);
-      if (text !== undefined) status.statuses.push({ key, text });
+      // Extensions color statuses with the terminal theme; the desktop shows plain text.
+      if (text !== undefined)
+        status.statuses.push({ key, text: stripVTControlCharacters(text) });
       publish();
     },
     setWidget: (key, content, widgetOptions) => {
-      live();
       checkText(key, 256);
       if (typeof content === "function") unsupported("setWidget(component)");
       const placement = widgetOptions?.placement ?? "aboveEditor";
@@ -281,9 +286,14 @@ export function createExtensionUIHost(options: Options): ExtensionUIHost {
         for (const line of content) checkText(line);
         checkText(content.join("\n"));
       }
+      if (!displaying()) return;
       status.widgets = status.widgets.filter((entry) => entry.key !== key);
       if (content !== undefined)
-        status.widgets.push({ key, lines: [...content], placement });
+        status.widgets.push({
+          key,
+          lines: content.map((line) => stripVTControlCharacters(line)),
+          placement,
+        });
       publish();
     },
     setTitle: (title) => setLabel("title", title),
