@@ -1,3 +1,4 @@
+import { X } from "lucide-react";
 import {
   createContext,
   useCallback,
@@ -7,7 +8,8 @@ import {
 } from "react";
 import { composerAction } from "../shared/keymap";
 import type { ModelSelection, Snapshot } from "../shared/rpc-schema";
-import type { PromptDelivery } from "../shared/runtime-contract";
+import type { DraftContent, PromptDelivery } from "../shared/runtime-contract";
+import { imageTypes, maxImageBase64 } from "./attachment-reads";
 import { ChatEmpty, ChatLayout } from "./ChatLayout";
 import { ComposerEditor, insertEditorNewline } from "./ComposerEditor";
 import { ComposerFrame } from "./ComposerFrame";
@@ -15,6 +17,7 @@ import { ComposerSubmit } from "./ComposerSubmit";
 import { ContextIndicator } from "./ContextIndicator";
 import { addressKey } from "./chat-snapshot";
 import { drafts, emptyContent, expandedDraft } from "./draft-store";
+import { ImagePreview } from "./ImageGallery";
 import { useT } from "./i18n";
 import { UserMessage } from "./MessageContent";
 import { MessageQueue } from "./MessageQueue";
@@ -29,11 +32,12 @@ import {
   steerOpeningSend,
   withdrawOpeningSend,
 } from "./opening-sends";
-import { openChat, startOpeningChat } from "./rpc";
-import { useStore } from "./store";
+import { openChat, rpc, startOpeningChat } from "./rpc";
+import { showError, useStore } from "./store";
 import "./composer.css";
 
 const OpeningId = createContext<string | undefined>(undefined);
+const noImages: DraftContent["images"] = [];
 function useOpeningTarget() {
   const id = useContext(OpeningId);
   return useStore((s) => (id ? s.pendingOpens[id] : s.openingTarget));
@@ -69,6 +73,14 @@ export function OpeningComposer({ preview }: { preview?: Snapshot }) {
     readText,
     readText,
   );
+  // Only a chat that does not exist yet holds images here; existing chats use their draft.
+  const imageKey = target && !snapshot ? openingDraftKey(target) : undefined;
+  const images = useStore((s) =>
+    imageKey ? (s.newChatImages[imageKey] ?? noImages) : noImages,
+  );
+  const imageSources = images.map(
+    ({ image }) => `data:${image.mimeType};base64,${image.data}`,
+  );
   const queued = openingSends(target).length > 0;
   const existing = !!preview || !!target?.id;
   const text = existing
@@ -89,8 +101,43 @@ export function OpeningComposer({ preview }: { preview?: Snapshot }) {
         },
       }));
   }
+  function setImages(
+    change: (images: DraftContent["images"]) => DraftContent["images"],
+  ) {
+    if (!imageKey) return;
+    useStore.setState((s) => ({
+      newChatImages: {
+        ...s.newChatImages,
+        [imageKey]: change(s.newChatImages[imageKey] ?? []),
+      },
+    }));
+  }
+  function addImage(data: string | null, mimeType: string) {
+    if (!data) return showError("No image could be read from the clipboard.");
+    if (data.length > maxImageBase64)
+      return showError(t["Each image must be at most 4.5 MiB of base64 data."]);
+    if ((useStore.getState().newChatImages[imageKey ?? ""]?.length ?? 0) >= 8)
+      return showError(t["You can attach up to 8 images."]);
+    setImages((current) => [
+      ...current,
+      { id: crypto.randomUUID(), image: { type: "image", data, mimeType } },
+    ]);
+  }
+  function attach(files: File[]) {
+    for (const file of files) {
+      if (!imageTypes.has(file.type)) continue;
+      const reader = new FileReader();
+      reader.onload = () =>
+        addImage(
+          String(reader.result).replace(/^data:[^,]*;base64,/, ""),
+          file.type,
+        );
+      reader.onerror = () => showError(`${file.name}: Could not read image.`);
+      reader.readAsDataURL(file);
+    }
+  }
   function send(delivery: PromptDelivery = "steer") {
-    if (!text.trim()) return;
+    if (!text.trim() && !images.length) return;
     if (!currentOpenId() && preview)
       void openChat(preview.info.cwd, preview.info.id);
     const state = useStore.getState();
@@ -99,8 +146,9 @@ export function OpeningComposer({ preview }: { preview?: Snapshot }) {
     if (!id || !opening) return;
     const content = snapshot
       ? { ...drafts.read(snapshot.address).content, text }
-      : { ...emptyContent(), text };
+      : { ...emptyContent(), text, images };
     queueOpeningSend(id, content, delivery);
+    setImages(() => []);
     if (snapshot) drafts.edit(snapshot.address, emptyContent, true);
     useStore.setState((s) => ({
       newChatDrafts: { ...s.newChatDrafts, [openingDraftKey(opening)]: "" },
@@ -136,18 +184,56 @@ export function OpeningComposer({ preview }: { preview?: Snapshot }) {
           const send = openId && withdrawOpeningSend(openId, id);
           if (!send) return;
           if (snapshot) drafts.restoreSent(snapshot.address, send.content);
-          else
+          else {
             changeText([send.content.text, text].filter(Boolean).join("\n\n"));
+            setImages((current) => [...send.content.images, ...current]);
+          }
           textareaRef.current?.focus();
         }}
       />
       <form
         className="composer"
+        onDragOver={(event) => {
+          if (!imageKey) return;
+          event.preventDefault();
+          event.dataTransfer.dropEffect = "copy";
+        }}
+        onDrop={(event) => {
+          if (!imageKey) return;
+          event.preventDefault();
+          attach(Array.from(event.dataTransfer.files));
+        }}
         onSubmit={(event) => {
           event.preventDefault();
           send();
         }}
       >
+        {images.length > 0 && (
+          <div className="composer-attachments">
+            {images.map(({ id }, index) => (
+              <div className="composer-attachment" key={id}>
+                <ImagePreview
+                  sources={imageSources}
+                  index={index}
+                  alt={t.imageN(index + 1, images.length)}
+                />
+                <button
+                  type="button"
+                  className="composer-attachment-remove"
+                  aria-label={`${t["Remove attachment"]}: ${t.imageN(index + 1, images.length)}`}
+                  title={t["Remove attachment"]}
+                  onClick={() =>
+                    setImages((current) =>
+                      current.filter((item) => item.id !== id),
+                    )
+                  }
+                >
+                  <X size={14} />
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
         <ComposerEditor
           viewKey={viewKey}
           inputRef={textareaRef}
@@ -155,6 +241,25 @@ export function OpeningComposer({ preview }: { preview?: Snapshot }) {
           placeholder={t["Ask anything, or describe what to build…"]}
           value={text}
           onChange={(event) => changeText(event.currentTarget.value)}
+          onPaste={(event) => {
+            if (!imageKey) return;
+            const files = Array.from(event.clipboardData.files);
+            if (files.length) {
+              event.preventDefault();
+              attach(files);
+              return;
+            }
+            // Windows screenshots can arrive as native-only clipboard data.
+            if (
+              !event.clipboardData.getData("text/plain") &&
+              !event.clipboardData.getData("text/html")
+            ) {
+              event.preventDefault();
+              void rpc.request
+                .readClipboardImage({})
+                .then((data) => addImage(data, "image/png"), showError);
+            }
+          }}
           onKeyDown={(event) => {
             if (event.nativeEvent.isComposing || event.keyCode === 229) return;
             const action = composerAction(event, keybindings);
@@ -187,8 +292,8 @@ export function OpeningComposer({ preview }: { preview?: Snapshot }) {
             <ComposerSubmit
               busy={false}
               waiting={queued}
-              hasContent={!!text}
-              disabled={!text.trim()}
+              hasContent={!!text || images.length > 0}
+              disabled={!text.trim() && !images.length}
               onStop={() => {
                 const id = currentOpenId();
                 if (id) restoreOpeningSends(id);

@@ -115,6 +115,8 @@ export const useStore = create<{
   openingTarget?: OpeningTarget;
   pendingOpens: Record<string, PendingOpen>;
   newChatDrafts: Record<string, string>;
+  /** Images pasted into a chat that has not been created yet. */
+  newChatImages: Record<string, DraftContent["images"]>;
   /** Chats whose deletion is in flight: hidden now, restored if it fails. */
   deletingSessions: Record<string, true>;
   /**
@@ -174,6 +176,7 @@ export const useStore = create<{
   packageOps: {},
   notices: [],
   newChatDrafts: {},
+  newChatImages: {},
   deletingSessions: {},
   rewinds: {},
   noticeHistory: loadNoticeHistory(),

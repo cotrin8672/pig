@@ -4,6 +4,12 @@ import { addressKey, sameAddress } from "./chat-snapshot";
 import type { DraftStore } from "./draft-store";
 
 export const maxImageBase64 = 4.5 * 1024 * 1024;
+export const imageTypes = new Set([
+  "image/png",
+  "image/jpeg",
+  "image/gif",
+  "image/webp",
+]);
 type Loaded = Pick<DraftContent, "images" | "files">;
 type Claim = {
   reads: Read[];
