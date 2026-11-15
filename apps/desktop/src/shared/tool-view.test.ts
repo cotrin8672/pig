@@ -3,6 +3,7 @@ import {
   diffStats,
   finishedWork,
   groupBlocks,
+  responseImages,
   resultText,
   shellOutcome,
 } from "./tool-view";
@@ -111,5 +112,38 @@ describe("tool-view", () => {
     });
     // ...but not while it is still calling tools.
     expect(finishedWork(records.slice(0, 3), true, all).size).toBe(0);
+  });
+
+  test("responseImages collects the images of a response's tool results", () => {
+    const image = { type: "image" as const, data: "x", mimeType: "image/png" };
+    const records = [
+      user(),
+      assistant(text("generating"), { ...call, id: "a" }),
+      rec({ role: "toolResult", toolCallId: "a", content: [] }),
+      assistant({ ...call, id: "b" }),
+      rec({ role: "toolResult", toolCallId: "b", content: [] }),
+      assistant(text("done")),
+    ];
+    const work = finishedWork(records, false, () => true);
+    const range = work.get(1);
+    expect(range).toEqual({
+      key: records[1].id,
+      first: 1,
+      final: 5,
+      tools: 2,
+    });
+    if (!range) throw new Error("expected a work range");
+    expect(
+      responseImages(records, range, {
+        a: { status: "done", result: { content: [text("a")] } },
+        b: { status: "done", result: { content: [text("b"), image] } },
+      }),
+    ).toEqual([image]);
+    // Text-only results and missing results add nothing.
+    expect(
+      responseImages(records, range, {
+        a: { status: "done", result: { content: [text("a")] } },
+      }),
+    ).toEqual([]);
   });
 });
