@@ -16,8 +16,20 @@ export async function buildStatisticsWorker(projectDir: string) {
     throw new AggregateError(result.logs, "Statistics worker build failed");
 }
 
+export async function buildChatHistoryWorker(projectDir: string) {
+  const result = await Bun.build({
+    entrypoints: [join(projectDir, "src/bun/chat-history-worker.ts")],
+    target: "bun",
+    outdir: join(projectDir, "build/chat-history"),
+    naming: "chat-history-worker.js",
+  });
+  if (!result.success)
+    throw new AggregateError(result.logs, "Chat history worker build failed");
+}
+
 export default async function preBuild() {
   stageSdkRuntime();
   await buildStatisticsWorker(join(import.meta.dir, ".."));
+  await buildChatHistoryWorker(join(import.meta.dir, ".."));
 }
 if (import.meta.main) await preBuild();

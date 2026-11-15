@@ -1,4 +1,5 @@
-import { join } from "node:path";
+import { stat } from "node:fs/promises";
+import { join, resolve } from "node:path";
 import Electrobun, {
   BrowserView,
   BrowserWindow,
@@ -14,6 +15,7 @@ import type {
   InstalledPackage,
   RPCSchema,
   SessionTarget,
+  Snapshot,
 } from "../shared/rpc-schema";
 import type { OpenSessionParams } from "../shared/runtime-contract";
 import { sessionIdFromLink } from "../shared/session-links";
@@ -27,6 +29,7 @@ import {
   validateAppearance,
 } from "./appearance";
 import { attachmentPreview, storeFile } from "./attachments";
+import { ChatHistoryImports } from "./chat-history-import";
 import { ChatRendererLoader } from "./chat-renderer-loader";
 import { ClientHub } from "./client-hub";
 import { createCompletionNotifier } from "./completion-notifier";
@@ -46,6 +49,7 @@ import {
   saveImage,
   showImageMenu,
 } from "./images";
+import { LocalChatHistory } from "./local-chat-history";
 import {
   cancelAllLogins,
   cancelLogin,
@@ -112,7 +116,6 @@ import { sessionDirFor } from "./session-files";
 import { loadSettings, saveSettings } from "./settings";
 import { TerminalRouter } from "./terminal-router";
 import {
-  packOpenState,
   packRuntimeState,
   packSnapshot,
   packTranscript,
@@ -147,6 +150,33 @@ await Promise.all([
   projectStore.load(),
 ]);
 const validateScope = (cwd: string) => projectStore.validateScope(cwd);
+const samePath = (a: string, b: string) =>
+  process.platform === "win32"
+    ? resolve(a).toLowerCase() === resolve(b).toLowerCase()
+    : resolve(a) === resolve(b);
+/**
+ * Imported chats go back to their original folder, registering it as a project
+ * when needed. Like addProject this grants no trust; the first new chat asks.
+ * Chats without a folder that still exists go to general chat.
+ */
+async function importScope(workspace?: string) {
+  if (!workspace || samePath(workspace, generalCwd)) return generalCwd;
+  const known = () => projectStore.value.find((p) => samePath(p, workspace));
+  if (known()) return known() as string;
+  const folder = resolve(workspace);
+  if (
+    !(await stat(folder).then(
+      (s) => s.isDirectory(),
+      () => false,
+    ))
+  )
+    return generalCwd;
+  await projectStore.save((current) =>
+    current.some((p) => samePath(p, folder)) ? current : [...current, folder],
+  );
+  hub.broadcast("projects", projectStore.value);
+  return known() ?? folder;
+}
 async function resolveSession(input: SessionTarget) {
   if (
     !input ||
@@ -180,7 +210,12 @@ function refreshSearch() {
 // Warm the index after startup work has settled.
 setTimeout(refreshSearch, 5000);
 async function openManagedSession(input: OpenSessionParams) {
-  return packSnapshot(await openSession(input));
+  return fullSnapshot(await openSession(input));
+}
+function fullSnapshot(snapshot: Snapshot) {
+  // RPC reads advance snapshotSeq independently of publications.
+  hub.resetRuntime(snapshot.address);
+  return packSnapshot(snapshot);
 }
 const settingsFile = join(desktopConfigDir, "settings.json");
 const appearanceFile = join(desktopConfigDir, "appearance.json");
@@ -263,6 +298,10 @@ type AppWindow = {
   /** Root UI leases created by this window's current page. */
   uiClients: Set<string>;
   flushDrafts: () => Promise<void>;
+  historyImports: ChatHistoryImports;
+  localHistory: LocalChatHistory;
+  historyPickerOpen: boolean;
+  historyRequest?: string;
 };
 const windows = new Map<string, AppWindow>();
 /** Windows whose native WebView still exists (close events may arrive later). */
@@ -303,10 +342,15 @@ const hostRequests = {
   packagePreviews: (input) => packagePreviews(input),
   listInstalled: () => listInstalled(publishInstalledUpdate),
   prompt: (input) => promptSession(input),
-  getOpenState: (input) => packOpenState(sessionHost.getOpenState(input)),
+  getOpenState: (input) => {
+    const state = sessionHost.getOpenState(input);
+    return state.state === "ready"
+      ? { ...state, snapshot: fullSnapshot(state.snapshot) }
+      : state;
+  },
   cancelOpen: (input) => sessionHost.cancelOpen(input),
   getSessionSnapshot: (input) =>
-    packSnapshot(sessionHost.getSessionSnapshot(input)),
+    fullSnapshot(sessionHost.getSessionSnapshot(input)),
   getSessionHistory: async (input) =>
     packTranscript(await sessionHost.getSessionHistory(input)),
   listSlashCommands: (input) => sessionHost.listSlashCommands(input),
@@ -320,7 +364,10 @@ const hostRequests = {
   getSessionDraft: (input) => sessionHost.getSessionDraft(input),
   discardRecovery: (input) => sessionHost.discardRecovery(input),
   resolveExtensionUI: (input) => sessionHost.resolveExtensionUI(input),
-  runtimeState: () => packRuntimeState(sessionHost.runtimeState()),
+  runtimeState: () => {
+    hub.resetRuntime();
+    return packRuntimeState(sessionHost.runtimeState());
+  },
   heartbeatUI: (input) => sessionHost.heartbeatUI(input),
   abort: (input) => abortSession(input),
   closeSession: (input) => closeSession(input),
@@ -465,8 +512,8 @@ const hostRequests = {
     // SessionHost validates persisted membership while resolving the file.
     return openManagedSession(input);
   },
-  rewindSession: async (input) => packSnapshot(await rewindSession(input)),
-  forkSession: async (input) => packSnapshot(await forkSession(input)),
+  rewindSession: async (input) => fullSnapshot(await rewindSession(input)),
+  forkSession: async (input) => fullSnapshot(await forkSession(input)),
   removeProject: (input) =>
     projectStore.save((current) => withoutProject(current, input?.cwd)),
   setProjectState: (input) =>
@@ -559,7 +606,10 @@ const hostRequests = {
     await applyModelSettings();
   },
   setEffort: (input) => setSessionEffort(input),
-} satisfies Omit<RequestHandlers, "copyImage" | "terminalCommand">;
+} satisfies Omit<
+  RequestHandlers,
+  "copyImage" | "terminalCommand" | "importChatHistory"
+>;
 /** Window-independent messages. */
 const hostMessages = {
   checkAppUpdate: () => {
@@ -655,7 +705,14 @@ const hostMessages = {
   },
 } satisfies Omit<
   MessageHandlers,
-  "usageActive" | "windowControl" | "imageMenu" | "connectUI" | "disconnectUI"
+  | "usageActive"
+  | "windowControl"
+  | "imageMenu"
+  | "connectUI"
+  | "disconnectUI"
+  | "chooseChatHistory"
+  | "discardChatHistory"
+  | "listChatHistory"
 >;
 const notifyCompletion = createCompletionNotifier({
   desktopState,
@@ -708,6 +765,9 @@ const syncUsageActive = () =>
   );
 /** The page went away (reload, navigation or close): end what only it owned. */
 function releasePage(target: AppWindow) {
+  target.historyRequest = undefined;
+  target.historyImports.clear();
+  target.localHistory.clear();
   for (const clientId of target.uiClients)
     sessionHost.disconnectUI({ clientId });
   target.uiClients.clear();
@@ -727,6 +787,26 @@ function createWindow() {
     handlers: {
       requests: {
         ...hostRequests,
+        importChatHistory: async (input) => {
+          const scopes = new Set<string>();
+          const place = async (workspace?: string) => {
+            const cwd = await importScope(workspace);
+            scopes.add(cwd);
+            return cwd;
+          };
+          // Exports carry no folder, so they always go to general chat.
+          const result = await (target.localHistory.owns(input?.previewId)
+            ? target.localHistory.import({ ...input, cwd: place })
+            : target.historyImports.import({
+                ...input,
+                cwd: await place(),
+              }));
+          if (result.copied) {
+            refreshSearch();
+            for (const cwd of scopes) hub.broadcast("chatsImported", { cwd });
+          }
+          return result;
+        },
         copyImage: ({ src }) => copyImage(src, target.window.ptr),
         terminalCommand: (input) => {
           if (terminals.accept(id, input)) sessionHost.terminalCommand(input);
@@ -734,6 +814,74 @@ function createWindow() {
       },
       messages: {
         ...hostMessages,
+        listChatHistory: ({ requestId, source }) => {
+          if (
+            typeof requestId !== "string" ||
+            requestId.length > 128 ||
+            (source !== "codex" && source !== "claude-code")
+          )
+            return;
+          target.historyRequest = requestId;
+          target.historyImports.clear();
+          void target.localHistory
+            .list(source)
+            .then((preview) => {
+              if (target.historyRequest === requestId)
+                hub.to(id, "chatHistoryFile", { requestId, preview });
+            })
+            .catch((error) => {
+              if (target.historyRequest === requestId)
+                hub.to(id, "chatHistoryFile", {
+                  requestId,
+                  error: String(error),
+                });
+            });
+        },
+        chooseChatHistory: ({ requestId }) => {
+          if (typeof requestId !== "string" || requestId.length > 128) return;
+          if (target.historyPickerOpen) {
+            hub.to(id, "chatHistoryFile", {
+              requestId,
+              error: "A file picker is already open.",
+            });
+            return;
+          }
+          target.historyPickerOpen = true;
+          target.historyRequest = requestId;
+          target.localHistory.clear();
+          const imports = target.historyImports;
+          void (async () => {
+            const files = await Utils.openFileDialog({
+              canChooseFiles: true,
+              canChooseDirectory: false,
+              allowsMultipleSelection: false,
+              allowedFileTypes: "json",
+            });
+            if (target.historyRequest !== requestId) return;
+            if (!files[0]) {
+              imports.clear();
+              hub.to(id, "chatHistoryFile", { requestId });
+              return;
+            }
+            const preview = await imports.prepare(files[0]);
+            if (target.historyRequest !== requestId) return;
+            hub.to(id, "chatHistoryFile", { requestId, preview });
+          })()
+            .catch((error) => {
+              hub.to(id, "chatHistoryFile", {
+                requestId,
+                error: String(error),
+              });
+            })
+            .finally(() => {
+              target.historyPickerOpen = false;
+            });
+        },
+        discardChatHistory: () => {
+          target.historyRequest = undefined;
+          target.historyImports.clear();
+          target.localHistory.clear();
+        },
         usageActive: ({ active }) => {
           if (typeof active !== "boolean") return;
           target.usageActive = active;
@@ -790,6 +938,9 @@ function createWindow() {
     usageActive: false,
     uiClients: new Set<string>(),
     flushDrafts: () => rpc.request.flushDrafts(),
+    historyImports: new ChatHistoryImports(),
+    localHistory: new LocalChatHistory(),
+    historyPickerOpen: false,
   } satisfies Omit<AppWindow, "id">);
   for (const other of windows.values()) other.focused = false;
   windows.set(id, target);

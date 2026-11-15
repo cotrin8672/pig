@@ -4,6 +4,11 @@ import type {
   SessionUIState,
 } from "../../../../packages/config/src";
 import type {
+  ChatHistoryFileEvent,
+  ChatHistoryImportResult,
+  LocalHistorySource,
+} from "./chat-history-import";
+import type {
   DesktopState,
   SessionFlags,
   UiPreferences,
@@ -246,6 +251,11 @@ export type RPCSchema = {
       };
       // biome-ignore lint/suspicious/noConfusingVoidType: Electrobun convention.
       importLegacySessions: { params: void; response: PiDataImportResult };
+      importChatHistory: {
+        // The host picks each chat's project from its original folder.
+        params: { previewId: string; ids: string[] | null };
+        response: ChatHistoryImportResult;
+      };
       getChatRendererBundle: {
         // biome-ignore lint/suspicious/noConfusingVoidType: Electrobun convention.
         params: void;
@@ -462,6 +472,10 @@ export type RPCSchema = {
       };
     };
     messages: {
+      chooseChatHistory: { requestId: string };
+      listChatHistory: { requestId: string; source: LocalHistorySource };
+      // biome-ignore lint/suspicious/noConfusingVoidType: Electrobun convention.
+      discardChatHistory: void;
       // biome-ignore lint/suspicious/noConfusingVoidType: Electrobun convention.
       checkAppUpdate: void;
       // biome-ignore lint/suspicious/noConfusingVoidType: Electrobun convention.
@@ -495,6 +509,8 @@ export type RPCSchema = {
       flushDrafts: { params: void; response: void };
     };
     messages: {
+      chatHistoryFile: ChatHistoryFileEvent;
+      chatsImported: { cwd: string };
       appUpdate: AppUpdateState;
       runtimeEvent: RuntimeWireEvent;
       extensionUIEvent: ExtensionUIEvent;

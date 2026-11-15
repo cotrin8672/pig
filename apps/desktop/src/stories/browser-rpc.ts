@@ -2,6 +2,10 @@ import { selectPaneSession } from "../mainview/pane-selection";
 import type { SendController } from "../mainview/send-controller";
 import { showNotice, useStore } from "../mainview/store";
 import { safeTerminalURL } from "../mainview/terminal-ui";
+import type {
+  ChatHistoryImportResult,
+  LocalHistorySource,
+} from "../shared/chat-history-import";
 import type { UIReply } from "../shared/extension-ui";
 import type {
   Appearance,
@@ -15,6 +19,7 @@ import type {
   SessionAddress,
 } from "../shared/runtime-contract";
 import { patchSettings, type SettingsPatch } from "../shared/settings";
+import { filePreview, localPreview } from "./settings/history-import-data";
 
 // The canvas runs in a browser without Electrobun or a real session.
 export const regenerate = async () => {};
@@ -106,6 +111,19 @@ export function setStoryConversationSearch(search: ConversationSearch) {
   conversationSearch = search;
 }
 export const forkChat = async () => {};
+// History import stories answer like a local scan after a short delay.
+function answerHistory(requestId: string, source?: LocalHistorySource) {
+  setTimeout(() => {
+    if (useStore.getState().chatHistoryFile?.requestId !== requestId) return;
+    useStore.setState({
+      chatHistoryFile: {
+        requestId,
+        source,
+        preview: source ? localPreview(source) : filePreview,
+      },
+    });
+  }, 900);
+}
 export const openChatLink = async () => {};
 // Settings stories reuse real provider/model panels; writes stay in the story's store.
 export const refresh = async () => {};
@@ -116,6 +134,15 @@ export function updateSettings(patch: SettingsPatch) {
     }));
 }
 const send = {
+  listChatHistory: ({
+    requestId,
+    source,
+  }: {
+    requestId: string;
+    source: LocalHistorySource;
+  }) => answerHistory(requestId, source),
+  chooseChatHistory: ({ requestId }: { requestId: string }) =>
+    answerHistory(requestId),
   imageMenu: () => {},
   startLogin: () => {},
   cancelLogin: () => {},
@@ -204,6 +231,12 @@ const request = {
     }));
   },
   async refreshProviderUsage() {},
+  async importChatHistory(params: {
+    ids: string[] | null;
+  }): Promise<ChatHistoryImportResult> {
+    await new Promise((resolve) => setTimeout(resolve, 1200));
+    return { copied: params.ids?.length ?? 12, skipped: 0, failed: 0 };
+  },
   async setModelsEnabled() {},
   async setModelEnabled() {},
   async refreshProviderModels() {},

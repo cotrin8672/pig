@@ -30,6 +30,7 @@ export const settingsCategories: { id: SettingsCategory; label: TextKey }[] = [
   { id: "general", label: "General" },
   { id: "appearance", label: "Appearance" },
   { id: "keyboard", label: "Keyboard shortcuts" },
+  { id: "import", label: "historyImportCategory" },
   { id: "updates", label: "appUpdateTitle" },
 ];
 
@@ -48,6 +49,11 @@ export const settingTargets: {
   { id: "block-images", category: "general", label: "Block images" },
   { id: "context-display", category: "general", label: "Context display" },
   { id: "usage-display", category: "general", label: "usageDisplay" },
+  {
+    id: "chat-history-import",
+    category: "import",
+    label: "historyImportTitle",
+  },
   { id: "theme-color", category: "appearance", label: "themeColor" },
   { id: "backdrop", category: "appearance", label: "Window backdrop" },
   { id: "window-opacity", category: "appearance", label: "Window opacity" },

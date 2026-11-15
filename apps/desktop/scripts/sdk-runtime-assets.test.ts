@@ -209,6 +209,15 @@ describe("SDK runtime production packaging", () => {
       join(import.meta.dir, "../src/shared/statistics.ts"),
       join(f.projectDir, "src/shared/statistics.ts"),
     );
+    for (const file of [
+      "bun/chat-history-worker.ts",
+      "bun/chat-history-parser.ts",
+      "shared/chat-history-import.ts",
+    ])
+      copyFileSync(
+        join(import.meta.dir, "../src", file),
+        join(f.projectDir, "src", file),
+      );
     const stage = join(f.projectDir, SDK_RUNTIME_STAGE);
     // Mirrors Hutch run_hook_helper.js: import the module, call its default.
     const hook = Bun.spawnSync(
@@ -224,6 +233,11 @@ describe("SDK runtime production packaging", () => {
     expect(existsSync(join(stage, "node_modules"))).toBe(true);
     expect(
       existsSync(join(f.projectDir, "build/statistics/statistics-worker.js")),
+    ).toBe(true);
+    expect(
+      existsSync(
+        join(f.projectDir, "build/chat-history/chat-history-worker.js"),
+      ),
     ).toBe(true);
     expect(
       sdkStageMatches({ ...f, destination: stage, roots: SDK_RUNTIME_ROOTS }),

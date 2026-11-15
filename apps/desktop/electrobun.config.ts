@@ -14,6 +14,7 @@ export default {
       "dist/assets": "views/mainview/assets",
       "scripts/app-update.ps1": "app-update.ps1",
       "build/statistics/statistics-worker.js": "bun/statistics-worker.js",
+      "build/chat-history/chat-history-worker.js": "bun/chat-history-worker.js",
       [`${SDK_RUNTIME_STAGE}/node_modules`]: "node_modules",
       [`${SDK_RUNTIME_STAGE}/sdk-runtime-manifest.json`]:
         "sdk-runtime-manifest.json",
