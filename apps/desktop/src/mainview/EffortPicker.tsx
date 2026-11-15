@@ -1,10 +1,11 @@
-import type { Effort, Snapshot } from "../shared/rpc-schema";
+import type { Effort } from "../shared/rpc-schema";
 import { EffortSlider } from "./EffortSlider";
+import type { ModelPickerSnapshot } from "./model-picker-view";
 import { changeSelection } from "./Picker";
 import { requestSelection, rpc } from "./rpc";
 import { useStore } from "./store";
 
-export function EffortPicker({ snapshot }: { snapshot: Snapshot }) {
+export function EffortPicker({ snapshot }: { snapshot: ModelPickerSnapshot }) {
   const id = snapshot.info.id;
   return (
     <EffortSlider
