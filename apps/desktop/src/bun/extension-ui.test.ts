@@ -130,6 +130,22 @@ if (process.env.PIG_EXTENSION_UI_TEST_CHILD !== "1") {
     return { events, terminals, broker, drafts, create, request, ready };
   }
 
+  test("display-only calls are dropped while suspended instead of throwing", () => {
+    const f = fixture();
+    const host = f.create();
+    const ui = host.uiContext;
+    host.cancelAll("reload");
+    const before = f.events.length;
+    expect(() => {
+      ui.notify("late");
+      ui.setStatus("k", "v");
+      ui.setWidget("w", ["x"]);
+      ui.setTitle("t");
+    }).not.toThrow();
+    expect(f.events.length).toBe(before);
+    expect(() => ui.getEditorText()).toThrow("Extension UI host unavailable");
+  });
+
   test("startup native UI works before ready; stable facade rotates and stale replies cannot affect new epoch", async () => {
     const f = fixture();
     const host = f.create();
