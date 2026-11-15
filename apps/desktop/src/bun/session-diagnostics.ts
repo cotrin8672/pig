@@ -24,6 +24,7 @@ type State = {
   cwd: string;
   run?: RunDiagnostic;
   recovered: RecoveredPrompt[];
+  resumeEntries?: string[];
 };
 const ownerKey = (manager: SessionManager) =>
   JSON.stringify([
@@ -145,6 +146,11 @@ export class SessionDiagnostics {
         value.sessionId !== this.value.sessionId ||
         value.cwd !== this.value.cwd ||
         !Array.isArray(value.recovered) ||
+        (value.resumeEntries !== undefined &&
+          (!Array.isArray(value.resumeEntries) ||
+            value.resumeEntries.some(
+              (id: unknown) => typeof id !== "string",
+            ))) ||
         value.recovered.some(
           (item: RecoveredPrompt) =>
             !item ||

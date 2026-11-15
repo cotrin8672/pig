@@ -1,5 +1,6 @@
 import { useLayoutEffect, useSyncExternalStore } from "react";
 import type { Snapshot } from "../shared/rpc-schema";
+import { RESUME_REQUEST_PREFIX } from "../shared/runtime-contract";
 import { expandedDraft } from "./draft-store";
 import { UserMessage } from "./MessageContent";
 import { sends } from "./rpc";
@@ -28,6 +29,7 @@ export function OptimisticMessages({
     .optimistic(snapshot.address)
     .filter(
       (send) =>
+        !send.key.requestId.startsWith(RESUME_REQUEST_PREFIX) &&
         !transcriptRequestIds(snapshot.transcript.records).has(
           send.key.requestId,
         ),
@@ -45,8 +47,6 @@ export function OptimisticMessages({
                 (send.disposition === "queued" ||
                   (send.disposition === undefined &&
                     snapshot.transcript.running))
-                  ? "pending"
-                  : undefined
               }
               message={{
                 role: "user",

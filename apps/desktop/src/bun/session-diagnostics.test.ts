@@ -49,6 +49,62 @@ async function fixture(
   }
 }
 
+test("automatic resume stays hidden live, saved, reloaded and paged; typed continue stays visible", () =>
+  fixture(async (manager, file, store) => {
+    const projector = new SDKProjector(manager, 1, store);
+    const message = {
+      role: "user" as const,
+      content: "continue",
+      timestamp: 3,
+    };
+    projector.event({ type: "agent_start" });
+    projector.event({ type: "message_start", message }, "resume:fixture");
+    expect(projector.snapshot().records.at(-1)).toMatchObject({
+      display: false,
+    });
+    projector.event({ type: "message_end", message });
+    const resumed = manager.appendMessage(message);
+    projector.event({
+      type: "message_start",
+      message: fauxAssistantMessage("resumed"),
+    });
+    expect(
+      projector.snapshot().records.find((record) => record.id === resumed),
+    ).toMatchObject({ display: false });
+    // Reopen before settlement: the visibility metadata must already be durable.
+    const reloaded = new SDKProjector(SessionManager.open(file), 2, store);
+    expect(
+      reloaded.snapshot().records.find((record) => record.id === resumed),
+    ).toMatchObject({ display: false });
+    manager.appendMessage(fauxAssistantMessage("resumed"));
+    const typed = manager.appendMessage({ ...message, timestamp: 4 });
+    for (let i = 0; i < 60; i++) {
+      manager.appendMessage({
+        ...message,
+        content: `turn ${i}`,
+        timestamp: 5 + i,
+      });
+      manager.appendMessage(fauxAssistantMessage(`answer ${i}`));
+    }
+    const paged = new SDKProjector(SessionManager.open(file), 3, store);
+    let page = paged.historyPage();
+    const records = [...page.records];
+    while (page.history?.before) {
+      page = paged.historyPage(page.history.before, page.history.revision);
+      records.push(...page.records);
+    }
+    expect(records.find((record) => record.id === resumed)).toMatchObject({
+      display: false,
+    });
+    expect(records.find((record) => record.id === typed)).not.toHaveProperty(
+      "display",
+      false,
+    );
+    expect(
+      manager.getBranch().find((entry) => entry.id === resumed),
+    ).toMatchObject({ type: "message", message });
+  }));
+
 test("non-message failure, abort and an interrupted run restore from disk without resuming execution", () =>
   fixture(async (manager, file, store) => {
     const projector = new SDKProjector(manager, 1, store);

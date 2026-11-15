@@ -40,6 +40,27 @@ function fixture(
   );
   return { drafts, sends, callbacks, delays };
 }
+test("only automatic resume uses a tagged request; typed continue remains a normal send", async () => {
+  const requests: PromptParams[] = [];
+  const f = fixture(
+    async (params) => {
+      requests.push(params);
+      return accepted;
+    },
+    async (key) => ({ ...key, state: "pending" }),
+  );
+  const content = { ...emptyContent(), text: "continue" };
+  f.drafts.edit(address, () => content);
+  await f.sends.send(address, undefined, undefined, "steer", true);
+  f.drafts.edit(address, () => content);
+  await f.sends.send(address);
+  expect(requests.map((request) => request.text)).toEqual([
+    "continue",
+    "continue",
+  ]);
+  expect(requests[0].requestId).toStartWith("resume:");
+  expect(requests[1].requestId).not.toStartWith("resume:");
+});
 test("timeout checks receipt without retransmission; pending retains the complete optimistic message", async () => {
   let calls = 0;
   let key: SendKey | undefined;

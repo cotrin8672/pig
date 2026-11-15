@@ -427,8 +427,7 @@ export const en = {
   "Already sending": "This message is already being sent.",
   Send: "Send",
   Resume: "Resume",
-  resumePrompt:
-    "Continue from where you stopped. Check the work already completed and carry on with the remaining steps.",
+  resumePrompt: "continue",
   "Choose an enabled model to send a message.":
     "Choose an enabled model to send a message.",
   "Manage models": "Manage models",
@@ -1122,8 +1121,7 @@ export const ja: Dictionary = {
   "Already sending": "このメッセージはすでに送信を開始しています。",
   Send: "送信",
   Resume: "再開",
-  resumePrompt:
-    "停止したところから再開してください。完了済みの作業を確認し、残りの手順を続けてください。",
+  resumePrompt: "continue",
   "Choose an enabled model to send a message.":
     "有効なモデルを選択してメッセージを送信してください。",
   "Manage models": "モデルを管理",
