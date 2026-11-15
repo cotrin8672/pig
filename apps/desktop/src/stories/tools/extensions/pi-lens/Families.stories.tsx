@@ -161,6 +161,10 @@ export const CodeFirst = { name: "コード中心", render: transcript("code") }
 /* Rich families: the same theme drawn as pictures instead of rows. */
 export const Minimap = { name: "ミニマップ", render: transcript("minimap") };
 export const Graph = { name: "関係図", render: transcript("graph") };
+export const GraphCompact = {
+  name: "関係図（コンパクト）",
+  render: transcript("graphCompact"),
+};
 export const Gauge = { name: "計器", render: transcript("gauge") };
 export const Split = { name: "分割ビュー", render: transcript("split") };
 export const Treemap = { name: "ツリーマップ", render: transcript("treemap") };
