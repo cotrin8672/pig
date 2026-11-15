@@ -33,6 +33,7 @@ import {
 } from "../shared/provider-usage";
 import { useT } from "./i18n";
 import { ProviderIcon } from "./ProviderIcon";
+import { useTooltip } from "./Tooltip";
 import "./provider-usage.css";
 
 /**
@@ -81,7 +82,8 @@ function usageWindows(entry: ProviderUsage) {
 }
 /**
  * One details popover per dock (docs/ui-guidelines.md 「情報量の多いホバー表示」):
- * moving between rows swaps its content instead of stacking popovers. Top layer
+ * moving between rows keeps it open, glides it to the new row and cross-fades
+ * only the content (same motion as the shared Tooltip). Top layer
  * so the sidebar's overflow can't clip it; a short close delay lets the pointer
  * cross into it. Like ActionsMenu, list scroll and window resize close it.
  */
@@ -118,12 +120,20 @@ function useUsagePopover() {
         right + width <= innerWidth - 8 ? right : box.left - width - 8;
       popup.style.left = `${Math.max(8, Math.min(left, innerWidth - width - 8))}px`;
       popup.style.top = `${Math.max(8, Math.min(box.top, innerHeight - height - 8))}px`;
+      popup.dataset.side = left === right ? "right" : "left";
     };
     if (!popup.matches(":popover-open")) popup.showPopover();
     position();
     // Pointer popovers close on scroll like ActionsMenu; a keyboard-focused
-    // row scrolls itself into view, so its popover follows instead.
-    const scroll = () => (row.matches(":focus-visible") ? position() : close());
+    // row scrolls itself into view, so its popover follows instead (at once:
+    // the row-switch glide would lag behind the scroll).
+    const follow = () => {
+      popup.style.transition = "none";
+      position();
+      popup.getBoundingClientRect();
+      popup.style.transition = "";
+    };
+    const scroll = () => (row.matches(":focus-visible") ? follow() : close());
     const dismiss = (event: KeyboardEvent) => {
       if (event.key === "Escape") close();
     };
@@ -158,11 +168,14 @@ function useUsagePopover() {
           id={id}
           role="tooltip"
           popover="manual"
-          className="usage-popover"
+          className="usage-popover ui-tooltip ui-tooltip-follow"
           onPointerEnter={() => clearTimeout(timer.current)}
           onPointerLeave={leave}
         >
-          {content}
+          {/* Keyed by row: live data updates must not replay the fade. */}
+          <div key={active} className="ui-tooltip-swap">
+            {content}
+          </div>
         </div>
       ),
   };
@@ -254,7 +267,7 @@ function UsageDetails({
     </>
   );
 }
-function tooltip(
+function usageLabel(
   entry: ProviderUsage,
   display: UsageDisplay,
   mode: string,
@@ -290,6 +303,7 @@ export function ProviderUsageView({
   const [collapsed, setCollapsed] = useState(false);
   const [coolingDown, setCoolingDown] = useState(false);
   const popover = useUsagePopover();
+  const tip = useTooltip();
   useEffect(() => {
     if (!coolingDown || refreshing) return;
     const timer = setTimeout(
@@ -327,7 +341,7 @@ export function ProviderUsageView({
           type="button"
           className="provider-usage-refresh"
           aria-label={t.usageRefresh}
-          title={t.usageRefresh}
+          {...tip({ tier: "label", side: "top", label: t.usageRefresh })}
           disabled={refreshing || coolingDown || !onRefresh}
           onClick={() => {
             setCoolingDown(true);
@@ -347,7 +361,7 @@ export function ProviderUsageView({
             const windows = usageWindows(entry);
             const balance = entry.data?.balances[0];
             const problem = entry.problem && problems[entry.problem];
-            const detail = tooltip(entry, display, mode, now, problem);
+            const detail = usageLabel(entry, display, mode, now, problem);
             return (
               <li
                 key={entry.key}

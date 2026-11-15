@@ -16,13 +16,12 @@ function DraftCard({
   const ref = useAnnotationHighlight(id);
   return (
     <li className="annotation-card" ref={ref} tabIndex={-1}>
-      <blockquote title={quote}>{quote}</blockquote>
-      {comment && <p title={comment}>{comment}</p>}
+      <blockquote aria-description={quote}>{quote}</blockquote>
+      {comment && <p aria-description={comment}>{comment}</p>}
       <button
         type="button"
         className="annotation-remove"
         aria-label={t["Remove comment"]}
-        title={t["Remove comment"]}
         onClick={() => onRemove(id)}
       >
         <X size={14} />

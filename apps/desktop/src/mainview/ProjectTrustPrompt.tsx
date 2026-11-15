@@ -82,7 +82,7 @@ export function ProjectTrustPrompt({
             return (
               <li
                 key={`${resource.kind}:${resource.path}`}
-                title={resource.path}
+                aria-description={resource.path}
               >
                 <Icon size={14} aria-hidden="true" />
                 <code>{projectRelative(cwd, resource.path)}</code>

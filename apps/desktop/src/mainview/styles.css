@@ -1,5 +1,6 @@
 @import "tailwindcss";
 @import "./tokens.css";
+@import "./tooltip.css";
 
 * {
   box-sizing: border-box;
@@ -105,13 +106,34 @@ button:disabled {
   opacity: 0.4;
   cursor: default;
 }
+/* Never the UA's black/white ring: any focusable gets the app ring. */
+:focus-visible,
 button:focus-visible,
 a:focus-visible,
 input:focus-visible,
 select:focus-visible,
 textarea:focus-visible {
-  outline: 1px solid var(--ds-focus);
+  /* Theme-coloured, softened ring; follows border-radius. */
+  outline: 2px solid color-mix(in srgb, var(--ds-focus) 70%, transparent);
   outline-offset: 2px;
+}
+/* Scroll regions would clip an outside ring. */
+.thread-scroll:focus-visible,
+pre[tabindex]:focus-visible {
+  outline-offset: -2px;
+}
+/* The thread reaches .main-clip's rounded corners; a square inset ring
+   would be cut off there. */
+.thread-scroll:focus-visible {
+  border-radius: var(--radius-sm);
+}
+/* Jump targets (search, annotations) take programmatic focus for screen
+   readers and keyboard paging; they are not controls and `search-target`
+   already marks them, so no ring. */
+.response-turn:focus,
+[data-content-index]:focus,
+.annotation-card:focus {
+  outline: none;
 }
 /* Text fields show the caret; a focus ring adds nothing there. */
 input:not([type]):focus,
@@ -205,9 +227,6 @@ p {
 }
 .sidebar-collapsed .sidebar {
   margin-left: calc(-1 * var(--ds-sidebar-width));
-}
-.sidebar-collapsed .sidebar-toggle {
-  left: 12px;
 }
 .project-list {
   flex: 1;
@@ -484,7 +503,7 @@ main > *,
     left var(--motion-duration-normal) var(--motion-ease-out);
 }
 .sidebar-collapsed .window-titlebar {
-  left: 52px;
+  left: 8px;
 }
 .window-titlebar-content {
   display: flex;
@@ -544,7 +563,8 @@ main > *,
   gap: 4px;
   margin-right: 12px;
 }
-.window-pane-controls button {
+.window-pane-controls button,
+.window-sidebar-controls button {
   width: 34px;
 }
 .window-controls button:hover {
@@ -572,17 +592,6 @@ main > *,
   display: flex;
   min-height: 0;
   flex-direction: column;
-}
-.chat-header {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  flex: 1;
-  min-width: 0;
-  height: 34px;
-  padding: 0 8px;
-  color: var(--ds-text-secondary);
-  font-size: var(--text-md);
 }
 .thread-scroll {
   --scrollbar-inset: var(--radius-sm);
@@ -846,35 +855,6 @@ details[open] > summary .tool-chevron,
 @keyframes thinking-shimmer {
   to {
     background-position: -200% 0;
-  }
-}
-
-/* Running line: the wait under a live response. One line, no card, no height change. */
-.running-line {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  min-height: 1.5em;
-}
-.running-glyph {
-  flex: none;
-  width: 1em;
-  font-family: var(--font-mono);
-  text-align: center;
-  color: var(--ds-text-secondary);
-}
-.running-verb {
-  animation: running-verb-in 260ms ease-out;
-}
-@keyframes running-verb-in {
-  from {
-    opacity: 0;
-    transform: translateY(2px);
-  }
-}
-@media (prefers-reduced-motion: reduce) {
-  .running-verb {
-    animation: none;
   }
 }
 
@@ -1703,7 +1683,7 @@ select {
   display: flex;
   gap: 8px;
 }
-input:not([type="range"]) {
+input:where(:not([type="range"], [type="checkbox"], [type="radio"])) {
   flex: 1;
   min-width: 0;
   width: 100%;
@@ -2223,34 +2203,6 @@ input:not([type="range"]) {
 }
 .chat-shell {
   position: relative;
-}
-.chat-heading {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  min-width: 0;
-}
-.chat-heading {
-  flex: 1;
-  overflow: hidden;
-}
-.chat-heading small {
-  flex: 1;
-  min-width: 0;
-  color: var(--ds-text-muted);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.chat-heading > svg {
-  flex: none;
-}
-.chat-heading > span {
-  flex: 0 1 auto;
-  max-width: min(160px, 35%);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 .chat-width-guides {
   position: absolute;

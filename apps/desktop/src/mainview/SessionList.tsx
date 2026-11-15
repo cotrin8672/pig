@@ -23,6 +23,7 @@ import { navigate } from "./navigation";
 import { openChat, refreshSessions, rpc, showPendingOpen } from "./rpc";
 import { sessionStatusLabels } from "./session-status";
 import { showError, useStore } from "./store";
+import { clipTooltipText, type TooltipAnchor, useTooltip } from "./Tooltip";
 import {
   publishSessionName,
   sessionNames,
@@ -35,6 +36,26 @@ import {
   selectSessionStatus,
   selectStartingChats,
 } from "./ui-selectors";
+
+const basename = (path: string) =>
+  path.split(/[\\/]/).filter(Boolean).pop() || path;
+
+const units: [Intl.RelativeTimeFormatUnit, number][] = [
+  ["year", 365 * 86_400_000],
+  ["month", 30 * 86_400_000],
+  ["day", 86_400_000],
+  ["hour", 3_600_000],
+  ["minute", 60_000],
+];
+/** `3 days ago` / `3日前`; under a minute reads as "now". */
+export function relativeTime(time: number, language: string, now = Date.now()) {
+  const format = new Intl.RelativeTimeFormat(language, { numeric: "auto" });
+  const elapsed = Math.max(0, now - time);
+  for (const [unit, size] of units)
+    if (elapsed >= size)
+      return format.format(-Math.floor(elapsed / size), unit);
+  return format.format(0, "second");
+}
 
 /** Unpinned chats, including the selected chat, shown before expanding. */
 export const RECENT_CHAT_LIMIT = 5;
@@ -112,7 +133,6 @@ export const SessionList = memo(function SessionList({
           className="thread more-chats"
           aria-expanded={showAll}
           aria-label={showAll ? t["Show fewer chats"] : t["Show older chats"]}
-          title={showAll ? t["Show fewer chats"] : t["Show older chats"]}
           onClick={() => setShowAll(!showAll)}
         >
           {showAll ? (
@@ -145,14 +165,19 @@ function StartingRow({ openId, title }: { openId: string; title: string }) {
   const active = useStore(
     (s) => s.page === "chat" && s.opening && s.openId === openId,
   );
+  const tooltip = useTooltip();
   return (
     <div className={`thread-row ${active ? "active" : ""}`}>
       <button
         type="button"
         className="thread"
-        title={title}
         aria-current={active ? "page" : undefined}
         onClick={() => showPendingOpen(openId)}
+        {...tooltip({
+          tier: "detail",
+          side: "right",
+          label: clipTooltipText(title),
+        })}
       >
         <span className="session-status-slot" />
         <span className="thread-title">{title}</span>
@@ -169,6 +194,37 @@ function SessionRow({ session, cwd }: { session: SessionInfo; cwd: string }) {
   const active = useStore((s) => s.active === session.id && s.page === "chat");
   const flags = useStore((s) => s.bootstrap.desktop.sessions[session.id]);
   const status = useStore((s) => selectSessionStatus(s, session.id));
+  const project = useStore((s) =>
+    cwd === s.bootstrap.generalCwd
+      ? undefined
+      : s.bootstrap.desktop.projects?.[cwd]?.name || basename(cwd),
+  );
+  const language = useStore((s) => s.settings.language);
+  const tooltip = useTooltip();
+  // Computed at hover time so "3 days ago" never goes stale.
+  const details = (): TooltipAnchor => {
+    const rows: [string, string][] = [];
+    if (session.modified > 0)
+      rows.push([
+        t["Last activity"],
+        `${relativeTime(session.modified, language)} · ${new Date(
+          session.modified,
+        ).toLocaleString(language, {
+          month: "numeric",
+          day: "numeric",
+          hour: "2-digit",
+          minute: "2-digit",
+        })}`,
+      ]);
+    if (project) rows.push([t.Project, project]);
+    if (status) rows.push([t.Status, t[sessionStatusLabels[status]]]);
+    return {
+      tier: "rich",
+      side: "right",
+      label: clipTooltipText(session.title),
+      rows,
+    };
+  };
   const [copied, setCopied] = useState(false);
   const [renaming, setRenaming] = useState(false);
   const target = { cwd, id: session.id };
@@ -241,13 +297,9 @@ function SessionRow({ session, cwd }: { session: SessionInfo; cwd: string }) {
         <button
           type="button"
           className="thread"
-          title={
-            status
-              ? `${session.title} · ${t[sessionStatusLabels[status]]}`
-              : session.title
-          }
           aria-current={active ? "page" : undefined}
           onClick={() => void openChat(cwd, session.id)}
+          {...tooltip(details)}
         >
           <span className="session-status-slot">
             {status && (
@@ -308,7 +360,7 @@ function SessionRow({ session, cwd }: { session: SessionInfo; cwd: string }) {
             <button
               type="button"
               role="menuitem"
-              title={
+              aria-description={
                 t["Paste in pig outside a text field to open this local link."]
               }
               onClick={() => {
@@ -328,7 +380,6 @@ function SessionRow({ session, cwd }: { session: SessionInfo; cwd: string }) {
             <ConfirmButton
               role="menuitem"
               className="session-menu-delete"
-              title={t["This permanently deletes this chat’s local history."]}
               aria-description={
                 t["This permanently deletes this chat’s local history."]
               }

@@ -553,7 +553,7 @@ function TodoRows({ context }: { context: ActionContext }) {
               )}
             </span>
             <div className="session-todo-copy">
-              <span title={item.title}>{item.title}</span>
+              <span aria-description={item.title}>{item.title}</span>
               {(item.description ||
                 item.owner ||
                 item.dependsOn?.length ||
@@ -672,7 +672,7 @@ function TaskRow({
           )}
           <span
             className={`session-task-name${process ? " is-command" : ""}`}
-            title={label}
+            aria-description={label}
           >
             {label}
           </span>
@@ -688,7 +688,6 @@ function TaskRow({
             type="button"
             className="session-task-dismiss"
             aria-label={`${t.dockDismiss}: ${run.title}`}
-            title={t.dockDismiss}
             onClick={onDismiss}
           >
             <X size={13} />
@@ -867,7 +866,10 @@ export function SessionPanel({
           </span>
           <span className="session-dock-label">{label}</span>
           {progress.current && (
-            <span className="session-dock-current" title={progress.current}>
+            <span
+              className="session-dock-current"
+              aria-description={progress.current}
+            >
               {progress.current}
               {progress.activeCount > 1
                 ? ` · ${t.dockMoreActive(progress.activeCount - 1)}`

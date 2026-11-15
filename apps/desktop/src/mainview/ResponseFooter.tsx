@@ -61,14 +61,17 @@ export const ResponseFooter = memo(function ResponseFooter({
     <div className={`response-footer ${stats.stopReason}`}>
       <div className="response-summary">
         {status.icon}
-        <strong>{status.label}</strong>
-        <span>· {duration(stats.durationMs)}</span>
+        <strong>{stats.imported ? t.historyImported : status.label}</strong>
+        {!stats.imported && <span>· {duration(stats.durationMs)}</span>}
         {stats.tools > 0 && <span>· {t.toolCount(stats.tools)}</span>}
       </div>
       <div className="response-meta">
         <span className="chip">{stats.model}</span>
         {(stats.tokensPerSecond !== undefined || stats.totalTokens > 0) && (
-          <span className="chip" title={t["Output speed · total tokens"]}>
+          <span
+            className="chip"
+            aria-description={t["Output speed · total tokens"]}
+          >
             {stats.tokensPerSecond !== undefined &&
               t.tokensPerSecond(Math.round(stats.tokensPerSecond))}
             {stats.tokensPerSecond !== undefined &&
@@ -88,7 +91,6 @@ export const ResponseFooter = memo(function ResponseFooter({
         </time>
         <button
           type="button"
-          title={t["Copy response"]}
           aria-label={t["Copy response"]}
           disabled={!stats.text}
           onClick={() =>
@@ -102,7 +104,6 @@ export const ResponseFooter = memo(function ResponseFooter({
         </button>
         <button
           type="button"
-          title={t["Branch into new chat"]}
           aria-label={t["Branch into new chat"]}
           disabled={!entryId || !canBranch || !!action}
           onClick={() => {
@@ -114,7 +115,6 @@ export const ResponseFooter = memo(function ResponseFooter({
         {canRegenerate && user && userEntryId && (
           <button
             type="button"
-            title={t.Regenerate}
             aria-label={t.Regenerate}
             disabled={!canBranch || !!action}
             onClick={() =>

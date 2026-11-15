@@ -39,7 +39,7 @@ export function GrepOutput({
         const name = parts.pop();
         return (
           <span className="tool-grep-file" key={file.path}>
-            <span className="tool-grep-file-head" title={file.path}>
+            <span className="tool-grep-file-head" aria-description={file.path}>
               <FileText size={12} aria-hidden="true" />
               <strong>{name}</strong>
               <small>{parts.join("/")}</small>

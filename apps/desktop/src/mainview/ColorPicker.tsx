@@ -180,7 +180,6 @@ export function ColorPicker({
                 type="button"
                 className="color-picker-reset"
                 aria-label={t["Reset to default"]}
-                title={t["Reset to default"]}
                 onClick={() => select(defaultThemeColor)}
               >
                 <RotateCcw size={14} aria-hidden="true" />

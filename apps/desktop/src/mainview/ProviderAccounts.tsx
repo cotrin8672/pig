@@ -202,7 +202,6 @@ export function ProviderAccounts({
       <button
         type="button"
         className="provider-account-add"
-        title={t.addAccount}
         aria-label={t.addAccountTo(p.name)}
         onClick={() => {
           setExpanded(true);

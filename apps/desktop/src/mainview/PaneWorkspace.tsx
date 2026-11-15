@@ -67,7 +67,6 @@ export function PaneWorkspace({
               type="button"
               className="pane-action pane-new-chat"
               aria-label={`${t["New chat"]}: Pane ${id}`}
-              title={t["New chat"]}
               onClick={() => newChatInPane(id)}
             >
               <SquarePen size={14} aria-hidden="true" />
@@ -77,7 +76,6 @@ export function PaneWorkspace({
                 type="button"
                 className="pane-action pane-close"
                 aria-label={`${t.paneClose}: Pane ${id}`}
-                title={t.paneClose}
                 onMouseDown={(event) => event.preventDefault()}
                 onClick={() => closePane(id)}
               >
@@ -105,13 +103,13 @@ const PaneWinbar = memo(function PaneWinbar({ paneId }: { paneId: number }) {
   const title = heading.title ?? t["New chat"];
   return (
     <header className="pane-winbar">
-      <span className="pane-winbar-project" title={project}>
+      <span className="pane-winbar-project" aria-description={project}>
         {project}
       </span>
       <span className="pane-winbar-separator" aria-hidden="true">
         /
       </span>
-      <span className="pane-winbar-title" title={title}>
+      <span className="pane-winbar-title" aria-description={title}>
         {title}
       </span>
     </header>

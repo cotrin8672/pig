@@ -74,7 +74,8 @@
   background: var(--ds-tile-hover);
 }
 
-/* Row details: glass popover in the top layer (see docs/ui-guidelines.md). */
+/* Row details: shared tooltip surface (`ui-tooltip`) in the top layer
+   (see docs/ui-guidelines.md). Only layout lives here. */
 .usage-popover {
   --scrollbar-inset: var(--radius-md);
   position: fixed;
@@ -85,12 +86,7 @@
   padding: 10px 12px 12px;
   overflow-y: auto;
   overscroll-behavior: contain;
-  border: 1px solid var(--ds-border-strong);
   border-radius: var(--radius-md);
-  background: var(--ds-bg-popover);
-  backdrop-filter: blur(20px);
-  box-shadow: var(--ds-shadow-dialog);
-  color: var(--ds-text-primary);
   font-family: var(--font-sans);
   font-size: var(--text-sm);
   line-height: var(--leading-normal);

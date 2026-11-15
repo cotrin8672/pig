@@ -16,7 +16,7 @@ import {
 } from "../../scripts/ui-fixture";
 
 test(
-  "usage popover glass matches the model picker in rendered pixels",
+  "usage popover uses the shared tooltip glass in rendered pixels",
   () =>
     runUiFixture(
       "usage-glass",
@@ -39,6 +39,9 @@ test(
     await wait();
     document.querySelector('.provider-usage-row').dispatchEvent(new PointerEvent('pointerover',{bubbles:true}));
     await until(()=>document.querySelector('.usage-popover')?.matches(':popover-open'),'usage popover opens');
+    // Jump the shared tooltip entry animation to its end before sampling pixels.
+    const settled=()=>document.getAnimations().filter(a=>a.animationName==='tooltip-in').forEach(a=>a.finish());
+    settled();
     const panel=document.querySelector('.usage-popover');
     const rect=panel.getBoundingClientRect();
     const x=Math.round(rect.left+rect.width/2),y=Math.round(rect.top+3);
@@ -48,13 +51,13 @@ test(
       const pixels=await capturePixels();
       const deviation=lineDeviation(pixels,x-24,y,48);
       check(deviation<8,'usage must blur the underlying stripes: '+deviation);
-      // The existing model-panel is the reference surface at the same position.
-      const reference=document.createElement('div');reference.className='model-panel';
-      reference.style.cssText='position:fixed;left:'+rect.left+'px;top:'+rect.top+'px;width:'+rect.width+'px;height:'+rect.height+'px;border:1px solid var(--ds-border-strong);border-radius:var(--radius-md)';
-      panel.hidePopover();document.body.append(reference);await wait();
-      const modelPixels=await capturePixels();
-      check(pixels(x,y).slice(0,3).every((v,i)=>Math.abs(v-modelPixels(x,y)[i])<3),'usage colour must match model picker: '+pixels(x,y)+' vs '+modelPixels(x,y));
-      reference.remove();panel.showPopover();
+      // A plain .ui-tooltip at the same position is the reference surface.
+      const reference=document.createElement('div');reference.className='ui-tooltip';
+      reference.style.cssText='position:fixed;left:'+rect.left+'px;top:'+rect.top+'px;width:'+rect.width+'px;height:'+rect.height+'px;border-radius:var(--radius-md)';
+      panel.hidePopover();document.body.append(reference);settled();await wait();
+      const tooltipPixels=await capturePixels();
+      check(pixels(x,y).slice(0,3).every((v,i)=>Math.abs(v-tooltipPixels(x,y)[i])<3),'usage colour must match the shared tooltip: '+pixels(x,y)+' vs '+tooltipPixels(x,y));
+      reference.remove();panel.showPopover();settled();
       const pattern=document.getElementById('pattern');
       pattern.style.background='transparent';
       const colours=[];
@@ -177,6 +180,7 @@ test("usage details popover in Edge: single, bridged, unpinned, keyboard", async
           open: true,
           name: "OpenAI Personal",
         });
+        await Bun.sleep(150); // let the shared tooltip entry animation finish
         expect(
           await js<boolean>(`
             const p=document.querySelector('.usage-popover'),style=getComputedStyle(p);
@@ -192,6 +196,15 @@ test("usage details popover in Edge: single, bridged, unpinned, keyboard", async
         s = await state();
         expect(s.count).toBe(1);
         expect(s.name).toBe("OpenAI Work");
+        // Same motion as the shared Tooltip: glide + content cross-fade, no re-entry.
+        const switching = await js<string[]>(
+          "return document.querySelector('.usage-popover').getAnimations({subtree:true}).map(a=>a.animationName??a.transitionProperty)",
+        );
+        expect(switching).toContain("top");
+        expect(switching).toContain("tooltip-swap");
+        expect(switching).not.toContain("tooltip-in");
+        await Bun.sleep(200);
+        s = await state();
         expect(
           await js<boolean>(`
             const row=[...document.querySelectorAll('.provider-usage-row')].find(r=>r.getAttribute('aria-label').startsWith('OpenAI Work'));

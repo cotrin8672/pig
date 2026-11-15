@@ -47,7 +47,6 @@ function CopyCommand({ name }: { name: string }) {
     <button
       type="button"
       className="package-command"
-      title={t.copyInstall(name)}
       aria-label={t.copyCommand(name)}
       onClick={() => void copy()}
     >
@@ -445,7 +444,9 @@ export function Extensions() {
                     </div>
                     <p
                       className="package-description"
-                      title={pkg.description || t["No description provided."]}
+                      aria-description={
+                        pkg.description || t["No description provided."]
+                      }
                     >
                       {pkg.description || t["No description provided."]}
                     </p>
@@ -463,7 +464,7 @@ export function Extensions() {
                         {match ? (
                           <ConfirmButton
                             className="primary package-uninstall"
-                            title={
+                            aria-description={
                               t[
                                 "This package will be removed from your pi configuration. Open chats will be reloaded."
                               ]
@@ -484,7 +485,7 @@ export function Extensions() {
                               op?.status === "running"
                             }
                             aria-busy={op?.status === "running"}
-                            title={
+                            aria-description={
                               installedError
                                 ? t["Installed packages could not be checked"]
                                 : t[
@@ -620,7 +621,7 @@ export function Extensions() {
                       )}
                       <ConfirmButton
                         className="primary package-uninstall"
-                        title={
+                        aria-description={
                           t[
                             "This package will be removed from your pi configuration. Open chats will be reloaded."
                           ]

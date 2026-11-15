@@ -8,12 +8,7 @@ export function ContextIndicator({ usage }: { usage?: ContextUsage | null }) {
   const percent = summary.percent ?? (contextDisplay === "used" ? 0 : 100);
   const title = summary.title;
   return (
-    <span
-      className="context-indicator"
-      role="img"
-      aria-label={title}
-      title={title}
-    >
+    <span className="context-indicator" role="img" aria-label={title}>
       <svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true">
         <circle
           cx="7"

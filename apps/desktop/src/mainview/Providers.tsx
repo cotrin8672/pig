@@ -261,7 +261,7 @@ export function ProviderDetail({
           className="provider-status"
           data-state={state}
           role="status"
-          title={via && t.connectedVia(via)}
+          aria-description={via && t.connectedVia(via)}
         >
           {busy && <LoaderCircle size={11} className="spinner" />}
           <span>{status}</span>

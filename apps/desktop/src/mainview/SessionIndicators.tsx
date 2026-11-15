@@ -88,7 +88,6 @@ export function SessionIndicators({ address }: { address: SessionAddress }) {
             aria-expanded={open === key}
             aria-controls={id}
             aria-label={label}
-            title={label}
             onClick={(event) => {
               if (open === key) {
                 // Cancels the native show so the same counter closes the panel.

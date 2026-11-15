@@ -37,7 +37,7 @@ export function EffortSlider({
   }
   return (
     <div className="model-reasoning">
-      <label htmlFor={id} title={t["Reasoning effort"]}>
+      <label htmlFor={id}>
         <Brain size={12} aria-hidden="true" />
         <span className="sr-only">{t["Reasoning effort"]}</span>
       </label>
@@ -59,7 +59,6 @@ export function EffortSlider({
           {levels.map((level, stop) => (
             <span
               key={level}
-              title={effortLabels[level]}
               style={{ left: `${(stop / (levels.length - 1)) * 100}%` }}
               data-filled={stop <= index}
             />
@@ -76,7 +75,6 @@ export function EffortSlider({
           disabled={disabled}
           aria-label={t["Reasoning effort"]}
           aria-valuetext={effortLabels[draft]}
-          title={effortLabels[draft]}
           onChange={(event) => setDraft(levels[Number(event.target.value)])}
           onPointerDown={(event) => {
             if (event.button === 0) {

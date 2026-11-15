@@ -151,19 +151,37 @@ function visit(node: Ast, fn: (node: Ast) => void) {
   }
 }
 
-/** Catch the common escape hatch: inline paint/opacity on a card element. */
+/** Check JSX surfaces and browser-native tooltips. */
 export function lintUiTsx(source: string, file: string): UiStyleIssue[] {
   const issues: UiStyleIssue[] = [];
   const tree = parseScript(source, {
     sourceType: "module",
     plugins: ["typescript", "jsx"],
   });
+  // SAFETY: Babel nodes have a string type discriminator; visit checks nested values before traversing them.
   visit(tree as unknown as Ast, (node) => {
     if (node.type !== "JSXOpeningElement") return;
     const attrs = (node.attributes as Ast[]).filter(
       (attr) => attr.type === "JSXAttribute",
     );
     const attrName = (attr: Ast) => (attr.name as Ast)?.name;
+    const tag = (node.name as Ast)?.name;
+    const title = attrs.find((attr) => attrName(attr) === "title");
+    if (
+      title &&
+      typeof tag === "string" &&
+      (/^[a-z]/.test(tag) || tag === "ConfirmButton")
+    ) {
+      const loc = title.loc as { start: { line: number; column: number } };
+      issues.push({
+        file,
+        line: loc.start.line,
+        column: loc.start.column + 1,
+        rule: "native-tooltip",
+        message:
+          "Do not render native title tooltips. Use the shared Tooltip only when needed; keep accessible labels/descriptions.",
+      });
+    }
     const classAttr = attrs.find((attr) => attrName(attr) === "className");
     const surface = attrs.find((attr) => attrName(attr) === "data-ui-surface");
     let card = (surface?.value as Ast)?.value === "card";

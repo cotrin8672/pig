@@ -53,7 +53,7 @@ export function BuiltinRetryNotice({ data }: ChatRendererProps<"retry">) {
       className="response-retry"
       data-waiting={data.waiting ? "" : undefined}
       role="status"
-      title={data.message}
+      aria-description={data.message}
     >
       {data.waiting ? (
         <RotateCw size={12} aria-hidden="true" />

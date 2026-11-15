@@ -28,7 +28,6 @@ export function ComposerSubmit({
     <button
       type="submit"
       className="send-button"
-      title={resume ? t.Resume : t.Send}
       aria-label={resume ? t.Resume : t.Send}
       disabled={disabled}
     >
@@ -44,7 +43,6 @@ export function ComposerSubmit({
       <button
         type="button"
         className="send-button waiting"
-        title={stopping ? "Stopping…" : t["Sending…"]}
         aria-label={stopping ? "Stopping…" : t["Sending…"]}
         aria-busy="true"
         disabled
@@ -57,7 +55,6 @@ export function ComposerSubmit({
     <button
       type="button"
       className="send-button"
-      title={t.Stop}
       aria-label={t.Stop}
       aria-keyshortcuts="Escape"
       onClick={onStop}

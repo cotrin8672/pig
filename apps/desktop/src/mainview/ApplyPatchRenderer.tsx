@@ -30,7 +30,11 @@ function FileCard({ file }: { file: PatchFile }) {
     <article className={`patch-file-card ${kind.tone}`}>
       <header>
         <kind.Icon size={13} />
-        <code title={file.moveTo ? `${file.path} → ${file.moveTo}` : path}>
+        <code
+          aria-description={
+            file.moveTo ? `${file.path} → ${file.moveTo}` : path
+          }
+        >
           {file.moveTo && (
             <>
               <span className="patch-file-from">{file.path}</span> →{" "}

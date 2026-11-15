@@ -180,7 +180,6 @@ export function WindowTitlebar({
             <button
               type="button"
               aria-label={t.paneSplitColumns}
-              title={t.paneSplitColumns}
               disabled={splitDisabled}
               onClick={() => onSplit("columns")}
             >
@@ -189,7 +188,6 @@ export function WindowTitlebar({
             <button
               type="button"
               aria-label={t.paneSplitRows}
-              title={t.paneSplitRows}
               disabled={splitDisabled}
               onClick={() => onSplit("rows")}
             >
@@ -201,7 +199,6 @@ export function WindowTitlebar({
           <button
             type="button"
             aria-label={t.Minimize}
-            title={t.Minimize}
             onClick={() => onAction("minimize")}
           >
             <Minus size={14} aria-hidden="true" />
@@ -209,7 +206,6 @@ export function WindowTitlebar({
           <button
             type="button"
             aria-label={maximized ? t.Restore : t.Maximize}
-            title={maximized ? t.Restore : t.Maximize}
             onClick={() => onAction("toggleMaximize")}
           >
             {maximized ? (
@@ -222,7 +218,6 @@ export function WindowTitlebar({
             type="button"
             className="window-close"
             aria-label={t["Close window"]}
-            title={t.Close}
             onClick={() => onAction("close")}
           >
             <X size={15} aria-hidden="true" />

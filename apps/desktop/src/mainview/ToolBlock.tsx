@@ -173,7 +173,7 @@ function Row({
         <summary>
           {icon}
           <span className="tool-verb">{verb}</span>
-          <code className="tool-target" title={target}>
+          <code className="tool-target" aria-description={target}>
             {target}
           </code>
           <span className="tool-meta">
@@ -307,7 +307,7 @@ function Shell({
       summary={
         <summary>
           <span className="tool-prompt">$</span>
-          <code className="tool-cmd" title={command}>
+          <code className="tool-cmd" aria-description={command}>
             <CodeText text={command} language={language} />
           </code>
           <span className="tool-meta">
@@ -316,7 +316,6 @@ function Shell({
                 className="tool-term-dot"
                 role="img"
                 aria-label={statusLabel}
-                title={statusLabel}
               />
               {status === "running" ? (
                 <ShellElapsed />

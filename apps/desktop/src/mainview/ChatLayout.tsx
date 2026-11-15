@@ -93,7 +93,6 @@ export function ChatLayout({
             type="button"
             className="thread-scroll-to-bottom"
             aria-label={t["Scroll to bottom"]}
-            title={t["Scroll to bottom"]}
             onClick={() => {
               const element = thread.current;
               if (!element) return;
@@ -126,7 +125,10 @@ export function ChatEmpty({ cwd }: { cwd?: string }) {
     <div className="chat-empty">
       <h1>{t["What shall we build?"]}</h1>
       {project ? (
-        <p className="muted chat-empty-project" title={t.workingIn(project)}>
+        <p
+          className="muted chat-empty-project"
+          aria-description={t.workingIn(project)}
+        >
           <Folder size={14} aria-hidden="true" />
           <span>{project}</span>
         </p>

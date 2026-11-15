@@ -168,7 +168,6 @@ function ImageViewer({
         </strong>
         <button
           type="button"
-          title={t["Copy image"]}
           aria-label={t["Copy image"]}
           onClick={() =>
             void rpc.request
@@ -181,7 +180,6 @@ function ImageViewer({
         </button>
         <button
           type="button"
-          title={t["Save image"]}
           aria-label={t["Save image"]}
           onClick={() => void rpc.request.saveImage({ src }).catch(showError)}
         >
@@ -189,7 +187,6 @@ function ImageViewer({
         </button>
         <button
           type="button"
-          title={t.Close}
           aria-label={t["Close image viewer"]}
           onClick={() => onClose(index)}
         >
@@ -236,7 +233,6 @@ function ImageViewer({
           <button
             type="button"
             aria-label={t["Previous image"]}
-            title={t["Previous image"]}
             onClick={() => go(-1)}
           >
             <ChevronLeft size={18} />
@@ -247,7 +243,6 @@ function ImageViewer({
           <button
             type="button"
             aria-label={t["Next image"]}
-            title={t["Next image"]}
             onClick={() => go(1)}
           >
             <ChevronRight size={18} />

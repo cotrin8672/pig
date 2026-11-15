@@ -105,7 +105,7 @@ export function ProviderModels({
       <div className="provider-section-heading">
         <h3>{t.Models}</h3>
         {!!group.length && (
-          <small title={t.modelsEnabled(enabledCount, group.length)}>
+          <small aria-description={t.modelsEnabled(enabledCount, group.length)}>
             {enabledCount}/{group.length}
           </small>
         )}
@@ -117,7 +117,6 @@ export function ProviderModels({
           aria-label={
             refreshing ? t["Refreshing models…"] : t["Refresh models"]
           }
-          title={refreshing ? t["Refreshing models…"] : t["Refresh models"]}
           disabled={refreshing}
           onClick={() => void refreshModels()}
         >
@@ -191,7 +190,10 @@ export function ProviderModels({
               return (
                 <div className="provider-model-item" key={key}>
                   <div className="provider-model-line">
-                    <label className="provider-model-row" title={model.id}>
+                    <label
+                      className="provider-model-row"
+                      aria-description={model.id}
+                    >
                       <span className="provider-model-name">{model.name}</span>
                       {model.contextWindow && (
                         <small className="provider-model-limits">
@@ -216,7 +218,6 @@ export function ProviderModels({
                       className="provider-model-expand"
                       aria-expanded={expanded}
                       aria-label={t.modelSettings(model.name)}
-                      title={t.modelSettings(model.name)}
                       onClick={() => setOpen(expanded ? undefined : key)}
                     >
                       <ChevronDown size={14} />

@@ -8,6 +8,26 @@ const tsx = (source: string) =>
   lintUiTsx(source, "src/mainview/Feature.tsx").map((issue) => issue.rule);
 
 describe("UI style policy", () => {
+  test("native tooltip attributes are rejected without banning component headings", () => {
+    for (const source of [
+      '<button title="New chat" aria-label="New chat" />',
+      "<span title={path}>Project</span>",
+      '<ConfirmButton title="Deletes history">Delete</ConfirmButton>',
+    ])
+      expect(tsx(source)).toEqual(["native-tooltip"]);
+    expect(
+      tsx('<button aria-label="New chat" aria-description="Create a chat" />'),
+    ).toEqual([]);
+    expect(
+      tsx(
+        '<ContentPage title="Settings"><Donut title="Usage" /></ContentPage>',
+      ),
+    ).toEqual([]);
+    expect(
+      lintUiTsx('<button\n  title="New chat" />', "feature.tsx")[0],
+    ).toMatchObject({ file: "feature.tsx", line: 2, column: 3 });
+  });
+
   test("normal cards use translucent tokens, not opaque paint or group opacity", () => {
     expect(css(".new-card { background: var(--ds-tile) }")).toEqual([]);
     for (const value of [

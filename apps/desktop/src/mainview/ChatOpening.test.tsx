@@ -55,8 +55,6 @@ if (process.env.PIG_CHAT_OPENING_CHILD !== "1") {
   }));
   mock.module("./Composer", () => ({ Composer: () => null }));
   const { ChatOpening } = await import("./ChatOpening");
-  const { ChatHeader } = await import("./ChatHeader");
-  const { WindowTitlebar } = await import("./WindowTitlebar");
   const snapshot: Snapshot = {
     address: { hostId: "opening-test", sessionId: "existing", epoch: 1 },
     snapshotSeq: 1,
@@ -121,42 +119,7 @@ if (process.env.PIG_CHAT_OPENING_CHILD !== "1") {
     }
   });
 
-  test("chat headings render in the titlebar without width or close buttons", () => {
-    const state = useStore.getInitialState();
-    const previous = { ...state };
-    Object.assign(state, {
-      bootstrap: { ...state.bootstrap, generalCwd: "general" },
-    });
-    try {
-      for (const [cwd, project] of [
-        ["C:\\work\\pig", "pig"],
-        ["/work/another-project", "another-project"],
-        ["general", "Chats"],
-      ]) {
-        const html = renderToStaticMarkup(
-          <WindowTitlebar maximized={false} onAction={() => {}}>
-            <ChatHeader cwd={cwd} title="Session <title>" />
-          </WindowTitlebar>,
-        );
-        expect(html).toContain('data-expanded="false"');
-        expect(html.indexOf('class="window-titlebar-drag')).toBeLessThan(
-          html.indexOf('class="chat-header"'),
-        );
-        expect(html).toContain(`<span title="${project}">${project}</span>`);
-        expect(html).toContain("Session &lt;title&gt;");
-        expect(html).not.toContain("chat-header-actions");
-        expect(html).not.toContain('aria-label="Reset chat width"');
-        expect(html).not.toContain('aria-label="Close chat (history is kept)"');
-        expect(html.match(/<button\b/g)).toHaveLength(3);
-        for (const action of ["Minimize", "Maximize", "Close window"])
-          expect(html).toContain(`aria-label="${action}"`);
-      }
-    } finally {
-      Object.assign(state, previous);
-    }
-  });
-
-  test("the titlebar follows active chats, startup targets, and page navigation", async () => {
+  test("the titlebar shows no chat heading and disables split outside chats", async () => {
     const { App } = await import("./App");
     const { navigationRevision } = await import("./navigation");
     const state = useStore.getInitialState();
@@ -187,12 +150,9 @@ if (process.env.PIG_CHAT_OPENING_CHILD !== "1") {
       };
       const active = renderToStaticMarkup(<App />);
       const main = active.split(/<main[^>]*>/)[1].split("</main>")[0];
-      expect(main).not.toContain('class="chat-header"');
-      expect(main).not.toContain("Live session title");
       const bar = active.slice(active.indexOf('class="window-titlebar"'));
-      expect(bar).toContain('class="chat-header"');
-      expect(bar).toContain("Live session title");
-      expect(bar).not.toContain("chat-header-actions");
+      // Project and session title live only in each pane's winbar.
+      expect(bar).not.toContain("Live session title");
       expect(bar).toContain('aria-label="Split pane left/right"');
       expect(bar).toContain('aria-label="Split pane top/bottom"');
       expect(bar).not.toContain('aria-label="Close pane (keep session)"');
@@ -205,23 +165,10 @@ if (process.env.PIG_CHAT_OPENING_CHILD !== "1") {
       state.openingTarget = { cwd: "/work/new-project" };
       const fresh = renderToStaticMarkup(<App />);
       const freshBar = fresh.slice(fresh.indexOf('class="window-titlebar"'));
-      expect(freshBar).toContain("new-project");
-      expect(freshBar).toContain("New chat");
-      expect(freshBar).not.toContain("Live session title");
-      expect(freshBar).not.toContain("chat-header-actions");
-
-      state.openingTarget = { cwd: "project", id: "existing" };
-      state.openingAddress = snapshot.address;
-      const preview = renderToStaticMarkup(<App />);
-      const previewBar = preview.slice(
-        preview.indexOf('class="window-titlebar"'),
-      );
-      expect(previewBar).toContain("Live session title");
-      expect(previewBar).not.toContain("chat-header-actions");
+      expect(freshBar).not.toContain("new-project");
 
       state.page = "settings";
       const settings = renderToStaticMarkup(<App />);
-      expect(settings).not.toContain('class="chat-header"');
       const settingsBar = settings.slice(
         settings.indexOf('class="window-titlebar"'),
       );
