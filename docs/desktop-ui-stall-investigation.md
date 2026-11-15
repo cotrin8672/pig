@@ -107,14 +107,14 @@ PC全体の使用率が低くても、入力を受ける1本のスレッドの�
 
 段階：file解決、SessionManager、preview送信、Trust確認/人間の回答待ち、ModelRuntime、resource services/queue、利用可能モデル、AgentSession作成、拡張/adapter bind、ready送信。
 
-PowerShell（開発アプリが未起動のときに設定。`mise run dev` は起動済みならフォーカスするだけなので、そのプロセスの環境は変わらない）：
+PowerShell（既存の開発セッションを停止してから設定し、起動する）：
 
 ```powershell
 $env:PIG_PERF_OPEN = '1'
 mise run dev
 ```
 
-ログ：`%TEMP%/pig-dev.stdout.log`。Trustの人間待ちと処理時間を混同しない。hostのready送信までの値であり、画面に描かれた時刻や入力latencyではない。
+ログは実行したターミナルに出る。Trustの人間待ちと処理時間を混同しない。hostのready送信までの値であり、画面に描かれた時刻や入力latencyではない。
 
 ## 8. 追加調査：前回の3点以外の重い経路
 
