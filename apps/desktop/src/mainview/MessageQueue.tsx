@@ -81,13 +81,13 @@ export function MessageQueue({
     );
   }
   return (
-    <details className="message-queue" open>
-      <summary ref={summary}>
+    <details className="message-queue" data-ui-surface="card" open>
+      <summary
+        ref={summary}
+        aria-label={t["Send after response"]}
+        title={t["Send after response"]}
+      >
         <ListEnd size={14} aria-hidden="true" />
-        <span>{t["Send after response"]}</span>
-        <span className="message-queue-count" aria-live="polite">
-          {items.length}
-        </span>
         <ChevronDown
           className="message-queue-chevron"
           size={14}
@@ -157,14 +157,15 @@ export function MessageQueue({
                   )}
                 </span>
               )}
-              <span className="message-queue-index" aria-hidden="true">
-                {index + 1}
-              </span>
               <p title={text}>{text || t.Message}</p>
               {attachments > 0 && (
-                <span className="message-queue-attachments">
+                <span
+                  className="message-queue-attachments"
+                  role="img"
+                  aria-label={`${t.Attachments}: ${attachments}`}
+                  title={`${t.Attachments}: ${attachments}`}
+                >
                   <Paperclip size={12} aria-hidden="true" />
-                  {attachments}
                 </span>
               )}
               <div className="message-queue-actions">
