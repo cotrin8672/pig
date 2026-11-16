@@ -287,10 +287,70 @@
   gap: 8px;
   min-height: 0;
 }
+/* Fixed height: switching to the context breakdown must not move the donuts. */
 .stats-tools {
-  flex: 0 1 auto;
-  max-height: 55%;
+  flex: 0 1 55%;
   container-type: inline-size;
+}
+.stats-tools h2 {
+  align-items: center;
+}
+.stats-tools h2 > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.stats-tabs {
+  flex: none;
+  margin: 0;
+}
+/* Initial context breakdown: group totals, then indented members. */
+.stats-context th:first-child {
+  max-width: 16em;
+}
+.stats-context .stats-group th,
+.stats-context .stats-group td {
+  color: var(--ds-text-primary);
+  font-weight: var(--font-weight-medium);
+}
+.stats-context tbody tr:not(.stats-group) th {
+  padding-left: 26px;
+}
+.stats-context tbody tr.stats-nested th {
+  padding-left: 44px;
+}
+.stats-context tbody tr:not(.stats-group) th:has(.stats-expand) {
+  padding-left: 12px;
+}
+.stats-expand {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  max-width: 100%;
+  height: 20px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+}
+.stats-expand > svg {
+  flex: none;
+  color: var(--ds-text-muted);
+  transition: transform var(--motion-duration-fast) var(--motion-ease-out);
+}
+.stats-expand[aria-expanded="true"] > svg {
+  transform: rotate(90deg);
+}
+.stats-expand > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.stats-expand > small {
+  margin-left: 4px;
+  color: var(--ds-text-muted);
+  font-size: var(--text-4xs);
 }
 @container (max-width: 400px) {
   .stats-tools .stats-share-bar {
@@ -560,7 +620,7 @@
   }
   .stats-tools {
     flex: none;
-    max-height: none;
+    height: 320px;
   }
   .stats-summary {
     grid-template-columns: repeat(3, minmax(0, 1fr));

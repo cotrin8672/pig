@@ -1,5 +1,5 @@
-import { RefreshCw } from "lucide-react";
-import { type PointerEvent, type ReactNode, useRef } from "react";
+import { ChevronRight, RefreshCw } from "lucide-react";
+import { type PointerEvent, type ReactNode, useRef, useState } from "react";
 import {
   type StatisticsPeriod as Period,
   type StatisticsData,
@@ -230,16 +230,145 @@ function ModelTable({ data }: { data: StatisticsData }) {
   );
 }
 
+function Share({ part, whole }: { part: number; whole: number }) {
+  return (
+    <span className="stats-share">
+      <span className="stats-share-bar">
+        <span style={{ width: `${whole ? (part / whole) * 100 : 0}%` }} />
+      </span>
+      {pct(part, whole)}
+    </span>
+  );
+}
+
+/** Where the initial context goes: each system prompt section, then tool declarations per extension. */
+function ContextTable({ data }: { data: StatisticsData }) {
+  const t = useT().statisticsText;
+  const [open, setOpen] = useState<ReadonlySet<string | null>>(new Set());
+  const { sections, sources } = data.initialContext;
+  const system = sections.reduce((n, s) => n + s.tokens, 0);
+  const declared = sources.reduce((n, s) => n + s.tokens, 0);
+  const total = system + declared;
+  if (!total) return <Empty />;
+  const sectionLabel = (id: string) =>
+    id in t.sections ? (
+      t.sections[id as keyof typeof t.sections]
+    ) : (
+      <code>{id}</code>
+    );
+  const row = (
+    key: string,
+    label: ReactNode,
+    value: number,
+    className?: string,
+  ) => (
+    <tr key={key} className={className}>
+      <th scope="row">{label}</th>
+      <td>
+        <Share part={value} whole={total} />
+      </td>
+      <td className={className === "stats-group" ? "strong" : ""}>
+        {tokens(value)}
+      </td>
+    </tr>
+  );
+  return (
+    <div className="stats-scroll">
+      <table className="stats-table stats-context">
+        <thead>
+          <tr>
+            <th scope="col">{t.item}</th>
+            <th scope="col">{t.modelShare}</th>
+            <th scope="col">tokens</th>
+          </tr>
+        </thead>
+        <tbody>
+          {row("system", t.systemPrompt, system, "stats-group")}
+          {[...sections]
+            .sort((a, b) => b.tokens - a.tokens)
+            .map((s) => row(`s:${s.id}`, sectionLabel(s.id), s.tokens))}
+          {row("tools", t.toolDefinitions, declared, "stats-group")}
+          {sources.flatMap((s) => {
+            const expanded = open.has(s.id);
+            const label = (
+              <button
+                key="label"
+                type="button"
+                className="stats-expand"
+                aria-expanded={expanded}
+                onClick={() =>
+                  setOpen((prev) => {
+                    const next = new Set(prev);
+                    if (!next.delete(s.id)) next.add(s.id);
+                    return next;
+                  })
+                }
+              >
+                <ChevronRight size={12} aria-hidden="true" />
+                <span>
+                  {s.id === null
+                    ? t.unknownSource
+                    : s.id === "builtin"
+                      ? t.builtinSource
+                      : s.id}
+                </span>
+                <small>{s.tools.length}</small>
+              </button>
+            );
+            return [
+              row(`x:${s.id}`, label, s.tokens),
+              ...(expanded
+                ? s.tools.map((tool) =>
+                    row(
+                      `t:${s.id}:${tool.name}`,
+                      <code>{tool.name}</code>,
+                      tool.tokens,
+                      "stats-nested",
+                    ),
+                  )
+                : []),
+            ];
+          })}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
 function ToolTable({ data }: { data: StatisticsData }) {
   const t = useT().statisticsText;
+  const [view, setView] = useState<"tools" | "context">("tools");
   const calls = data.tools.reduce((n, t) => n + t.calls, 0);
   return (
     <section className="stats-panel stats-tools" data-ui-surface="card">
       <h2>
-        {t.tools}
-        <span>{t.calls(calls)}</span>
+        <fieldset className="stats-periods stats-tabs">
+          {(["tools", "context"] as const).map((id) => (
+            <button
+              key={id}
+              type="button"
+              aria-pressed={view === id}
+              className={view === id ? "active" : ""}
+              onClick={() => setView(id)}
+            >
+              {id === "tools" ? t.tools : t.contextBreakdown}
+            </button>
+          ))}
+        </fieldset>
+        <span>
+          {view === "tools"
+            ? t.calls(calls)
+            : `${tokens(
+                [
+                  ...data.initialContext.sections,
+                  ...data.initialContext.sources,
+                ].reduce((n, s) => n + s.tokens, 0),
+              )} tokens`}
+        </span>
       </h2>
-      {data.tools.length ? (
+      {view === "context" ? (
+        <ContextTable data={data} />
+      ) : data.tools.length ? (
         <div className="stats-scroll">
           <table className="stats-table">
             <thead>
@@ -264,16 +393,7 @@ function ToolTable({ data }: { data: StatisticsData }) {
                         <code>{t.tool}</code>
                       </th>
                       <td aria-description={`${t.calls.toLocaleString()}`}>
-                        <span className="stats-share">
-                          <span className="stats-share-bar">
-                            <span
-                              style={{
-                                width: `${calls ? (t.calls / calls) * 100 : 0}%`,
-                              }}
-                            />
-                          </span>
-                          {pct(t.calls, calls)}
-                        </span>
+                        <Share part={t.calls} whole={calls} />
                       </td>
                       <td>{t.failures.toLocaleString()}</td>
                       <td className={rate < 0.9 ? "warn" : ""}>
@@ -504,19 +624,15 @@ function Composition({ data }: { data: StatisticsData }) {
         slices={context.parts.map((p, i) => ({
           id: p.id,
           label:
-            p.id === "tools"
-              ? t.toolDefinitions
-              : p.id === "base"
-                ? t.base
-                : p.id === "agents"
-                  ? t.agents
-                  : p.id === "skills"
-                    ? t.skills
-                    : p.id === "extensions"
-                      ? t.extensions
-                      : p.id === "other"
-                        ? t.other
-                        : p.label,
+            {
+              tools: t.toolDefinitions,
+              toolPrompts: t.toolPrompts,
+              base: t.base,
+              agents: t.agents,
+              skills: t.skills,
+              extensions: t.extensions,
+              other: t.other,
+            }[p.id] ?? p.label,
           value: p.tokens,
           color: `part-${i}`,
         }))}

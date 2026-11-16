@@ -24,6 +24,14 @@ export type ToolStatistics = {
 };
 export type InitialContext = {
   parts: { id: string; label: string; tokens: number }[];
+  /** System prompt sections by SDK name (`content` for unsectioned text). */
+  sections: { id: string; tokens: number }[];
+  /** Tool declarations grouped by the registering extension (`builtin`, or null if unknown). */
+  sources: {
+    id: string | null;
+    tokens: number;
+    tools: { name: string; tokens: number }[];
+  }[];
   measuredTotal: number | null;
   contextWindow: number | null;
 };
