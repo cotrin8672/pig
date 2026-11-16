@@ -26,8 +26,10 @@ import type {
   PromptAccepted,
   PromptParams,
   PromptReceipt,
+  RuntimePublication,
   RuntimeRecoveryState,
-  RuntimeViewState,
+  RuntimeStateSnapshot,
+  RuntimeUsage,
   SendKey,
   SessionAddress,
 } from "./runtime-contract";
@@ -143,6 +145,8 @@ export interface ModelSelection {
   contextUsage?: ContextUsage | null;
 }
 export interface Snapshot extends ModelSelection {
+  /** History and drafts remain usable without a live SDK runtime. */
+  suspended?: true;
   sessionAccounts?: Record<string, string>;
   accountSwitchAllowed?: boolean;
   modelCatalog?: ModelInfo[];
@@ -272,9 +276,10 @@ export type RPCSchema = {
         response: { state: "pending" | "applied" | "failed" };
       };
       heartbeatUI: {
-        params: { clientId: string };
+        params: { clientId: string; usage?: RuntimeUsage };
         response: { connected: boolean };
       };
+      wakeSession: { params: SessionAddress; response: Snapshot };
       searchPackages: {
         params: { query: string; page: number };
         response: { items: MarketPackage[]; total: number; pageSize: number };
@@ -355,6 +360,11 @@ export type RPCSchema = {
       };
       getPromptReceipt: { params: SendKey; response: PromptReceipt };
       cancelPrompt: { params: SendKey; response: PromptReceipt };
+      acknowledgePromptRecovery: {
+        params: SessionAddress & { key: SendKey };
+        // biome-ignore lint/suspicious/noConfusingVoidType: Electrobun convention.
+        response: void;
+      };
       reorderQueuedPrompts: {
         params: SessionAddress & { requestIds: string[] };
         response: string[];
@@ -387,7 +397,7 @@ export type RPCSchema = {
         response: { state: "applied" | "pending" };
       };
       // biome-ignore lint/suspicious/noConfusingVoidType: Electrobun convention.
-      runtimeState: { params: void; response: RuntimeViewState };
+      runtimeState: { params: void; response: RuntimeStateSnapshot };
       removeProject: { params: { cwd: string }; response: string[] };
       setProjectState: {
         params: { cwd: string } & ProjectFlags;
@@ -494,10 +504,13 @@ export type RPCSchema = {
       resolveLogin: { loginId: string; value: string };
       cancelLogin: { loginId: string };
       openExternal: { url: string };
+      // Absolute local path from a transcript; Bun reveals it in the file manager.
+      revealPath: { path: string };
       // src is a rendered image: a base64 data URL or an http(s) Markdown image URL.
       imageMenu: { src: string };
-      connectUI: { clientId: string };
+      connectUI: { clientId: string; usage?: RuntimeUsage };
       disconnectUI: { clientId: string };
+      runtimeUsage: { clientId: string; usage: RuntimeUsage };
       installPackage: { opId: string; name: string };
       uninstallPackage: { opId: string; source: string };
       updatePackage: { opId: string; source: string };
@@ -512,9 +525,9 @@ export type RPCSchema = {
       chatHistoryFile: ChatHistoryFileEvent;
       chatsImported: { cwd: string };
       appUpdate: AppUpdateState;
-      runtimeEvent: RuntimeWireEvent;
-      extensionUIEvent: ExtensionUIEvent;
-      terminalEvent: TerminalHostEvent;
+      runtimeEvent: RuntimePublication<RuntimeWireEvent>;
+      extensionUIEvent: RuntimePublication<ExtensionUIEvent>;
+      terminalEvent: RuntimePublication<TerminalHostEvent>;
       packageOp: PackageOpStatus;
       installed: InstalledPackage[];
       sessionEvent: WireEvent;

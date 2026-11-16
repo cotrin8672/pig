@@ -1,7 +1,10 @@
 import { beforeEach, expect, mock, test } from "bun:test";
 import { fileURLToPath } from "node:url";
 import type { SessionInfo } from "../shared/rpc-schema";
-import type { RuntimeEvent } from "../shared/runtime-contract";
+import type {
+  RuntimeEvent,
+  RuntimePublication,
+} from "../shared/runtime-contract";
 import { emptyTranscript } from "../shared/transcript";
 
 if (process.env.PIG_SESSION_REFRESH_CHILD !== "1") {
@@ -27,13 +30,23 @@ if (process.env.PIG_SESSION_REFRESH_CHILD !== "1") {
     result: ReturnType<typeof Promise.withResolvers<SessionInfo[]>>;
   }[] = [];
   let runtimeEvent: (event: RuntimeEvent) => void;
+  let publicationSeq = 0;
   mock.module("electrobun/view", () => ({
     Electroview: class {
       constructor(readonly options: unknown) {}
       static defineRPC(config: {
-        handlers: { messages: { runtimeEvent: typeof runtimeEvent } };
+        handlers: {
+          messages: {
+            runtimeEvent: (event: RuntimePublication<RuntimeEvent>) => void;
+          };
+        };
       }) {
-        runtimeEvent = config.handlers.messages.runtimeEvent;
+        runtimeEvent = (event) =>
+          config.handlers.messages.runtimeEvent({
+            hostId: "refresh",
+            publicationSeq: ++publicationSeq,
+            event,
+          });
         return {
           send: {},
           request: {

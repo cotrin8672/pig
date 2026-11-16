@@ -12,7 +12,9 @@ import type {
   Snapshot,
 } from "../shared/rpc-schema";
 import {
+  type RuntimePublication,
   type RuntimeRecoveryState,
+  type RuntimeUsage,
   type SessionAddress,
   UI_HEARTBEAT_INTERVAL_MS,
 } from "../shared/runtime-contract";
@@ -22,10 +24,14 @@ import {
   type Settings,
   type SettingsPatch,
 } from "../shared/settings";
-import { expandSnapshotDelta } from "../shared/snapshot-delta";
+import {
+  expandSnapshotDelta,
+  type RuntimeWireEvent,
+} from "../shared/snapshot-delta";
 import type { Message } from "../shared/transcript";
 import { transferEditorView } from "./ComposerEditor";
 import { addressKey, sameAddress } from "./chat-snapshot";
+import { attachmentReads } from "./composer-attachments";
 import { createDraftImageRecovery } from "./draft-image-recovery";
 import { drafts } from "./draft-store";
 import { getT } from "./i18n";
@@ -40,17 +46,18 @@ import {
 } from "./opening-sends";
 import { selectPaneSession } from "./pane-selection";
 import {
-  invalidateRuntimeRead,
   liveAddress,
+  prepareRuntimeHost,
+  receiveCoveredRuntime,
   receiveExtension,
   receiveRuntime,
   receiveRuntimeState,
   receiveSnapshot,
   receiveTerminal,
   receiveWire,
-  runtimeRevision,
   subscribeOwnership,
 } from "./runtime-events";
+import { type PublicationPhase, RuntimeSync } from "./runtime-sync";
 import { changeSelection, selections } from "./selections";
 import { SendController } from "./send-controller";
 import { lane } from "./session-lane";
@@ -89,6 +96,18 @@ const recoverSnapshots = createSnapshotRecovery(
   (address) => rpc.request.getSessionSnapshot(address),
   liveAddress,
 );
+
+const runtimeSync = new RuntimeSync();
+function receivePublication<T>(
+  publication: RuntimePublication<T>,
+  apply: (event: T, phase: PublicationPhase) => void,
+) {
+  const receive = (phase: PublicationPhase) => apply(publication.event, phase);
+  if (!runtimeSync.receive(publication, receive)) {
+    void reconnectRuntime().catch(showError);
+    runtimeSync.receive(publication, receive);
+  }
+}
 
 // Root event handlers below are installed before any session-opening RPC.
 let appearanceInFlight = false;
@@ -181,9 +200,70 @@ export const rpc = Electroview.defineRPC<RPCSchema>({
       packageOp: receivePackageOp,
       installed: (installed) =>
         useStore.setState({ installed, installedLoaded: true }),
-      runtimeEvent: function handleRuntimeEvent(event) {
-        if (event.type === "snapshotDelta") {
-          const address = event.snapshot.address;
+      runtimeEvent: (publication) => {
+        function handleRuntimeEvent(
+          event: RuntimeWireEvent,
+          phase: PublicationPhase = "live",
+        ) {
+          if (phase === "covered") {
+            if (event.type !== "snapshotDelta") receiveCoveredRuntime(event);
+            if (event.type === "closed" && event.discardDraft) {
+              drafts.discard(event.address, true);
+              sends.discard(event.address);
+            }
+            if (
+              event.type === "closed" &&
+              event.reason === "failed" &&
+              event.message
+            )
+              showNotice({ level: "error", message: event.message });
+            return;
+          }
+          if (event.type === "snapshotDelta") {
+            const address = event.snapshot.address;
+            if (
+              useStore.getState().hostId &&
+              useStore.getState().hostId !== address.hostId
+            ) {
+              void reconnectRuntime().catch(showError);
+              return;
+            }
+            if (!liveAddress(address)) return;
+            const current = useStore.getState().snapshots[address.sessionId];
+            if (
+              current &&
+              sameAddress(current.address, address) &&
+              current.snapshotSeq >= event.snapshot.snapshotSeq
+            )
+              return;
+            const snapshot = expandSnapshotDelta(event, current);
+            if (!snapshot) {
+              // The full read supplies this base; do not launch a redundant recovery.
+              if (phase === "before-state") return;
+              void recoverSnapshots(
+                address,
+                event.snapshot.snapshotSeq,
+                (value) =>
+                  handleRuntimeEvent({ type: "snapshot", snapshot: value }),
+              ).catch((error) => {
+                if (liveAddress(address)) showError(error);
+              });
+              return;
+            }
+            event = { type: "snapshot", snapshot };
+          }
+          if (event.type === "closed" && event.discardDraft) {
+            receiveRuntime(event);
+            drafts.discard(event.address, true);
+            sends.discard(event.address);
+            return;
+          }
+          const address =
+            event.type === "ready" ||
+            event.type === "snapshot" ||
+            event.type === "replaced"
+              ? event.snapshot.address
+              : event.address;
           if (
             useStore.getState().hostId &&
             useStore.getState().hostId !== address.hostId
@@ -191,97 +271,88 @@ export const rpc = Electroview.defineRPC<RPCSchema>({
             void reconnectRuntime().catch(showError);
             return;
           }
-          if (!liveAddress(address)) return;
+          const before = useStore.getState();
+          const previousAddress =
+            event.type === "replaced" || event.type === "suspended"
+              ? event.previous
+              : address;
+          const previousCwd =
+            before.snapshots[previousAddress.sessionId]?.info.cwd ??
+            (event.type === "closed"
+              ? Object.keys(before.sessions).find((cwd) =>
+                  before.sessions[cwd].some(
+                    (session) => session.id === address.sessionId,
+                  ),
+                )
+              : undefined);
+          receiveRuntime(event);
           const current = useStore.getState().snapshots[address.sessionId];
           if (
-            current &&
-            sameAddress(current.address, address) &&
-            current.snapshotSeq >= event.snapshot.snapshotSeq
-          )
-            return;
-          const snapshot = expandSnapshotDelta(event, current);
-          if (!snapshot) {
-            invalidateRuntimeRead();
-            void recoverSnapshots(
-              address,
-              event.snapshot.snapshotSeq,
-              (value) =>
-                handleRuntimeEvent({ type: "snapshot", snapshot: value }),
+            event.type === "suspended" &&
+            current?.transcript.history?.revision !== event.historyRevision &&
+            Object.values(useStore.getState().panes).some(
+              (pane) => pane.sessionId === address.sessionId,
+            )
+          ) {
+            void recoverSnapshots(address, event.snapshotSeq, (snapshot) =>
+              handleRuntimeEvent({ type: "snapshot", snapshot }),
             ).catch((error) => {
               if (liveAddress(address)) showError(error);
             });
-            return;
           }
-          event = { type: "snapshot", snapshot };
+          if (current) sends.reconcile(current);
+          resumeSelectionChanges();
+          if (
+            event.type === "ready" ||
+            event.type === "replaced" ||
+            event.type === "closed" ||
+            (event.type === "snapshot" &&
+              current &&
+              current !== before.snapshots[address.sessionId] &&
+              (!before.snapshots[address.sessionId] ||
+                (before.snapshots[address.sessionId].transcript.running &&
+                  !current.transcript.running) ||
+                before.snapshots[address.sessionId].info.cwd !==
+                  current.info.cwd ||
+                before.snapshots[address.sessionId].info.title !==
+                  current.info.title ||
+                before.snapshots[address.sessionId].info.modified !==
+                  current.info.modified))
+          ) {
+            const cwd =
+              event.type === "closed" ? previousCwd : event.snapshot.info.cwd;
+            void refreshSessions(cwd).catch(showError);
+            if (event.type === "replaced" && previousCwd && previousCwd !== cwd)
+              void refreshSessions(previousCwd).catch(showError);
+          }
         }
-        if (event.type === "closed" && event.discardDraft) {
-          receiveRuntime(event);
-          drafts.discard(event.address, true);
-          sends.discard(event.address);
-          return;
-        }
-        const address =
-          event.type === "ready" ||
-          event.type === "snapshot" ||
-          event.type === "replaced"
-            ? event.snapshot.address
-            : event.address;
-        if (
-          useStore.getState().hostId &&
-          useStore.getState().hostId !== address.hostId
-        ) {
-          void reconnectRuntime().catch(showError);
-          return;
-        }
-        const before = useStore.getState();
-        const previousAddress =
-          event.type === "replaced" ? event.previous : address;
-        const previousCwd =
-          before.snapshots[previousAddress.sessionId]?.info.cwd ??
-          (event.type === "closed"
-            ? Object.keys(before.sessions).find((cwd) =>
-                before.sessions[cwd].some(
-                  (session) => session.id === address.sessionId,
-                ),
-              )
-            : undefined);
-        receiveRuntime(event);
-        const current = useStore.getState().snapshots[address.sessionId];
-        if (current) sends.reconcile(current);
-        resumeSelectionChanges();
-        if (
-          event.type === "ready" ||
-          event.type === "replaced" ||
-          event.type === "closed" ||
-          (event.type === "snapshot" &&
-            current &&
-            current !== before.snapshots[address.sessionId] &&
-            (!before.snapshots[address.sessionId] ||
-              (before.snapshots[address.sessionId].transcript.running &&
-                !current.transcript.running) ||
-              before.snapshots[address.sessionId].info.cwd !==
-                current.info.cwd ||
-              before.snapshots[address.sessionId].info.title !==
-                current.info.title ||
-              before.snapshots[address.sessionId].info.modified !==
-                current.info.modified))
-        ) {
-          const cwd =
-            event.type === "closed" ? previousCwd : event.snapshot.info.cwd;
-          void refreshSessions(cwd).catch(showError);
-          if (event.type === "replaced" && previousCwd && previousCwd !== cwd)
-            void refreshSessions(previousCwd).catch(showError);
-        }
+        receivePublication(publication, handleRuntimeEvent);
       },
-      extensionUIEvent: (event) => {
-        if (!receiveExtension(event) && event.type === "draft")
-          void recoverDraftImages(event.address, event.draft.revision).catch(
-            (error) => {
-              if (liveAddress(event.address)) showError(error);
-            },
-          );
-      },
-      terminalEvent: receiveTerminal,
+      extensionUIEvent: (publication) =>
+        receivePublication(publication, (event, phase) => {
+          if (
+            phase === "covered" &&
+            event.type !== "notify" &&
+            event.type !== "capability"
+          )
+            return;
+          if (
+            phase === "covered" &&
+            !useStore.getState().addresses[
+              (event.type === "request" ? event.request : event.address)
+                .sessionId
+            ]
+          )
+            return;
+          if (!receiveExtension(event) && event.type === "draft")
+            void recoverDraftImages(event.address, event.draft.revision).catch(
+              (error) => {
+                if (liveAddress(event.address)) showError(error);
+              },
+            );
+        }),
+      terminalEvent: (publication) =>
+        receivePublication(publication, receiveTerminal),
       sessionEvent: (event) => {
         receiveWire(event);
         const snapshot = useStore.getState().snapshots[event.address.sessionId];
@@ -462,6 +533,7 @@ export async function refresh() {
     bootstrap.desktop = {
       ...bootstrap.desktop,
       chatWidth: current.chatWidth,
+      sidebarWidth: current.sidebarWidth,
       recentModels: current.recentModels,
     };
   }
@@ -508,6 +580,10 @@ export async function refresh() {
 export const sends = new SendController(
   drafts,
   {
+    prepareSession: (address) =>
+      useStore.getState().snapshots[address.sessionId]?.suspended
+        ? ensureSessionRuntime(address)
+        : undefined,
     syncDraft: (params) => rpc.request.syncDraft(params),
     // Issued synchronously: the host orders it against earlier selection changes.
     prompt: (params) => rpc.request.prompt(params),
@@ -515,11 +591,19 @@ export const sends = new SendController(
     cancelPrompt: (params) => rpc.request.cancelPrompt(params),
     reorderPrompts: (params) => rpc.request.reorderQueuedPrompts(params),
     steerPrompt: (params) => rpc.request.steerQueuedPrompt(params),
+    acknowledgeRecovery: (params) =>
+      rpc.request.acknowledgePromptRecovery(params),
   },
   undefined,
   undefined,
   showError,
   (address, step) => lane.enqueue(address, step),
+  (kind) =>
+    showNotice({
+      level: "warning",
+      message:
+        kind === "restored" ? getT().steeringRestored : getT().sendUnconfirmed,
+    }),
 );
 const selectionTransfers = new Map<
   string,
@@ -541,6 +625,7 @@ function resumeSelectionChanges() {
     if (
       !snapshot ||
       snapshot.ready === false ||
+      snapshot.suspended ||
       !sameAddress(snapshot.address, address)
     )
       continue;
@@ -574,16 +659,83 @@ export async function requestSelection(
   request: () => Promise<ModelSelection>,
 ) {
   try {
+    if (useStore.getState().snapshots[address.sessionId]?.suspended)
+      await ensureSessionRuntime(address);
     return await request();
   } catch (error) {
     const snapshot = await rpc.request.getSessionSnapshot(address);
+    await settleRuntimeRead();
     receiveSnapshot(snapshot);
     showError(error);
     return snapshot;
   }
 }
 const clientId = crypto.randomUUID();
+let usageSequence = 0;
+let usageSignature = "";
+let lastUsage: RuntimeUsage = { sequence: 0, protected: [] };
+function runtimeUsage(): RuntimeUsage {
+  const state = useStore.getState();
+  const owners = [
+    ...Object.values(state.panes).flatMap((pane) => {
+      const address = pane.sessionId && state.addresses[pane.sessionId];
+      return address ? [address] : [];
+    }),
+    ...Object.values(state.pendingOpens).flatMap((open) => {
+      const address = open.address ?? (open.id && state.addresses[open.id]);
+      return address ? [address] : [];
+    }),
+    ...drafts.protectedAddresses(),
+    ...sends.protectedAddresses(),
+    ...attachmentReads.protectedAddresses(),
+  ];
+  const unique = new Map(
+    owners.map((address) => [addressKey(address), address]),
+  );
+  const signature = [...unique.keys()].sort().join("\n");
+  if (signature !== usageSignature) {
+    usageSignature = signature;
+    lastUsage = { sequence: ++usageSequence, protected: [...unique.values()] };
+  }
+  return lastUsage;
+}
+function publishUsage() {
+  if (rootConnection)
+    rpc.send.runtimeUsage?.({ clientId, usage: runtimeUsage() });
+}
+const wakes = new Map<string, Promise<void>>();
+/** Startup precedes CAS: a failure cannot reserve or dispatch this input. */
+export function ensureSessionRuntime(address: SessionAddress): Promise<void> {
+  const current = useStore.getState().snapshots[address.sessionId];
+  if (!current?.suspended) return Promise.resolve();
+  const key = addressKey(address);
+  const pending = wakes.get(key);
+  if (pending) return pending;
+  const task = rpc.request
+    .wakeSession(address)
+    .then(async (snapshot) => {
+      await settleRuntimeRead();
+      if (!sameAddress(snapshot.address, address) || !liveAddress(address))
+        throw new Error(
+          "Session changed before sending; your input is retained.",
+        );
+      receiveSnapshot(snapshot);
+      receiveRecovery(await rpc.request.getRecovery(address));
+    })
+    .finally(() => {
+      if (wakes.get(key) === task) wakes.delete(key);
+    });
+  wakes.set(key, task);
+  return task;
+}
 let rootConnection: Promise<void> | undefined;
+// RPC action replies must not install new owners ahead of an older state read.
+async function settleRuntimeRead() {
+  for (let read = rootConnection; read; read = rootConnection) {
+    await read;
+    if (read === rootConnection) return;
+  }
+}
 let heartbeatTimer: ReturnType<typeof setInterval> | undefined;
 let heartbeatInFlight = false;
 let connectionGeneration = 0;
@@ -604,7 +756,7 @@ function startHeartbeat() {
     if (heartbeatInFlight) return;
     heartbeatInFlight = true;
     void rpc.request
-      .heartbeatUI({ clientId })
+      .heartbeatUI({ clientId, usage: runtimeUsage() })
       .then(({ connected }) => {
         if (!connected || !rootConnection) {
           if (!connected) rootConnection = undefined;
@@ -622,24 +774,73 @@ function startHeartbeat() {
 }
 export function connectRuntime() {
   if (!rootConnection) {
-    rpc.send.connectUI({ clientId });
+    runtimeSync.begin();
+    rpc.send.connectUI({ clientId, usage: runtimeUsage() });
     startHeartbeat();
     const generation = ++connectionGeneration;
     rootConnection = (async () => {
-      for (let attempt = 0; attempt < 3; attempt++) {
-        const revision = runtimeRevision;
+      for (;;) {
         const state = await rpc.request.runtimeState();
         if (generation !== connectionGeneration)
           throw new Error("Runtime synchronization was superseded");
-        if (receiveRuntimeState(state, revision)) {
+        prepareRuntimeHost(state.hostId);
+        const foreign = runtimeSync.finish(state, () => {
+          receiveRuntimeState(state);
           receiveRecovery(state);
-          resumeSelectionChanges();
+        });
+        resumeSelectionChanges();
+        if (!foreign.length) {
+          const viewed = new Set(
+            Object.values(useStore.getState().panes).map(
+              (pane) => pane.sessionId,
+            ),
+          );
+          await Promise.all(
+            state.sessions
+              .filter((session) => {
+                const shown =
+                  useStore.getState().snapshots[session.address.sessionId];
+                return (
+                  session.suspended &&
+                  viewed.has(session.address.sessionId) &&
+                  (!shown ||
+                    shown.transcript.history?.revision !==
+                      session.suspended.historyRevision)
+                );
+              })
+              .map(async (session) => {
+                try {
+                  const snapshot = await rpc.request.getSessionSnapshot(
+                    session.address,
+                  );
+                  if (
+                    generation === connectionGeneration &&
+                    liveAddress(session.address)
+                  )
+                    receiveSnapshot(snapshot);
+                } catch (error) {
+                  if (
+                    generation === connectionGeneration &&
+                    useStore.getState().snapshots[session.address.sessionId]
+                      ?.suspended
+                  )
+                    showError(error);
+                }
+                return undefined;
+              }),
+          );
+          publishUsage();
           return;
         }
+        // Only an actual host change needs another read, never ordinary activity.
+        runtimeSync.begin();
+        for (const event of foreign) runtimeSync.receive(event, event.apply);
       }
-      throw new Error(getT().runtimeUnsynchronized);
     })().catch((error) => {
-      if (generation === connectionGeneration) rootConnection = undefined;
+      if (generation === connectionGeneration) {
+        rootConnection = undefined;
+        runtimeSync.cancel();
+      }
       throw error;
     });
   }
@@ -647,11 +848,25 @@ export function connectRuntime() {
 }
 export function initRuntimeConnection() {
   void connectRuntime().catch(showError);
+  const unsubscribe = [
+    useStore.subscribe((state, previous) => {
+      if (
+        state.panes !== previous.panes ||
+        state.addresses !== previous.addresses ||
+        state.pendingOpens !== previous.pendingOpens
+      )
+        publishUsage();
+    }),
+    drafts.subscribe(publishUsage),
+    sends.subscribe(publishUsage),
+    attachmentReads.subscribe(publishUsage),
+  ];
   const disconnect = () => {
     connectionGeneration++;
     clearInterval(heartbeatTimer);
     heartbeatTimer = undefined;
     rootConnection = undefined;
+    runtimeSync.cancel();
     rpc.send.disconnectUI({ clientId });
   };
   const reconnect = (event: PageTransitionEvent) => {
@@ -660,6 +875,7 @@ export function initRuntimeConnection() {
   window.addEventListener("pagehide", disconnect);
   window.addEventListener("pageshow", reconnect);
   return () => {
+    for (const stop of unsubscribe) stop();
     window.removeEventListener("pagehide", disconnect);
     window.removeEventListener("pageshow", reconnect);
     disconnect();
@@ -842,12 +1058,22 @@ export async function openChat(
         active: current.info.id,
         ...selectPaneSession(state, current.info.id),
       }));
+    if (current.suspended) {
+      try {
+        const snapshot = await rpc.request.getSessionSnapshot(current.address);
+        await settleRuntimeRead();
+        receiveSnapshot(snapshot);
+        return useStore.getState().snapshots[id];
+      } catch (error) {
+        showError(error);
+      }
+    }
     return current;
   }
   const openId = crypto.randomUUID();
   const promise = openSnapshot(
     () =>
-      opens.open({ openId, cwd, id }, (openMessage) => {
+      opens.open({ openId, cwd, id, historyOnly: true }, (openMessage) => {
         useStore.setState((state) => {
           const pending = state.pendingOpens[openId];
           return {
@@ -923,6 +1149,8 @@ function beginRewind(sessionId: string, rewind: Rewind) {
 }
 export async function forkChat(sessionId: string, entryId: string) {
   const previous = currentAddress(sessionId);
+  if (useStore.getState().snapshots[sessionId]?.suspended)
+    await ensureSessionRuntime(previous);
   const revision = navigationRevision;
   // The branch keeps this chat's view; it never blanks into a loading screen.
   const settle = beginRewind(sessionId, { kind: "fork", entryId });
@@ -930,6 +1158,7 @@ export async function forkChat(sessionId: string, entryId: string) {
     await sends.stop(previous, () => rpc.request.abort(previous));
     await selections.flush(previous);
     const snapshot = await rpc.request.forkSession({ ...previous, entryId });
+    await settleRuntimeRead();
     if (!liveAddress(snapshot.address))
       throw new Error("The branch response belongs to a replaced session");
     sends.retire(previous);
@@ -954,6 +1183,8 @@ export async function regenerate(
   entryId: string,
 ) {
   const previous = currentAddress(sessionId);
+  if (useStore.getState().snapshots[sessionId]?.suspended)
+    await ensureSessionRuntime(previous);
   // Display only: the persisted transcript changes when the rewind lands.
   const settle = beginRewind(sessionId, { kind: "resend", entryId, user });
   let sending: Promise<void> | undefined;
@@ -964,6 +1195,7 @@ export async function regenerate(
       ...previous,
       entryId,
     });
+    await settleRuntimeRead();
     if (!liveAddress(snapshot.address))
       throw new Error("The rewind response belongs to a replaced session");
     sends.retire(previous);
@@ -1093,6 +1325,7 @@ async function openSnapshot(
     await connectRuntime();
     if (opens.isCancelled(openId)) return;
     const snapshot = await load();
+    await settleRuntimeRead();
     if (
       !snapshot ||
       opens.isCancelled(openId) ||

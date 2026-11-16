@@ -7,7 +7,11 @@ import {
   type TranscriptRecord,
 } from "./transcript";
 import { transcriptIndex } from "./transcript-index";
-import { unpackTranscript, type WireTranscript } from "./transcript-wire";
+import {
+  transcriptWireBase,
+  unpackTranscript,
+  type WireTranscript,
+} from "./transcript-wire";
 
 export type RecordPayloadRef = {
   payloadRef: string;
@@ -22,6 +26,17 @@ export type RecordPayloadRef = {
 };
 export type SnapshotDeltaEvent = {
   type: "snapshotDelta";
+  /** Whole-record/tool references require the exact last publication, unlike
+   * immutable persisted-body references, which only require the same revision. */
+  reuse?: {
+    baseSeq: number;
+    /** Reuse all preceding wire tools except complete replacements, or supply
+     * the exact surviving reference IDs when membership changed. */
+    tools: string[] | "remaining";
+    /** Unchanged wire order: its records are the UI's suffix, after any
+     * explicitly prepended history. Only changed rows are transmitted. */
+    recordCount?: number;
+  };
   appends?: {
     baseSeq: number;
     records: Record<string, ContentAppend[]>;
@@ -29,7 +44,7 @@ export type SnapshotDeltaEvent = {
   };
   snapshot: Omit<Snapshot, "transcript"> & {
     transcript: Omit<WireTranscript, "records"> & {
-      records: (TranscriptRecord | RecordPayloadRef)[];
+      records: (TranscriptRecord | RecordPayloadRef | string)[];
     };
   };
 };
@@ -63,6 +78,27 @@ export function expandSnapshotDelta(
   )
     return undefined;
   const appends = event.appends;
+  const reuse = event.reuse;
+  if (
+    !reuse &&
+    !appends &&
+    !snapshot.transcript.records.some(
+      (record) =>
+        record && typeof record === "object" && "payloadRef" in record,
+    )
+  )
+    return undefined;
+  if (
+    reuse &&
+    (!Number.isSafeInteger(reuse.baseSeq) ||
+      reuse.baseSeq !== current.snapshotSeq ||
+      reuse.baseSeq >= snapshot.snapshotSeq ||
+      (reuse.tools !== "remaining" &&
+        (!Array.isArray(reuse.tools) ||
+          reuse.tools.some((id) => typeof id !== "string" || !id) ||
+          new Set(reuse.tools).size !== reuse.tools.length)))
+  )
+    return undefined;
   if (
     appends &&
     (!Number.isSafeInteger(appends.baseSeq) ||
@@ -73,9 +109,52 @@ export function expandSnapshotDelta(
   )
     return undefined;
   const previous = transcriptIndex(current.transcript.records);
+  const previousWire = transcriptWireBase(current.transcript);
+  if (previousWire.recordCount > current.transcript.records.length)
+    return undefined;
+  const tail = previousWire.recordCount
+    ? current.transcript.records.slice(-previousWire.recordCount)
+    : [];
+  const tailIds = new Set(tail.map((record) => record.id));
+  let wireRecords = snapshot.transcript.records;
+  if (reuse?.recordCount !== undefined) {
+    const count = reuse.recordCount;
+    if (
+      !Number.isSafeInteger(count) ||
+      count <= 0 ||
+      count !== previousWire.recordCount
+    )
+      return undefined;
+    if (tailIds.size !== count) return undefined;
+    const updates = new Map<string, (typeof wireRecords)[number]>();
+    for (const record of wireRecords) {
+      const id = typeof record === "string" ? record : record?.id;
+      if (!tailIds.has(id) || updates.has(id)) return undefined;
+      updates.set(id, record);
+    }
+    wireRecords = tail.map((record) => updates.get(record.id) ?? record.id);
+  }
   const records: TranscriptRecord[] = [];
   const expandedRecords = new Set<string>();
-  for (const record of snapshot.transcript.records) {
+  const recordIds = new Set<string>();
+  for (const record of wireRecords) {
+    const id = typeof record === "string" ? record : record?.id;
+    if (typeof id !== "string" || !id || recordIds.has(id)) return undefined;
+    recordIds.add(id);
+    if (typeof record === "string") {
+      const old = previous.get(record);
+      if (
+        !reuse ||
+        !tailIds.has(record) ||
+        !old?.entryId ||
+        old.entryId !== old.id
+      )
+        return undefined;
+      records.push(old);
+      continue;
+    }
+    if (!record || typeof record !== "object" || Array.isArray(record))
+      return undefined;
     if (!("payloadRef" in record)) {
       const patches =
         appends && Object.hasOwn(appends.records, record.id)
@@ -123,6 +202,27 @@ export function expandSnapshotDelta(
     return undefined;
   try {
     const tools = { ...snapshot.transcript.tools };
+    const previousTools = new Set(previousWire.toolIds);
+    const reusedTools =
+      reuse?.tools === "remaining"
+        ? previousWire.toolIds.filter((id) => !Object.hasOwn(tools, id))
+        : (reuse?.tools ?? []);
+    for (const id of reusedTools) {
+      if (
+        !previousTools.has(id) ||
+        Object.hasOwn(tools, id) ||
+        !Object.hasOwn(current.transcript.tools, id) ||
+        current.transcript.tools[id].status === "running" ||
+        Object.hasOwn(snapshot.transcript.toolResultRefs ?? {}, id)
+      )
+        return undefined;
+      Object.defineProperty(tools, id, {
+        value: current.transcript.tools[id],
+        enumerable: true,
+        configurable: true,
+        writable: true,
+      });
+    }
     for (const [id, patches] of Object.entries(appends?.tools ?? {})) {
       if (
         !Object.hasOwn(tools, id) ||

@@ -4,7 +4,10 @@ import { fauxAssistantMessage } from "@earendil-works/pi-ai";
 import { createRuntimeDeltaEncoder } from "../bun/snapshot-delta";
 import { packSnapshot } from "../bun/transcript-wire";
 import type { Snapshot } from "../shared/rpc-schema";
-import type { SessionAddress } from "../shared/runtime-contract";
+import type {
+  RuntimePublication,
+  SessionAddress,
+} from "../shared/runtime-contract";
 import type { RuntimeWireEvent } from "../shared/snapshot-delta";
 import { emptyTranscript } from "../shared/transcript";
 
@@ -27,6 +30,7 @@ if (process.env.PIG_SNAPSHOT_DELTA_CHILD !== "1") {
   });
 } else {
   let receive!: (event: RuntimeWireEvent) => void;
+  let publicationSeq = 0;
   const reads: ReturnType<typeof Promise.withResolvers<Snapshot>>[] = [];
   let sends = 0;
   let resetBase: ((address: SessionAddress) => void) | undefined;
@@ -34,9 +38,18 @@ if (process.env.PIG_SNAPSHOT_DELTA_CHILD !== "1") {
     Electroview: class {
       constructor(readonly options: unknown) {}
       static defineRPC(config: {
-        handlers: { messages: { runtimeEvent: typeof receive } };
+        handlers: {
+          messages: {
+            runtimeEvent: (event: RuntimePublication<RuntimeWireEvent>) => void;
+          };
+        };
       }) {
-        receive = config.handlers.messages.runtimeEvent;
+        receive = (event) =>
+          config.handlers.messages.runtimeEvent({
+            hostId: "delta-rpc",
+            publicationSeq: ++publicationSeq,
+            event,
+          });
         return {
           send: {},
           request: {

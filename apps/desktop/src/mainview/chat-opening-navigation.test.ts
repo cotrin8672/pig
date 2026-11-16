@@ -38,6 +38,7 @@ if (process.env.PIG_OPEN_NAVIGATION_CHILD !== "1") {
           request: {
             runtimeState: async () => ({
               hostId: "navigation",
+              publicationSeq: 0,
               sessions: [],
               pendingUI: [],
               drafts: [],

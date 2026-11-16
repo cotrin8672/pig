@@ -37,10 +37,10 @@ function snapshot(seq = 1): Snapshot {
 const runtimeEvents = (received: { name: string; payload: unknown }[]) =>
   received
     .filter((item) => item.name === "runtimeEvent")
-    .map((item) => (item.payload as RuntimeWireEvent).type);
+    .map((item) => (item.payload as { event: RuntimeWireEvent }).event.type);
 
 test("each window gets its own delta base and one transcript per publication", () => {
-  const hub = new ClientHub();
+  const hub = new ClientHub("host");
   const first = client();
   hub.add("first", first.send);
   hub.runtime({ type: "snapshot", snapshot: snapshot(1) });
@@ -63,7 +63,7 @@ test("each window gets its own delta base and one transcript per publication", (
 });
 
 test("full RPC reads reset the owner's base in every window without resetting other chats", () => {
-  const hub = new ClientHub();
+  const hub = new ClientHub("host");
   const first = client();
   const second = client();
   hub.add("first", first.send);
@@ -92,7 +92,7 @@ test("full RPC reads reset the owner's base in every window without resetting ot
 });
 
 test("broadcast survives a failing window; targeted messages reach one window", () => {
-  const hub = new ClientHub();
+  const hub = new ClientHub("host");
   const healthy = client();
   const errors = console.error;
   console.error = () => {};
@@ -114,4 +114,49 @@ test("broadcast survives a failing window; targeted messages reach one window", 
   hub.remove("broken");
   expect(hub.ids()).toEqual(["healthy"]);
   expect(() => hub.add("healthy", healthy.send)).toThrow();
+});
+
+test("state reads and all runtime surfaces share one host publication boundary", () => {
+  const hub = new ClientHub("host");
+  const first = client();
+  const second = client();
+  hub.add("first", first.send);
+  hub.add("second", second.send);
+  const address = snapshot().address;
+  hub.runtime({ type: "snapshot", snapshot: snapshot() });
+  hub.extension({ type: "notify", address, level: "info", message: "notice" });
+  const state = hub.runtimeState(() => ({
+    hostId: "host",
+    sessions: [],
+    drafts: [],
+    statuses: [],
+    pendingUI: [],
+  }));
+  hub.runtime({ type: "snapshot", snapshot: snapshot(2) });
+  expect(state.publicationSeq).toBe(2);
+  for (const target of [first, second]) {
+    expect(
+      target.received.map(
+        ({ payload }) => (payload as { publicationSeq: number }).publicationSeq,
+      ),
+    ).toEqual([1, 2, 3]);
+    expect(runtimeEvents(target.received)).toEqual(["snapshot", "snapshot"]);
+  }
+  hub.reset("first");
+  hub.extension({
+    type: "notify",
+    address,
+    level: "info",
+    message: "after reload",
+  });
+  expect(first.received.at(-1)?.payload).toMatchObject({
+    hostId: "host",
+    publicationSeq: 4,
+  });
+  hub.terminal({ ...address, uiId: "term", type: "open" }, "first");
+  expect(first.received.at(-1)).toMatchObject({
+    name: "terminalEvent",
+    payload: { hostId: "host", publicationSeq: 5, event: { type: "open" } },
+  });
+  expect(second.received).toHaveLength(4);
 });

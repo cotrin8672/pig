@@ -40,11 +40,6 @@ export function subscribeOwnership(
 const retired = new Map<string, number>();
 const latest = new Map<string, WireEvent>();
 const terminalListeners = new Set<(event: TerminalHostEvent) => void>();
-export let runtimeRevision = 0;
-/** A newer wire publication is waiting for a missing-base recovery. */
-export function invalidateRuntimeRead() {
-  runtimeRevision++;
-}
 function retire(address: SessionAddress) {
   retired.set(
     address.sessionId,
@@ -113,20 +108,42 @@ function removeSurfaces(address: SessionAddress) {
     ),
   }));
 }
-function replace(previous: SessionAddress, next: SessionAddress) {
+function replace(
+  previous: SessionAddress,
+  next: SessionAddress,
+  covered = false,
+  suspension?: { draftRevision?: number },
+) {
   if (
     sameAddress(previous, next) ||
-    previous.epoch <= (retired.get(previous.sessionId) ?? -1)
+    (!covered && previous.epoch <= (retired.get(previous.sessionId) ?? -1)) ||
+    (covered && drafts.read(previous).transferred)
   )
     return;
   retire(previous);
-  drafts.transfer(previous, next);
+  drafts.transfer(previous, next, suspension?.draftRevision);
   for (const listener of ownershipListeners) listener(previous, next);
   removeSurfaces(previous);
   useStore.setState((s) => {
     const snapshots = { ...s.snapshots };
-    if (sameAddress(snapshots[previous.sessionId]?.address ?? next, previous))
+    const outgoing = snapshots[previous.sessionId];
+    if (outgoing && sameAddress(outgoing.address, previous)) {
       delete snapshots[previous.sessionId];
+      // Keep the outgoing transcript, read-only, until the replacement's own
+      // snapshot lands (any newer epoch wins). Without it the active chat is
+      // briefly absent and the workspace opens a new draft in its place.
+      if (!snapshots[next.sessionId]) {
+        const { ready: _ready, ...view } = outgoing;
+        snapshots[next.sessionId] = suspension
+          ? {
+              ...view,
+              address: next,
+              viewEpoch: outgoing.viewEpoch ?? outgoing.address.epoch,
+              suspended: true,
+            }
+          : { ...outgoing, ready: false };
+      }
+    }
     return {
       snapshots,
       active: s.active === previous.sessionId ? next.sessionId : s.active,
@@ -199,8 +216,9 @@ export function receiveWire(event: WireEvent) {
   });
 }
 export function receiveRuntime(event: RuntimeEvent) {
-  runtimeRevision++;
-  if (event.type === "opening") {
+  if (event.type === "suspended") {
+    receiveSuspended(event);
+  } else if (event.type === "opening") {
     if (!register(event.address)) return;
     if (event.openId)
       useStore.setState((state) => {
@@ -236,9 +254,14 @@ export function receiveRuntime(event: RuntimeEvent) {
     removeSurfaces(event.address);
     useStore.setState((s) => {
       const snapshots = { ...s.snapshots };
+      const shown = snapshots[event.address.sessionId];
       if (
-        snapshots[event.address.sessionId] &&
-        sameAddress(snapshots[event.address.sessionId].address, event.address)
+        shown &&
+        (sameAddress(shown.address, event.address) ||
+          // A replacement placeholder still carries its predecessor's address.
+          (shown.ready === false &&
+            shown.address.hostId === event.address.hostId &&
+            shown.address.epoch < event.address.epoch))
       ) {
         const snapshot = snapshots[event.address.sessionId];
         if (event.reason === "failed" && snapshot.ready === false)
@@ -254,8 +277,43 @@ export function receiveRuntime(event: RuntimeEvent) {
       showNotice({ level: "error", message: event.message });
   }
 }
+function receiveSuspended(event: Extract<RuntimeEvent, { type: "suspended" }>) {
+  if (!liveAddress(event.address)) return;
+  const shown = useStore.getState().snapshots[event.address.sessionId];
+  if (
+    shown &&
+    sameAddress(shown.address, event.address) &&
+    shown.snapshotSeq >= event.snapshotSeq &&
+    !shown.suspended
+  )
+    return;
+  replace(event.previous, event.address, false, {
+    draftRevision: event.draftRevision,
+  });
+  register(event.address);
+  if (
+    !shown ||
+    shown.address.hostId !== event.address.hostId ||
+    shown.transcript.history?.revision !== event.historyRevision
+  )
+    return;
+  const { ready: _ready, ...view } = shown;
+  useStore.setState((state) => ({
+    snapshots: {
+      ...state.snapshots,
+      [event.address.sessionId]: {
+        ...view,
+        viewEpoch: shown.viewEpoch ?? shown.address.epoch,
+        address: event.address,
+        suspended: true,
+        snapshotSeq: sameAddress(shown.address, event.address)
+          ? Math.max(shown.snapshotSeq, event.snapshotSeq)
+          : event.snapshotSeq,
+      },
+    },
+  }));
+}
 export function receiveExtension(event: ExtensionUIEvent): boolean {
-  runtimeRevision++;
   const address = event.type === "request" ? event.request : event.address;
   if (!register(address)) return true;
   if (event.type === "request")
@@ -315,11 +373,25 @@ export function receiveExtension(event: ExtensionUIEvent): boolean {
     }));
   return true;
 }
-export function receiveRuntimeState(state: RuntimeViewState, since: number) {
-  // An in-flight reconnect response cannot roll back newer live publications.
-  if (since !== runtimeRevision) return false;
+/** Late publications covered by a state read must not reopen old sessions, but
+ * their local ownership transfer may not have been represented in that read. */
+export function receiveCoveredRuntime(event: RuntimeEvent) {
+  if (
+    event.type !== "opening" &&
+    event.type !== "replaced" &&
+    event.type !== "suspended"
+  )
+    return;
+  const next =
+    event.type === "replaced" ? event.snapshot.address : event.address;
+  const current = useStore.getState().addresses[next.sessionId];
+  if (event.previous && current && sameAddress(current, next))
+    replace(event.previous, next, true);
+}
+export function prepareRuntimeHost(hostId: string) {
   const old = useStore.getState();
-  if (old.hostId && old.hostId !== state.hostId) {
+  if (old.hostId === hostId) return;
+  if (old.hostId && old.hostId !== hostId) {
     for (const address of Object.values(old.addresses)) drafts.retire(address);
     latest.clear();
     retired.clear();
@@ -338,6 +410,20 @@ export function receiveRuntimeState(state: RuntimeViewState, since: number) {
         "Runtime restarted. Unconfirmed sends may have executed; drafts are retained under their previous owner.",
     });
   }
+  useStore.setState({ hostId });
+}
+export function receiveRuntimeState(state: RuntimeViewState) {
+  prepareRuntimeHost(state.hostId);
+  for (const session of state.sessions)
+    if (session.suspended?.previous)
+      receiveSuspended({
+        type: "suspended",
+        address: session.address,
+        previous: session.suspended.previous,
+        snapshotSeq: session.suspended.snapshotSeq,
+        historyRevision: session.suspended.historyRevision,
+        draftRevision: session.suspended.draftRevision,
+      });
   const present = new Set(
     state.sessions.map((session) => addressKey(session.address)),
   );

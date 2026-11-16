@@ -5,6 +5,7 @@ import type { SessionActionRequest } from "../../../../packages/config/src";
 import { AdapterRuntime } from "./adapter-runtime";
 import { createAdapterSource } from "./adapter-source";
 import { ConfigLoader } from "./config-loader";
+import { keepLastContextTokens } from "./context-usage";
 
 function required<T>(value: T | undefined): T {
   if (value === undefined) throw new Error("Session runtime is not ready");
@@ -52,11 +53,13 @@ import type {
   PromptParams,
   RuntimeEvent,
   RuntimeRecoveryState,
+  RuntimeUsage,
   RuntimeViewState,
   SendKey,
   SessionAddress,
   SessionPhase,
 } from "../shared/runtime-contract";
+import { RUNTIME_IDLE_MS } from "../shared/runtime-contract";
 import type { Settings } from "../shared/settings";
 import type {
   TerminalClientCommand,
@@ -76,7 +79,7 @@ import {
 import { defaultEffort } from "./model-settings";
 import { traceOpen } from "./open-performance";
 import { withPackageLock } from "./package-queue";
-import { resolveProjectTrust } from "./project-trust";
+import { isProjectTrusted, resolveProjectTrust } from "./project-trust";
 import { providerAccounts } from "./provider-accounts";
 import { desktopResourceOptions } from "./resources";
 import { agentDir } from "./runtime-profile";
@@ -105,14 +108,24 @@ import {
   resolveSessionFile,
   sameSessionPath,
   sessionDirFor,
+  sessionHistoryDigest,
+  unchangedHistoryPrefix,
 } from "./session-files";
 import { currentSettings } from "./settings";
 import { desktopShellTool } from "./shell-tools";
 import { SessionStatistics, statisticsOwner } from "./statistics/collector";
 import type { StatisticsSink } from "./statistics/contracts";
+import { toolSourceLabel } from "./statistics/initial-context";
 import { UIRequestBroker } from "./ui-request-broker";
 
 type Managed = {
+  idleSince?: number;
+  wakeRequested?: boolean;
+  operations: number;
+  suspending?: Promise<HistoryHandle | undefined>;
+  suspensionError?: string;
+  suspensionCleanup?: Promise<void>;
+  resuming?: boolean;
   address: SessionAddress;
   cwd: string;
   phase: SessionPhase;
@@ -170,6 +183,28 @@ type Managed = {
     value: ReturnType<AgentSession["getContextUsage"]>;
   };
 };
+/** No manager, projector, SDK objects or transcript bodies survive suspension. */
+type HistoryHandle = {
+  digest: string;
+  entryCount: number;
+  address: SessionAddress;
+  previous?: SessionAddress;
+  draftRevision?: number;
+  cwd: string;
+  file: string;
+  leaf: string | null;
+  revision: string;
+  seq: number;
+  openId: string;
+  info: SessionInfo;
+  accounts: SessionAccounts;
+  accountHistory: boolean;
+  selection: ModelSelection;
+  failure?: string;
+  aborted?: boolean;
+  reading?: Promise<Snapshot>;
+  waking?: Promise<Snapshot>;
+};
 type Opening = {
   input: OpenSessionParams;
   state: OpenState;
@@ -190,6 +225,7 @@ export type SessionAccountPersistence = {
 type Options = {
   sessionAccounts?: SessionAccountPersistence;
   modelInfo: (model: Model<Api>) => ModelInfo;
+  historyModel?: (provider: string, id: string) => ModelInfo | undefined;
   emit: (event: RuntimeEvent) => void;
   emitUI: (event: ExtensionUIEvent) => void;
   emitTerminal: (event: TerminalHostEvent) => void;
@@ -200,12 +236,36 @@ type Options = {
   configFile?: string;
   configureModels?: (runtime: ModelRuntime) => void | Promise<void>;
   connectionNow?: () => number;
+  idleNow?: () => number;
   recoveryFile?: string;
   statistics?: StatisticsSink;
 };
 // SDK's low-level API registry is process-global: serialize loader/reload work.
 let loaderQueue = Promise.resolve();
 const stopWaitMs = 2_000;
+function sessionInfo(manager: SDKSessionManager, cwd: string): SessionInfo {
+  const first = manager
+    .getBranch()
+    .find((entry) => entry.type === "message" && entry.message.role === "user");
+  const content =
+    first?.type === "message" && first.message.role === "user"
+      ? first.message.content
+      : "";
+  const title =
+    typeof content === "string"
+      ? content
+      : content
+          .filter((part) => part.type === "text")
+          .map((part) => part.text)
+          .join(" ");
+  return {
+    id: manager.getSessionId(),
+    cwd,
+    title: manager.getSessionName() ?? (title || "New chat"),
+    modified:
+      Date.parse(manager.getEntries().at(-1)?.timestamp ?? "") || Date.now(),
+  };
+}
 async function stopBudget<T>(task: Promise<T>, phase: string): Promise<T> {
   let timer: ReturnType<typeof setTimeout> | undefined;
   try {
@@ -236,6 +296,7 @@ export function loadExclusive<T>(fn: () => Promise<T>): Promise<T> {
   return task;
 }
 
+import { RuntimeUsageTracker } from "./runtime-usage";
 import { UIConnectionLease } from "./ui-connection-lease";
 
 export class SessionHost {
@@ -247,6 +308,9 @@ export class SessionHost {
   readonly drafts: ComposerBridge;
   private epoch = 0;
   private sessions = new Map<string, Managed>();
+  private histories = new Map<string, HistoryHandle>();
+  private readonly usage: RuntimeUsageTracker;
+  private idleTimer?: ReturnType<typeof setInterval>;
   private readonly shareModelCatalog = createModelCatalogCache();
   private failedHistory = new Map<
     string,
@@ -255,6 +319,8 @@ export class SessionHost {
       cwd: string;
       revision: string;
       leaf: string | null;
+      digest: string;
+      entryCount: number;
       snapshot: Snapshot;
     }
   >();
@@ -270,6 +336,7 @@ export class SessionHost {
   private configReloading = false;
   private configReloadPending = false;
   constructor(private readonly options: Options) {
+    this.usage = new RuntimeUsageTracker(options.idleNow);
     this.configLoader = new ConfigLoader(
       options.configFile ?? join(desktopConfigDir, "config.ts"),
     );
@@ -319,20 +386,43 @@ export class SessionHost {
   private get settings() {
     return (this.options.settings ?? currentSettings)();
   }
-  connectUI({ clientId }: { clientId: string }) {
+  connectUI(input: { clientId: string; usage?: RuntimeUsage }) {
+    const { clientId, usage } = input;
     if (this.shuttingDown) throw new Error("Session host is shutting down");
     this.clients.connect(clientId);
+    this.usage.connect(clientId);
+    if (usage) this.runtimeUsage({ clientId, usage });
+    if (!this.idleTimer) {
+      this.idleTimer = setInterval(() => {
+        void this.suspendIdle().catch((error) =>
+          console.error("Idle suspension failed", error),
+        );
+      }, 15_000);
+      this.idleTimer.unref();
+    }
     this.broker.setAvailable(true);
   }
-  heartbeatUI({ clientId }: { clientId: string }) {
-    return {
-      connected: !this.shuttingDown && this.clients.heartbeat(clientId),
-    };
+  heartbeatUI(input: { clientId: string; usage?: RuntimeUsage }) {
+    const connected =
+      !this.shuttingDown && this.clients.heartbeat(input.clientId);
+    if (connected && input.usage)
+      this.runtimeUsage({ clientId: input.clientId, usage: input.usage });
+    return { connected };
+  }
+  runtimeUsage(input: { clientId: string; usage: RuntimeUsage }) {
+    if (!this.usage.update(input.clientId, input.usage)) return;
+    for (const address of input.usage.protected) {
+      const m = this.sessions.get(address.sessionId);
+      if (m && addressKey(m.address) === addressKey(address))
+        m.idleSince = undefined;
+    }
   }
   disconnectUI({ clientId }: { clientId: string }) {
+    this.usage.disconnect(clientId);
     this.clients.disconnect(clientId);
   }
   disconnectAll() {
+    this.usage.clear();
     this.clients.clear();
   }
   private address(id: string): SessionAddress {
@@ -344,9 +434,15 @@ export class SessionHost {
       !m ||
       addressKey(m.address) !== addressKey(address) ||
       m.phase === "closing" ||
-      (ready && (m.phase !== "ready" || !!m.transition || m.stopping))
+      (ready &&
+        (m.phase !== "ready" ||
+          !!m.transition ||
+          m.stopping ||
+          !!m.suspending ||
+          !!m.suspensionError))
     )
       throw new Error("STALE_SESSION_ADDRESS");
+    if (ready) m.idleSince = undefined;
     return m;
   }
   session(id: string) {
@@ -355,19 +451,314 @@ export class SessionHost {
     return m.runtime.session;
   }
   sessionAddress(id: string) {
+    const history = this.histories.get(id);
+    if (history) return { ...history.address };
     const m = this.sessions.get(id);
     if (!m) throw new Error("Chat is not open");
     return { ...m.address };
   }
   private serialize<T>(m: Managed, fn: () => Promise<T>) {
+    m.operations++;
+    m.idleSince = undefined;
     const expected = addressKey(m.address);
     const task = m.operation.then(() => {
       if (m.phase === "closing" || addressKey(m.address) !== expected)
         throw new Error("STALE_SESSION_ADDRESS");
       return fn();
     });
-    m.operation = task.catch(() => {});
+    m.operation = task
+      .finally(() => {
+        m.operations--;
+      })
+      .catch(() => {});
     return task;
+  }
+  private canSuspend(m: Managed, ownSlot = false) {
+    const session = m.runtime?.session;
+    if (
+      this.shuttingDown ||
+      m.phase !== "ready" ||
+      !session?.isIdle ||
+      m.projector?.running ||
+      m.projector?.retry ||
+      m.operations > (ownSlot ? 1 : 0) ||
+      (!ownSlot && m.suspending) ||
+      m.suspensionError ||
+      m.wakeRequested ||
+      m.resuming ||
+      m.transition ||
+      m.stopping ||
+      m.reloadPending ||
+      this.configReloading ||
+      this.configReloadPending ||
+      m.queuedImages ||
+      m.preparingImages ||
+      m.queued.size ||
+      m.startedSends.length ||
+      session.pendingMessageCount ||
+      this.receipts.pending(m.address) ||
+      this.drafts.hasContent(m.address) ||
+      this.broker
+        .pending()
+        .some((request) => addressKey(request) === addressKey(m.address)) ||
+      this.usage.protects(m.address) ||
+      this.configLoader.config.sessionAdapters?.length ||
+      this.configLoader.config.toolViews?.length
+    )
+      return false;
+    // Extensions are stopped through the SDK's official session_shutdown.
+    const file = m.manager.getSessionFile();
+    try {
+      return !!file && statSync(file).isFile();
+    } catch {
+      return false;
+    }
+  }
+  /** One host sweep; eligibility is rechecked inside the session's operation lane. */
+  async suspendIdle() {
+    let suspended = 0;
+    const now = (this.options.idleNow ?? Date.now)();
+    for (const id of [...this.sessions.keys()]) {
+      const m = this.sessions.get(id);
+      if (!m) continue;
+      if (!this.canSuspend(m)) {
+        m.idleSince = undefined;
+        continue;
+      }
+      m.idleSince ??= now;
+      if (now - m.idleSince < RUNTIME_IDLE_MS) continue;
+      m.wakeRequested = false;
+      const task = this.serialize(m, async () => {
+        if (!this.canSuspend(m, true)) return undefined;
+        const previous = { ...m.address };
+        const file = required(m.manager.getSessionFile());
+        const history: HistoryHandle = {
+          address: this.address(previous.sessionId),
+          previous,
+          cwd: m.cwd,
+          file,
+          leaf: m.manager.getLeafId(),
+          digest: sessionHistoryDigest(m.manager),
+          entryCount: m.manager.getEntryCount(),
+          revision: required(m.projector?.snapshot().history?.revision),
+          seq: m.seq + 1,
+          openId: m.openId,
+          info: { ...this.info(m) },
+          accounts: { ...m.accounts },
+          accountHistory: this.hasAccountHistory(m),
+          selection: structuredClone(this.selection(m)),
+          failure: m.projector?.failure,
+          aborted: m.projector?.aborted,
+        };
+        this.cancelPublish(m);
+        // dispose emits session_shutdown and awaits the SDK's credential writes.
+        m.suspensionCleanup = required(m.runtime).dispose();
+        await stopBudget(m.suspensionCleanup, "idle SDK shutdown");
+        if (m.phase === "closing" || this.shuttingDown) return undefined;
+        m.projector?.checkpoint();
+        history.leaf = m.manager.getLeafId();
+        this.detachAdapters(m);
+        m.unsubscribe?.();
+        m.ui.dispose();
+        m.eventBus.clear();
+        if (m.models) releaseModelRuntime(m.models);
+        m.suspensionCleanup = undefined;
+        m.controller.abort(new Error("SDK suspended"));
+        this.receipts.cancel(previous);
+        history.draftRevision = this.drafts.read(previous).revision + 1;
+        this.histories.set(previous.sessionId, history);
+        try {
+          this.drafts.transfer(previous, history.address);
+        } catch (error) {
+          this.histories.delete(previous.sessionId);
+          throw error;
+        }
+        this.sessions.delete(previous.sessionId);
+        this.options.emit({
+          type: "suspended",
+          previous,
+          address: history.address,
+          snapshotSeq: history.seq,
+          historyRevision: history.revision,
+          draftRevision: history.draftRevision,
+        });
+        return history;
+      });
+      m.suspending = task;
+      try {
+        if (await task) suspended++;
+      } catch (error) {
+        // Never claim success or start a second SDK after an unconfirmed shutdown.
+        m.suspensionError = `SDK suspension failed: ${String(error)}`;
+        m.projector?.fail(m.suspensionError);
+        this.options.emitUI({
+          type: "notify",
+          address: m.address,
+          level: "error",
+          message: m.suspensionError,
+        });
+      } finally {
+        m.suspending = undefined;
+        m.wakeRequested = false;
+      }
+    }
+    return suspended;
+  }
+  isSuspended(address: SessionAddress) {
+    const m = this.sessions.get(address.sessionId);
+    return !!(
+      (m &&
+        addressKey(m.address) === addressKey(address) &&
+        (m.suspending || m.suspensionError || m.resuming)) ||
+      this.histories.has(address.sessionId)
+    );
+  }
+  wakeSession(address: SessionAddress): Promise<Snapshot> {
+    const m = this.sessions.get(address.sessionId);
+    if (m && addressKey(m.address) === addressKey(address)) {
+      if (m.suspensionError)
+        return Promise.reject(new Error(m.suspensionError));
+      if (m.suspending) {
+        m.wakeRequested = true;
+        return m.suspending.then((history) =>
+          history ? this.wakeSession(history.address) : this.snapshot(m),
+        );
+      }
+      if (m.phase === "ready") return Promise.resolve(this.snapshot(m));
+    }
+    const history = this.histories.get(address.sessionId);
+    if (
+      this.shuttingDown ||
+      !history ||
+      addressKey(history.address) !== addressKey(address)
+    )
+      return Promise.reject(new Error("STALE_SESSION_ADDRESS"));
+    history.waking ??= this.openSession({
+      openId: crypto.randomUUID(),
+      cwd: history.cwd,
+      id: address.sessionId,
+    }).finally(() => {
+      history.waking = undefined;
+    });
+    return history.waking;
+  }
+  private historySelection(
+    manager: SDKSessionManager,
+    accounts: SessionAccounts,
+    previous?: ModelSelection,
+  ): ModelSelection {
+    const saved = manager.buildSessionContext().model;
+    if (!saved || saved.provider === IMPORTED_HISTORY_PROVIDER)
+      return previous ?? { effort: "off", effortLevels: [] };
+    const model = (previous?.model?.provider === saved.provider &&
+    previous.model.id === saved.modelId
+      ? previous.model
+      : undefined) ??
+      this.options.historyModel?.(saved.provider, saved.modelId) ?? {
+        provider: saved.provider,
+        id: saved.modelId,
+        name: saved.modelId,
+      };
+    const level = [...manager.getBranch()]
+      .reverse()
+      .find((entry) => entry.type === "thinking_level_change");
+    const levels = model.effortLevels ?? [];
+    return {
+      model,
+      ...(accounts[model.provider]
+        ? { accountId: accounts[model.provider] }
+        : {}),
+      effort:
+        level?.type === "thinking_level_change"
+          ? (levels.find((item) => item === level.thinkingLevel) ?? "off")
+          : "off",
+      effortLevels: levels,
+    };
+  }
+  private historySnapshot(
+    history: HistoryHandle,
+    prepared?: SDKSessionManager,
+  ): Promise<Snapshot> {
+    if (history.reading) return history.reading;
+    const task = (async () => {
+      const manager =
+        prepared ??
+        (await readSessionFile(history.cwd, history.address.sessionId));
+      if (this.shuttingDown) throw new Error("STALE_SESSION_ADDRESS");
+      if (this.histories.get(history.address.sessionId) !== history) {
+        const live = this.sessions.get(history.address.sessionId);
+        if (
+          live?.phase === "ready" &&
+          addressKey(live.address) === addressKey(history.address)
+        )
+          return this.snapshot(live);
+        throw new Error("STALE_SESSION_ADDRESS");
+      }
+      const prefixChanged = !unchangedHistoryPrefix(manager, history);
+      if (prefixChanged) {
+        if (
+          this.drafts.hasContent(history.address) ||
+          this.receipts.pending(history.address)
+        )
+          throw new Error(
+            "History changed externally; your draft is retained.",
+          );
+        history.revision = crypto.randomUUID();
+      }
+      if (manager.getLeafId() !== history.leaf || prefixChanged) {
+        history.failure = undefined;
+        history.aborted = undefined;
+      }
+      history.leaf = manager.getLeafId();
+      history.digest = sessionHistoryDigest(manager);
+      history.entryCount = manager.getEntryCount();
+      history.accountHistory ||= manager
+        .getEntries()
+        .some(
+          (entry) =>
+            entry.type === "message" &&
+            (entry.message.role === "user" ||
+              entry.message.role === "assistant"),
+        );
+      history.selection = this.historySelection(
+        manager,
+        history.accounts,
+        history.selection,
+      );
+      history.info = sessionInfo(manager, history.cwd);
+      const projector = new SDKProjector(
+        manager,
+        history.address.epoch,
+        undefined,
+        history.revision,
+      );
+      const snapshot: Snapshot = {
+        ...history.selection,
+        suspended: true,
+        address: { ...history.address },
+        snapshotSeq: ++history.seq,
+        info: { ...history.info },
+        sessionAccounts: { ...history.accounts },
+        accountSwitchAllowed: !history.accountHistory,
+        transcript: projector.snapshot(),
+        failure: history.failure ?? projector.failure,
+        aborted: history.aborted,
+      };
+      return this.settings.blockImages ? scrubImages(snapshot) : snapshot;
+    })();
+    history.reading = task;
+    void task
+      .finally(() => {
+        if (history.reading === task) history.reading = undefined;
+      })
+      .catch(() => {});
+    return task;
+  }
+  readSessionSnapshot(address: SessionAddress): Promise<Snapshot> {
+    const history = this.histories.get(address.sessionId);
+    if (history && addressKey(history.address) === addressKey(address))
+      return this.historySnapshot(history);
+    return Promise.resolve(this.getSessionSnapshot(address));
   }
   /** Mark synchronously, before serialized work or SDK shutdown can yield. UI
    * replies/Stop/Close stay addressed through current(..., false). */
@@ -413,6 +804,12 @@ export class SessionHost {
     const result = this.openResults.get(openId);
     if (result) {
       if (result.state.state !== "ready") return result.state;
+      const history = this.histories.get(result.state.address.sessionId);
+      if (
+        history &&
+        addressKey(history.address) === addressKey(result.state.address)
+      )
+        return { state: "opening", address: { ...history.address } };
       const m = this.sessions.get(result.state.address.sessionId);
       if (
         !m ||
@@ -435,6 +832,21 @@ export class SessionHost {
         : { state: "unknown" })
     );
   }
+  async readOpenState(input: { openId: string }): Promise<OpenState> {
+    const result = this.openResults.get(input.openId);
+    if (result?.state.state === "ready") {
+      const history = this.histories.get(result.state.address.sessionId);
+      if (
+        history &&
+        addressKey(history.address) === addressKey(result.state.address)
+      )
+        return {
+          state: "ready",
+          snapshot: await this.historySnapshot(history),
+        };
+    }
+    return this.getOpenState(input);
+  }
   cancelOpen({ openId }: { openId: string }) {
     this.cancelledOpens.add(openId);
     const open = this.opens.get(openId);
@@ -453,19 +865,25 @@ export class SessionHost {
       return Promise.reject(new Error("Invalid open request"));
     const old = this.opens.get(input.openId);
     if (old)
-      return old.input.cwd === input.cwd && old.input.id === input.id
+      return old.input.cwd === input.cwd &&
+        old.input.id === input.id &&
+        old.input.historyOnly === input.historyOnly
         ? old.promise
         : Promise.reject(new Error("OPEN_ID_CONFLICT"));
     const result = this.openResults.get(input.openId);
     if (result) {
-      if (result.input.cwd !== input.cwd || result.input.id !== input.id)
+      if (
+        result.input.cwd !== input.cwd ||
+        result.input.id !== input.id ||
+        result.input.historyOnly !== input.historyOnly
+      )
         return Promise.reject(new Error("OPEN_ID_CONFLICT"));
-      const state = this.getOpenState(input);
-      return state.state === "ready"
-        ? Promise.resolve(state.snapshot)
-        : Promise.reject(
-            new Error("message" in state ? state.message : "Opening cancelled"),
-          );
+      return this.readOpenState(input).then((state) => {
+        if (state.state === "ready") return state.snapshot;
+        throw new Error(
+          "message" in state ? state.message : "Opening cancelled",
+        );
+      });
     }
     if (this.cancelledOpens.has(input.openId))
       return Promise.reject(new Error("Opening cancelled"));
@@ -505,7 +923,15 @@ export class SessionHost {
   private async open(open: Opening): Promise<Snapshot> {
     const timing = traceOpen(open.input.openId);
     let m: Managed | undefined;
-    let historyPreview: { snapshot: Snapshot; leaf: string | null } | undefined;
+    let historyPreview:
+      | {
+          snapshot: Snapshot;
+          leaf: string | null;
+          digest: string;
+          entryCount: number;
+        }
+      | undefined;
+    let resuming: HistoryHandle | undefined;
     try {
       const { input, controller } = open;
       controller.signal.throwIfAborted();
@@ -513,6 +939,12 @@ export class SessionHost {
         const existing = this.sessions.get(input.id) as Managed;
         if (existing.cwd !== input.cwd)
           throw new Error("Session does not belong to this project");
+        const history = this.histories.get(input.id);
+        if (existing.resuming && history && input.historyOnly) {
+          const snapshot = await this.historySnapshot(history);
+          open.state = { state: "ready", snapshot };
+          return snapshot;
+        }
         if (existing.phase !== "ready")
           throw new Error("Session is already opening or closing");
         const snapshot = this.snapshot(existing);
@@ -534,13 +966,78 @@ export class SessionHost {
         return snapshot;
       }
       timing.mark("resolve-file");
+      const known = input.id && this.histories.get(input.id);
+      if (known && known.cwd !== input.cwd)
+        throw new Error("Session does not belong to this project");
+      if (input.historyOnly && input.id && file) {
+        let prepared: SDKSessionManager | undefined;
+        let history = known || undefined;
+        if (!history) {
+          const reader = await readSessionFile(input.cwd, input.id);
+          controller.signal.throwIfAborted();
+          prepared = reader;
+          controller.signal.throwIfAborted();
+          const acquired = this.sessions.get(input.id);
+          if (acquired) {
+            const snapshot = this.snapshot(acquired);
+            open.state = { state: "ready", snapshot };
+            return snapshot;
+          }
+          history = this.histories.get(input.id);
+          if (!history) {
+            const accounts = validateSessionAccounts(
+              this.options.sessionAccounts?.read(input.id) ?? {},
+            );
+            history = {
+              address: this.address(input.id),
+              cwd: input.cwd,
+              file,
+              leaf: reader.getLeafId(),
+              digest: sessionHistoryDigest(reader),
+              entryCount: reader.getEntryCount(),
+              revision: crypto.randomUUID(),
+              seq: 0,
+              openId: input.openId,
+              info: sessionInfo(reader, input.cwd),
+              accounts,
+              accountHistory: reader
+                .getEntries()
+                .some(
+                  (entry) =>
+                    entry.type === "message" &&
+                    (entry.message.role === "user" ||
+                      entry.message.role === "assistant"),
+                ),
+              selection: this.historySelection(reader, accounts),
+            };
+            this.histories.set(input.id, history);
+          }
+        }
+        const snapshot = await this.historySnapshot(history, prepared);
+        controller.signal.throwIfAborted();
+        open.state = { state: "ready", snapshot };
+        this.options.emit({ type: "ready", openId: input.openId, snapshot });
+        return snapshot;
+      }
+      resuming = known || undefined;
+      if (resuming && (!file || !sameSessionPath(file, resuming.file)))
+        throw new Error("Session file changed while suspended");
       // open() derives the directory from the file, which matches sessionDirFor.
       const manager = file
         ? SessionManager.open(file)
         : SessionManager.create(input.cwd, await sessionDirFor(input.cwd));
       controller.signal.throwIfAborted();
+      if (
+        resuming &&
+        (manager.getSessionId() !== resuming.address.sessionId ||
+          manager.getLeafId() !== resuming.leaf ||
+          sessionHistoryDigest(manager) !== resuming.digest)
+      )
+        throw new Error(
+          "History changed externally; reopen it before sending.",
+        );
       timing.mark("session-manager");
-      const address = this.address(manager.getSessionId());
+      const address = resuming?.address ?? this.address(manager.getSessionId());
       this.failedHistory.delete(address.sessionId);
       const ui = createExtensionUIHost({
         address,
@@ -553,16 +1050,21 @@ export class SessionHost {
         address,
         cwd: input.cwd,
         phase: "opening",
-        seq: 0,
+        seq: resuming?.seq ?? 0,
+        operations: 0,
+        resuming: !!resuming,
         openId: input.openId,
         manager,
-        accounts: validateSessionAccounts(
-          this.options.sessionAccounts?.read(address.sessionId) ?? {},
-        ),
+        accounts: resuming
+          ? { ...resuming.accounts }
+          : validateSessionAccounts(
+              this.options.sessionAccounts?.read(address.sessionId) ?? {},
+            ),
         projector: new SDKProjector(
           manager,
           address.epoch,
           this.runDiagnostics,
+          resuming?.revision,
         ),
         controller,
         ui,
@@ -593,16 +1095,24 @@ export class SessionHost {
       open.managed = m;
       this.sessions.set(address.sessionId, m);
       open.state = { state: "opening", address };
-      this.options.emit({
-        type: "opening",
-        openId: input.openId,
-        address,
-        cwd: input.cwd,
-      });
-      // History is independent of model availability, Trust UI and startup hooks.
-      const preview = this.snapshot(m);
-      historyPreview = { snapshot: preview, leaf: manager.getLeafId() };
-      this.options.emit({ type: "snapshot", snapshot: preview });
+      if (!resuming)
+        this.options.emit({
+          type: "opening",
+          openId: input.openId,
+          address,
+          cwd: input.cwd,
+        });
+      if (!resuming) {
+        // A cold handle already owns its view; do not copy a second preview.
+        const preview = this.snapshot(m);
+        historyPreview = {
+          snapshot: preview,
+          leaf: manager.getLeafId(),
+          digest: sessionHistoryDigest(manager),
+          entryCount: manager.getEntryCount(),
+        };
+        this.options.emit({ type: "snapshot", snapshot: preview });
+      }
       timing.mark("history-preview");
       const managed = m;
       const factory: Parameters<typeof createAgentSessionRuntime>[0] = async (
@@ -657,7 +1167,9 @@ export class SessionHost {
                 this.options.resourceDir ?? desktopConfigDir,
               )),
               eventBus: managed.eventBus,
-              extensionFactories: [managed.images.extension],
+              extensionFactories: [
+                { name: "pig-image-policy", factory: managed.images.extension },
+              ],
             },
             resourceLoaderReloadOptions: {
               resolveProjectTrust: async () => trust.trusted,
@@ -688,7 +1200,9 @@ export class SessionHost {
               this.options.resourceDir ?? desktopConfigDir,
             )),
             eventBus: managed.eventBus,
-            extensionFactories: [managed.images.extension],
+            extensionFactories: [
+              { name: "pig-image-policy", factory: managed.images.extension },
+            ],
           });
           await next.reload({
             resolveProjectTrust: async () => nextTrust.trusted,
@@ -827,6 +1341,11 @@ export class SessionHost {
       timing.mark("bind-extensions-and-adapters");
       controller.signal.throwIfAborted();
       managed.phase = "ready";
+      managed.resuming = false;
+      if (resuming) {
+        managed.seq = Math.max(managed.seq, resuming.seq);
+        this.histories.delete(address.sessionId);
+      }
       const snapshot = this.snapshot(managed);
       open.state = { state: "ready", snapshot };
       this.options.emit({ type: "ready", openId: input.openId, snapshot });
@@ -838,6 +1357,32 @@ export class SessionHost {
         state: cancelled ? "cancelled" : "failed",
         message: String(error),
       };
+      if (resuming) {
+        resuming.failure = `SDK startup failed: ${String(error)}`;
+        if (m) {
+          if (
+            resuming.leaf &&
+            !m.manager.getBranch().some((entry) => entry.id === resuming?.leaf)
+          )
+            resuming.revision = crypto.randomUUID();
+          resuming.leaf = m.manager.getLeafId();
+          resuming.digest = sessionHistoryDigest(m.manager);
+          resuming.entryCount = m.manager.getEntryCount();
+          m.phase = "closing";
+          m.controller.abort(error);
+          await this.destroy(
+            m,
+            this.histories.get(resuming.address.sessionId) === resuming,
+          );
+        }
+        this.options.emitUI({
+          type: "notify",
+          address: resuming.address,
+          level: "error",
+          message: resuming.failure,
+        });
+        throw error;
+      }
       if (m) {
         // Retain only verified ownership and a branch token, never a failed runtime.
         const preview =
@@ -848,12 +1393,14 @@ export class SessionHost {
               }
             : undefined;
         const history = preview?.transcript.history;
-        if (history && preview)
+        if (history && preview && historyPreview)
           this.failedHistory.set(m.address.sessionId, {
             address: { ...m.address },
             cwd: m.cwd,
             revision: history.revision,
-            leaf: historyPreview?.leaf ?? null,
+            leaf: historyPreview.leaf,
+            digest: historyPreview.digest,
+            entryCount: historyPreview.entryCount,
             snapshot: preview,
           });
         await this.destroy(m);
@@ -952,6 +1499,11 @@ export class SessionHost {
         m.statistics?.initialContext(
           outgoing,
           session.model?.contextWindow ?? null,
+          new Map(
+            session
+              .getAllTools()
+              .map((tool) => [tool.name, toolSourceLabel(tool.sourceInfo)]),
+          ),
         );
       } catch {
         console.error("[statistics] initial context unavailable");
@@ -1088,6 +1640,7 @@ export class SessionHost {
     let retrying = false;
     const unsubscribe = session.subscribe((event) => {
       if (!current()) return;
+      m.idleSince = undefined;
       observe(() => {
         statistics?.event(
           event,
@@ -1261,7 +1814,14 @@ export class SessionHost {
   }
   private publish(m: Managed) {
     this.cancelPublish(m);
-    if (m.phase === "closing" || !m.runtime || !m.projector) return;
+    if (
+      m.phase === "closing" ||
+      (m.resuming && m.phase !== "ready") ||
+      m.suspending ||
+      !m.runtime ||
+      !m.projector
+    )
+      return;
     const snapshot = this.snapshot(m, false);
     this.options.emit({ type: "snapshot", snapshot });
     this.options.emitSession?.(m.address.sessionId, {
@@ -1309,7 +1869,10 @@ export class SessionHost {
         epoch: m.address.epoch,
         model: limitsModel,
         contextWindow: limitsModel?.contextWindow,
-        value: session.getContextUsage(),
+        value: keepLastContextTokens(
+          session.getContextUsage(),
+          m.contextCache?.value,
+        ),
       };
     const usage = m.contextCache.value;
     return {
@@ -1396,6 +1959,9 @@ export class SessionHost {
       );
     }
     const snapshot: Snapshot = {
+      ...(m.resuming || m.suspending || m.suspensionError
+        ? { suspended: true as const }
+        : {}),
       ...(m.phase === "ready" ? {} : { ready: false }),
       address: { ...m.address },
       snapshotSeq: ++m.seq,
@@ -1425,11 +1991,16 @@ export class SessionHost {
     if (typeof input.revision !== "string" || typeof input.before !== "string")
       throw new Error("Invalid history cursor");
     let page: ReturnType<SDKProjector["historyPage"]>;
-    if (this.sessions.has(input.sessionId)) {
+    if (
+      this.sessions.has(input.sessionId) &&
+      !this.histories.has(input.sessionId)
+    ) {
       const m = this.current(input, false);
       page = required(m.projector).historyPage(input.before, input.revision);
     } else {
-      const owner = this.failedHistory.get(input.sessionId);
+      const owner =
+        this.histories.get(input.sessionId) ??
+        this.failedHistory.get(input.sessionId);
       if (
         this.shuttingDown ||
         !owner ||
@@ -1441,13 +2012,15 @@ export class SessionHost {
       // The same header/path checks used by open; no extensions, Trust grant or model startup.
       const manager = await readSessionFile(owner.cwd, input.sessionId);
       if (
-        this.failedHistory.get(input.sessionId) !== owner ||
-        this.sessions.has(input.sessionId)
+        (this.histories.get(input.sessionId) ??
+          this.failedHistory.get(input.sessionId)) !== owner ||
+        (this.sessions.has(input.sessionId) &&
+          !this.histories.has(input.sessionId))
       )
         throw new Error("STALE_SESSION_ADDRESS");
       if (
-        owner.leaf &&
-        !manager.getBranch().some((entry) => entry.id === owner.leaf)
+        owner.revision !== input.revision ||
+        !unchangedHistoryPrefix(manager, owner)
       )
         throw new Error("STALE_HISTORY_CURSOR");
       page = new SDKProjector(
@@ -1460,6 +2033,9 @@ export class SessionHost {
     return this.settings.blockImages ? scrubImages(page) : page;
   }
   listSlashCommands(address: SessionAddress): SlashCommand[] {
+    const history = this.histories.get(address.sessionId);
+    if (history && addressKey(history.address) === addressKey(address))
+      return [];
     const session = required(this.current(address).runtime).session;
     const commands: SlashCommand[] = [];
     const seen = new Set<string>();
@@ -1522,6 +2098,19 @@ export class SessionHost {
   getPromptReceipt(key: SendKey) {
     return this.receipts.lookup(key);
   }
+  acknowledgePromptRecovery(params: SessionAddress & { key: SendKey }) {
+    const m = this.current(params, false);
+    if (
+      !m.projector?.diagnostics.value.recovered.some(
+        (item) =>
+          item.key &&
+          addressKey(item.key) === addressKey(params.key) &&
+          item.key.requestId === params.key.requestId,
+      )
+    )
+      throw new Error("Queued input was not cancelled in this chat");
+    this.receipts.acknowledgeRecovery(params.key);
+  }
   /** Returns the resulting order of the host-held follow-ups. */
   reorderQueuedPrompts(input: SessionAddress & { requestIds: string[] }) {
     this.current(input, false);
@@ -1539,6 +2128,13 @@ export class SessionHost {
     return this.receipts.steerQueued(key);
   }
   private draftOwner(address: SessionAddress) {
+    const history = this.histories.get(address.sessionId);
+    if (history && addressKey(history.address) === addressKey(address))
+      return {
+        cwd: history.cwd,
+        sessionFile: history.file,
+        branchId: history.leaf,
+      };
     const m = this.current(address, false);
     return {
       cwd: m.cwd,
@@ -1671,12 +2267,13 @@ export class SessionHost {
       });
   }
   getSessionDraft(address: SessionAddress) {
-    this.current(address, false);
+    this.draftOwner(address);
     return this.drafts.read(address);
   }
   syncDraft(params: DraftSyncParams) {
-    this.current(params, false);
-    if (this.sessions.get(params.sessionId)?.transition)
+    this.draftOwner(params);
+    const managed = this.sessions.get(params.sessionId);
+    if (managed?.transition || managed?.suspending)
       throw new Error("STALE_SESSION_ADDRESS");
     const result = this.drafts.sync(params);
     if (result.applied && params.requestId)
@@ -1714,11 +2311,14 @@ export class SessionHost {
   }
   resolveExtensionUI(reply: UIReply) {
     const m = this.current(reply, false);
+    m.idleSince = undefined;
     this.broker.resolve(reply);
     this.maybeReload(m);
   }
   terminalCommand(command: TerminalClientCommand & SessionAddress) {
-    this.current(command, false).ui.handleTerminal(command);
+    const m = this.current(command, false);
+    m.idleSince = undefined;
+    m.ui.handleTerminal(command);
   }
   private recoverQueue(m: Managed) {
     const intents = new Map(
@@ -1844,6 +2444,16 @@ export class SessionHost {
     return m.stopPromise;
   }
   closeSession(address: SessionAddress): Promise<void> {
+    const dormant = this.histories.get(address.sessionId);
+    if (dormant && addressKey(dormant.address) === addressKey(address)) {
+      this.histories.delete(address.sessionId);
+      if (!this.sessions.has(address.sessionId)) {
+        this.receipts.cancel(address);
+        this.drafts.remove(address);
+        this.options.emit({ type: "closed", address, reason: "close" });
+        return Promise.resolve();
+      }
+    }
     const history = this.failedHistory.get(address.sessionId);
     if (history && addressKey(history.address) === addressKey(address)) {
       this.failedHistory.delete(address.sessionId);
@@ -1886,7 +2496,7 @@ export class SessionHost {
     });
     return m.closing;
   }
-  private destroy(m: Managed) {
+  private destroy(m: Managed, keepDraft = false) {
     this.cancelPublish(m);
     if (m.disposing) return m.disposing;
     this.recoverQueue(m);
@@ -1894,6 +2504,13 @@ export class SessionHost {
       const errors: unknown[] = [];
       this.detachAdapters(m);
       await m.operation.catch(() => {});
+      if (m.suspensionCleanup) {
+        try {
+          await m.suspensionCleanup;
+        } catch (error) {
+          errors.push(error);
+        }
+      }
       try {
         await m.runtime?.session.abort();
       } catch (error) {
@@ -1916,7 +2533,7 @@ export class SessionHost {
         m.unsubscribe?.();
         m.ui.dispose();
         this.broker.cancelSession(m.address);
-        this.drafts.remove(m.address);
+        if (!keepDraft) this.drafts.remove(m.address);
       } catch (error) {
         errors.push(error);
       }
@@ -2196,6 +2813,8 @@ export class SessionHost {
   async findSession(cwd: string, id: string): Promise<SessionInfo> {
     const m = this.sessions.get(id);
     if (m && m.cwd === cwd) return this.info(m);
+    const history = this.histories.get(id);
+    if (history && history.cwd === cwd) return { ...history.info };
     await resolveSessionFile(cwd, id);
     return { id, cwd, title: "", modified: 0 };
   }
@@ -2218,6 +2837,12 @@ export class SessionHost {
     return { ...info, title: name.trim(), modified: Date.now() };
   }
   async deleteSession(info: SessionInfo) {
+    const history = this.histories.get(info.id);
+    if (history) {
+      if (history.cwd !== info.cwd)
+        throw new Error("Session does not belong to this project");
+      await this.closeSession(history.address);
+    }
     const m = this.sessions.get(info.id);
     if (m && m.cwd !== info.cwd)
       throw new Error("Session does not belong to this project");
@@ -2248,14 +2873,18 @@ export class SessionHost {
       statisticsOwner(agentDir, info.cwd, info.id),
     );
   }
-  private recoveryState(sessions: Managed[]): RuntimeRecoveryState {
+  private recoveryState(
+    sessions: Managed[],
+    histories: HistoryHandle[] = [],
+  ): RuntimeRecoveryState {
     const allowed = sessions
       .filter(
         (m) =>
           m.phase === "ready" &&
           m.runtime?.session.settingsManager.isProjectTrusted(),
       )
-      .map((m) => this.draftOwner(m.address));
+      .map((m) => this.draftOwner(m.address))
+      .concat(histories.map((h) => this.draftOwner(h.address)));
     const saved = this.recovery.snapshot(allowed, this.hostId);
     const intents = new Map(
       saved.intents.map((intent) => [
@@ -2273,7 +2902,9 @@ export class SessionHost {
       hostId: this.hostId,
       sendIntents: [...intents.values()],
       retainedDrafts: saved.drafts.filter((item) => {
-        const current = this.sessions.get(item.address.sessionId);
+        const current =
+          this.sessions.get(item.address.sessionId) ??
+          this.histories.get(item.address.sessionId);
         return (
           !current || addressKey(current.address) !== addressKey(item.address)
         );
@@ -2282,10 +2913,24 @@ export class SessionHost {
     };
   }
   getRecovery(address: SessionAddress): RuntimeRecoveryState {
+    const history = this.histories.get(address.sessionId);
+    if (history && addressKey(history.address) === addressKey(address))
+      return this.recoveryState([]);
     return this.recoveryState([this.current(address)]);
   }
+  async readRecovery(address: SessionAddress): Promise<RuntimeRecoveryState> {
+    const history = this.histories.get(address.sessionId);
+    if (history && addressKey(history.address) === addressKey(address)) {
+      const trusted = await isProjectTrusted(history.cwd);
+      if (this.histories.get(address.sessionId) !== history)
+        throw new Error("STALE_SESSION_ADDRESS");
+      return this.recoveryState([], trusted ? [history] : []);
+    }
+    return this.getRecovery(address);
+  }
   runtimeState(): RuntimeViewState {
-    const sessions = [...this.sessions.values()];
+    const sessions = [...this.sessions.values()].filter((m) => !m.resuming);
+    const histories = [...this.histories.values()];
     return {
       ...this.recoveryState(sessions),
       sessions: [
@@ -2295,6 +2940,17 @@ export class SessionHost {
           openId: m.openId,
           snapshot: m.projector ? this.snapshot(m) : undefined,
         })),
+        ...histories.map((history) => ({
+          phase: "ready" as const,
+          address: { ...history.address },
+          openId: history.openId,
+          suspended: {
+            previous: history.previous,
+            snapshotSeq: history.seq,
+            historyRevision: history.revision,
+            draftRevision: history.draftRevision,
+          },
+        })),
         ...[...this.failedHistory.values()].map((history) => ({
           phase: "closing" as const,
           address: { ...history.address },
@@ -2302,7 +2958,7 @@ export class SessionHost {
         })),
       ],
       pendingUI: this.broker.pending(),
-      drafts: sessions.map((m) => ({
+      drafts: [...sessions, ...histories].map((m) => ({
         address: { ...m.address },
         draft: this.drafts.read(m.address),
       })),
@@ -2315,6 +2971,9 @@ export class SessionHost {
   dispose(): Promise<void> {
     if (this.disposal) return this.disposal;
     this.shuttingDown = true;
+    clearInterval(this.idleTimer);
+    this.idleTimer = undefined;
+    this.histories.clear();
     this.failedHistory.clear();
     const opening = [...this.opens.values()].filter(
       (open) =>
