@@ -153,10 +153,11 @@ export class SessionStatistics {
   initialContext(
     messages: Parameters<typeof initialContextMetadata>[0],
     contextWindow: number | null,
+    sources?: Parameters<typeof initialContextMetadata>[2],
   ) {
     if (this.closed || this.initialContextObserved) return;
     this.initialContextObserved = true;
-    const metadata = initialContextMetadata(messages, contextWindow);
+    const metadata = initialContextMetadata(messages, contextWindow, sources);
     if (metadata) this.emit("initial_context", metadata);
   }
 

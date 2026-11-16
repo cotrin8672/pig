@@ -111,12 +111,49 @@ export const statisticsFixture: StatisticsFixture = {
   ],
   initialContext: {
     parts: [
-      { id: "base", label: "基本プロンプト", tokens: 1850 },
+      { id: "base", label: "基本プロンプト", tokens: 640 },
+      { id: "toolPrompts", label: "ツール説明・ルール", tokens: 1390 },
       { id: "tools", label: "ツール定義", tokens: 6150 },
       { id: "agents", label: "AGENTS.md", tokens: 2400 },
       { id: "skills", label: "スキル一覧", tokens: 1320 },
       { id: "extensions", label: "拡張のセクション", tokens: 940 },
-      { id: "other", label: "その他", tokens: 180 },
+    ],
+    sections: [
+      { id: "preamble", tokens: 40 },
+      { id: "tools", tokens: 420 },
+      { id: "rules", tokens: 970 },
+      { id: "docs", tokens: 580 },
+      { id: "addendum", tokens: 310 },
+      { id: "project_context", tokens: 2400 },
+      { id: "skills", tokens: 1320 },
+      { id: "cwd", tokens: 20 },
+      { id: "lsp_status", tokens: 630 },
+    ],
+    sources: [
+      {
+        id: "pi-lens",
+        tokens: 3400,
+        tools: [
+          { name: "lsp_navigation", tokens: 2140 },
+          { name: "ast_grep_search", tokens: 1260 },
+        ],
+      },
+      {
+        id: "builtin",
+        tokens: 1860,
+        tools: [
+          { name: "edit", tokens: 560 },
+          { name: "bash", tokens: 420 },
+          { name: "grep", tokens: 380 },
+          { name: "read", tokens: 310 },
+          { name: "write", tokens: 190 },
+        ],
+      },
+      {
+        id: "pi-codex-image-gen",
+        tokens: 890,
+        tools: [{ name: "imagegen", tokens: 890 }],
+      },
     ],
     measuredTotal: null,
     contextWindow: 200_000,
@@ -130,5 +167,11 @@ export const emptyStatistics: StatisticsFixture = {
   daily: {},
   models: [],
   tools: [],
-  initialContext: { parts: [], measuredTotal: null, contextWindow: 200_000 },
+  initialContext: {
+    parts: [],
+    sections: [],
+    sources: [],
+    measuredTotal: null,
+    contextWindow: 200_000,
+  },
 };

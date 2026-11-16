@@ -148,6 +148,53 @@ test.skipIf(!existsSync(edge) && !process.env.PIG_REQUIRE_UI_TESTS)(
             join(dir, "statistics.png"),
             await browser.screenshot(),
           );
+          // The tools card switches to the initial context breakdown in place.
+          const panel = await browser.evaluate<{ height: number }>(
+            "({height:document.querySelector('.stats-tools').getBoundingClientRect().height})",
+          );
+          await browser.evaluate(
+            "document.querySelectorAll('.stats-tabs button')[1].click()",
+          );
+          await waitFor("!!document.querySelector('.stats-context')");
+          await browser.evaluate(
+            "document.querySelector('.stats-context .stats-expand').click()",
+          );
+          await waitFor(
+            "!!document.querySelector('.stats-context .stats-nested')",
+          );
+          const breakdown = await browser.evaluate<{
+            groups: string[];
+            nested: number;
+            overflowX: boolean;
+            scroll: boolean;
+          }>(`(() => {
+            const scroll=document.querySelector('.stats-tools .stats-scroll');
+            const page=document.querySelector('.statistics-overview');
+            return {
+              groups:[...document.querySelectorAll('.stats-context .stats-group th')].map(el=>el.textContent),
+              nested:document.querySelectorAll('.stats-context .stats-nested').length,
+              overflowX:scroll.scrollWidth>scroll.clientWidth+1,
+              scroll:page.scrollHeight>page.clientHeight+1,
+            };
+          })()`);
+          expect(breakdown).toEqual({
+            groups: ["システムプロンプト", "ツール定義"],
+            nested: 2,
+            overflowX: false,
+            scroll: false,
+          });
+          await Bun.write(
+            join(dir, "statistics-context.png"),
+            await browser.screenshot(),
+          );
+          expect(
+            await browser.evaluate<number>(
+              "document.querySelector('.stats-tools').getBoundingClientRect().height",
+            ),
+          ).toBeLessThanOrEqual(panel.height + 1);
+          await browser.evaluate(
+            "document.querySelectorAll('.stats-tabs button')[0].click()",
+          );
           for (const [width, height] of [
             [1600, 1000],
             [1400, 720],

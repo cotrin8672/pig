@@ -143,7 +143,8 @@ export function queryStatistics(
     .get(start, range.end) as { data: string } | null;
   type Context = {
     parts: { id: string; label: string; tokens: number }[];
-    tools: { name: string; tokens: number }[];
+    sections: { id: string; tokens: number }[];
+    tools: { name: string; tokens: number; source: string | null }[];
     contextWindow: number | null;
   };
   let context: Context | null = null;
@@ -158,9 +159,15 @@ export function queryStatistics(
         if (
           typeof part.id === "string" &&
           tokens !== null &&
-          ["base", "tools", "agents", "skills", "extensions", "other"].includes(
-            part.id,
-          )
+          [
+            "base",
+            "toolPrompts",
+            "tools",
+            "agents",
+            "skills",
+            "extensions",
+            "other",
+          ].includes(part.id)
         )
           parts.push({ id: part.id, label: part.id, tokens });
       }
@@ -168,11 +175,25 @@ export function queryStatistics(
         const tool = object(value);
         const tokens = number(tool.tokens);
         if (typeof tool.name === "string" && tokens !== null)
-          tools.push({ name: tool.name, tokens });
+          tools.push({
+            name: tool.name,
+            tokens,
+            source: typeof tool.source === "string" ? tool.source : null,
+          });
+      }
+      const sections: Context["sections"] = [];
+      for (const value of Array.isArray(parsed.sections)
+        ? parsed.sections
+        : []) {
+        const section = object(value);
+        const tokens = number(section.tokens);
+        if (typeof section.id === "string" && tokens !== null)
+          sections.push({ id: section.id, tokens });
       }
       const window = number(parsed.contextWindow);
       context = {
         parts,
+        sections,
         tools,
         contextWindow: window && window > 0 ? window : null,
       };
@@ -193,6 +214,18 @@ export function queryStatistics(
         failures: 0,
         definitionTokens: t.tokens,
       });
+  const sources = new Map<
+    string | null,
+    StatisticsData["initialContext"]["sources"][number]
+  >();
+  for (const { name, tokens, source } of context?.tools ?? []) {
+    const group = sources.get(source) ?? { id: source, tokens: 0, tools: [] };
+    group.tokens += tokens;
+    group.tools.push({ name, tokens });
+    sources.set(source, group);
+  }
+  for (const group of sources.values())
+    group.tools.sort((a, b) => b.tokens - a.tokens);
   const dropped = db
     .query("SELECT value FROM collection_state WHERE key = 'dropped'")
     .get() as { value: number } | null;
@@ -205,6 +238,8 @@ export function queryStatistics(
     tools,
     initialContext: {
       parts: context?.parts ?? [],
+      sections: context?.sections ?? [],
+      sources: [...sources.values()].sort((a, b) => b.tokens - a.tokens),
       measuredTotal: null,
       contextWindow: context?.contextWindow ?? null,
     },

@@ -76,7 +76,8 @@ test("statistics aggregates known tokens, exact time boundaries, tool outcomes a
         at: start,
         data: {
           parts: [{ id: "tools", label: "tools", tokens: 123 }],
-          tools: [{ name: "unused", tokens: 123 }],
+          sections: [{ id: "rules", tokens: 7 }],
+          tools: [{ name: "unused", tokens: 123, source: "pi-lens" }],
           contextWindow: 200000,
         },
       },
@@ -98,6 +99,12 @@ test("statistics aggregates known tokens, exact time boundaries, tool outcomes a
     const daily = snapshot.daily[snapshot.models[0].id][0];
     expect(daily).toEqual(snapshot.models[0].tokens);
     expect(snapshot.initialContext.contextWindow).toBe(200000);
+    expect(snapshot.initialContext.sections).toEqual([
+      { id: "rules", tokens: 7 },
+    ]);
+    expect(snapshot.initialContext.sources).toEqual([
+      { id: "pi-lens", tokens: 123, tools: [{ name: "unused", tokens: 123 }] },
+    ]);
     store.save([
       {
         ...event,
@@ -139,6 +146,8 @@ test("empty databases and all-period ranges remain bounded", async () => {
     expect(snapshot.models).toEqual([]);
     expect(snapshot.initialContext).toEqual({
       parts: [],
+      sections: [],
+      sources: [],
       measuredTotal: null,
       contextWindow: null,
     });

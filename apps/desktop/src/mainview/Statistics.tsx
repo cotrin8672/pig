@@ -11,7 +11,13 @@ const empty: StatisticsData = {
   daily: {},
   models: [],
   tools: [],
-  initialContext: { parts: [], measuredTotal: null, contextWindow: null },
+  initialContext: {
+    parts: [],
+    sections: [],
+    sources: [],
+    measuredTotal: null,
+    contextWindow: null,
+  },
   coverage: { unknownUsage: 0, dropped: 0, collection: "active" },
 };
 
