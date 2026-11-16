@@ -5,8 +5,8 @@
   "license": "MIT",
   "architecture": {
     "64bit": {
-      "url": "https://github.com/cotrin8672/pig/releases/download/v0.8.0/pig-windows-x64.zip",
-      "hash": "0966a2484dd90e325ef47437f0bff4408c71e5a07b10a3d4738fd3fc8cfa6065"
+      "url": "https://github.com/cotrin8672/pig/releases/download/v0.9.0/pig-windows-x64.zip",
+      "hash": "1e858f8d48237e25cb6ca199d30ff67dc04aed6f12d5853c14674a44f0b99aa5"
     }
   },
   "bin": [["bin/launcher.exe", "pig"]],
