@@ -48,6 +48,23 @@ export const en = {
     extensions: "Extension sections",
     other: "Other",
     toolDefinitions: "Tool definitions",
+    toolPrompts: "Tool descriptions & rules",
+    contextBreakdown: "Initial context",
+    item: "Item",
+    systemPrompt: "System prompt",
+    builtinSource: "pi built-in",
+    unknownSource: "Unknown source",
+    sections: {
+      content: "Additional instructions",
+      preamble: "Preamble (pi / SYSTEM.md)",
+      tools: "Tool descriptions",
+      rules: "Rules (tool & extension guidelines)",
+      docs: "pi docs pointers",
+      addendum: "APPEND_SYSTEM / appended",
+      project_context: "AGENTS.md",
+      skills: "Skill catalog",
+      cwd: "Working directory",
+    },
     refresh: "Refresh statistics",
     loading: "Loading…",
     coverage: (unknown: number, dropped: number) =>
@@ -98,9 +115,9 @@ export const en = {
   draftUnsavedTitle: "Unsaved drafts",
   draftRetry: "Retry saving",
   draftCloseUnsaved: "Close without saving",
-  runtimeUnsynchronized:
-    "Runtime connected but state is not synchronized. Retrying automatically.",
   "Toggle sidebar": "Toggle sidebar",
+  "Resize sidebar":
+    "Resize sidebar (drag past the minimum to close; double-click resets)",
   "Chat renderers": "Chat renderers",
   "Reload chat renderers": "Reload chat renderers",
   "Load trusted local TSX components. Changes only affect chat display.":
@@ -429,6 +446,12 @@ export const en = {
   "Reorder queued message": "Reorder (drag, or Alt+↑/↓)",
   "Steering pending": "Steering · waiting for the next step",
   "Steering read": "Steering · read by the agent",
+  "Send unconfirmed": "Unconfirmed",
+  "Check send status": "Check send status (does not resend)",
+  steeringRestored:
+    "Queued input was cancelled before delivery. It has been returned to the composer; it was not resent.",
+  sendUnconfirmed:
+    "The send could not be confirmed. Its content remains in the tray as unconfirmed; it has not been resent. Check its status before sending it again.",
   "Already sending": "This message is already being sent.",
   Send: "Send",
   Resume: "Resume",
@@ -506,6 +529,10 @@ export const en = {
     `Context usage will update after the next response (${limit} token limit)`,
   context: (percent: number, mode: string, count: string, limit: string) =>
     `${percent}% context ${mode}, ${count} tokens (${limit} total)`,
+  contextHeading: (percent: number, mode: string) =>
+    `Context ${percent}% ${mode === "used" ? "used" : "left"}`,
+  contextDetail: (used: string, limit: string, left: string) =>
+    `${used} / ${limit} tokens used · ${left} left`,
   newChatIn: (name: string) => `New chat in ${name}`,
   removeProject: (name: string) => `Remove ${name}`,
   signIn: (name: string) => `Sign in to ${name}`,
@@ -630,6 +657,8 @@ export const en = {
   List: "List",
   Edit: "Edit",
   Write: "Write",
+  Visualize: "Visualization",
+  widgetTooLarge: "This visualization is too large to show.",
   Patch: "Patch",
   patchAdded: "Added",
   patchUpdated: "Updated",
@@ -865,6 +894,23 @@ export const ja: Dictionary = {
     extensions: "拡張のセクション",
     other: "その他",
     toolDefinitions: "ツール定義",
+    toolPrompts: "ツール説明・ルール",
+    contextBreakdown: "初期コンテキスト",
+    item: "項目",
+    systemPrompt: "システムプロンプト",
+    builtinSource: "pi 組み込み",
+    unknownSource: "提供元不明",
+    sections: {
+      content: "追加の指示",
+      preamble: "冒頭文（pi・SYSTEM.md）",
+      tools: "ツールの説明",
+      rules: "ルール（ツール・拡張のガイドライン）",
+      docs: "pi ドキュメント案内",
+      addendum: "APPEND_SYSTEM・追記",
+      project_context: "AGENTS.md",
+      skills: "スキル一覧",
+      cwd: "作業ディレクトリ",
+    },
     refresh: "統計を更新",
     loading: "読み込み中…",
     coverage: (unknown: number, dropped: number) =>
@@ -914,9 +960,9 @@ export const ja: Dictionary = {
   draftUnsavedTitle: "未保存の下書き",
   draftRetry: "保存を再試行",
   draftCloseUnsaved: "保存せず終了",
-  runtimeUnsynchronized:
-    "ランタイムには接続済みですが、状態は未同期です。自動的に再試行します。",
   "Toggle sidebar": "サイドバーの開閉",
+  "Resize sidebar":
+    "サイドバーの幅を調整（最小幅より狭めると閉じる・ダブルクリックで既定幅）",
   "Chat renderers": "チャット描画コンポーネント",
   "Reload chat renderers": "描画コンポーネントを再読込",
   "Load trusted local TSX components. Changes only affect chat display.":
@@ -1245,6 +1291,12 @@ export const ja: Dictionary = {
   "Reorder queued message": "並べ替え（ドラッグ、または Alt+↑↓）",
   "Steering pending": "割り込み待ち · 次のステップで反映",
   "Steering read": "割り込み · 読まれました",
+  "Send unconfirmed": "未確認",
+  "Check send status": "送信結果を確認（再送はしません）",
+  steeringRestored:
+    "未読の送信が取り消されました。内容を入力欄に戻しました。自動再送はしていません。",
+  sendUnconfirmed:
+    "送信結果を確認できませんでした。内容はトレイに「未確認」として残しています。二重送信を避けるため、再送前に送信結果を確認してください。",
   "Already sending": "このメッセージはすでに送信を開始しています。",
   Send: "送信",
   Resume: "再開",
@@ -1322,6 +1374,12 @@ export const ja: Dictionary = {
     `次の応答後にコンテキスト使用量を更新します（上限 ${limit} トークン）`,
   context: (percent, mode, count, limit) =>
     `コンテキスト${mode === "used" ? "使用済み" : "残り"} ${percent}%、${count} トークン（合計 ${limit}）`,
+  contextHeading: (percent, mode) =>
+    mode === "used"
+      ? `コンテキスト ${percent}% 使用済み`
+      : `コンテキスト 残り ${percent}%`,
+  contextDetail: (used, limit, left) =>
+    `${used} / ${limit} トークン使用 · 残り ${left}`,
   newChatIn: (name) => `${name} で新しいチャット`,
   removeProject: (name) => `${name} を削除`,
   signIn: (name) => `${name} にサインイン`,
@@ -1441,6 +1499,8 @@ export const ja: Dictionary = {
   List: "一覧",
   Edit: "編集",
   Write: "作成",
+  Visualize: "ビジュアル",
+  widgetTooLarge: "このビジュアルは大きすぎるため表示できません。",
   Patch: "パッチ",
   patchAdded: "追加",
   patchUpdated: "変更",
