@@ -11,6 +11,7 @@ import {
   Pencil,
   Plug,
   Search,
+  Shapes,
 } from "lucide-react";
 import {
   createContext,
@@ -32,6 +33,7 @@ import {
   shellOutcome,
 } from "../shared/tool-view";
 import type { Transcript } from "../shared/transcript";
+import { WIDGET_TOOLS, widgetFromTool } from "../shared/widget";
 import {
   annotationRevision,
   hasAnnotationRange,
@@ -51,6 +53,7 @@ import { DisclosureContext, DisclosureScope } from "./LazyDetails";
 import { Markdown, MessageContent, ToolResultContent } from "./MessageContent";
 import { SyntaxRangesContext } from "./SyntaxText";
 import { languageFromPath, terminalText } from "./syntax-highlighting";
+import { WidgetFrame } from "./WidgetFrame";
 
 type ToolState = Transcript["tools"][string] | undefined;
 type Tone = "running" | "done" | "error";
@@ -453,6 +456,20 @@ export function BuiltinTool({
     );
   const args = (call.arguments ?? {}) as Record<string, unknown>;
   const path = str(args.path);
+  const widget = WIDGET_TOOLS.has(call.name) && widgetFromTool(args);
+  if (widget)
+    return (
+      <Row
+        defaultOpen
+        icon={<Shapes size={ICON} />}
+        verb={t.Visualize}
+        target={widget.title ?? ""}
+        state={state}
+        status={status}
+      >
+        <WidgetFrame block={widget} streaming={status === "running"} />
+      </Row>
+    );
   if (SHELL_TOOLS.has(call.name))
     return (
       <Shell
