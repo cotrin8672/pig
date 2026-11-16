@@ -25,18 +25,15 @@ import {
 } from "react";
 import { useShallow } from "zustand/react/shallow";
 import appIcon from "../../assets/icon.svg";
-import {
-  createFinishedWorkIndex,
-  groupBlocks,
-  responseImages,
-} from "../shared/tool-view";
+import { SIDEBAR_WIDTH } from "../shared/desktop-state";
+import { createFinishedWorkIndex, groupBlocks } from "../shared/tool-view";
 import { ChatEmpty, ChatLayout } from "./ChatLayout";
 import { ChatOpening, OpeningComposer, OpeningMessages } from "./ChatOpening";
 import { Compaction } from "./CompactionRenderer";
 import { Composer } from "./Composer";
 import { CustomRecord } from "./CustomRecord";
 import type { ChatSnapshot } from "./chat-snapshot";
-import { addressKey, sameAddress } from "./chat-snapshot";
+import { addressKey, chatViewKey, sameAddress } from "./chat-snapshot";
 import { dataText, isVisibleRecord } from "./custom-data";
 import { DynamicTheme } from "./DynamicTheme";
 import { Extensions } from "./Extensions";
@@ -48,7 +45,7 @@ import { fontFamilyValue } from "./font-family";
 import { SavedOutputContext } from "./HighlightedCode";
 import { getT, useT } from "./i18n";
 import { DisclosureScope, LazyDetails } from "./LazyDetails";
-import { Markdown, MessageContent, UserMessage } from "./MessageContent";
+import { Markdown, UserMessage } from "./MessageContent";
 import { modelDividers } from "./model-dividers";
 import { NotificationCenter } from "./NotificationCenter";
 import { OptimisticMessages } from "./OptimisticMessages";
@@ -74,10 +71,12 @@ import {
   refresh,
   rpc,
   sends,
+  updateUiPreferences,
 } from "./rpc";
 import { SearchPalette } from "./SearchPalette";
 import { SessionPanel } from "./SessionPanel";
 import { Settings } from "./Settings";
+import { SidebarResizer } from "./SidebarResizer";
 import { SidebarSessions } from "./SidebarSessions";
 import { Statistics } from "./Statistics";
 import { revealTarget } from "./search-target";
@@ -109,7 +108,7 @@ function isWindowDragTarget(target: EventTarget) {
   );
 }
 function renderPaneChat(snapshot: ChatSnapshot) {
-  return <Chat key={addressKey(snapshot.address)} snapshot={snapshot} />;
+  return <Chat key={chatViewKey(snapshot)} snapshot={snapshot} />;
 }
 
 export function App() {
@@ -133,6 +132,11 @@ export function App() {
     };
   }, [fontFamily, codeFontFamily]);
   const [sidebarOpen, setSidebarOpen] = useState(true);
+  const savedSidebarWidth = useStore(
+    (s) => s.bootstrap.desktop.sidebarWidth ?? SIDEBAR_WIDTH.default,
+  );
+  const [draggedSidebarWidth, setDraggedSidebarWidth] = useState<number>();
+  const sidebarWidth = draggedSidebarWidth ?? savedSidebarWidth;
   const [startupFailed, setStartupFailed] = useState(false);
   const initialize = useCallback(() => {
     setStartupFailed(false);
@@ -206,6 +210,7 @@ export function App() {
         style={
           {
             "--window-opacity": state.windowOpacity,
+            "--ds-sidebar-width": `${sidebarWidth}px`,
           } as React.CSSProperties
         }
       >
@@ -247,6 +252,20 @@ export function App() {
             </>
           )}
         </aside>
+        {sidebarOpen && state.sidebarReady && (
+          <SidebarResizer
+            width={sidebarWidth}
+            onResize={setDraggedSidebarWidth}
+            onCommit={(width) => {
+              setDraggedSidebarWidth(undefined);
+              updateUiPreferences({ sidebarWidth: width });
+            }}
+            onCollapse={() => {
+              setDraggedSidebarWidth(undefined);
+              setSidebarOpen(false);
+            }}
+          />
+        )}
         <MainViewport busy={!state.initialized}>
           {!state.initialized ? (
             startupFailed && (
@@ -257,16 +276,19 @@ export function App() {
                 </button>
               </div>
             )
-          ) : state.page === "providers" ? (
-            <Providers />
-          ) : state.page === "extensions" ? (
-            <Extensions />
-          ) : state.page === "settings" ? (
-            <Settings />
-          ) : state.page === "statistics" ? (
-            <Statistics />
           ) : (
-            <ConversationWorkspace />
+            <>
+              {/* Pages cover the chats instead of replacing them: rebuilding
+                  every pane on each page switch costs seconds in long chats. */}
+              <div
+                className="main-layer"
+                data-covered={state.page !== "chat" || undefined}
+                inert={state.page !== "chat"}
+              >
+                <ConversationWorkspace active={state.page === "chat"} />
+              </div>
+              <SidebarPage page={state.page} />
+            </>
           )}
         </MainViewport>
         <UIRequestBroker />
@@ -361,14 +383,22 @@ function SidebarFooter({
   );
 }
 
-function ConversationWorkspace() {
+function SidebarPage({ page }: { page: string }) {
+  if (page === "providers") return <Providers />;
+  if (page === "extensions") return <Extensions />;
+  if (page === "settings") return <Settings />;
+  if (page === "statistics") return <Statistics />;
+  return null;
+}
+
+function ConversationWorkspace({ active: shown }: { active: boolean }) {
   const {
     activeSnapshot: active,
     openingSnapshot,
     openingView,
     generalCwd,
   } = useStore(useShallow(selectConversationView));
-  const idle = !openingView && !active;
+  const idle = shown && !openingView && !active;
   // With no chat shown, the workspace is simply a new local draft. Drafts do
   // not start an SDK session until the first send, so this is free.
   useLayoutEffect(() => {
@@ -378,15 +408,12 @@ function ConversationWorkspace() {
     <PaneWorkspace renderChat={renderPaneChat}>
       {openingView ? (
         openingSnapshot ? (
-          <Chat
-            key={addressKey(openingSnapshot.address)}
-            snapshot={openingSnapshot}
-          />
+          <Chat key={chatViewKey(openingSnapshot)} snapshot={openingSnapshot} />
         ) : (
           <ChatOpening />
         )
       ) : active ? (
-        <Chat key={addressKey(active.address)} snapshot={active} />
+        <Chat key={chatViewKey(active)} snapshot={active} />
       ) : null}
     </PaneWorkspace>
   );
@@ -768,16 +795,6 @@ export const Chat = memo(function Chat({
       transcript.history?.revision,
     ],
   );
-  // A generated image belongs to the answer, not only to the folded work above it.
-  const workImages = useMemo(() => {
-    const images = new Map<string, ReturnType<typeof responseImages>>();
-    for (const range of new Set(work.values()))
-      images.set(
-        range.key,
-        responseImages(transcript.records, range, transcript.tools),
-      );
-    return images;
-  }, [work, transcript.records, transcript.tools]);
   const [indexFooters] = useState(createResponseFooterIndex);
   const footers = useMemo(
     () =>
@@ -933,10 +950,6 @@ export const Chat = memo(function Chat({
         if (!isVisibleRecord(record)) return null;
         const range = work.get(index);
         const folded = range !== undefined && !openWork[range.key];
-        const images =
-          range && index === range.final
-            ? workImages.get(range.key)
-            : undefined;
         const toggle = range && !renderedWork.has(range.key) && (
           <WorkToggle
             open={!folded}
@@ -1097,9 +1110,6 @@ export const Chat = memo(function Chat({
                           />
                         )
                       )}
-                      {images?.length ? (
-                        <MessageContent content={images} markdown={false} />
-                      ) : null}
                     </>
                   ) : (
                     <CustomRecord record={record} />

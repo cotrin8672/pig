@@ -70,6 +70,7 @@ test.skipIf(!existsSync(edge) && !process.env.PIG_REQUIRE_UI_TESTS)(
                 contents: `
               import {useStore} from ${source("./store.ts")};
               const noop=()=>{};
+              export const ensureSessionRuntime=()=>Promise.resolve();
               export const rpc={request:new Proxy({},{get:()=>async()=>[]}),send:new Proxy({},{get:()=>noop})};
               export function updateAppearance(change){useStore.setState(s=>({appearance:change(s.appearance)}));window.__appearanceWrites=(window.__appearanceWrites??0)+1;}
               export const updateSettings=noop,updateUiPreferences=noop,refreshSessions=noop,refresh=noop,requestSelection=noop,connectRuntime=noop,cancelOpening=noop,openChat=noop,showPendingOpen=noop;

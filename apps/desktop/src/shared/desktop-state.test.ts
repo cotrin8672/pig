@@ -6,6 +6,22 @@ import {
   validateUiPreferences,
 } from "./desktop-state";
 
+test("sidebar width is clamped to 200–480 and rejects non-numbers", () => {
+  expect(validateUiPreferences({ sidebarWidth: 312.4 })).toEqual({
+    sidebarWidth: 312,
+  });
+  expect(validateUiPreferences({ sidebarWidth: 10 })).toEqual({
+    sidebarWidth: 200,
+  });
+  expect(validateUiPreferences({ sidebarWidth: 9999 })).toEqual({
+    sidebarWidth: 480,
+  });
+  for (const sidebarWidth of ["300", Number.NaN, Infinity])
+    expect(() => validateUiPreferences({ sidebarWidth })).toThrow(
+      "Invalid sidebar width.",
+    );
+});
+
 test("validates UI preferences, clamps widths to 480–1600, and deduplicates without mutating input", () => {
   const input = {
     chatWidth: 799.6,

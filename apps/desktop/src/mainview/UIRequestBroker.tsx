@@ -12,6 +12,7 @@ import {
   ownedTerminalCommand,
   subscribeTerminal,
 } from "./runtime-events";
+import { SolidBlurFilter } from "./SolidBlurFilter";
 import { showError, useStore } from "./store";
 import { TerminalDialog } from "./TerminalDialog";
 import {
@@ -238,6 +239,7 @@ function NativeRequest({
         }
       }}
     >
+      <SolidBlurFilter id="sdk-request-solid" />
       {request.kind === "project-trust" ? (
         <ProjectTrustPrompt
           cwd={request.cwd}

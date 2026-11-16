@@ -1,5 +1,7 @@
 .search-palette {
-  margin: 12vh auto auto;
+  /* Input row sits just above the middle; on short windows it rises so the fixed-height
+     results still fit (72px ≈ input row + borders + bottom gap). */
+  margin: max(4vh, min(36vh, calc(100vh - min(400px, 52vh) - 72px))) auto auto;
   width: min(640px, calc(100vw - 32px));
   padding: 0;
   overflow: hidden;
@@ -11,11 +13,6 @@
   /* The window is transparent, so a plain blur is itself translucent and the sharp
      text underneath shows through it. #search-palette-solid makes the blur opaque. */
   backdrop-filter: blur(24px) saturate(140%) url("#search-palette-solid");
-}
-.search-palette-filter {
-  position: absolute;
-  width: 0;
-  height: 0;
 }
 .search-palette[open] {
   display: flex;

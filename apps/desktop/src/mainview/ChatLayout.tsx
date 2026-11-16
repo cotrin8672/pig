@@ -46,10 +46,13 @@ export function ChatLayout({
     const element = thread.current;
     const content = element?.firstElementChild;
     if (!element || !content) return;
-    let scrollHeight = element.scrollHeight;
+    // The baseline comes from the observer's first callback, delivered before
+    // paint: reading it here would force a second layout of a freshly mounted chat.
+    let scrollHeight: number | undefined;
     const measure = () => {
       const nextHeight = element.scrollHeight;
-      if (nextHeight !== scrollHeight) {
+      if (scrollHeight === undefined) scrollHeight = nextHeight;
+      else if (nextHeight !== scrollHeight) {
         // Respect wheel/focus scrolling even before its scroll event is flushed.
         const wasAtBottom = isThreadAtBottom({
           scrollHeight,
@@ -61,7 +64,6 @@ export function ChatLayout({
       }
       setAwayFromBottom(!isThreadAtBottom(element));
     };
-    measure();
     const observer = new ResizeObserver(measure);
     observer.observe(element);
     observer.observe(content);

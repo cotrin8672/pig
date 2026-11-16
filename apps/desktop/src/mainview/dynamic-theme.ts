@@ -82,6 +82,8 @@ export function createThemeTokens(
     "--ds-bg-primary": surface(18),
     "--ds-bg-secondary": card(25),
     "--ds-bg-sidebar": `${surface(6)}1f`,
+    // Near-neutral dark veil over the chat: mutes the shell tint for long reading.
+    "--ds-bg-chat": `${neutral(8)}38`,
     "--ds-bg-tertiary": card(23),
     "--ds-bg-under": surface(18),
     "--ds-shell-start": shell(34),
