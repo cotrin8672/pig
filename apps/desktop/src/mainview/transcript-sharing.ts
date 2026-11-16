@@ -5,6 +5,7 @@ import {
   type TranscriptRecord,
 } from "../shared/transcript";
 import { transcriptIndex } from "../shared/transcript-index";
+import { preserveTranscriptWireBase } from "../shared/transcript-wire";
 
 function shallowEqual(
   left: Readonly<Record<string, unknown>>,
@@ -43,6 +44,15 @@ export function shareTranscript(
       old.kind !== record.kind
     )
       return record;
+    // Wire reuse already restored these identities; do not rebuild their metadata.
+    if (
+      old === record &&
+      (record.kind !== "message" ||
+        record.message.role !== "toolResult" ||
+        incoming.tools[record.message.toolCallId] ===
+          current.tools[record.message.toolCallId])
+    )
+      return old;
     const shared = sameEnvelope(old, record)
       ? old
       : ({ ...record, ...recordPayload(old) } as TranscriptRecord);
@@ -88,5 +98,7 @@ export function shareTranscript(
     }
     return shared;
   });
-  return changed ? { ...incoming, records, tools } : incoming;
+  return changed
+    ? preserveTranscriptWireBase(incoming, { ...incoming, records, tools })
+    : incoming;
 }

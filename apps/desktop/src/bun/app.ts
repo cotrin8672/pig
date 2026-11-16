@@ -1,5 +1,5 @@
 import { stat } from "node:fs/promises";
-import { join, resolve } from "node:path";
+import { dirname, isAbsolute, join, resolve } from "node:path";
 import Electrobun, {
   BrowserView,
   BrowserWindow,
@@ -17,7 +17,10 @@ import type {
   SessionTarget,
   Snapshot,
 } from "../shared/rpc-schema";
-import type { OpenSessionParams } from "../shared/runtime-contract";
+import type {
+  OpenSessionParams,
+  SessionAddress,
+} from "../shared/runtime-contract";
 import { sessionIdFromLink } from "../shared/session-links";
 import { patchSettings } from "../shared/settings";
 import { AppUpdater } from "./app-update";
@@ -126,7 +129,7 @@ import { UsageService } from "./usage/service";
 
 await prepareDesktopConfig(Utils.paths.userData);
 /** Every open window's UI; publications go to all of them. */
-const hub = new ClientHub();
+const hub = new ClientHub(sessionHost.hostId);
 // Paths only (never values): GUI env can differ from the user's shell.
 console.info(`Pi agent directory: ${agentDir} (${agentDirSource})`);
 const chatRendererLoader = new ChatRendererLoader(
@@ -216,6 +219,22 @@ function fullSnapshot(snapshot: Snapshot) {
   // RPC reads advance snapshotSeq independently of publications.
   hub.resetRuntime(snapshot.address);
   return packSnapshot(snapshot);
+}
+async function withRuntime<T extends SessionAddress, R>(
+  input: T,
+  action: (input: T) => R,
+): Promise<Awaited<R>> {
+  if (sessionHost.isSuspended(input)) {
+    const snapshot = await sessionHost.wakeSession(input);
+    if (
+      snapshot.address.hostId !== input.hostId ||
+      snapshot.address.sessionId !== input.sessionId ||
+      snapshot.address.epoch !== input.epoch
+    )
+      throw new Error("STALE_SESSION_ADDRESS");
+  }
+  // No await before dispatch on an already-live runtime.
+  return await action(input);
 }
 const settingsFile = join(desktopConfigDir, "settings.json");
 const appearanceFile = join(desktopConfigDir, "appearance.json");
@@ -311,8 +330,8 @@ const liveWindows = () =>
   );
 const terminals = new TerminalRouter(
   {
-    broadcast: (event) => hub.broadcast("terminalEvent", event),
-    to: (client, event) => hub.to(client, "terminalEvent", event),
+    broadcast: (event) => hub.terminal(event),
+    to: (client, event) => hub.terminal(event, client),
   },
   (address) =>
     sessionHost.terminalCommand({
@@ -341,38 +360,44 @@ const hostRequests = {
   searchPackages: (input) => searchPackages(input),
   packagePreviews: (input) => packagePreviews(input),
   listInstalled: () => listInstalled(publishInstalledUpdate),
-  prompt: (input) => promptSession(input),
-  getOpenState: (input) => {
-    const state = sessionHost.getOpenState(input);
+  prompt: (input) => withRuntime(input, promptSession),
+  getOpenState: async (input) => {
+    const state = await sessionHost.readOpenState(input);
     return state.state === "ready"
       ? { ...state, snapshot: fullSnapshot(state.snapshot) }
       : state;
   },
   cancelOpen: (input) => sessionHost.cancelOpen(input),
-  getSessionSnapshot: (input) =>
-    fullSnapshot(sessionHost.getSessionSnapshot(input)),
+  getSessionSnapshot: async (input) =>
+    fullSnapshot(await sessionHost.readSessionSnapshot(input)),
+  wakeSession: async (input) =>
+    fullSnapshot(await sessionHost.wakeSession(input)),
   getSessionHistory: async (input) =>
     packTranscript(await sessionHost.getSessionHistory(input)),
   listSlashCommands: (input) => sessionHost.listSlashCommands(input),
-  completeSlashArguments: (input) => sessionHost.completeSlashArguments(input),
+  completeSlashArguments: (input) =>
+    withRuntime(input, (value) => sessionHost.completeSlashArguments(value)),
   getPromptReceipt: (input) => sessionHost.getPromptReceipt(input),
   cancelPrompt: (input) => sessionHost.cancelPrompt(input),
+  acknowledgePromptRecovery: (input) =>
+    sessionHost.acknowledgePromptRecovery(input),
   reorderQueuedPrompts: (input) => sessionHost.reorderQueuedPrompts(input),
   steerQueuedPrompt: (input) => sessionHost.steerQueuedPrompt(input),
-  getRecovery: (input) => sessionHost.getRecovery(input),
+  getRecovery: (input) => sessionHost.readRecovery(input),
   syncDraft: (input) => sessionHost.syncDraft(input),
   getSessionDraft: (input) => sessionHost.getSessionDraft(input),
-  discardRecovery: (input) => sessionHost.discardRecovery(input),
+  discardRecovery: (input) =>
+    withRuntime(input.current, () => sessionHost.discardRecovery(input)),
   resolveExtensionUI: (input) => sessionHost.resolveExtensionUI(input),
-  runtimeState: () => {
-    hub.resetRuntime();
-    return packRuntimeState(sessionHost.runtimeState());
-  },
+  runtimeState: () =>
+    hub.runtimeState(() => packRuntimeState(sessionHost.runtimeState())),
   heartbeatUI: (input) => sessionHost.heartbeatUI(input),
   abort: (input) => abortSession(input),
   closeSession: (input) => closeSession(input),
-  reloadSession: (input) => sessionHost.reloadSession(input),
-  invokeSessionAction: (input) => sessionHost.invokeSessionAction(input),
+  reloadSession: (input) =>
+    withRuntime(input, (value) => sessionHost.reloadSession(value)),
+  invokeSessionAction: (input) =>
+    withRuntime(input, (value) => sessionHost.invokeSessionAction(value)),
   reloadAdapterConfig: () => sessionHost.reloadAdapterConfig(),
   readClipboardImage,
   attachmentPreview: ({ path }) => attachmentPreview(path),
@@ -512,8 +537,10 @@ const hostRequests = {
     // SessionHost validates persisted membership while resolving the file.
     return openManagedSession(input);
   },
-  rewindSession: async (input) => fullSnapshot(await rewindSession(input)),
-  forkSession: async (input) => fullSnapshot(await forkSession(input)),
+  rewindSession: async (input) =>
+    fullSnapshot(await withRuntime(input, rewindSession)),
+  forkSession: async (input) =>
+    fullSnapshot(await withRuntime(input, forkSession)),
   removeProject: (input) =>
     projectStore.save((current) => withoutProject(current, input?.cwd)),
   setProjectState: (input) =>
@@ -545,7 +572,7 @@ const hostRequests = {
     usageService.invalidate(provider);
   },
   refreshProviderModels: ({ provider }) => refreshProviderModels(provider),
-  setModel: (input) => setSessionModel(input),
+  setModel: (input) => withRuntime(input, setSessionModel),
   setDefaultModel: async ({ model }) =>
     writeDefaultModel(
       model,
@@ -605,7 +632,7 @@ const hostRequests = {
     await writeDefaultEffort(provider, id, effort);
     await applyModelSettings();
   },
-  setEffort: (input) => setSessionEffort(input),
+  setEffort: (input) => withRuntime(input, setSessionEffort),
 } satisfies Omit<
   RequestHandlers,
   "copyImage" | "terminalCommand" | "importChatHistory"
@@ -673,6 +700,18 @@ const hostMessages = {
   openExternal: ({ url }) => {
     if (/^https?:\/\//i.test(url)) Utils.openExternal(url);
   },
+  revealPath: ({ path }) => {
+    if (!isAbsolute(path)) return;
+    // Select an existing file; open the nearest existing folder otherwise.
+    void (async () => {
+      for (let target = resolve(path); ; target = dirname(target)) {
+        const info = await stat(target).catch(() => undefined);
+        if (info?.isFile()) return Utils.showItemInFolder(target);
+        if (info?.isDirectory()) return Utils.openPath(target);
+        if (dirname(target) === target) return;
+      }
+    })();
+  },
   installPackage: (input) => {
     void packageOperation(
       "install",
@@ -710,6 +749,7 @@ const hostMessages = {
   | "imageMenu"
   | "connectUI"
   | "disconnectUI"
+  | "runtimeUsage"
   | "chooseChatHistory"
   | "discardChatHistory"
   | "listChatHistory"
@@ -728,7 +768,7 @@ const notifyCompletion = createCompletionNotifier({
 });
 configureSessionHost(
   {
-    ui: (event) => hub.broadcast("extensionUIEvent", event),
+    ui: (event) => hub.extension(event),
     terminal: (event) => terminals.event(event),
     runtime: (event) => {
       hub.runtime(event);
@@ -915,6 +955,10 @@ function createWindow() {
         connectUI: (input) => {
           sessionHost.connectUI(input);
           target.uiClients.add(input.clientId);
+        },
+        runtimeUsage: (input) => {
+          if (target.uiClients.has(input.clientId))
+            sessionHost.runtimeUsage(input);
         },
         disconnectUI: (input) => {
           target.uiClients.delete(input?.clientId);

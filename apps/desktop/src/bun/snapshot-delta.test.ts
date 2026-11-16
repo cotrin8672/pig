@@ -4,9 +4,10 @@ import { hydrateChatSnapshot, newerSnapshot } from "../mainview/chat-snapshot";
 import type { Snapshot } from "../shared/rpc-schema";
 import {
   expandSnapshotDelta,
+  type RecordPayloadRef,
   type SnapshotDeltaEvent,
 } from "../shared/snapshot-delta";
-import { emptyTranscript } from "../shared/transcript";
+import { emptyTranscript, recordEnvelope } from "../shared/transcript";
 import { SessionManager } from "./sdk";
 import { SDKProjector } from "./sdk-projector";
 import { createRuntimeDeltaEncoder } from "./snapshot-delta";
@@ -203,7 +204,12 @@ test("missing/foreign/revision bases request a full snapshot, never a partial tr
     { message: { role: "user", content: "must not override the base" } },
   ]) {
     const malformed = clone(event);
-    Object.assign(malformed.snapshot.transcript.records[0], change);
+    malformed.snapshot.transcript.records[0] = {
+      ...recordEnvelope(initial.transcript.records[0]),
+      entryId: "saved",
+      payloadRef: "saved",
+      ...change,
+    } as RecordPayloadRef;
     expect(expandSnapshotDelta(malformed, initial)).toBeUndefined();
   }
   const missingResult = clone(event);
@@ -226,7 +232,8 @@ test("branch, epoch, replacement and close reset the encoder; new/live records a
   }) as SnapshotDeltaEvent;
   const live = delta.snapshot.transcript.records.at(-1);
   expect(live).toBeDefined();
-  expect(live && "payloadRef" in live).toBe(false);
+  expect(typeof live).not.toBe("string");
+  expect(live && typeof live === "object" && "payloadRef" in live).toBe(false);
   encode({ type: "closed", address: snapshot.address, reason: "close" });
   expect(encode({ type: "snapshot", snapshot }).type).toBe("snapshot");
   const previous = snapshot.address;
@@ -417,7 +424,9 @@ test("invalid live append targets and lengths request recovery without mutating 
     wire.snapshot.transcript.tools.partial.status = "done";
   });
   change((wire) => {
-    wire.snapshot.transcript.records[0].entryId = "live";
+    const record = wire.snapshot.transcript.records[0];
+    if (typeof record === "string") throw new Error("Expected live record");
+    record.entryId = "live";
   });
   for (const wire of malformed)
     expect(expandSnapshotDelta(wire, initial)).toBeUndefined();

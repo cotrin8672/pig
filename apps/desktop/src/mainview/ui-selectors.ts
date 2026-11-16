@@ -38,12 +38,10 @@ export function selectPaneHeading(s: State, paneId: number) {
 /** Full snapshots belong to the conversation, not the window/sidebar subscription. */
 export function selectConversationView(s: State) {
   const openingView = s.opening && s.openingViewRevision === navigationRevision;
-  const active =
-    s.page === "chat" && !openingView && s.active
-      ? s.snapshots[s.active]
-      : undefined;
+  // Independent of the page: pages cover the conversation instead of unmounting it.
+  const active = !openingView && s.active ? s.snapshots[s.active] : undefined;
   const opening =
-    s.page === "chat" && openingView && s.openingTarget?.id
+    openingView && s.openingTarget?.id
       ? s.snapshots[s.openingTarget.id]
       : undefined;
   return {

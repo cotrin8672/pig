@@ -12,7 +12,6 @@ import {
   receiveSnapshot,
   receiveTerminal,
   receiveWire,
-  runtimeRevision,
   subscribeTerminal,
 } from "./runtime-events";
 import { useStore } from "./store";
@@ -46,6 +45,76 @@ function fixture() {
   };
   return { address, snapshot };
 }
+test("suspension transfers ownership without discarding loaded history or a late local draft", () => {
+  const { address, snapshot } = fixture();
+  snapshot.transcript.history = { revision: "retained" };
+  receiveSnapshot(snapshot);
+  drafts.edit(address, () => ({ ...emptyContent(), text: "late local input" }));
+  const next = { ...address, epoch: 2 };
+  const records =
+    useStore.getState().snapshots[address.sessionId].transcript.records;
+  receiveExtension({
+    type: "draft",
+    address: next,
+    draft: { ...emptyContent(), revision: 1 },
+  });
+  const previews: boolean[] = [];
+  const unsubscribe = useStore.subscribe((state) =>
+    previews.push(state.snapshots[address.sessionId]?.ready === false),
+  );
+  try {
+    receiveRuntime({
+      type: "suspended",
+      previous: address,
+      address: next,
+      snapshotSeq: 2,
+      historyRevision: "retained",
+      draftRevision: 1,
+    });
+  } finally {
+    unsubscribe();
+  }
+  const parked = useStore.getState().snapshots[address.sessionId];
+  expect(parked.address).toEqual(next);
+  expect(parked.ready).toBeUndefined();
+  expect(parked.suspended).toBe(true);
+  expect(parked.transcript.records).toBe(records);
+  expect(drafts.read(next).content.text).toBe("late local input");
+  expect(drafts.read(next).conflict).toBeUndefined();
+  expect(previews).not.toContain(true);
+  receiveRuntimeState({
+    hostId: address.hostId,
+    sessions: [
+      {
+        phase: "ready",
+        address: next,
+        suspended: {
+          previous: address,
+          snapshotSeq: 2,
+          historyRevision: "retained",
+          draftRevision: 1,
+        },
+      },
+    ],
+    pendingUI: [],
+    drafts: [],
+    statuses: [],
+  });
+  expect(
+    useStore.getState().snapshots[address.sessionId].transcript.records,
+  ).toBe(records);
+  receiveSnapshot({ ...snapshot, address: next, snapshotSeq: 3 });
+  receiveRuntime({
+    type: "suspended",
+    previous: address,
+    address: next,
+    snapshotSeq: 2,
+    historyRevision: "retained",
+  });
+  expect(
+    useStore.getState().snapshots[address.sessionId].suspended,
+  ).toBeUndefined();
+});
 test("startup Trust and native/custom UI appear at root before any chat snapshot exists", () => {
   const { address } = fixture();
   receiveRuntime({ type: "opening", address, cwd: "/fixture", openId: "open" });
@@ -180,11 +249,11 @@ test("reconnect retains notices only for the same live owner, without replay or 
     statuses: [],
     pendingUI: [],
   };
-  receiveRuntimeState(state, runtimeRevision);
+  receiveRuntimeState(state);
   expect(
     useStore.getState().extensionNotices[addressKey(address)],
   ).toHaveLength(1);
-  receiveRuntimeState({ ...state, sessions: [] }, runtimeRevision);
+  receiveRuntimeState({ ...state, sessions: [] });
   expect(useStore.getState().extensionNotices).toEqual({});
 });
 
@@ -297,6 +366,54 @@ test("replaced remaps active tab/draft and rejects old epoch status, snapshots a
     useStore.getState().extensionStatuses[addressKey(address)],
   ).toBeUndefined();
 });
+test("a branch keeps the active chat readable between opening and replaced, so no draft opens", () => {
+  const { address, snapshot } = fixture();
+  receiveSnapshot(snapshot);
+  useStore.setState({ page: "chat", active: address.sessionId });
+  const next = { ...address, sessionId: `${address.sessionId}-fork`, epoch: 2 };
+  receiveRuntime({
+    type: "opening",
+    previous: address,
+    address: next,
+    cwd: "/fixture",
+  });
+  const placeholder = useStore.getState().snapshots[next.sessionId];
+  expect(useStore.getState().active).toBe(next.sessionId);
+  expect(placeholder?.ready).toBe(false);
+  expect(placeholder?.address).toEqual(address);
+  receiveRuntime({
+    type: "replaced",
+    previous: address,
+    snapshot: {
+      ...snapshot,
+      address: next,
+      snapshotSeq: 1,
+      info: { ...snapshot.info, id: next.sessionId },
+    },
+  });
+  expect(useStore.getState().snapshots[next.sessionId]?.address).toEqual(next);
+  expect(useStore.getState().snapshots[next.sessionId]?.ready).not.toBe(false);
+});
+test("a replacement that fails to open does not leave its placeholder looking live", () => {
+  const { address, snapshot } = fixture();
+  receiveSnapshot(snapshot);
+  const next = { ...address, epoch: 2 };
+  receiveRuntime({
+    type: "opening",
+    previous: address,
+    address: next,
+    cwd: "/fixture",
+  });
+  receiveRuntime({
+    type: "closed",
+    address: next,
+    reason: "failed",
+    message: "boom",
+  });
+  expect(useStore.getState().snapshots[address.sessionId]?.failure).toBe(
+    "boom",
+  );
+});
 test("terminal boundary adds host owner even before ready snapshot and never uses active tab", () => {
   const { address } = fixture();
   const request: UIRequest = {
@@ -369,23 +486,17 @@ test("failed startup retains readable history, while cancellation removes previe
   ).toBeUndefined();
 });
 
-test("reconnect response racing newer root events cannot restore ended requests", () => {
+test("reconnect never restores disconnected terminal requests", () => {
   const { address } = fixture();
-  const before = runtimeRevision;
   receiveRuntime({ type: "opening", address, cwd: "/fixture" });
-  const applied = receiveRuntimeState(
-    {
-      hostId: address.hostId,
-      sessions: [],
-      drafts: [],
-      statuses: [],
-      pendingUI: [
-        { ...address, uiId: "late", kind: "terminal", title: "stale" },
-      ],
-    },
-    before,
-  );
-  expect(applied).toBe(false);
+  const applied = receiveRuntimeState({
+    hostId: address.hostId,
+    sessions: [],
+    drafts: [],
+    statuses: [],
+    pendingUI: [{ ...address, uiId: "late", kind: "terminal", title: "stale" }],
+  });
+  expect(applied).toBe(true);
   expect(useStore.getState().pendingUI).toHaveLength(0);
 });
 
@@ -458,22 +569,19 @@ test("wire result references hydrate before buffered events, replacements and re
   const next = { ...snapshot, address: { ...address, epoch: 2 } };
   receiveRuntime({ type: "replaced", previous: address, snapshot: next });
   check();
-  receiveRuntimeState(
-    {
-      hostId: address.hostId,
-      sessions: [
-        {
-          phase: "ready",
-          address: next.address,
-          snapshot: { ...next, snapshotSeq: 3 },
-        },
-      ],
-      drafts: [],
-      pendingUI: [],
-      statuses: [],
-    },
-    runtimeRevision,
-  );
+  receiveRuntimeState({
+    hostId: address.hostId,
+    sessions: [
+      {
+        phase: "ready",
+        address: next.address,
+        snapshot: { ...next, snapshotSeq: 3 },
+      },
+    ],
+    drafts: [],
+    pendingUI: [],
+    statuses: [],
+  });
   check();
 });
 
@@ -535,16 +643,13 @@ test("wire buffers release transcripts after hydration, replace, reconnect omiss
   const missing = fixture();
   bufferWire({ ...wire, address: missing.address });
   expect(
-    receiveRuntimeState(
-      {
-        hostId: address.hostId,
-        sessions: [],
-        pendingUI: [],
-        drafts: [],
-        statuses: [],
-      },
-      runtimeRevision,
-    ),
+    receiveRuntimeState({
+      hostId: address.hostId,
+      sessions: [],
+      pendingUI: [],
+      drafts: [],
+      statuses: [],
+    }),
   ).toBe(true);
   expect(buffer.size).toBe(0);
   receiveSnapshot(missing.snapshot);
@@ -556,16 +661,13 @@ test("wire buffers release transcripts after hydration, replace, reconnect omiss
   bufferWire({ ...wire, address: pending.address });
   const nextHost = `${address.hostId}-restarted`;
   expect(
-    receiveRuntimeState(
-      {
-        hostId: nextHost,
-        sessions: [],
-        pendingUI: [],
-        drafts: [],
-        statuses: [],
-      },
-      runtimeRevision,
-    ),
+    receiveRuntimeState({
+      hostId: nextHost,
+      sessions: [],
+      pendingUI: [],
+      drafts: [],
+      statuses: [],
+    }),
   ).toBe(true);
   expect(buffer.size).toBe(0);
   receiveSnapshot(pending.snapshot);

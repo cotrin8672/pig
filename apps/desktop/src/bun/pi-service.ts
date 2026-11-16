@@ -267,6 +267,18 @@ export async function getStatistics(period: StatisticsPeriod) {
   return data;
 }
 export const sessionHost = new SessionHost({
+  historyModel: (provider, id) => {
+    const model = runtime
+      .getAllModels()
+      .find(
+        (model): model is Model<Api> =>
+          "reasoning" in model &&
+          "maxTokens" in model &&
+          model.provider === provider &&
+          model.id === id,
+      );
+    return model && modelInfo(model);
+  },
   statistics: statisticsEnabled ? statistics : undefined,
   sessionAccounts: {
     read: (id) => sessionAccountPersistence?.read(id) ?? {},

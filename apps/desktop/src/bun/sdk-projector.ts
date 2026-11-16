@@ -113,7 +113,7 @@ export class SDKProjector {
   private requestIds = new Map<string, string>();
   private resumeEntries: Set<string>;
   private tools: Transcript["tools"] = {};
-  private historyRevision = crypto.randomUUID();
+  private historyRevision: string = crypto.randomUUID();
   private branchLeaf?: SessionEntry;
   private branch: SessionEntry[] = [];
   private branchIds = new Set<string>();
@@ -131,7 +131,9 @@ export class SDKProjector {
     private readonly manager: SessionManager,
     private readonly epoch: number,
     diagnostics?: SessionDiagnosticStore,
+    revision?: string,
   ) {
+    if (revision) this.historyRevision = revision;
     this.diagnostics = new SessionDiagnostics(manager, diagnostics);
     this.resumeEntries = new Set(this.diagnostics.value.resumeEntries);
     const run = this.diagnostics.value.run;

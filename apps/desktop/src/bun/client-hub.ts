@@ -1,5 +1,13 @@
+import type { ExtensionUIEvent } from "../shared/extension-ui";
 import type { RPCSchema } from "../shared/rpc-schema";
-import type { RuntimeEvent, SessionAddress } from "../shared/runtime-contract";
+import type {
+  RuntimeEvent,
+  RuntimePublication,
+  RuntimeStateSnapshot,
+  RuntimeViewState,
+  SessionAddress,
+} from "../shared/runtime-contract";
+import type { TerminalHostEvent } from "../shared/terminal-ui";
 import { createRuntimeDeltaEncoder } from "./snapshot-delta";
 
 export type ClientMessages = RPCSchema["webview"]["messages"];
@@ -17,6 +25,20 @@ type Client = {
 /** Delivers host publications to every connected UI (one entry per window). */
 export class ClientHub {
   private readonly clients = new Map<string, Client>();
+  private publicationSeq = 0;
+  constructor(private readonly hostId: string) {}
+  private publication<T>(event: T): RuntimePublication<T> {
+    return {
+      hostId: this.hostId,
+      publicationSeq: ++this.publicationSeq,
+      event,
+    };
+  }
+  runtimeState(read: () => RuntimeViewState): RuntimeStateSnapshot {
+    this.resetRuntime();
+    // Capture synchronously with the read, not when RPC's awaited response is sent.
+    return { ...read(), publicationSeq: this.publicationSeq };
+  }
   add(id: string, send: ClientSender) {
     if (this.clients.has(id)) throw new Error(`Duplicate UI client ${id}`);
     this.clients.set(id, { send, encode: createRuntimeDeltaEncoder() });
@@ -55,8 +77,20 @@ export class ClientHub {
     if (client) this.deliver(id, client, name, payload);
   }
   runtime(event: RuntimeEvent) {
+    const publication = this.publication(event);
     for (const [id, client] of this.clients)
-      this.deliver(id, client, "runtimeEvent", client.encode(event));
+      this.deliver(id, client, "runtimeEvent", {
+        ...publication,
+        event: client.encode(event),
+      });
+  }
+  extension(event: ExtensionUIEvent) {
+    this.broadcast("extensionUIEvent", this.publication(event));
+  }
+  terminal(event: TerminalHostEvent, client?: string) {
+    const publication = this.publication(event);
+    if (client === undefined) this.broadcast("terminalEvent", publication);
+    else this.to(client, "terminalEvent", publication);
   }
   private deliver<K extends keyof ClientMessages>(
     id: string,

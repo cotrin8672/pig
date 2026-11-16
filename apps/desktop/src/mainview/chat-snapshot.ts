@@ -6,12 +6,23 @@ import {
   indexTranscriptTail,
   transcriptIndex,
 } from "../shared/transcript-index";
-import { unpackTranscript } from "../shared/transcript-wire";
+import {
+  preserveTranscriptWireBase,
+  unpackTranscript,
+} from "../shared/transcript-wire";
 import { shareTranscript } from "./transcript-sharing";
 
-export type ChatSnapshot = Snapshot;
+export type ChatSnapshot = Snapshot & {
+  /** A cold SDK generation must not remount the existing conversation/editor. */
+  viewEpoch?: number;
+};
 export const addressKey = (address: SessionAddress) =>
   JSON.stringify([address.hostId, address.sessionId, address.epoch]);
+export const chatViewKey = (snapshot: ChatSnapshot) =>
+  addressKey({
+    ...snapshot.address,
+    epoch: snapshot.viewEpoch ?? snapshot.address.epoch,
+  });
 export const sameAddress = (a: SessionAddress, b: SessionAddress) =>
   a.hostId === b.hostId && a.sessionId === b.sessionId && a.epoch === b.epoch;
 
@@ -61,6 +72,7 @@ function retainHistory(current: Transcript, incoming: Transcript): Transcript {
     history: current.history,
   };
   indexTranscriptTail(transcript.records, prefix, incoming.records);
+  preserveTranscriptWireBase(incoming, transcript);
   retainedPrefixes.set(transcript, {
     firstId: first.id,
     firstOrder: first.order,
@@ -83,12 +95,12 @@ export function prependHistory(
   page = unpackTranscript(page);
   return {
     ...current,
-    transcript: {
+    transcript: preserveTranscriptWireBase(current.transcript, {
       ...current.transcript,
       records: [...page.records, ...current.transcript.records],
       tools: { ...page.tools, ...current.transcript.tools },
       history: page.history,
-    },
+    }),
   };
 }
 
@@ -118,9 +130,9 @@ export function applyChatEvent(
 }
 
 export function newerSnapshot(
-  current: Snapshot | undefined,
+  current: ChatSnapshot | undefined,
   incoming: Snapshot,
-): Snapshot {
+): ChatSnapshot {
   if (!current) return hydrateChatSnapshot(incoming);
   if (current.address.hostId !== incoming.address.hostId) return current;
   if (incoming.address.epoch < current.address.epoch) return current;
@@ -133,6 +145,9 @@ export function newerSnapshot(
   return sameAddress(current.address, incoming.address)
     ? {
         ...incoming,
+        ...(current.viewEpoch !== undefined
+          ? { viewEpoch: current.viewEpoch }
+          : {}),
         modelCatalog: incoming.modelCatalog ?? current.modelCatalog,
         transcript: retainHistory(
           current.transcript,

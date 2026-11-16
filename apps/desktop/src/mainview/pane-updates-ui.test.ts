@@ -467,3 +467,59 @@ test.skipIf(!existsSync(fixtureEdge) && !process.env.PIG_REQUIRE_UI_TESTS)(
     ),
   60_000,
 );
+
+test.skipIf(!existsSync(fixtureEdge) && !process.env.PIG_REQUIRE_UI_TESTS)(
+  "sidebar pages cover the panes without rebuilding them",
+  () =>
+    runUiFixture(
+      "page-switch-panes",
+      `
+    const {createRoot}=await import(${fixtureImport(import.meta.resolve("react-dom/client"))});
+    const {flushSync}=await import(${fixtureImport(import.meta.resolve("react-dom"))});
+    const {App}=await import(${fixtureImport(new URL("./App.tsx", import.meta.url))});
+    const {useStore}=await import(${fixtureImport(new URL("./store.ts", import.meta.url))});
+    await import(${fixtureImport(new URL("./styles.css", import.meta.url))});
+    ${fixtureHelpers}
+    const root=createFixtureRoot(createRoot);
+    window.__requests={listSlashCommands:async()=>[],statistics:async()=>new Promise(()=>{}),listInstalled:async()=>new Promise(()=>{}),searchPackages:async()=>new Promise(()=>{})};
+    const snapshot=id=>({address:{hostId:'pages',sessionId:id,epoch:1},snapshotSeq:1,
+      info:{id,cwd:'fixture',title:'Chat '+id,modified:1},effort:'off',effortLevels:[],
+      transcript:{history:{revision:id},records:Array.from({length:60},(_,i)=>({id:id+i,entryId:id+i,parentId:null,branchId:id,order:i,kind:'message',
+        message:{role:'user',content:'Question '+i+' '+'words '.repeat(30),timestamp:i}})),tools:{},current:null,running:false,liveToEntry:{}}});
+    const a=snapshot('a'),b=snapshot('b');
+    flushSync(()=>useStore.setState(s=>({
+      initialized:true,page:'chat',active:'a',activePane:1,
+      paneTree:{type:'split',axis:'columns',weights:[0.5,0.5],children:[{type:'pane',id:1},{type:'pane',id:2}]},
+      panes:{1:{sessionId:'a'},2:{sessionId:'b'}},snapshots:{a,b},addresses:{a:a.address,b:b.address},sessions:{},
+      bootstrap:{...s.bootstrap,generalCwd:'fixture'},settings:{...s.settings,language:'en'},
+    })));
+    flushSync(()=>root.render(<App/>));
+    const pane=id=>document.querySelector('[data-pane-id="'+id+'"]');
+    await until(()=>pane(1)?.querySelector('textarea')&&pane(2)?.querySelector('textarea'),'both chats must mount');
+    await wait();
+    const editors=[1,2].map(id=>pane(id).querySelector('textarea')),threads=[1,2].map(id=>pane(id).querySelector('.thread-scroll'));
+    threads[0].scrollTop=200;threads[1].scrollTop=500;await wait();
+    const tops=threads.map(t=>t.scrollTop);
+    check(tops[0]>0&&tops[1]>tops[0],'fixture histories must scroll');
+    editors[0].focus();
+    for(const [page,selector] of [['settings','.settings-page'],['providers','.content-page'],['extensions','.content-page'],['statistics','.content-page']]){
+      flushSync(()=>useStore.setState({page}));await wait();
+      const shown=document.querySelector(selector);
+      check(shown,page+': the page must render');
+      const r=shown.getBoundingClientRect();
+      check(document.elementFromPoint(r.left+r.width/2,r.top+r.height/2)?.closest(selector)===shown,page+': the page must receive pointer input above the chats');
+      const layer=pane(1).closest('.main-layer');
+      check(layer.inert&&getComputedStyle(layer).visibility==='hidden',page+': covered chats must be hidden and inert');
+      check(document.activeElement!==editors[0],page+': a covered composer must not keep focus');
+      check(editors.every(e=>e.isConnected)&&threads.every(t=>t.isConnected),page+': opening a page must not unmount the chats');
+      flushSync(()=>useStore.setState({page:'chat'}));await wait();
+      check([1,2].every(id=>pane(id).querySelector('textarea')===editors[id-1]&&pane(id).querySelector('.thread-scroll')===threads[id-1]),page+': returning must reuse the same chat DOM');
+      check(threads.every((t,i)=>Math.abs(t.scrollTop-tops[i])<=1),page+': returning must keep each scroll position');
+      check(!pane(1).closest('.main-layer').inert&&getComputedStyle(pane(1).closest('.main-layer')).visibility==='visible',page+': returning must reveal the chats');
+    }
+    root.unmount();
+  `,
+      { realRpc: true },
+    ),
+  60_000,
+);

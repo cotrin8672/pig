@@ -5,8 +5,33 @@ export type WireTranscript = Transcript & {
   toolResultRefs?: Record<string, string>;
 };
 
+// History is prepended locally; it is never part of the preceding wire base.
+const wireBases = new WeakMap<
+  Transcript,
+  { readonly recordCount: number; readonly toolIds: readonly string[] }
+>();
+export function transcriptWireBase(transcript: Transcript) {
+  let base = wireBases.get(transcript);
+  if (!base) {
+    base = {
+      recordCount: transcript.records.length,
+      toolIds: Object.keys(transcript.tools),
+    };
+    wireBases.set(transcript, base);
+  }
+  return base;
+}
+export function preserveTranscriptWireBase(
+  source: Transcript,
+  target: Transcript,
+): Transcript {
+  wireBases.set(target, transcriptWireBase(source));
+  return target;
+}
+
 export function unpackTranscript(transcript: WireTranscript): Transcript {
-  if (!transcript.toolResultRefs) return transcript;
+  if (!transcript.toolResultRefs)
+    return preserveTranscriptWireBase(transcript, transcript);
   const { toolResultRefs, ...rest } = transcript;
   const records = new Map(
     transcript.records.map((record) => [record.id, record]),
@@ -31,5 +56,5 @@ export function unpackTranscript(transcript: WireTranscript): Transcript {
       },
     };
   }
-  return { ...rest, tools };
+  return preserveTranscriptWireBase(transcript, { ...rest, tools });
 }

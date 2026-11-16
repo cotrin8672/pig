@@ -6,6 +6,12 @@ import type { Snapshot } from "./rpc-schema";
 
 export const UI_HEARTBEAT_INTERVAL_MS = 5_000;
 export const UI_CONNECTION_LEASE_MS = 30_000;
+export const RUNTIME_IDLE_MS = 5 * 60_000;
+/** Complete protection set for one Root, not merely its focused Pane. */
+export type RuntimeUsage = {
+  sequence: number;
+  protected: SessionAddress[];
+};
 export type SessionAddress = {
   hostId: string;
   sessionId: string;
@@ -13,7 +19,12 @@ export type SessionAddress = {
 };
 export type UIAddress = SessionAddress & { uiId: string };
 export type SessionPhase = "opening" | "ready" | "closing";
-export type OpenSessionParams = { openId: string; cwd: string; id?: string };
+export type OpenSessionParams = {
+  openId: string;
+  cwd: string;
+  id?: string;
+  historyOnly?: true;
+};
 export type OpenState =
   | { state: "opening"; address: SessionAddress }
   | { state: "ready"; snapshot: Snapshot }
@@ -29,6 +40,15 @@ export type RuntimeEvent =
     }
   | { type: "ready"; openId?: string; snapshot: Snapshot }
   | { type: "replaced"; previous: SessionAddress; snapshot: Snapshot }
+  | {
+      type: "suspended";
+      previous: SessionAddress;
+      address: SessionAddress;
+      snapshotSeq: number;
+      historyRevision: string;
+      /** Empty server mirror's revision after the ownership-only transfer. */
+      draftRevision?: number;
+    }
   | {
       type: "closed";
       address: SessionAddress;
@@ -89,6 +109,8 @@ export type RecoveredDraft = {
 };
 export type SendIntent = {
   receipt: PromptReceipt;
+  /** Cancelled queued input has already been returned to a durable draft. */
+  recovered?: true;
   delivery?: PromptDelivery;
   timestamp?: number;
   draftRevision: number;
@@ -103,6 +125,12 @@ export type RuntimeViewState = {
     snapshot?: Snapshot;
     address: SessionAddress;
     openId?: string;
+    suspended?: {
+      previous?: SessionAddress;
+      snapshotSeq: number;
+      historyRevision: string;
+      draftRevision?: number;
+    };
   }[];
   pendingUI: UIRequest[];
   drafts: { address: SessionAddress; draft: DraftState }[];
@@ -111,6 +139,12 @@ export type RuntimeViewState = {
   retainedDrafts?: RecoveredDraft[];
   recoveryError?: string;
 };
+export type RuntimeCursor = {
+  hostId: string;
+  publicationSeq: number;
+};
+export type RuntimePublication<T> = RuntimeCursor & { event: T };
+export type RuntimeStateSnapshot = RuntimeViewState & RuntimeCursor;
 export type RuntimeRecoveryState = Pick<
   RuntimeViewState,
   "hostId" | "sendIntents" | "retainedDrafts" | "recoveryError"
