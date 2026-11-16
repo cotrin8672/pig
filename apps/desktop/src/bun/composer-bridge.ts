@@ -34,6 +34,16 @@ export class ComposerBridge {
   read(address: SessionAddress): DraftState {
     return structuredClone(this.current(address));
   }
+  hasContent(address: SessionAddress): boolean {
+    const draft = this.current(address);
+    return !!(
+      draft.text ||
+      draft.pastes.length ||
+      draft.images.length ||
+      draft.files?.length ||
+      draft.annotations?.length
+    );
+  }
   sync(params: DraftSyncParams): DraftSyncResult {
     const current = this.current(params);
     if (

@@ -37,16 +37,14 @@ import {
 import { AnnotationDrafts } from "./AnnotationCards";
 import { AnnotationPopover } from "./AnnotationPopover";
 import { rememberAnnotationRange } from "./annotation-highlights";
-import {
-  AttachmentReads,
-  imageTypes,
-  maxImageBase64,
-} from "./attachment-reads";
+import { imageTypes, maxImageBase64 } from "./attachment-reads";
 import { ComposerEditor, insertEditorNewline } from "./ComposerEditor";
 import { ComposerFrame } from "./ComposerFrame";
 import { ComposerSubmit } from "./ComposerSubmit";
 import { ContextIndicator } from "./ContextIndicator";
 import { addressKey } from "./chat-snapshot";
+import { attachmentReads } from "./composer-attachments";
+import { composerHistory } from "./composer-input-history";
 import { createDraftMirror } from "./draft-mirror";
 import { drafts, emptyContent, expandedDraft } from "./draft-store";
 import { ImagePreview } from "./ImageGallery";
@@ -54,10 +52,8 @@ import { useT } from "./i18n";
 import { MessageQueue } from "./MessageQueue";
 import { ModelPicker } from "./ModelPicker";
 import { createModelPickerSelector } from "./model-picker-view";
-import { rpc, sends } from "./rpc";
-import { subscribeOwnership } from "./runtime-events";
+import { ensureSessionRuntime, rpc, sends } from "./rpc";
 import { SessionIndicators } from "./SessionIndicators";
-import { isPendingSteer } from "./send-controller";
 import { interruptedSession } from "./session-status";
 import {
   applySlashCompletion,
@@ -86,10 +82,6 @@ const fileIcons: [RegExp, typeof GenericFile][] = [
 const fileIcon = (name: string) =>
   fileIcons.find(([pattern]) => pattern.test(name))?.[1] ?? GenericFile;
 
-const attachmentReads = new AttachmentReads(drafts, showError);
-subscribeOwnership((previous, next) =>
-  attachmentReads.transfer(previous, next),
-);
 export function Composer({
   snapshot,
   annotationRoot,
@@ -203,8 +195,8 @@ export function Composer({
   useEffect(() => {
     if (!open) return;
     let live = true;
-    void rpc.request
-      .listSlashCommands(slashAddress)
+    void ensureSessionRuntime(slashAddress)
+      .then(() => rpc.request.listSlashCommands(slashAddress))
       .then((commands) => {
         if (live) setCommandState({ key, commands });
       })
@@ -391,15 +383,28 @@ export function Composer({
         />
       )}
       <MessageQueue
-        steering={sends.optimistic(address).flatMap((send) =>
-          send.content &&
-          isPendingSteer(send, transcript.running) &&
-          !send.key.requestId.startsWith(RESUME_REQUEST_PREFIX) &&
-          // Scanned only for pending steering, never on an idle render.
-          !transcriptRequestIds(transcript.records).has(send.key.requestId)
-            ? [{ id: send.key.requestId, content: send.content }]
-            : [],
-        )}
+        steering={sends
+          .pendingSteering(address, transcript.running)
+          .flatMap((send) =>
+            send.content &&
+            !send.key.requestId.startsWith(RESUME_REQUEST_PREFIX) &&
+            // Scanned only for pending steering, never on an idle render.
+            !transcriptRequestIds(transcript.records).has(send.key.requestId)
+              ? [
+                  {
+                    id: send.key.requestId,
+                    content: send.content,
+                    unconfirmed: send.state === "unknown",
+                  },
+                ]
+              : [],
+          )}
+        onCheck={(requestId) => {
+          const send = sends
+            .pendingSteering(address, transcript.running)
+            .find((item) => item.key.requestId === requestId);
+          if (send) return sends.lookup(address, send.key);
+        }}
         items={sends.queued(address).flatMap((item) =>
           item.content
             ? [
@@ -674,6 +679,11 @@ export function Composer({
               : t["Ask anything, or describe what to build…"]
           }
           value={text}
+          pastes={pastes}
+          onRestore={(edit) =>
+            drafts.edit(address, (content) => ({ ...content, ...edit }))
+          }
+          messageHistory={() => composerHistory(transcript.records)}
           onChange={(event) => {
             const target = event.currentTarget;
             updateSelection(target);

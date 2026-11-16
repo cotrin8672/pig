@@ -7,6 +7,7 @@ import { packSnapshot } from "../src/bun/transcript-wire";
 import {
   hydrateChatSnapshot,
   newerSnapshot,
+  prependHistory,
 } from "../src/mainview/chat-snapshot";
 import type { Snapshot } from "../src/shared/rpc-schema";
 import { expandSnapshotDelta } from "../src/shared/snapshot-delta";
@@ -161,13 +162,13 @@ for (const fixture of cases) {
     initial = next(1);
   encode({ type: "ready", snapshot: initial });
   let current = hydrateChatSnapshot(wireCopy(packSnapshot(initial)));
-  current = {
-    ...current,
-    transcript: {
-      ...current.transcript,
-      history: { revision: "branch" },
-      records: [
-        ...Array.from(
+  if (fixture.older)
+    current = prependHistory(
+      current,
+      {
+        ...emptyTranscript(),
+        history: { revision: "branch" },
+        records: Array.from(
           { length: fixture.older },
           (_, i): TranscriptRecord => ({
             id: `older-${i}`,
@@ -183,10 +184,9 @@ for (const fixture of cases) {
             },
           }),
         ),
-        ...current.transcript.records,
-      ],
-    },
-  };
+      },
+      records[0].id,
+    );
   const samples: {
     encode: number;
     stringify: number;

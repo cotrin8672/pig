@@ -42,6 +42,38 @@ function fixture(
   );
   return { drafts, sends, callbacks, delays };
 }
+test("SDK startup settles before CAS; failure restores input without reservation or dispatch", async () => {
+  const drafts = new DraftStore();
+  drafts.edit(address, () => ({
+    ...emptyContent(),
+    text: "kept while starting",
+  }));
+  const startup = Promise.withResolvers<void>();
+  let syncs = 0,
+    prompts = 0;
+  const sends = new SendController(drafts, {
+    prepareSession: () => startup.promise,
+    syncDraft: async (params) => {
+      syncs++;
+      return syncDraft(params);
+    },
+    prompt: async () => {
+      prompts++;
+      return accepted;
+    },
+    getPromptReceipt: async (key) => ({ ...key, state: "pending" }),
+  });
+  const pending = sends.send(address);
+  await Bun.sleep(0);
+  expect(syncs).toBe(0);
+  expect(prompts).toBe(0);
+  startup.reject(new Error("SDK could not start"));
+  await pending;
+  expect(syncs).toBe(0);
+  expect(prompts).toBe(0);
+  expect(drafts.read(address).content.text).toBe("kept while starting");
+  expect(sends.read(address)?.state).toBe("rejected");
+});
 test("only automatic resume uses a tagged request; typed continue remains a normal send", async () => {
   const requests: PromptParams[] = [];
   const f = fixture(

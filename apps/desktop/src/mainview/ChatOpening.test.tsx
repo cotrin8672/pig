@@ -26,6 +26,7 @@ if (process.env.PIG_CHAT_OPENING_CHILD !== "1") {
   });
 } else {
   mock.module("./rpc", () => ({
+    ensureSessionRuntime: async () => {},
     rpc: { send: {}, request: {} },
     cancelOpening: async () => {},
     updateUiPreferences: () => {},

@@ -79,7 +79,7 @@ for (const action of ["fork", "rewind"]) {
 }
 
 test.skipIf(!existsSync(fixtureEdge) && !process.env.PIG_REQUIRE_UI_TESTS)(
-  "rejected and cancelled steering leave no ghost message and the same chat can resume without replay",
+  "cancelled steering returns to the editor with a notice, without ghosts or automatic replay",
   () =>
     runUiFixture(
       "failed-steering",
@@ -98,6 +98,7 @@ test.skipIf(!existsSync(fixtureEdge) && !process.env.PIG_REQUIRE_UI_TESTS)(
     window.__requests={
       listSlashCommands:()=>[],
       syncDraft:params=>({applied:true,draft:{...params.content,revision:params.expectedRevision+1}}),
+      acknowledgePromptRecovery:()=>{},
       prompt:params=>{requests.push(params);const gate=Promise.withResolvers();pending.push(gate);return gate.promise;},
       getPromptReceipt:params=>({...params,state:'rejected',code:'PREFLIGHT_FAILED',message:'Send failed'}),
     };
@@ -126,14 +127,18 @@ test.skipIf(!existsSync(fixtureEdge) && !process.env.PIG_REQUIRE_UI_TESTS)(
     check(!document.querySelector('.message-queue-steer')&&!document.querySelector('.message.user'),'cancelled steering must not leave a ghost message');
     check(sends.optimistic(address).length===0,'recovered request identity must release the optimistic queue');
     check(snapshot.transcript.records[0].message.content[0].text==='Keep this instruction','cancelled input must remain preserved');
+    check(drafts.read(address).content.text==='Keep this instruction','cancelled steering must return to the composer');
+    check(useStore.getState().noticeHistory.some(notice=>notice.message.includes('returned to the composer')),'cancellation must explain where the input went');
+    await render();
+    check(drafts.read(address).content.text==='Keep this instruction','repeated snapshots must not duplicate restored input');
     check(requests.length===2,'neither rejection nor cancellation may resend automatically');
-    check(button().getAttribute('aria-label')==='Resume'&&!button().disabled,'the same chat must offer an enabled Resume');
-    button().click();await until(()=>requests.length===3,'the same chat must accept a manual Resume');
-    check(requests[2].text==='continue','Resume must not replay cancelled steering');
+    check(button().getAttribute('aria-label')==='Send'&&!button().disabled,'the restored input must be available for a manual retry');
+    button().click();await until(()=>requests.length===3,'the same chat must accept a manual retry');
+    check(requests[2].text==='Keep this instruction','only an explicit retry may send the restored input');
     pending[2].resolve({disposition:'started'});
     snapshot={...snapshot,failure:undefined,transcript:{...snapshot.transcript,running:true,records:[recovered,{
-      id:'resumed',requestId:requests[2].requestId,display:false,parentId:null,branchId:'root',order:1,kind:'message',
-      message:{role:'user',content:'continue',timestamp:2},
+      id:'retried',requestId:requests[2].requestId,parentId:null,branchId:'root',order:1,kind:'message',
+      message:{role:'user',content:'Keep this instruction',timestamp:2},
     }]}};
     await render();await until(()=>button().getAttribute('aria-label')==='Stop'&&!button().disabled,'resumed chat must restore Stop');
     check(requests.length===3&&!document.querySelector('.message-queue-steer'),'resuming must not resurrect failed steering');
@@ -145,7 +150,7 @@ test.skipIf(!existsSync(fixtureEdge) && !process.env.PIG_REQUIRE_UI_TESTS)(
 );
 
 test.skipIf(!existsSync(fixtureEdge) && !process.env.PIG_REQUIRE_UI_TESTS)(
-  "unconfirmed sends leave no permanent steering bubble and retain data without replay",
+  "unconfirmed sends stay labelled in the tray, notify and allow read-only status checks",
   () =>
     runUiFixture(
       "unconfirmed-send",
@@ -159,12 +164,13 @@ test.skipIf(!existsSync(fixtureEdge) && !process.env.PIG_REQUIRE_UI_TESTS)(
     await import(${local("./styles.css")});
     ${fixtureHelpers}
     const root=createFixtureRoot(createRoot),gate=Promise.withResolvers(),requests=[];
+    let checks=0,confirmed=false;
     const address={hostId:'unconfirmed',sessionId:'chat',epoch:1};
     window.__requests={
       listSlashCommands:async()=>[],
       syncDraft:async params=>({applied:true,draft:{...params.content,revision:params.expectedRevision+1}}),
       prompt:params=>{requests.push(params);return gate.promise;},
-      getPromptReceipt:async()=>{throw new Error('Disconnected');},
+      getPromptReceipt:async params=>{checks++;if(confirmed)return {...params,state:'accepted',accepted:{disposition:'queued'},acceptedAt:1};throw new Error('Disconnected');},
     };
     useStore.setState(s=>({settings:{...s.settings,language:'en'}}));
     let snapshot={address,info:{id:'chat',cwd:'fixture',title:'Fixture',modified:1},effort:'off',effortLevels:[],
@@ -180,8 +186,17 @@ test.skipIf(!existsSync(fixtureEdge) && !process.env.PIG_REQUIRE_UI_TESTS)(
     await render();
     check(sends.read(address).state==='unknown','repeated receipt failures must leave an honest unknown state');
     check(!document.querySelector('.message.user'),'unknown input must not remain as steering or a normal optimistic bubble');
+    const unconfirmed=document.querySelector('.message-queue-check');
+    check(unconfirmed?.textContent==='Unconfirmed','unknown input must remain labelled in the existing tray');
+    check(useStore.getState().noticeHistory.some(notice=>notice.message.includes('could not be confirmed')),'unknown results must notify once instead of disappearing');
+    const queueBox=document.querySelector('.message-queue').getBoundingClientRect();
+    const composerBox=document.querySelector('.composer').getBoundingClientRect();
+    check(queueBox.top<composerBox.top,'unconfirmed input belongs above, never below the editor');
     check(sends.retained()[0].content.text==='作業を続けて','unknown payload must remain recoverable');
     check(requests.length===1,'unknown input must never resend automatically');
+    const before=checks;confirmed=true;unconfirmed.click();
+    await until(()=>sends.read(address).state==='accepted','manual check must accept a late receipt');
+    check(checks===before+1&&requests.length===1,'checking must only read the receipt, never resend');
     snapshot={...snapshot,transcript:{...snapshot.transcript,records:[{
       id:'committed',requestId:requests[0].requestId,parentId:null,branchId:'root',order:0,kind:'message',
       message:{role:'user',content:'作業を続けて',timestamp:1},

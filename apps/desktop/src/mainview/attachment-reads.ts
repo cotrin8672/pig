@@ -77,6 +77,11 @@ export class AttachmentReads {
   pending(address: SessionAddress) {
     return this.read(address).filter((read) => read.state === "pending").length;
   }
+  protectedAddresses(): SessionAddress[] {
+    return [...this.reads.values()]
+      .filter((read) => read.state === "pending")
+      .map((read) => read.address);
+  }
   /**
    * Moves every in-flight attachment from the editor to the message being
    * sent, so a late load can never land in the next draft.

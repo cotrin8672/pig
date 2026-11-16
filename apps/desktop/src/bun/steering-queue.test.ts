@@ -11,6 +11,8 @@ test("real SDK: steering joins the active run, editable follow-ups wait until se
       import { fauxProvider, fauxAssistantMessage } from "@earendil-works/pi-ai";
       import { SessionHost } from ${JSON.stringify(new URL("./session-host.ts", import.meta.url).href)};
       import { modelInfo, disposeSessions } from ${JSON.stringify(new URL("./pi-service.ts", import.meta.url).href)};
+      import { DraftStore } from ${JSON.stringify(new URL("../mainview/draft-store.ts", import.meta.url).href)};
+      import { SendController } from ${JSON.stringify(new URL("../mainview/send-controller.ts", import.meta.url).href)};
       const faux = fauxProvider({ tokensPerSecond: Infinity, models: [{ id: "fixture" }] });
       const host = new SessionHost({ modelInfo, configureModels: m => m.registerNativeProvider(faux.provider), emit() {}, emitUI() {}, emitTerminal() {} });
       const cwd = ${JSON.stringify(home)};
@@ -137,6 +139,29 @@ test("real SDK: steering joins the active run, editable follow-ups wait until se
       expect(recovered().some(r => r.requestId === "failed-steer")).toBe(true);
       expect(ids()).toContain("failed-dispatch");
       expect(host.getSessionSnapshot(chat.address).failure).toBe("SDK dispatch failed");
+      const recoveredKey = { ...chat.address, requestId: "failed-steer" };
+      expect(() => host.acknowledgePromptRecovery({
+        ...chat.address, key: { ...chat.address, requestId: "failed-dispatch" },
+      })).toThrow("Queued input was not cancelled");
+      const clientDrafts = new DraftStore(), notices = [];
+      clientDrafts.receive(chat.address, host.getSessionDraft(chat.address));
+      const transport = {
+        syncDraft: async params => host.syncDraft(params),
+        prompt: async () => { throw new Error("Recovery must never resend"); },
+        getPromptReceipt: async key => host.getPromptReceipt(key),
+        acknowledgeRecovery: async params => host.acknowledgePromptRecovery(params),
+      };
+      const sends = new SendController(clientDrafts, transport, () => {}, 5000, error => { throw new Error(error); }, undefined, kind => notices.push(kind));
+      sends.restore(host.receipts.intents());
+      sends.reconcile(host.getSessionSnapshot(chat.address));
+      expect(clientDrafts.read(chat.address).content.text).toBe("preserve failed steering");
+      await wait(() => host.receipts.queuedIntent(recoveredKey)?.recovered);
+      expect(host.getSessionDraft(chat.address).text).toBe("preserve failed steering");
+      expect(notices).toEqual(["restored"]);
+      const fresh = new SendController(clientDrafts, transport, () => {});
+      fresh.restore(host.receipts.intents());
+      fresh.reconcile(host.getSessionSnapshot(chat.address));
+      expect(clientDrafts.read(chat.address).content.text).toBe("preserve failed steering");
       session.agent.prompt = agentPrompt;
       faux.setResponses([fauxAssistantMessage("manual send after dispatch failure")]);
       await host.prompt(input("after-dispatch-failure", "new instruction"));

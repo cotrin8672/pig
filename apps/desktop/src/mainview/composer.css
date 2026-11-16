@@ -7,7 +7,7 @@
   flex-direction: column;
   gap: 6px;
   margin: 0;
-  padding: 8px 12px 0;
+  padding: 4px 12px 0;
   list-style: none;
 }
 .composer-annotations .annotation-card {
@@ -62,7 +62,7 @@
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
-  padding: 8px 12px 0;
+  padding: 4px 12px 0;
 }
 .composer-attachment {
   position: relative;
@@ -316,6 +316,13 @@
 .message-queue-action:hover {
   background: var(--ds-bg-hover);
   color: var(--ds-text-primary);
+}
+.message-queue-action.message-queue-check {
+  flex: none;
+  width: auto;
+  padding-inline: 6px;
+  color: var(--ds-warning);
+  font-size: var(--text-xs);
 }
 @media (pointer: coarse) {
   .message-queue-action {

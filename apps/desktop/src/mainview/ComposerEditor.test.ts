@@ -56,10 +56,10 @@ test("the configured newline key inserts at the selection and retains the caret"
   }
 });
 
-test("clearing a draft returns the editor to its minimum height", () => {
+test("clearing a draft returns to measured content height; CSS supplies the minimum", () => {
   const input = editor(20, 10);
   input.style.height = "220px";
   sizeEditor(input);
-  expect(input.style.height).toBe("32px");
+  expect(input.style.height).toBe("20px");
   expect(input.scrollTop).toBe(0);
 });

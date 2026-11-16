@@ -54,6 +54,14 @@ export class SendReceipts {
     const intent = this.records.get(sendKey(key))?.intent;
     return intent?.content ? intent : this.recovery?.lookup(key, true);
   }
+  acknowledgeRecovery(key: SendKey) {
+    const record = this.records.get(sendKey(key));
+    const intent = this.queuedIntent(key);
+    if (!intent || intent.recovered) return;
+    const recovered: SendIntent = { ...intent, recovered: true };
+    this.recovery?.intent(recovered);
+    if (record) record.intent = recovered;
+  }
   intents() {
     const terminal = new Map<string, SendIntent>();
     const unresolved: SendIntent[] = [];
