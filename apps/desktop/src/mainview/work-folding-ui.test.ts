@@ -91,3 +91,59 @@ test.skipIf(!existsSync(fixtureEdge) && !process.env.PIG_REQUIRE_UI_TESTS)(
     ),
   60_000,
 );
+
+test.skipIf(!existsSync(fixtureEdge) && !process.env.PIG_REQUIRE_UI_TESTS)(
+  "tool images stay in their tool result when a response stops, finishes or fails",
+  () =>
+    runUiFixture(
+      "work-folding-images",
+      `
+      const {createRoot}=await import(${fixtureImport(import.meta.resolve("react-dom/client"))});
+      const {flushSync}=await import(${fixtureImport(import.meta.resolve("react-dom"))});
+      const {Chat}=await import(${fixtureImport(new URL("./App.tsx", import.meta.url))});
+      const {useStore}=await import(${fixtureImport(new URL("./store.ts", import.meta.url))});
+      await import(${fixtureImport(new URL("./styles.css", import.meta.url))});
+      ${fixtureHelpers}
+      const root=createFixtureRoot(createRoot);
+      const canvas=document.createElement('canvas');canvas.width=canvas.height=8;
+      const image={type:'image',mimeType:'image/png',data:canvas.toDataURL('image/png').split(',')[1]};
+      const record=(id,order,message)=>({id,entryId:id,parentId:null,branchId:'branch',order,kind:'message',message});
+      const text=value=>({type:'text',text:value});
+      const assistant=(id,order,content,extra={})=>record(id,order,{role:'assistant',content,api:'openai-responses',provider:'fixture',model:'fixture-model',
+        usage:{input:0,output:0,cacheRead:0,cacheWrite:0,totalTokens:0,cost:{input:0,output:0,cacheRead:0,cacheWrite:0,total:0}},stopReason:'stop',timestamp:order,...extra});
+      const call={type:'toolCall',id:'read',name:'read',arguments:{path:'C:/shot.png'}};
+      const result=[text('Read image file [image/png]'),image];
+      const snapshot=(running,final)=>({address:{hostId:'img',sessionId:'chat',epoch:1},snapshotSeq:1,
+        info:{id:'chat',cwd:'fixture',title:'Images',modified:1},effort:'off',effortLevels:[],
+        transcript:{history:{revision:'branch'},records:[record('u',0,{role:'user',content:'Look',timestamp:0}),
+          assistant('step',1,[text('Reading'),call]),
+          record('result',2,{role:'toolResult',toolCallId:'read',toolName:'read',content:result,isError:false,timestamp:2}),
+          ...(final?[final]:[])],
+          tools:{read:{status:'done',result:{content:result}}},running,current:null,liveToEntry:{}}});
+      window.__requests={listSlashCommands:async()=>[]};
+      const show=async s=>{flushSync(()=>useStore.setState(st=>({snapshots:{chat:s},settings:{...st.settings,language:'en'}})));await wait();};
+      function StoredChat(){const s=useStore(st=>st.snapshots.chat);return <Chat snapshot={s}/>;}
+      await show(snapshot(true));
+      flushSync(()=>root.render(<div className="chat-shell" style={{height:600}}><StoredChat/></div>));await wait();
+      const outside=()=>[...document.querySelectorAll('.image-set')].filter(el=>!el.closest('.tool-output'));
+      for(const [label,final] of [
+        ['finished',assistant('final',3,[text('Done')])],
+        ['aborted',assistant('final',3,[text('Partial')],{stopReason:'aborted'})],
+        ['failed',assistant('final',3,[],{stopReason:'error',errorMessage:'boom'})],
+      ]){
+        await show(snapshot(true,final));
+        await show(snapshot(false,final));
+        check(outside().length===0,label+': a stopped response must not repeat tool images outside their tool result');
+        const toggle=document.querySelector('.work-toggle');
+        if(toggle?.getAttribute('aria-expanded')==='false'){toggle.click();await wait();}
+        const row=document.querySelector('[data-tool-call-id="read"] details');
+        if(row&&!row.open){row.querySelector('summary').click();await wait();}
+        await until(()=>document.querySelector('.tool-output .image-set img'),label+': the read result must still show its image');
+        check(outside().length===0,label+': expanding work must not duplicate the image');
+        if(document.querySelector('.work-toggle')?.getAttribute('aria-expanded')==='true'){document.querySelector('.work-toggle').click();await wait();}
+      }
+      root.unmount();
+      `,
+    ),
+  60_000,
+);

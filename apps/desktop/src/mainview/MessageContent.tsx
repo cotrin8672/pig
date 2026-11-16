@@ -3,10 +3,12 @@ import type { ChatRendererProps } from "@pig/chat-renderers";
 import type { Root } from "hast";
 import { Check, Copy, Pencil } from "lucide-react";
 import {
+  createContext,
   Fragment,
   memo,
   startTransition,
   useCallback,
+  useContext,
   useEffect,
   useLayoutEffect,
   useMemo,
@@ -18,7 +20,6 @@ import ReactMarkdown, {
   type Components,
   defaultUrlTransform,
 } from "react-markdown";
-import rehypeKatex from "rehype-katex";
 import remarkGfm from "remark-gfm";
 import remarkMath from "remark-math";
 import { parseAnnotations, withAnnotations } from "../shared/annotations";
@@ -41,10 +42,13 @@ import {
   retainedMarkdown,
 } from "./markdown-processing";
 import { editKey, messageEdits } from "./message-edits";
+import { positionedKatex } from "./positioned-katex";
 import { openChatLink, regenerate, rpc } from "./rpc";
 import { SentAttachments } from "./SentAttachments";
 import { showError } from "./store";
 import { createTextSampler } from "./streaming-text";
+
+const MarkdownStreaming = createContext(false);
 
 export const Markdown = memo(function Markdown({
   text,
@@ -59,39 +63,60 @@ export const Markdown = memo(function Markdown({
     sampler.update(text, streaming);
   }, [sampler, text, streaming]);
   useEffect(() => () => sampler.dispose(), [sampler]);
-  return <RenderedMarkdown text={streaming ? sample : text} />;
+  return (
+    <RenderedMarkdown text={streaming ? sample : text} streaming={streaming} />
+  );
 });
 
 const RenderedMarkdown = memo(function RenderedMarkdown({
   text,
+  streaming,
 }: {
   text: string;
+  streaming: boolean;
 }) {
   return (
-    <ChatContent kind="markdown" data={{ text }} builtin={BuiltinMarkdown} />
+    <MarkdownStreaming.Provider value={streaming}>
+      <ChatContent kind="markdown" data={{ text }} builtin={BuiltinMarkdown} />
+    </MarkdownStreaming.Provider>
   );
 });
 
 // Stable component types preserve code/image DOM, highlight work and selection
 // while streaming. Inline component functions remount every Markdown update.
+// Inline code holding an absolute Windows path (drive or UNC). Fenced blocks
+// always end with a newline, so they never match.
+const LOCAL_PATH = /^(?:[A-Za-z]:[\\/]|\\\\[^\\/\s]+[\\/])[^<>"|?*\n]*$/;
+
 export const markdownComponents: Components = {
   table: ({ children }) => (
     <div className="markdown-table-scroll">
       <table>{children}</table>
     </div>
   ),
-  code: ({ className, children }) => (
-    <code className={className}>
-      {typeof children === "string" ? (
-        <CodeText
-          text={children}
-          language={/(?:^|\s)language-(\S+)/.exec(className ?? "")?.[1]}
-        />
-      ) : (
-        children
-      )}
-    </code>
-  ),
+  code: ({ className, children }) =>
+    !className && typeof children === "string" && LOCAL_PATH.test(children) ? (
+      <a
+        href={children}
+        onClick={(e) => {
+          e.preventDefault();
+          rpc.send.revealPath({ path: children });
+        }}
+      >
+        <code>{children}</code>
+      </a>
+    ) : (
+      <code className={className}>
+        {typeof children === "string" ? (
+          <CodeText
+            text={children}
+            language={/(?:^|\s)language-(\S+)/.exec(className ?? "")?.[1]}
+          />
+        ) : (
+          children
+        )}
+      </code>
+    ),
   a: ({ href, children }) => (
     <a
       href={href}
@@ -134,34 +159,39 @@ const MarkdownTree = memo(function MarkdownTree({ tree }: { tree: Root }) {
 export function BuiltinMarkdown({
   data: { text },
 }: ChatRendererProps<"markdown">) {
+  const streaming = useContext(MarkdownStreaming);
   const source = useMemo(() => normalizeMath(text), [text]);
   const plain = useMemo(() => plainMarkdown(source), [source]);
   const [result, setResult] = useState<
-    { text: string; tree: Root } | undefined
+    { text: string; streaming: boolean; tree: Root } | undefined
   >(() => {
-    const cached = cachedMarkdown(source);
-    return cached ? { text: source, tree: cached.tree } : undefined;
+    const cached = cachedMarkdown(source, streaming);
+    return cached ? { text: source, streaming, tree: cached.tree } : undefined;
   });
   const [error, setError] = useState<unknown>();
   const committed = useRef<{ text: string; tree: Root } | undefined>(undefined);
   useEffect(() => {
     if (!browserMarkdown() || plain) return;
     const controller = new AbortController();
-    void prepareMarkdown(source, controller.signal).then(
+    void prepareMarkdown(source, controller.signal, streaming).then(
       (parsed) => {
         if (parsed && !controller.signal.aborted)
-          startTransition(() => setResult({ text: source, tree: parsed.tree }));
+          startTransition(() =>
+            setResult({ text: source, streaming, tree: parsed.tree }),
+          );
       },
       (failure) => {
         if (!controller.signal.aborted) setError(failure);
       },
     );
     return () => controller.abort();
-  }, [source, plain]);
+  }, [source, plain, streaming]);
   const exact =
     plain ??
-    cachedMarkdown(source)?.tree ??
-    (result?.text === source ? result.tree : undefined);
+    cachedMarkdown(source, streaming)?.tree ??
+    (result?.text === source && result.streaming === streaming
+      ? result.tree
+      : undefined);
   useLayoutEffect(() => {
     if (exact) committed.current = { text: source, tree: exact };
   }, [source, exact]);
@@ -191,7 +221,7 @@ export function BuiltinMarkdown({
     <ReactMarkdown
       remarkPlugins={[remarkGfm, remarkMath]}
       // Invalid TeX renders as red source text instead of throwing.
-      rehypePlugins={[[rehypeKatex, { throwOnError: false }]]}
+      rehypePlugins={[[positionedKatex, { streaming }]]}
       urlTransform={(url) =>
         sessionIdFromLink(url) ? url : defaultUrlTransform(url)
       }
