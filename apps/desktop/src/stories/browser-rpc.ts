@@ -32,6 +32,7 @@ const unavailable = async () => {
     "Storybookの表示用プレビューです。送信・実行・保存は実アプリに接続していません。",
   );
 };
+export const ensureSessionRuntime = unavailable;
 export const openChat = async (_cwd: string, id?: string) => {
   if (!previewActive) return;
   const state = useStore.getState();
@@ -79,7 +80,9 @@ export const sends = {
   getTick: () => 0,
   read: () => undefined,
   optimistic: () => [],
+  pendingSteering: () => [],
   queued: () => [],
+  lookup: unavailable,
   send: unavailable,
   stop: unavailable,
   withdrawQueued: unavailable,
@@ -91,7 +94,9 @@ export const sends = {
   | "getTick"
   | "read"
   | "optimistic"
+  | "pendingSteering"
   | "queued"
+  | "lookup"
   | "send"
   | "stop"
   | "withdrawQueued"
