@@ -36,6 +36,11 @@
   margin-top: auto;
   padding-top: 300px;
 }
+.current-ui-model-anchor.pane-view {
+  position: relative;
+  height: 400px;
+  flex: none;
+}
 .current-ui-notification-anchor {
   position: relative;
   min-height: 440px;

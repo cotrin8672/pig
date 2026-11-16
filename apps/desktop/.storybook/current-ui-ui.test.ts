@@ -37,6 +37,14 @@ test("the actual App and its feature components render in isolated Storybook pre
       ["domain-chat-screen--default", "Design System/Domain/ChatScreen"],
       ["domain-composer-ui--default", "Design System/Domain/ComposerUI"],
       ["domain-composer-ui--model-picker", "Design System/Domain/ComposerUI"],
+      [
+        "domain-composer-ui--model-picker-narrow",
+        "Design System/Domain/ComposerUI",
+      ],
+      [
+        "domain-composer-ui--model-picker-small",
+        "Design System/Domain/ComposerUI",
+      ],
       ["domain-sidebar--notification-center", "Design System/Domain/Sidebar"],
       ["domain-chat-screen--session-panel", "Design System/Domain/ChatScreen"],
     ])
@@ -213,7 +221,7 @@ test("the actual App and its feature components render in isolated Storybook pre
         );
         await waitFor("!!document.querySelector('.model-source-rail')");
         await browser.evaluate(
-          "[...document.querySelectorAll('.model-source-rail button')].find(button=>button.title==='OpenAI Codex').click()",
+          "[...document.querySelectorAll('.model-source-rail button')].find(button=>button.getAttribute('aria-label')==='OpenAI Codex').click()",
         );
         await waitFor(
           "[...document.querySelectorAll('.model-option')].some(button=>button.textContent.includes('GPT-6.1 Sol'))",
@@ -224,6 +232,34 @@ test("the actual App and its feature components render in isolated Storybook pre
         await waitFor(
           "document.querySelector('.picker-model-label').textContent==='GPT-6.1 Sol'",
         );
+        for (const size of ["narrow", "small"]) {
+          await navigate(
+            `domain-composer-ui--model-picker-${size}`,
+            "!!document.querySelector('.model-source-rail')",
+          );
+          expect(
+            await browser.evaluate(`(() => {
+              const pane = document.querySelector('.pane-view').getBoundingClientRect();
+              const panel = document.querySelector('.model-panel').getBoundingClientRect();
+              const label = document.querySelector('.model-source-rail button > span');
+              return panel.left >= pane.left && panel.right <= pane.right
+                && getComputedStyle(label).display === 'none';
+            })()`),
+          ).toBe(true);
+          expect(
+            await browser.evaluate(
+              "getComputedStyle(document.querySelector('.model-capabilities')).display === 'none'",
+            ),
+          ).toBe(size === "small");
+          await browser.evaluate(
+            "document.querySelector('.model-source-rail button').dispatchEvent(new PointerEvent('pointerover', {bubbles:true}))",
+          );
+          await waitFor("!!document.querySelector('[role=tooltip]')");
+          await Bun.write(
+            join(directory, `model-picker-${size}.png`),
+            await browser.screenshot(),
+          );
+        }
         await navigate(
           "domain-sidebar--notification-center",
           "!!document.querySelector('.notification-center')",

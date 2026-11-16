@@ -37,3 +37,21 @@ export const ModelPicker: Story = {
     </PreviewTheme>
   ),
 };
+
+export const ModelPickerNarrow: Story = {
+  parameters: { appPreview: false, gallery: true },
+  render: (args) => (
+    <PreviewTheme args={args}>
+      <ModelPickerPreview paneWidth={380} />
+    </PreviewTheme>
+  ),
+};
+
+export const ModelPickerSmall: Story = {
+  parameters: { appPreview: false, gallery: true },
+  render: (args) => (
+    <PreviewTheme args={args}>
+      <ModelPickerPreview paneWidth={280} />
+    </PreviewTheme>
+  ),
+};
