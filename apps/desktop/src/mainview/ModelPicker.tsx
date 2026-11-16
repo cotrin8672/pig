@@ -11,7 +11,17 @@ import {
   SquarePen,
   X,
 } from "lucide-react";
-import { memo, useEffect, useId, useMemo, useRef, useState } from "react";
+import {
+  type FocusEvent,
+  memo,
+  type PointerEvent,
+  useEffect,
+  useId,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import {
   accountModelKey,
   accountSourceKey,
@@ -34,9 +44,58 @@ import { navigate } from "./navigation";
 import { changeSelection, usePicker } from "./Picker";
 import { ProviderIcon } from "./ProviderIcon";
 import { startProviderLogin } from "./provider-login";
-import { openChat, requestSelection, rpc, updateUiPreferences } from "./rpc";
-import { useStore } from "./store";
+import {
+  ensureSessionRuntime,
+  openChat,
+  requestSelection,
+  rpc,
+  updateUiPreferences,
+} from "./rpc";
+import { showError, useStore } from "./store";
+import { useTooltip } from "./Tooltip";
 import "./provider-accounts.css";
+
+/** Keeps the panel inside the pane that clips it (panes hide overflow). */
+function usePanelRoom(
+  open: boolean,
+  picker: { current: HTMLElement | null },
+  panel: { current: HTMLElement | null },
+) {
+  useLayoutEffect(() => {
+    const anchor = picker.current;
+    if (!open || !anchor) return;
+    const bounds = anchor.closest<HTMLElement>(".pane-view");
+    const fit = () => {
+      const left = bounds?.getBoundingClientRect().left ?? 0;
+      panel.current?.style.setProperty(
+        "--model-panel-room",
+        `${Math.floor(anchor.getBoundingClientRect().right - left - 8)}px`,
+      );
+    };
+    fit();
+    const observer = new ResizeObserver(fit);
+    observer.observe(anchor);
+    if (bounds) observer.observe(bounds);
+    return () => observer.disconnect();
+  }, [open, picker, panel]);
+}
+
+/** Scrolls the highlighted model name when it is cut off. */
+function updateMarquee(row: Element | null | undefined) {
+  const name = row?.querySelector<HTMLElement>(".model-option-name");
+  if (!name) return;
+  const distance = name.scrollWidth - name.clientWidth;
+  if (distance <= 1) {
+    delete name.dataset.overflow;
+    return;
+  }
+  name.dataset.overflow = "";
+  name.style.setProperty("--marquee-distance", `${distance}px`);
+  name.style.setProperty(
+    "--marquee-duration",
+    `${(2 + distance / 30).toFixed(2)}s`,
+  );
+}
 
 export const ModelPicker = memo(function ModelPicker({
   snapshot,
@@ -51,6 +110,10 @@ export const ModelPicker = memo(function ModelPicker({
   const current = selection ?? snapshot ?? { effort: "off", effortLevels: [] };
   const bootstrap = useStore((state) => state.bootstrap);
   const [open, setOpen] = useState(false);
+  useEffect(() => {
+    if (open && snapshot?.suspended)
+      void ensureSessionRuntime(snapshot.address).catch(showError);
+  }, [open, snapshot?.suspended, snapshot?.address]);
   const sources = useMemo(
     () => (open ? accountModelSources(bootstrap, snapshot) : []),
     [open, bootstrap, snapshot],
@@ -91,6 +154,34 @@ export const ModelPicker = memo(function ModelPicker({
   const list = useRef<HTMLDivElement>(null);
   const listId = useId();
   const { ref, close } = usePicker();
+  const panel = useRef<HTMLDivElement>(null);
+  usePanelRoom(open, ref, panel);
+  const tooltip = useTooltip();
+  // The rail shows only icons in narrow panels; then the name moves to a Tooltip.
+  const railTip = (label: string, description?: string) => {
+    const props: {
+      onPointerEnter?: (event: PointerEvent<HTMLElement>) => void;
+      onFocus?: (event: FocusEvent<HTMLElement>) => void;
+    } = tooltip({
+      tier: description ? "detail" : "label",
+      label,
+      description,
+      side: "right",
+    });
+    const compact = (el: HTMLElement) => {
+      const text = el.querySelector(":scope > span");
+      return !text || getComputedStyle(text).display === "none";
+    };
+    return {
+      ...props,
+      onPointerEnter: (event: PointerEvent<HTMLElement>) => {
+        if (compact(event.currentTarget)) props.onPointerEnter?.(event);
+      },
+      onFocus: (event: FocusEvent<HTMLElement>) => {
+        if (compact(event.currentTarget)) props.onFocus?.(event);
+      },
+    };
+  };
   const activeKey =
     (!source || source === "recent") && recent.length
       ? "recent"
@@ -128,6 +219,13 @@ export const ModelPicker = memo(function ModelPicker({
         ?.querySelector(`[data-model-index="${activeIndex}"]`)
         ?.scrollIntoView({ block: "nearest" });
   }, [open, activeIndex]);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: Re-measure when the highlighted row or list changes.
+  useLayoutEffect(() => {
+    if (open && activeIndex >= 0)
+      updateMarquee(
+        list.current?.querySelector(`[data-model-index="${activeIndex}"]`),
+      );
+  }, [open, activeIndex, query, activeKey]);
   function desired({ source, model }: AccountModel): ModelSelection {
     return {
       model,
@@ -209,6 +307,7 @@ export const ModelPicker = memo(function ModelPicker({
         // biome-ignore lint/a11y/noStaticElementInteractions: Keyboard events are delegated from inputs and options.
         <div
           className="picker-panel model-panel"
+          ref={panel}
           onKeyDown={(event) => {
             if (event.nativeEvent.isComposing || event.keyCode === 229) return;
             if (event.key === "Escape" && query) {
@@ -307,6 +406,8 @@ export const ModelPicker = memo(function ModelPicker({
                     type="button"
                     aria-pressed={activeKey === "recent" && !searching}
                     onClick={() => selectSource("recent")}
+                    aria-label={t.Recent}
+                    {...railTip(t.Recent)}
                   >
                     <Clock3 size={12} />
                     <span>{t.Recent}</span>
@@ -324,12 +425,24 @@ export const ModelPicker = memo(function ModelPicker({
                       undefined
                     }
                     onClick={() => selectSource(entry.key)}
-                    aria-description={entry.label}
+                    aria-label={entry.label}
+                    {...railTip(
+                      entry.label,
+                      accountLocked(entry, snapshot)
+                        ? t.accountLocked
+                        : !entry.configured
+                          ? t.accountSignInNeeded(entry.label)
+                          : undefined,
+                    )}
                   >
                     <ProviderIcon provider={entry.provider} size={12} />
                     <span>{entry.label}</span>
                     {accountLocked(entry, snapshot) ? (
-                      <Lock size={10} aria-label={t.accountLocked} />
+                      <Lock
+                        size={10}
+                        className="model-source-lock"
+                        aria-label={t.accountLocked}
+                      />
                     ) : (
                       <small>
                         {entry.configured ? entry.models.length : "!"}
@@ -425,7 +538,7 @@ export const ModelPicker = memo(function ModelPicker({
                             />
                           )}
                           <span className="model-option-name">
-                            {model.name}
+                            <span>{model.name}</span>
                           </span>
                           <span className="model-capabilities">
                             {model.reasoning && (

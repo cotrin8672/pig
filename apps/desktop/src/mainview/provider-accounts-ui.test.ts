@@ -130,6 +130,7 @@ test.skipIf(!existsSync(edge) && !process.env.PIG_REQUIRE_UI_TESTS)(
                 contents: `
         export const refresh=async()=>window.refresh?.(), updateSettings=()=>{}, updateUiPreferences=()=>{};
         export const requestSelection=(_a,fn)=>fn();
+        export const ensureSessionRuntime=()=>Promise.resolve();
         export const openChat=(...args)=>{window.calls.push(["openChat",args]);};
         export const rpc={send:{startLogin:params=>window.calls.push(["login",params]),cancelLogin:()=>{}},request:{
           renameProviderAccount:params=>window.rename(params),renameDefaultProviderAccount:async params=>window.calls.push(["renameDefault",params]),

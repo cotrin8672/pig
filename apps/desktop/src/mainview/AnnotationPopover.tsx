@@ -91,6 +91,14 @@ export function AnnotationPopover({
         return;
       selecting = true;
       setTarget(undefined);
+      // Pressing inside a selection would start a native text drag (the
+      // selection stays put and pointerup never arrives). Response text is
+      // read-only, so drop the selection first and let the press re-select.
+      if (
+        !event.shiftKey &&
+        (event.target as Element).closest?.("article.message.assistant")
+      )
+        document.getSelection()?.removeAllRanges();
     };
     const finishSelection = () => {
       if (!selecting) return;

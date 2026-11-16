@@ -9,6 +9,7 @@ export type ModelPickerSnapshot = ModelSelection &
     Snapshot,
     | "address"
     | "ready"
+    | "suspended"
     | "sessionAccounts"
     | "accountSwitchAllowed"
     | "modelCatalog"
@@ -24,6 +25,7 @@ export function createModelPickerSelector() {
     const view: ModelPickerSnapshot = {
       address: snapshot.address,
       ready: snapshot.ready,
+      suspended: snapshot.suspended,
       info: { id: snapshot.info.id, cwd: snapshot.info.cwd },
       model: snapshot.model,
       accountId: snapshot.accountId,

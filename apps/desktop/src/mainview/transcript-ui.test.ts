@@ -1200,7 +1200,7 @@ test.skipIf(!existsSync(edge) && !process.env.PIG_REQUIRE_UI_TESTS)(
         check(item && row && getComputedStyle(item).position==="relative","attachment must stay in normal flow, never use the page loading overlay");
         const a=item.getBoundingClientRect(),r=row.getBoundingClientRect(),f=form.getBoundingClientRect();
         const style=getComputedStyle(form),inset=parseFloat(style.paddingLeft)+parseFloat(style.borderLeftWidth)+12;
-        check(Math.abs(a.left-r.left-12)<=1 && Math.abs(a.top-r.top-8)<=1 && Math.abs(a.left-f.left-inset)<=1,"pending attachments must start in the composer's top-left attachment slot: "+JSON.stringify({item:a.toJSON(),row:r.toJSON(),form:f.toJSON(),inset}));
+        check(Math.abs(a.left-r.left-12)<=1 && Math.abs(a.top-r.top-4)<=1 && Math.abs(a.left-f.left-inset)<=1,"pending attachments must start in the composer's top-left attachment slot: "+JSON.stringify({item:a.toJSON(),row:r.toJSON(),form:f.toJSON(),inset}));
         return {x:a.left,y:a.top,width:a.width,height:a.height};
       };
       const assertSameBounds=before=>{
@@ -1327,6 +1327,16 @@ test.skipIf(!existsSync(edge) && !process.env.PIG_REQUIRE_UI_TESTS)(
       await wheel(sourceRail,sourceRail.scrollHeight);checkPickerHeight();
       check(sourceButton("Extra 14").getBoundingClientRect().bottom<=sourceRail.getBoundingClientRect().bottom,"the last account must remain reachable");
       metrics.modelPickerFixedHeight=panelRect.height;
+      await click(document.querySelector(".model-picker summary"));
+      flushSync(()=>useStore.setState({bootstrap:pickerBootstrap}));
+      await render(<div className="pane-view" style={{position:"absolute",overflow:"hidden",left:200,top:0,width:330,height:500}}><div style={{position:"absolute",right:60,bottom:20}}><ModelPicker selection={pickerSelection} onSelect={()=>{}}/></div></div>);
+      await click(document.querySelector(".model-picker summary"));await wait();
+      const narrowPanel=document.querySelector(".model-panel").getBoundingClientRect(),narrowPane=document.querySelector(".pane-view").getBoundingClientRect();
+      check(narrowPanel.left>=narrowPane.left && narrowPanel.right<=narrowPane.right,"a narrow pane must not clip the model picker: "+narrowPanel.left+"/"+narrowPane.left);
+      const railButton=document.querySelector(".model-source-rail button");
+      check(railButton.getBoundingClientRect().width<=28 && getComputedStyle(railButton.querySelector(":scope > span")).display==="none" && railButton.getAttribute("aria-label"),"narrow pickers must collapse the account rail to labelled icons");
+      const narrowName=document.querySelector(".model-option-name");
+      check(narrowName.getBoundingClientRect().width>=80,"narrow pickers must leave room for model names");
       await render(<div/>);
       metrics.stage="default-model-settings";
       flushSync(()=>useStore.setState({bootstrap:pickerBootstrap}));
@@ -1678,7 +1688,8 @@ test.skipIf(!existsSync(edge) && !process.env.PIG_REQUIRE_UI_TESTS)(
             if(method==="syncDraft")return {applied:true,draft:{...params.content,revision:params.expectedRevision+1}};
             return {};
           }}),send:new Proxy({},{get:()=>noop})};
-          export const sends={subscribe:()=>noop,getTick:()=>0,read:()=>window.__sendState,optimistic:()=>[],queued:()=>[],retained:()=>[],send:async(_address,_content,_attachments,delivery)=>{window.__sendCount=(window.__sendCount??0)+1;window.__sendModes?.push(delivery);}};
+          export const sends={subscribe:()=>noop,getTick:()=>0,read:()=>window.__sendState,optimistic:()=>[],pendingSteering:()=>[],queued:()=>[],retained:()=>[],send:async(_address,_content,_attachments,delivery)=>{window.__sendCount=(window.__sendCount??0)+1;window.__sendModes?.push(delivery);}};
+          export const ensureSessionRuntime=()=>Promise.resolve();
           export const updateAppearance=noop,updateSettings=noop,updateUiPreferences=noop,refreshSessions=noop,refresh=()=>window.__refresh?.()??Promise.resolve(),requestSelection=(_address,request)=>request(),connectRuntime=noop,initRuntimeConnection=noop,cancelOpening=noop,openChat=noop,startOpeningChat=noop,showPendingOpen=noop,openChatLink=noop,forkChat=noop,regenerate=noop,initSessionLinks=noop,initSessionReadTracking=noop,reconnectRuntime=noop;
         `,
               }));
