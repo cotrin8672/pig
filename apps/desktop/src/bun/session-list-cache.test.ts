@@ -143,6 +143,9 @@ test("replacement with the same length/mtime, same-size rewrites, shrink and del
       title: "New title",
     });
     const replacedStat = await stat(file);
+    // Windows ChangeTime only advances per clock tick; without a gap the
+    // rewrite below can keep an identical stamp on a fast runner.
+    await Bun.sleep(50);
     await writeFile(file, body("session-b", "Edit name"));
     await utimes(file, replacedStat.atime, replacedStat.mtime);
     expect((await cache.list(dir))[0].title).toBe("Edit name");

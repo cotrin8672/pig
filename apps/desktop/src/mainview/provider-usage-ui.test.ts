@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import { existsSync } from "node:fs";
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdtemp, readFile, realpath, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -17,7 +17,8 @@ test.skipIf(!existsSync(edge) && !process.env.PIG_REQUIRE_UI_TESTS)(
   "provider usage in Edge: framed bars, sidebar widths, preference, alpha and scroll",
   async () => {
     if (!existsSync(edge)) throw new Error("Required UI browser is missing");
-    const dir = await mkdtemp(join(tmpdir(), "pig-usage-ui-"));
+    // Vite's root must be the long path: CI's tmpdir() is an 8.3 short name.
+    const dir = await realpath(await mkdtemp(join(tmpdir(), "pig-usage-ui-")));
     let passed = false;
     const source = (path: string) =>
       JSON.stringify(fileURLToPath(new URL(path, import.meta.url)));

@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import { existsSync } from "node:fs";
-import { mkdtemp } from "node:fs/promises";
+import { mkdtemp, realpath } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -17,7 +17,10 @@ const edge =
 test.skipIf(!existsSync(edge) && !process.env.PIG_REQUIRE_UI_TESTS)(
   "statistics: production navigation, one-screen pastel layout, live periods, errors and stale replies",
   async () => {
-    const dir = await mkdtemp(join(tmpdir(), "pig-statistics-ui-"));
+    // Vite's root must be the long path: CI's tmpdir() is an 8.3 short name.
+    const dir = await realpath(
+      await mkdtemp(join(tmpdir(), "pig-statistics-ui-")),
+    );
     let passed = false;
     const source = (path: string) =>
       JSON.stringify(fileURLToPath(new URL(path, import.meta.url)));
