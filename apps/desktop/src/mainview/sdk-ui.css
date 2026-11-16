@@ -6,7 +6,10 @@
   max-height: calc(100vh - 64px);
   overflow: auto;
   color: var(--ds-text-primary);
-  background: var(--ds-bg-elevated-opaque);
+  /* Same glass as the search palette: translucent fill, blur made opaque by
+     #sdk-request-solid so sharp text behind the transparent window cannot leak. */
+  background: color-mix(in srgb, var(--ds-bg-elevated-opaque) 64%, transparent);
+  backdrop-filter: blur(24px) saturate(140%) url("#sdk-request-solid");
   /* Waiting on the user: a tertiary ring marks it apart from ordinary dialogs. */
   border: 1px solid color-mix(in srgb, var(--ds-highlight) 55%, transparent);
   border-radius: var(--radius-md);

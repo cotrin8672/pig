@@ -14,8 +14,12 @@ export interface SessionFlags {
 }
 export interface UiPreferences {
   chatWidth?: number;
+  sidebarWidth?: number;
   recentModels?: string[];
 }
+export const SIDEBAR_WIDTH = { min: 200, default: 260, max: 480 };
+export const clampSidebarWidth = (width: number) =>
+  Math.round(Math.min(SIDEBAR_WIDTH.max, Math.max(SIDEBAR_WIDTH.min, width)));
 export interface DesktopState extends UiPreferences {
   sessions: Record<string, SessionFlags>;
   projects?: Record<string, ProjectFlags>;
@@ -33,6 +37,14 @@ export function validateUiPreferences(value: unknown): UiPreferences {
     )
       throw new Error("Invalid chat width.");
     next.chatWidth = clampChatWidth(input.chatWidth);
+  }
+  if (input.sidebarWidth !== undefined) {
+    if (
+      typeof input.sidebarWidth !== "number" ||
+      !Number.isFinite(input.sidebarWidth)
+    )
+      throw new Error("Invalid sidebar width.");
+    next.sidebarWidth = clampSidebarWidth(input.sidebarWidth);
   }
   if (input.recentModels !== undefined) {
     if (
