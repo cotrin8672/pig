@@ -1,21 +1,21 @@
 import type { Root } from "hast";
 import ReactMarkdown from "react-markdown";
-import rehypeKatex from "rehype-katex";
 import remarkGfm from "remark-gfm";
 import remarkMath from "remark-math";
 import { markdownUrl } from "./markdown-url";
+import { positionedKatex } from "./positioned-katex";
 
 export type ParsedMarkdown = { tree: Root; nodes: number };
 
 /** Use react-markdown's own processor and post-processing, including URL/raw-HTML
  * safety. Only the serializable HAST crosses the worker boundary, never HTML. */
-export function parseMarkdown(text: string): ParsedMarkdown {
+export function parseMarkdown(text: string, streaming = false): ParsedMarkdown {
   let tree: Root | undefined;
   ReactMarkdown({
     children: text,
     remarkPlugins: [remarkGfm, remarkMath],
     rehypePlugins: [
-      [rehypeKatex, { throwOnError: false }],
+      [positionedKatex, { streaming }],
       () => (value: Root) => {
         tree = value;
       },

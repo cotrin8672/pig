@@ -1,4 +1,4 @@
-import type { Transcript, TranscriptRecord } from "./transcript";
+import type { TranscriptRecord } from "./transcript";
 
 /** Pure helpers for rendering SDK tool calls in the transcript. */
 
@@ -148,47 +148,6 @@ export function finishedWork(
   }
   if (start < records.length) close(start, records.length - 1, running);
   return result;
-}
-
-export interface ToolImage {
-  type: "image";
-  data: string;
-  mimeType: string;
-}
-
-const isImageBlock = (block: unknown): block is ToolImage =>
-  !!block &&
-  typeof block === "object" &&
-  (block as { type?: unknown }).type === "image" &&
-  typeof (block as { data?: unknown }).data === "string" &&
-  typeof (block as { mimeType?: unknown }).mimeType === "string";
-
-/**
- * Images returned by the tool calls of one response, in call order. The final
- * answer shows them, so a generated image is not hidden inside folded work.
- */
-export function responseImages(
-  records: readonly TranscriptRecord[],
-  range: WorkRange,
-  tools: Transcript["tools"],
-): ToolImage[] {
-  const images: ToolImage[] = [];
-  for (let index = range.first; index <= range.final; index++) {
-    const record = records[index];
-    if (record.kind !== "message" || record.message.role !== "assistant")
-      continue;
-    for (const block of record.message.content) {
-      if (block.type !== "toolCall") continue;
-      const result = tools[block.id]?.result;
-      const content =
-        result && typeof result === "object" && "content" in result
-          ? (result as { content?: unknown }).content
-          : undefined;
-      if (!Array.isArray(content)) continue;
-      for (const item of content) if (isImageBlock(item)) images.push(item);
-    }
-  }
-  return images;
 }
 
 /** Keep completed work ranges; only saved, unchanged records can form a reusable prefix. */

@@ -5,8 +5,14 @@ import ReactMarkdown from "react-markdown";
 import rehypeKatex from "rehype-katex";
 import remarkGfm from "remark-gfm";
 import remarkMath from "remark-math";
+import { normalizeMath } from "../shared/math";
 import { parseMarkdown } from "./markdown-engine";
-import { plainMarkdown, retainedMarkdown } from "./markdown-processing";
+import {
+  cachedMarkdown,
+  plainMarkdown,
+  prepareMarkdown,
+  retainedMarkdown,
+} from "./markdown-processing";
 import { markdownUrl } from "./markdown-url";
 
 const renderTree = (tree: Root | undefined) => {
@@ -114,6 +120,86 @@ test("pending changes retain complete blocks across synthetic paragraph separato
   expect(
     retainedMarkdown("old new", { text: "old", tree: unknown }).tree,
   ).toBeUndefined();
+});
+test("completed display math never falls back to raw TeX while following prose is pending", () => {
+  for (const input of [
+    "$$\nx = \\frac{1}{2}\n$$",
+    "$$$\nx = \\frac{1}{2}\n$$$$",
+    "\\[x = \\frac{1}{2}\\]",
+    "~~~math\nx = \\frac{1}{2}\n~~~",
+    "````math\nx = \\frac{1}{2}\n````",
+    "$$\n\\notARealCommand{x}\n$$",
+    "> $$\n> x = \\frac{1}{2}\n> $$",
+    "- $$\n  x = \\frac{1}{2}\n  $$",
+  ]) {
+    const initial = normalizeMath(input);
+    const previous = { text: initial, tree: parseMarkdown(initial).tree };
+    const pending = retainedMarkdown(`${initial}\n\nNext paragraph`, previous);
+    expect(renderTree(pending.tree)).toBe(baseline(initial));
+    expect(pending.tail).toContain("Next paragraph");
+    expect(pending.tail).not.toContain("frac");
+    expect(pending.tail).not.toContain("$$");
+    expect(pending.tail).not.toContain("notARealCommand");
+    expect(renderTree(parseMarkdown(initial).tree)).toBe(baseline(initial));
+  }
+});
+test("new source inside unfinished or edited math never retains an obsolete equation", () => {
+  for (const initial of [
+    "$$\nx = 1",
+    "$$\nx = 1\n",
+    "~~~math\nx = 1",
+    "~~~math\nx = 1\n",
+    "$$\nx = 1\n> $$",
+  ]) {
+    const previous = { text: initial, tree: parseMarkdown(initial).tree };
+    const next = `${initial} + 2`;
+    const pending = retainedMarkdown(next, previous);
+    expect(pending.tail).toBe(next);
+    expect(pending.tree).toBeUndefined();
+  }
+  const initial = "$$\nx = 1\n$$";
+  const previous = { text: initial, tree: parseMarkdown(initial).tree };
+  const pending = retainedMarkdown(initial.replace("1", "2"), previous);
+  expect(pending.tail).toContain("x = 2");
+  expect(pending.tree).toBeUndefined();
+});
+test("streaming incomplete math stays literal across parse completion, appends and newlines", () => {
+  for (const [initial, append, close] of [
+    ["$$\nx = \\frac{1", "}{2}\n+ 3", "\n$$"],
+    ["~~~math\nx = \\frac{1", "}{2}\n+ 3", "\n~~~"],
+    ["> $$\n> x = \\frac{1", "}{2}\n> + 3", "\n> $$"],
+    ["- $$\n  x = \\frac{1", "}{2}\n  + 3", "\n  $$"],
+  ]) {
+    const previous = {
+      text: initial,
+      tree: parseMarkdown(initial, true).tree,
+    };
+    expect(renderTree(previous.tree)).not.toContain('class="katex');
+    expect(renderTree(previous.tree)).toContain("markdown-pending-source");
+    const next = initial + append;
+    const pending = retainedMarkdown(next, previous);
+    expect(pending.tail).toBe("");
+    expect(renderTree(pending.tree)).toBe(
+      renderTree(parseMarkdown(next, true).tree),
+    );
+    expect(renderTree(pending.tree)).not.toContain('class="katex');
+    expect(renderTree(parseMarkdown(next + close, true).tree)).toBe(
+      baseline(next + close),
+    );
+    expect(renderTree(parseMarkdown(next).tree)).toBe(baseline(next));
+    const edited = retainedMarkdown(next.replace("1", "9"), previous);
+    expect(edited.tail).toContain("frac{9");
+  }
+});
+test("streaming and final Markdown caches never share an unfinished math rendering", async () => {
+  const text = "$$\ncacheSeparation = \\frac{17}{";
+  const pending = await prepareMarkdown(text, undefined, true);
+  const final = await prepareMarkdown(text);
+  expect(pending).not.toBe(final);
+  expect(cachedMarkdown(text, true)).toBe(pending);
+  expect(cachedMarkdown(text)).toBe(final);
+  expect(renderTree(pending?.tree)).not.toContain('class="katex');
+  expect(renderTree(final?.tree)).toBe(baseline(text));
 });
 test("pending code-body updates preserve the pre/code tree and latest source, not a stale body", () => {
   const initial =

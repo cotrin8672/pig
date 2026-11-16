@@ -9,6 +9,8 @@ type Cached = {
   value?: ParsedMarkdown;
 };
 const cache = new Map<string, Cached>();
+const cacheKey = (text: string, streaming: boolean) =>
+  `${streaming ? 1 : 0}\0${text}`;
 function trim() {
   const size = (source: string, entry: Cached) =>
     source.length * 2 + (entry.value?.nodes ?? 0) * 128;
@@ -22,7 +24,8 @@ function trim() {
     weight -= size(source, entry);
   }
 }
-export const cachedMarkdown = (text: string) => cache.get(text)?.value;
+export const cachedMarkdown = (text: string, streaming = false) =>
+  cache.get(cacheKey(text, streaming))?.value;
 // Plain prose needs no parser/KaTeX. Keep exact paragraph geometry immediately,
 // including soft breaks, so a cold worker cannot shift a plain-text conversation.
 export function plainMarkdown(text: string): Root | undefined {
@@ -59,9 +62,11 @@ export const browserMarkdown = () =>
 export async function prepareMarkdown(
   text: string,
   signal?: AbortSignal,
+  streaming = false,
 ): Promise<ParsedMarkdown | undefined> {
   if (signal?.aborted) return undefined;
-  let entry = cache.get(text);
+  const key = cacheKey(text, streaming);
+  let entry = cache.get(key);
   if (!entry) {
     const controller = new AbortController();
     entry = {
@@ -75,13 +80,18 @@ export async function prepareMarkdown(
       if (browserMarkdown()) {
         try {
           const { markdownWorker } = await import("./markdown-worker-client");
-          return await markdownWorker.run({ text }, controller.signal);
+          return await markdownWorker.run(
+            { text, streaming },
+            controller.signal,
+          );
         } catch {
           if (controller.signal.aborted) return undefined;
         }
       }
       const { parseMarkdown } = await import("./markdown-engine");
-      return controller.signal.aborted ? undefined : parseMarkdown(text);
+      return controller.signal.aborted
+        ? undefined
+        : parseMarkdown(text, streaming);
     })().then(
       (value) => {
         current.done = true;
@@ -91,11 +101,11 @@ export async function prepareMarkdown(
       },
       (error) => {
         current.done = true;
-        if (cache.get(text) === current) cache.delete(text);
+        if (cache.get(key) === current) cache.delete(key);
         throw error;
       },
     );
-    cache.set(text, current);
+    cache.set(key, current);
     trim();
   }
   const current = entry;
@@ -113,7 +123,7 @@ export async function prepareMarkdown(
       if (!release()) return;
       if (!current.done && !current.users) {
         current.controller.abort();
-        if (cache.get(text) === current) cache.delete(text);
+        if (cache.get(key) === current) cache.delete(key);
       }
       resolve(undefined);
     };
@@ -136,6 +146,12 @@ function appendMarkdownText(
 ): Element | undefined {
   if (node.type !== "element" || node.position?.end.offset !== end)
     return undefined;
+  const raw = node.children[0];
+  if (node.data?.pendingMath && raw?.type === "text")
+    return {
+      ...node,
+      children: [{ ...raw, value: raw.value + text }],
+    };
   let index = node.children.length - 1;
   while (index >= 0 && node.children[index].type !== "element") index--;
   const child = node.children[index];
@@ -174,7 +190,11 @@ export function retainedMarkdown(
   // Append within the current text block, including nested list/quote prose,
   // rather than temporarily moving the suffix onto a separate visual line.
   const appended =
-    appending && last && !/[\r\n]/.test(text.slice(prefix))
+    appending &&
+    last &&
+    (!/[\r\n]/.test(text.slice(prefix)) ||
+      (last.type === "element" &&
+        (last.data?.hasPendingMath || last.data?.pendingMath)))
       ? appendMarkdownText(last, prefix, text.slice(prefix))
       : undefined;
   if (appended)
