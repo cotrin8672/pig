@@ -2182,10 +2182,10 @@ input:where(:not([type="range"], [type="checkbox"], [type="radio"])) {
 /* All supported labels share a cell, keeping the chip width stable. */
 .picker-effort-label > span {
   grid-area: 1 / 1;
-  visibility: hidden;
 }
-.picker-effort-label > span[data-active] {
-  visibility: visible;
+/* Hide only inactive labels; forcing `visible` would leak through covered layers. */
+.picker-effort-label > span:not([data-active]) {
+  visibility: hidden;
 }
 .model-reasoning {
   display: grid;
@@ -2209,10 +2209,9 @@ input:where(:not([type="range"], [type="checkbox"], [type="radio"])) {
 }
 .effort-value > span {
   grid-area: 1 / 1;
-  visibility: hidden;
 }
-.effort-value > span[data-active] {
-  visibility: visible;
+.effort-value > span:not([data-active]) {
+  visibility: hidden;
 }
 .effort-slider {
   position: relative;
