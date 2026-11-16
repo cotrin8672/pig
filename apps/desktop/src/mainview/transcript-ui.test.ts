@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import { existsSync } from "node:fs";
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdtemp, readFile, realpath, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -369,7 +369,10 @@ test.skipIf(!existsSync(edge) && !process.env.PIG_REQUIRE_UI_TESTS)(
       throw new Error(
         "Required UI browser is missing; set PIG_UI_BROWSER to Edge/Chromium.",
       );
-    const dir = await mkdtemp(join(tmpdir(), "piris-transcript-ui-"));
+    // Vite's root must be the long path: CI's tmpdir() is an 8.3 short name.
+    const dir = await realpath(
+      await mkdtemp(join(tmpdir(), "piris-transcript-ui-")),
+    );
     let passed = false;
     try {
       const source = (name: string) =>
