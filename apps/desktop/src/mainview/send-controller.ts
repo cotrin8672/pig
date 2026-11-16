@@ -14,7 +14,10 @@ import type {
 import { RESUME_REQUEST_PREFIX } from "../shared/runtime-contract";
 import { addressKey, sameAddress } from "./chat-snapshot";
 import { type DraftStore, expandedDraft } from "./draft-store";
-import { transcriptRequestIds } from "./transcript-requests";
+import {
+  cancelledRequestIds,
+  transcriptRequestIds,
+} from "./transcript-requests";
 
 export type SendState = {
   key: SendKey;
@@ -44,6 +47,8 @@ export function isSendUnconfirmed(state: SendState | undefined) {
   return !!state && ["sending", "checking", "unknown"].includes(state.state);
 }
 type Transport = {
+  /** Runs before draft CAS/reservation; it never dispatches a prompt itself. */
+  prepareSession?(address: SessionAddress): Promise<void> | void;
   syncDraft(params: DraftSyncParams): Promise<DraftSyncResult>;
   prompt(params: PromptParams): Promise<PromptAccepted>;
   getPromptReceipt(params: SendKey): Promise<PromptReceipt>;
@@ -55,6 +60,9 @@ type Transport = {
   ): Promise<string[]>;
   /** Sends a waiting follow-up now as steering; false once it has started. */
   steerPrompt?(params: SendKey): Promise<boolean>;
+  acknowledgeRecovery?(
+    params: SessionAddress & { key: SendKey },
+  ): Promise<void>;
 };
 export type PendingAttachments = Promise<
   Pick<DraftContent, "images" | "files">
@@ -80,6 +88,7 @@ export class SendController {
   private dispatched = new Set<string>();
   private cancelled = new Set<string>();
   private withdrawn = new Set<string>();
+  private notifiedUnknown = new Set<string>();
   /** Follow-ups the host promoted to steering; later updates keep that delivery. */
   private promoted = new Set<string>();
   /** Queue position after a reorder; unranked items follow in send order. */
@@ -99,6 +108,7 @@ export class SendController {
     private lookupBudgetMs = 5_000,
     private rejected: (message: string) => void = () => {},
     private sequence: Sequence = (_, step) => step(),
+    private notice: (kind: "restored" | "unknown") => void = () => {},
   ) {}
   subscribe = (listener: () => void) => {
     this.listeners.add(listener);
@@ -109,7 +119,15 @@ export class SendController {
   read(address: SessionAddress) {
     return this.states.get(addressKey(address));
   }
+  protectedAddresses(): SessionAddress[] {
+    return [...this.operations].flatMap(([id, state]) =>
+      isSendUnconfirmed(state)
+        ? [this.transfers.get(id)?.address ?? state.key]
+        : [],
+    );
+  }
   reconcile(snapshot: Snapshot) {
+    const recovered: SendState[] = [];
     for (const state of this.operations.values()) {
       if (
         sameAddress(
@@ -118,11 +136,26 @@ export class SendController {
           snapshot.address,
         ) &&
         (state.state === "accepted" || isSendUnconfirmed(state)) &&
-        state.content &&
-        transcriptRequestIds(snapshot.transcript.records).has(
-          state.key.requestId,
-        )
+        !state.detached &&
+        state.content
       ) {
+        const records = snapshot.transcript.records;
+        if (cancelledRequestIds(records).has(state.key.requestId)) {
+          recovered.push(state);
+          this.put(
+            snapshot.address,
+            {
+              ...state,
+              state: "accepted",
+              content: undefined,
+              optimistic: false,
+              recoveredQueue: false,
+            },
+            this.read(snapshot.address)?.key.requestId === state.key.requestId,
+          );
+          continue;
+        }
+        if (!transcriptRequestIds(records).has(state.key.requestId)) continue;
         // Matching history is authoritative even if the acceptance RPC was lost.
         if (isSendUnconfirmed(state))
           this.settle(state.key, state, { state: "accepted" });
@@ -135,6 +168,44 @@ export class SendController {
         );
       }
     }
+    // restoreSent prepends; reverse so multiple recovered sends keep click order.
+    for (const state of recovered.reverse())
+      if (
+        state.content &&
+        !state.key.requestId.startsWith(RESUME_REQUEST_PREFIX)
+      )
+        this.drafts.restoreSent(snapshot.address, state.content);
+    if (recovered.length) {
+      this.notice("restored");
+      // Acknowledge only after the restored draft is durable, never before.
+      void this.drafts
+        .flush(snapshot.address, this.transport.syncDraft)
+        .then(async () => {
+          for (const state of recovered)
+            await this.transport.acknowledgeRecovery?.({
+              ...snapshot.address,
+              key: state.key,
+            });
+        })
+        .catch((error) => this.rejected(String(error)));
+    }
+  }
+  /** Unknown input stays read-only in the tray, never as a conversation bubble. */
+  pendingSteering(address: SessionAddress, running: boolean) {
+    return [...this.operations.values()].filter(
+      (state) =>
+        sameAddress(
+          this.transfers.get(this.operationKey(state.key))?.address ??
+            state.key,
+          address,
+        ) &&
+        !state.detached &&
+        state.content &&
+        (state.state === "unknown" ||
+          (state.optimistic &&
+            state.state !== "rejected" &&
+            isPendingSteer(state, running))),
+    );
   }
   optimistic(address: SessionAddress) {
     return [...this.operations.values()].filter(
@@ -331,6 +402,15 @@ export class SendController {
     if (!isSendUnconfirmed(state)) this.ranks.delete(id);
     this.operations.set(id, state);
     if (current) this.states.set(addressKey(address), state);
+    if (
+      state.state === "unknown" &&
+      state.content &&
+      !state.detached &&
+      !this.notifiedUnknown.has(id)
+    ) {
+      this.notifiedUnknown.add(id);
+      this.notice("unknown");
+    }
     this.tick++;
     for (const listener of this.listeners) listener();
   }
@@ -357,6 +437,7 @@ export class SendController {
       if (existing?.detached) continue;
       const draft = this.drafts.read(receipt);
       const recoveredQueue = !!(
+        !intent.recovered &&
         draft.retired &&
         receipt.state === "accepted" &&
         receipt.accepted.disposition === "queued" &&
@@ -384,7 +465,7 @@ export class SendController {
             ? draft.version
             : -1,
         state: receipt.state === "pending" ? "checking" : receipt.state,
-        content: intent.content,
+        content: intent.recovered ? undefined : intent.content,
         owner: intent.owner,
         recoveredQueue,
         delivery: intent.delivery,
@@ -562,6 +643,9 @@ export class SendController {
       if (!expandedDraft(content) && !content.images.length)
         throw new Error("Message is empty");
     }
+    const prepare = this.transport.prepareSession?.(address);
+    if (prepare) await prepare;
+    check();
     this.reserved.add(id);
     let payload: PromptParams;
     {
@@ -725,7 +809,7 @@ export class SendController {
         }
         update({
           ...state,
-          state: "checking",
+          state: state.state === "unknown" ? "unknown" : "checking",
           stage: receipt.stage,
         });
       })
@@ -735,7 +819,8 @@ export class SendController {
         // An unreachable receipt service must not leave a send looking active forever.
         update({
           ...state,
-          state: failures >= 3 ? "unknown" : "checking",
+          state:
+            state.state === "unknown" || failures >= 3 ? "unknown" : "checking",
           ...(failures >= 3
             ? { recoveryReason: "lookup-timeout" as const }
             : {}),

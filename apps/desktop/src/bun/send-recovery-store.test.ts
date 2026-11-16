@@ -104,6 +104,36 @@ test("image garbage collection runs only after removing references and preserves
   });
 });
 
+test("acknowledged queue recovery survives restart without deleting the original recovery payload", async () => {
+  await fixture(async ({ ledger, store, owner }) => {
+    const params: PromptParams = {
+      ...address,
+      requestId: "cancelled",
+      draftRevision: 1,
+      text: "keep me",
+    };
+    ledger.register(params, { content: content("keep me"), owner });
+    await ledger.send(
+      params,
+      {
+        prompt: async (_text, options) => {
+          options?.preflightResult?.("queued");
+        },
+      } as Pick<AgentSession, "prompt">,
+      async () => ({ text: params.text }),
+      () => {},
+    );
+    ledger.acknowledgeRecovery(params);
+    ledger.acknowledgeRecovery(params);
+    const restarted = new SendReceipts("new-host", store);
+    expect(restarted.queuedIntent(params)).toMatchObject({
+      recovered: true,
+      content: content("keep me"),
+    });
+    expect(ledger.intents()[0].recovered).toBe(true);
+  });
+});
+
 test("invalid saved JSON reports recovery failure without rewriting the saved draft", async () => {
   await fixture(async ({ store, owner, bridge }) => {
     bridge.sync({

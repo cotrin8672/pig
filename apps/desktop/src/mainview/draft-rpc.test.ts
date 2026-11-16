@@ -1,7 +1,10 @@
 import { expect, mock, test } from "bun:test";
 import { fileURLToPath } from "node:url";
 import type { ExtensionUIEvent } from "../shared/extension-ui";
-import type { DraftState } from "../shared/runtime-contract";
+import type {
+  DraftState,
+  RuntimePublication,
+} from "../shared/runtime-contract";
 
 if (process.env.PIG_DRAFT_RPC_CHILD !== "1") {
   test("compact draft recovery with the real RPC handlers in isolation", async () => {
@@ -22,14 +25,26 @@ if (process.env.PIG_DRAFT_RPC_CHILD !== "1") {
   });
 } else {
   let receive!: (event: ExtensionUIEvent) => void;
+  let publicationSeq = 0;
   const reads: ReturnType<typeof Promise.withResolvers<DraftState>>[] = [];
   mock.module("electrobun/view", () => ({
     Electroview: class {
       constructor(readonly options: unknown) {}
       static defineRPC(config: {
-        handlers: { messages: { extensionUIEvent: typeof receive } };
+        handlers: {
+          messages: {
+            extensionUIEvent: (
+              event: RuntimePublication<ExtensionUIEvent>,
+            ) => void;
+          };
+        };
       }) {
-        receive = config.handlers.messages.extensionUIEvent;
+        receive = (event) =>
+          config.handlers.messages.extensionUIEvent({
+            hostId: "draft-rpc",
+            publicationSeq: ++publicationSeq,
+            event,
+          });
         return {
           send: {},
           request: {

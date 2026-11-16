@@ -122,6 +122,39 @@ test("late old-epoch ACK and accepted clear cannot mutate transferred draft", as
   expect(store.read(next).content.text).toBe("unsynced");
   await expect(store.flush(a, mirror())).rejects.toThrow("replaced");
 });
+for (const echoFirst of [false, true])
+  test(`suspension's empty mirror echo ${echoFirst ? "before" : "after"} ownership preserves late input without a false conflict`, async () => {
+    const store = new DraftStore();
+    const next = { ...a, epoch: 2 };
+    const remote = { ...emptyContent(), revision: 3 };
+    store.receive(a, { ...emptyContent(), revision: 2 });
+    store.edit(a, () => content("late local input"));
+    if (echoFirst) store.receive(next, remote);
+    store.transfer(a, next, remote.revision);
+    if (!echoFirst) store.receive(next, remote);
+    expect(store.read(next).content.text).toBe("late local input");
+    expect(store.read(next).conflict).toBeUndefined();
+    expect(store.read(next).revision).toBe(3);
+    await store.flush(next, async (params) => {
+      expect(params.expectedRevision).toBe(3);
+      return {
+        applied: true,
+        draft: { ...params.content, revision: 4 },
+      };
+    });
+    expect(store.read(next).dirty).toBe(false);
+  });
+test("suspension cannot erase input already edited under its new owner", () => {
+  const store = new DraftStore();
+  const next = { ...a, epoch: 2 };
+  store.receive(a, { ...emptyContent(), revision: 2 });
+  store.edit(a, () => content("old owner's late input"));
+  store.receive(next, { ...emptyContent(), revision: 3 });
+  store.edit(next, () => content("new owner's input"));
+  store.transfer(a, next, 3);
+  expect(store.read(next).content.text).toBe("old owner's late input");
+  expect(store.read(next).conflict?.text).toBe("new owner's input");
+});
 test("transfers release old payloads and conflicts, retaining only the destination draft", () => {
   const store = new DraftStore();
   let address = a;

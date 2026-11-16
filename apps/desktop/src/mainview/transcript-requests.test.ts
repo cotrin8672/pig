@@ -4,7 +4,10 @@ import type { PromptAccepted } from "../shared/runtime-contract";
 import { emptyTranscript, type TranscriptRecord } from "../shared/transcript";
 import { DraftStore, emptyContent } from "./draft-store";
 import { SendController } from "./send-controller";
-import { transcriptRequestIds } from "./transcript-requests";
+import {
+  cancelledRequestIds,
+  transcriptRequestIds,
+} from "./transcript-requests";
 
 const record = (id: string, requestId?: string): TranscriptRecord => ({
   id,
@@ -54,6 +57,29 @@ test("request ID metadata changes/removals, prepend, branch, reorder and persist
     expect(transcriptRequestIds(records)).not.toBe(before);
   }
   expect([...before]).toEqual(["old-request", "request-b"]);
+});
+
+test("cancelled queue records never confirm delivery, and successful delivery wins over an old cancellation", () => {
+  const cancelled: TranscriptRecord = {
+    ...record("cancelled", "request-a"),
+    kind: "message",
+    message: {
+      role: "custom",
+      customType: "Cancelled queued prompt",
+      display: true,
+      content: "not delivered",
+      timestamp: 1,
+    },
+  };
+  expect(transcriptRequestIds([cancelled]).has("request-a")).toBe(false);
+  expect(cancelledRequestIds([cancelled]).has("request-a")).toBe(true);
+  for (const records of [
+    [cancelled, record("delivered", "request-a")],
+    [record("delivered", "request-a"), cancelled],
+  ]) {
+    expect(transcriptRequestIds(records).has("request-a")).toBe(true);
+    expect(cancelledRequestIds(records).has("request-a")).toBe(false);
+  }
 });
 
 test("reconciliation reads no history without a matching accepted send, then releases the optimistic copy", async () => {

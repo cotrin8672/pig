@@ -1,4 +1,5 @@
 import {
+  CircleHelp,
   GripVertical,
   ListEnd,
   LoaderCircle,
@@ -41,15 +42,17 @@ export function MessageQueue({
   onDelete,
   onMove,
   onSteer,
+  onCheck,
 }: {
   items: QueueItem[];
-  /** Accepted steering not yet read by the agent; the SDK cannot withdraw it. */
-  steering?: { id: string; content: DraftContent }[];
+  /** Unread or unconfirmed input; neither can safely be withdrawn individually. */
+  steering?: { id: string; content: DraftContent; unconfirmed?: boolean }[];
   onEdit: Action;
   onDelete: Action;
   /** Receives the full new order of the queue. */
   onMove?(ids: string[]): unknown;
   onSteer?: Action;
+  onCheck?: Action;
 }) {
   const t = useT();
   const root = useRef<HTMLElement>(null);
@@ -117,20 +120,35 @@ export function MessageQueue({
       tabIndex={-1}
     >
       <ol ref={list}>
-        {steering.map(({ id, content }) => {
+        {steering.map(({ id, content, unconfirmed }) => {
           const text = preview(content);
+          const Icon = unconfirmed ? CircleHelp : SendHorizontal;
           return (
             <li key={id} className="message-queue-steer">
               <span className="message-queue-handle">
-                <SendHorizontal
+                <Icon
                   size={13}
                   className="message-queue-mode"
                   role="img"
-                  aria-label={t["Steering pending"]}
+                  aria-label={
+                    unconfirmed ? t["Send unconfirmed"] : t["Steering pending"]
+                  }
                 />
               </span>
               <p aria-description={text}>{text || t.Message}</p>
               {attachments(content)}
+              {unconfirmed && (
+                <button
+                  type="button"
+                  className="message-queue-action message-queue-check"
+                  aria-label={t["Check send status"]}
+                  aria-description={t.sendUnconfirmed}
+                  disabled={busy === id}
+                  onClick={() => onCheck && void act(id, onCheck)}
+                >
+                  {t["Send unconfirmed"]}
+                </button>
+              )}
             </li>
           );
         })}

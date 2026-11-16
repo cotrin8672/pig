@@ -382,6 +382,23 @@ test("unread steering leads the same tray as read-only rows", () => {
   ).toContain("only steering");
 });
 
+test("unconfirmed input has a visible status and a read-only check, never retry/edit/delete", () => {
+  const html = renderToStaticMarkup(
+    <MessageQueue
+      items={[]}
+      steering={[{ id: "unknown", content, unconfirmed: true }]}
+      onEdit={() => {}}
+      onDelete={() => {}}
+      onCheck={() => {}}
+    />,
+  );
+  expect(html).toContain(">Unconfirmed</button>");
+  expect(html).toContain('aria-label="Check send status (does not resend)"');
+  expect(html).not.toContain('aria-label="Edit queued message');
+  expect(html).not.toContain('aria-label="Delete queued message');
+  expect(html).not.toContain("secret-base64");
+});
+
 test("queue rows offer reorder and steer only when wired, and a started row cannot move or steer", () => {
   const html = renderToStaticMarkup(
     <MessageQueue

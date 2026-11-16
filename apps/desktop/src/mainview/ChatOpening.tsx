@@ -16,6 +16,7 @@ import { ComposerFrame } from "./ComposerFrame";
 import { ComposerSubmit } from "./ComposerSubmit";
 import { ContextIndicator } from "./ContextIndicator";
 import { addressKey } from "./chat-snapshot";
+import { composerHistory } from "./composer-input-history";
 import { drafts, emptyContent, expandedDraft } from "./draft-store";
 import { ImagePreview } from "./ImageGallery";
 import { useT } from "./i18n";
@@ -86,11 +87,15 @@ export function OpeningComposer({ preview }: { preview?: Snapshot }) {
   const text = existing
     ? [existingText, newText].filter(Boolean).join("\n")
     : newText;
-  function changeText(value: string) {
+  function changeText(value: string, pastes?: DraftContent["pastes"]) {
     if (snapshot)
       drafts.edit(
         snapshot.address,
-        (content) => ({ ...content, text: value }),
+        (content) => ({
+          ...content,
+          text: value,
+          pastes: pastes ?? content.pastes,
+        }),
         true,
       );
     if (target)
@@ -239,6 +244,13 @@ export function OpeningComposer({ preview }: { preview?: Snapshot }) {
           aria-label={t.Message}
           placeholder={t["Ask anything, or describe what to build…"]}
           value={text}
+          pastes={
+            snapshot ? drafts.read(snapshot.address).content.pastes : undefined
+          }
+          onRestore={(edit) => changeText(edit.text, edit.pastes)}
+          messageHistory={() =>
+            snapshot ? composerHistory(snapshot.transcript.records) : []
+          }
           onChange={(event) => changeText(event.currentTarget.value)}
           onPaste={(event) => {
             if (!imageKey) return;

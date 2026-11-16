@@ -77,6 +77,25 @@ export class DraftStore {
   >();
   private tick = 0;
   getTick = () => this.tick;
+  protectedAddresses(): SessionAddress[] {
+    return [...this.owners].flatMap(([key, address]) => {
+      const draft = this.entries.get(key);
+      return draft &&
+        !draft.retired &&
+        !draft.transferred &&
+        (draft.dirty ||
+          draft.conflict ||
+          this.queues.has(key) ||
+          this.flights.has(key) ||
+          draft.content.text ||
+          draft.content.pastes.length ||
+          draft.content.images.length ||
+          draft.content.files?.length ||
+          draft.content.annotations?.length)
+        ? [address]
+        : [];
+    });
+  }
   retained() {
     return [...this.owners].flatMap(([key, address]) => {
       const draft = this.entries.get(key);
@@ -213,16 +232,31 @@ export class DraftStore {
       version: draft.version + 1,
     });
   }
-  transfer(previous: SessionAddress, next: SessionAddress) {
+  transfer(previous: SessionAddress, next: SessionAddress, revision?: number) {
     if (addressKey(previous) === addressKey(next)) return;
     const old = this.read(previous);
     if (old.transferred) return;
     this.remoteImages.delete(addressKey(previous));
-    const current = this.read(next);
+    const destination = this.read(next);
+    // Suspension moves the empty mirror; its echo is not another editor's edit.
+    const inherited =
+      revision !== undefined &&
+      !destination.dirty &&
+      old.revision + 1 === revision &&
+      destination.revision <= revision;
+    const current =
+      revision === undefined
+        ? destination
+        : {
+            ...destination,
+            revision: Math.max(destination.revision, revision),
+          };
     // A new epoch's startup editor event may beat the replaced publication.
     // Never overwrite that newer extension text with a clean old mirror.
     const keepCurrent =
-      (!old.dirty || old.clearedForSend) && current.revision > 0;
+      (!old.dirty || old.clearedForSend) &&
+      destination.revision > 0 &&
+      !inherited;
     const version = Math.max(old.version, current.version) + 1;
     this.put(previous, {
       ...old,
@@ -233,7 +267,10 @@ export class DraftStore {
       transferred: true,
       transferredVersion: keepCurrent ? undefined : version,
     });
-    if (keepCurrent) return;
+    if (keepCurrent) {
+      if (current !== destination) this.put(next, current);
+      return;
+    }
     this.put(next, {
       ...current,
       content: old.content,
@@ -241,6 +278,7 @@ export class DraftStore {
       conflict:
         old.dirty &&
         current.revision > 0 &&
+        !inherited &&
         !equal(old.content, current.content)
           ? { ...current.content, revision: current.revision }
           : old.conflict,

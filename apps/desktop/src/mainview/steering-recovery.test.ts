@@ -1,0 +1,292 @@
+import { expect, test } from "bun:test";
+import type { Snapshot } from "../shared/rpc-schema";
+import type {
+  DraftSyncParams,
+  PromptReceipt,
+  SendIntent,
+  SendKey,
+} from "../shared/runtime-contract";
+import { emptyTranscript, type TranscriptRecord } from "../shared/transcript";
+import { DraftStore, emptyContent } from "./draft-store";
+import { SendController } from "./send-controller";
+
+const address = { hostId: "steering", sessionId: "chat", epoch: 1 };
+const content = {
+  text: "first",
+  pastes: [],
+  images: [
+    {
+      id: "image",
+      image: { type: "image" as const, mimeType: "image/png", data: "YWJj" },
+    },
+  ],
+  files: [{ id: "file", name: "notes", path: "/notes" }],
+};
+const key = { ...address, requestId: "first" };
+const intent: SendIntent = {
+  receipt: {
+    ...key,
+    state: "accepted",
+    accepted: { disposition: "queued" },
+    acceptedAt: 1,
+  },
+  content,
+  delivery: "steer",
+  hash: "hash",
+  draftRevision: 1,
+  owner: {
+    cwd: "/project",
+    sessionFile: "/project/chat.jsonl",
+    branchId: null,
+  },
+};
+function cancelled(requestId = key.requestId): TranscriptRecord {
+  return {
+    id: `recovered:${requestId}`,
+    requestId,
+    parentId: null,
+    branchId: "root",
+    order: 0,
+    kind: "message",
+    message: {
+      role: "custom",
+      customType: "Cancelled queued prompt",
+      display: true,
+      content: [{ type: "text", text: "not the original draft" }],
+      timestamp: 1,
+    },
+  };
+}
+function snapshot(records: TranscriptRecord[] = [cancelled()]): Snapshot {
+  return {
+    address,
+    snapshotSeq: 1,
+    info: {
+      id: address.sessionId,
+      cwd: "/project",
+      title: "Chat",
+      modified: 1,
+    },
+    effort: "off",
+    effortLevels: [],
+    transcript: { ...emptyTranscript(), records },
+  };
+}
+function fixture(sync?: (p: DraftSyncParams) => Promise<void>) {
+  const drafts = new DraftStore();
+  const notices: string[] = [];
+  const errors: string[] = [];
+  const acknowledged: SendKey[] = [];
+  const transport = {
+    syncDraft: async (p: DraftSyncParams) => {
+      await sync?.(p);
+      return {
+        applied: true,
+        draft: { ...p.content, revision: p.expectedRevision + 1 },
+      };
+    },
+    prompt: async () => ({ disposition: "queued" as const }),
+    getPromptReceipt: async (p: SendKey): Promise<PromptReceipt> => ({
+      ...p,
+      state: "unknown",
+      reason: "not-found",
+    }),
+    acknowledgeRecovery: async (p: { key: SendKey }) => {
+      acknowledged.push(p.key);
+    },
+  };
+  const sends = new SendController(
+    drafts,
+    transport,
+    () => {},
+    10,
+    (error) => errors.push(error),
+    undefined,
+    (kind) => notices.push(kind),
+  );
+  return { drafts, sends, notices, errors, acknowledged, transport };
+}
+
+test.each([
+  "accepted",
+  "pending",
+  "unknown",
+] as const)("cancelled %s steering returns the original text and attachments once, preserving newer typing", async (state) => {
+  const f = fixture();
+  f.sends.restore([
+    {
+      ...intent,
+      receipt:
+        state === "accepted"
+          ? intent.receipt
+          : state === "pending"
+            ? { ...key, state, stage: "dispatched" }
+            : { ...key, state, reason: "not-found" },
+    },
+  ]);
+  f.drafts.edit(address, () => ({ ...emptyContent(), text: "newer" }));
+  f.sends.reconcile(snapshot());
+  const restored = f.drafts.read(address).content;
+  expect(restored.text).toBe("first\n\nnewer");
+  expect(restored.images).toEqual(content.images);
+  expect(restored.files).toEqual(content.files);
+  expect(f.sends.pendingSteering(address, false)).toEqual([]);
+  expect(f.sends.optimistic(address)).toEqual([]);
+  f.sends.reconcile(snapshot());
+  f.sends.restore([intent]);
+  f.sends.reconcile(snapshot());
+  expect(f.drafts.read(address).content).toEqual(restored);
+  expect(f.notices.filter((kind) => kind === "restored")).toHaveLength(1);
+  await Bun.sleep(0);
+  expect(f.acknowledged).toMatchObject([key]);
+});
+
+test("several cancelled inputs keep send order ahead of the newer draft", () => {
+  const f = fixture();
+  f.sends.restore([
+    intent,
+    {
+      ...intent,
+      content: { ...emptyContent(), text: "second" },
+      receipt: { ...intent.receipt, requestId: "second" },
+    },
+  ]);
+  f.drafts.edit(address, () => ({ ...emptyContent(), text: "newer" }));
+  f.sends.reconcile(snapshot([cancelled(), cancelled("second")]));
+  expect(f.drafts.read(address).content.text).toBe("first\n\nsecond\n\nnewer");
+  expect(f.notices).toEqual(["restored"]);
+});
+
+test("a cancelled record is not delivered history, but actual delivery wins over stale recovery", () => {
+  const f = fixture();
+  f.sends.restore([intent]);
+  const delivered: TranscriptRecord = {
+    ...cancelled(),
+    id: "delivered",
+    kind: "message",
+    message: {
+      role: "user",
+      content: "transformed by an extension",
+      timestamp: 2,
+    },
+  };
+  f.sends.reconcile(snapshot([cancelled(), delivered]));
+  expect(f.drafts.read(address).content).toEqual(emptyContent());
+  expect(f.sends.optimistic(address)).toEqual([]);
+  expect(f.notices).toEqual([]);
+});
+
+test("recovery acknowledgement waits for persistence and prevents restoration on renderer reload", async () => {
+  const saved = Promise.withResolvers<void>();
+  const f = fixture(async () => saved.promise);
+  f.sends.restore([intent]);
+  f.sends.reconcile(snapshot());
+  expect(f.acknowledged).toEqual([]);
+  saved.resolve();
+  await Bun.sleep(0);
+  expect(f.acknowledged).toMatchObject([key]);
+  const reload = fixture();
+  reload.drafts.receive(address, {
+    ...f.drafts.read(address).content,
+    revision: 1,
+  });
+  reload.sends.restore([{ ...intent, recovered: true }]);
+  reload.sends.reconcile(snapshot());
+  expect(reload.drafts.read(address).content.text).toBe("first");
+  expect(reload.notices).toEqual([]);
+});
+
+test("failed draft persistence retains recovery data and reports the error without acknowledging", async () => {
+  const f = fixture(async () => {
+    throw new Error("disk unavailable");
+  });
+  f.sends.restore([intent]);
+  f.sends.reconcile(snapshot());
+  await Bun.sleep(0);
+  expect(f.drafts.read(address).content.text).toBe("first");
+  expect(f.acknowledged).toEqual([]);
+  expect(f.errors).toEqual(["Error: disk unavailable"]);
+});
+
+test("unknown input stays in the tray, not the draft; checking can confirm it without sending again", async () => {
+  const f = fixture();
+  f.sends.restore([
+    {
+      ...intent,
+      receipt: { ...key, state: "unknown", reason: "not-found" },
+    },
+  ]);
+  expect(f.notices).toEqual(["unknown"]);
+  expect(f.sends.pendingSteering(address, false)[0].state).toBe("unknown");
+  expect(f.sends.optimistic(address)).toEqual([]);
+  expect(f.drafts.read(address).content).toEqual(emptyContent());
+  await f.sends.lookup(address, key);
+  expect(f.notices).toEqual(["unknown"]);
+  f.transport.getPromptReceipt = async () => ({
+    ...key,
+    state: "pending",
+    stage: "dispatched",
+  });
+  await f.sends.lookup(address, key);
+  expect(f.sends.pendingSteering(address, false)[0].state).toBe("unknown");
+  f.transport.getPromptReceipt = async () => ({
+    ...key,
+    state: "accepted",
+    accepted: { disposition: "queued" },
+    acceptedAt: 1,
+  });
+  await f.sends.lookup(address, key);
+  expect(f.sends.pendingSteering(address, true)[0].state).toBe("accepted");
+  expect(f.drafts.read(address).content).toEqual(emptyContent());
+});
+
+test("a hung status lookup notifies once and keeps unconfirmed content without piling up RPCs", async () => {
+  const f = fixture();
+  let calls = 0;
+  f.transport.getPromptReceipt = () => {
+    calls++;
+    return new Promise(() => {});
+  };
+  f.sends.restore([
+    {
+      ...intent,
+      receipt: { ...key, state: "pending", stage: "dispatched" },
+    },
+  ]);
+  await f.sends.lookup(address, key);
+  await f.sends.lookup(address, key);
+  expect(calls).toBe(1);
+  expect(f.notices).toEqual(["unknown"]);
+  expect(f.sends.pendingSteering(address, false)[0].content).toEqual(content);
+});
+
+test("a late acceptance reply cannot resurrect cancelled steering or remove the restored draft", async () => {
+  const f = fixture();
+  const response = Promise.withResolvers<{ disposition: "queued" }>();
+  let started = false;
+  f.transport.prompt = () => {
+    started = true;
+    return response.promise;
+  };
+  f.drafts.edit(address, () => content);
+  const sending = f.sends.send(address);
+  while (!started) await Bun.sleep(0);
+  const requestId = f.sends.read(address)?.key.requestId;
+  f.sends.reconcile(snapshot([cancelled(requestId)]));
+  response.resolve({ disposition: "queued" });
+  await sending;
+  expect(f.sends.pendingSteering(address, false)).toEqual([]);
+  expect(f.drafts.read(address).content.text).toBe("first");
+  expect(f.notices).toEqual(["restored"]);
+});
+
+test("stale epochs and retired sends cannot restore input into a changed conversation", () => {
+  const f = fixture();
+  f.sends.restore([intent]);
+  f.sends.reconcile({ ...snapshot(), address: { ...address, epoch: 2 } });
+  expect(f.drafts.read(address).content).toEqual(emptyContent());
+  f.sends.retire(address);
+  f.sends.reconcile(snapshot());
+  expect(f.drafts.read(address).content).toEqual(emptyContent());
+  expect(f.notices).toEqual([]);
+});
