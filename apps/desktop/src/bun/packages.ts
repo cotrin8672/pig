@@ -7,6 +7,7 @@ import {
   SettingsManager,
 } from "@earendil-works/pi-coding-agent";
 import { classify, npmName } from "../shared/packages";
+import "./bun-package-manager";
 import type {
   InstalledPackage,
   MarketPackage,
@@ -390,7 +391,7 @@ export async function packageOperation(
           `${info.path ?? ""} ${info.syscall ?? ""} ${detail}`,
         );
       const message = npmMissing
-        ? "npm was not found. Install Node.js (npm) or set npmCommand in ~/.pi/agent/settings.json"
+        ? "npm was not found. Install it or remove npmCommand from ~/.pi/agent/settings.json to use the bundled Bun"
         : `Package ${action} failed for ${source}: ${detail}`;
       emit({ ...frame, status: "error", message });
       throw new Error(message);

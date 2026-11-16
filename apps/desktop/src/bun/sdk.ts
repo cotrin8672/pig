@@ -1,4 +1,5 @@
 import type { CredentialStore } from "@earendil-works/pi-ai";
+import "./bun-package-manager";
 
 // shortcut: SDK 1.5.2's AuthStorage is private; recheck this path on SDK upgrades.
 export const { AuthStorage } = (await import(
