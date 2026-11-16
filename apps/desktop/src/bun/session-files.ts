@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { createReadStream } from "node:fs";
 import { unlink } from "node:fs/promises";
 import { resolve } from "node:path";
@@ -44,6 +45,28 @@ export function sameSessionPath(left: string, right: string) {
   return key(left) === key(right);
 }
 const sessionList = new SessionListCache();
+/** Owned scalar fingerprint; detects same-ID/same-size history rewrites too. */
+export function sessionHistoryDigest(
+  manager: Pick<ReturnType<typeof SessionManager.inMemory>, "getEntries">,
+  count = Infinity,
+) {
+  const hash = createHash("sha256");
+  const entries = manager.getEntries();
+  for (let index = 0; index < Math.min(count, entries.length); index++)
+    hash.update(JSON.stringify(entries[index])).update("\n");
+  return hash.digest("hex");
+}
+export function unchangedHistoryPrefix(
+  manager: ReturnType<typeof SessionManager.inMemory>,
+  basis: { digest: string; entryCount: number; leaf: string | null },
+) {
+  return (
+    manager.getEntryCount() >= basis.entryCount &&
+    sessionHistoryDigest(manager, basis.entryCount) === basis.digest &&
+    (!basis.leaf ||
+      manager.getBranch().some((entry) => entry.id === basis.leaf))
+  );
+}
 export async function listSessionFiles(cwd: string): Promise<SessionInfo[]> {
   const directory =
     (await sessionDirFor(cwd)) ?? defaultSessionDir(cwd, agentDir);

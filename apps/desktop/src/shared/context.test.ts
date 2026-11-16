@@ -52,3 +52,17 @@ test("used context reports the same fraction in title and indicator, clamped", (
   expect(contextSummary(usage(1), "used", "ja").title).toContain("使用済み");
   expect(contextSummary(usage(1), "remaining", "ja").title).toContain("残り");
 });
+
+test("tooltip heading follows the display mode; detail always shows used and left", () => {
+  const remaining = contextSummary(usage(50_000, 200_000));
+  expect(remaining.heading).toBe("Context 75% left");
+  expect(remaining.detail).toBe("50k / 200k tokens used · 150k left");
+  expect(contextSummary(usage(50_000, 200_000), "used").heading).toBe(
+    "Context 25% used",
+  );
+  expect(contextSummary(usage(50_000, 200_000), "remaining", "ja").detail).toBe(
+    "50k / 200k トークン使用 · 残り 150k",
+  );
+  expect(contextSummary(usage(null)).detail).toBeUndefined();
+  expect(contextSummary(null).heading).toBeUndefined();
+});

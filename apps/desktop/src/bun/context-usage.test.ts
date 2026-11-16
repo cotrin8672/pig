@@ -5,7 +5,7 @@ import {
   InMemoryCredentialStore,
   InMemoryModelsStore,
 } from "@earendil-works/pi-ai";
-import { projectedContextUsage } from "./context-usage";
+import { keepLastContextTokens, projectedContextUsage } from "./context-usage";
 import {
   createAgentSessionFromServices,
   createAgentSessionServices,
@@ -13,6 +13,20 @@ import {
   SessionManager,
   SettingsManager,
 } from "./sdk";
+
+test("unknown tokens after compaction keep the last known count", () => {
+  const last = { tokens: 500, contextWindow: 1000, percent: 50 };
+  const unknown = { tokens: null, contextWindow: 2000, percent: null };
+  expect(keepLastContextTokens(unknown, last)).toEqual({
+    tokens: 500,
+    contextWindow: 2000,
+    percent: 25,
+  });
+  expect(keepLastContextTokens(unknown, undefined)).toBe(unknown);
+  const known = { tokens: 10, contextWindow: 1000, percent: 1 };
+  expect(keepLastContextTokens(known, last)).toBe(known);
+  expect(keepLastContextTokens(undefined, last)).toBeUndefined();
+});
 
 test("SDK context projection uses valid response usage, trailing estimates, compaction and context edits", async () => {
   const faux = fauxProvider({
