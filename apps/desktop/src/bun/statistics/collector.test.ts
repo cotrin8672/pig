@@ -106,6 +106,7 @@ test("retry belongs to the same run; tool outcomes keep independent facts withou
     exitCode: 1,
     executionDurationMs: 20,
     observedDurationMs: 25,
+    shellCommandKey: "unclassified",
   });
   expect(tool?.parentCall).toBe("parent");
   expect(tool?.request).toBe(
@@ -116,6 +117,68 @@ test("retry belongs to the same run; tool outcomes keep independent facts withou
   expect(
     new Set(events.filter((event) => event.run).map((event) => event.run)).size,
   ).toBe(1);
+});
+
+test("shell command keys follow calls until completion or run cleanup", () => {
+  const { collector, events } = fixture();
+  const start = (id: string, name: string, command?: string) =>
+    collector.event({
+      type: "tool_execution_start",
+      toolCallId: id,
+      toolName: name,
+      args: { command },
+    });
+  const end = (id: string, name: string) =>
+    collector.event({
+      type: "tool_execution_end",
+      toolCallId: id,
+      toolName: name,
+      isError: true,
+      result: { content: [] },
+    });
+
+  collector.event({ type: "agent_start" });
+  start("first", "bash", "git diff -- 'SECRET-arg'");
+  start("second", "powershell", "Get-ChildItem 'SECRET-path'");
+  start("missing-arg", "bash");
+  start("read", "read", "git diff");
+  start("unfinished", "bash", "pnpm test");
+  end("second", "powershell");
+  end("first", "bash");
+  end("missing-arg", "bash");
+  end("read", "read");
+  end("missing-start", "bash");
+  collector.event({ type: "agent_settled", aborted: true });
+  collector.event({ type: "agent_start" });
+  end("unfinished", "bash");
+
+  const ends = events.filter((event) => event.type === "tool_execution_end");
+  expect(
+    ends.map(({ call, data }) => [call, data.shellCommandKey ?? null]),
+  ).toEqual([
+    ["second", "Get-ChildItem"],
+    ["first", "git diff"],
+    ["missing-arg", "unclassified"],
+    ["read", null],
+    ["missing-start", "unclassified"],
+    ["unfinished", "unclassified"],
+  ]);
+  expect(ends.find((event) => event.call === "read")?.data).not.toHaveProperty(
+    "shellCommandKey",
+  );
+  expect(
+    events.every(
+      (event) =>
+        event.type === "tool_execution_end" ||
+        !("shellCommandKey" in event.data),
+    ),
+  ).toBe(true);
+  expect(ends[0].data).toMatchObject({
+    exitCode: null,
+    isError: true,
+    executionObserved: false,
+  });
+  expect(JSON.stringify(events)).not.toContain("SECRET");
 });
 
 test("auxiliary usage is recorded once per new entry, never imported from inherited history", () => {

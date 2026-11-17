@@ -335,6 +335,75 @@ function ContextTable({ data }: { data: StatisticsData }) {
   );
 }
 
+/** Ranked by failures: repeated failing commands cost retries and output. */
+function CommandTable({ data }: { data: StatisticsData }) {
+  const t = useT().statisticsText;
+  const { rows, unclassified, unmeasured } = data.commands;
+  return (
+    <section className="stats-panel stats-commands" data-ui-surface="card">
+      <h2>
+        {t.commands}
+        <span aria-description={t.commandCoverageHint}>
+          {t.commandCoverage(unclassified, unmeasured)}
+        </span>
+      </h2>
+      {rows.length ? (
+        <div className="stats-scroll">
+          <table className="stats-table">
+            <thead>
+              <tr>
+                <th scope="col">{t.command}</th>
+                <th scope="col">{t.runs}</th>
+                <th scope="col">{t.failures}</th>
+                <th scope="col" aria-description={t.commandSuccessHint}>
+                  {t.success}
+                </th>
+                <th scope="col" aria-description={t.unknownHint}>
+                  {t.unknownOutcome}
+                </th>
+                <th scope="col" aria-description={t.sdkErrorsHint}>
+                  {t.sdkErrors}
+                </th>
+                <th scope="col" aria-description={t.failureOutputHint}>
+                  {t.failureOutput}
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((r) => {
+                const known = r.calls - r.unknown;
+                const ok = known - r.failures;
+                return (
+                  <tr key={`${r.shell}:${r.command}`}>
+                    <th scope="row">
+                      <code>{r.command}</code>
+                      <small className="stats-shell">{r.shell}</small>
+                    </th>
+                    <td>{r.calls.toLocaleString()}</td>
+                    <td className={r.failures ? "strong" : ""}>
+                      {r.failures.toLocaleString()}
+                    </td>
+                    <td className={known && ok / known < 0.9 ? "warn" : ""}>
+                      {pct(ok, known)}
+                    </td>
+                    <td>{r.unknown.toLocaleString()}</td>
+                    <td>{r.sdkErrors.toLocaleString()}</td>
+                    <td>
+                      {r.failureBytes ? `${tokens(r.failureBytes)}B` : "—"}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      ) : (
+        <Empty />
+      )}
+    </section>
+  );
+}
+
 function ToolTable({ data }: { data: StatisticsData }) {
   const t = useT().statisticsText;
   const [view, setView] = useState<"tools" | "context">("tools");
@@ -700,6 +769,7 @@ export function StatisticsView({
       <div className="statistics-page" aria-busy={busy}>
         <Summary data={data} />
         <DailyChart data={data} />
+        <CommandTable data={data} />
         <div className="stats-side">
           <ToolTable data={data} />
           <Composition data={data} />

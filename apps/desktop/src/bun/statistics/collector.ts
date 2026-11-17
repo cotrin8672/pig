@@ -17,6 +17,7 @@ import {
   toolMetadata,
   usageMetadata,
 } from "./normalize";
+import { classifyShellCommand, isShellTool } from "./shell-command";
 
 const hash = (value: string) =>
   createHash("sha256").update(value).digest("hex");
@@ -50,7 +51,13 @@ export class SessionStatistics {
     account: string | null;
   } | null = null;
   private lastRequest: string | null = null;
-  private tools = new Map<string, number>();
+  private tools = new Map<
+    string,
+    {
+      startedAt: number;
+      shellCommandKey?: ReturnType<typeof classifyShellCommand>;
+    }
+  >();
   private ended = new WeakSet<object>();
   private entries = new Set<string>();
   private lastError = false;
@@ -71,7 +78,7 @@ export class SessionStatistics {
     this.project = hash(identity.cwd);
     this.emit("binding_open", {
       epoch: identity.epoch,
-      collectorVersion: 1,
+      collectorVersion: 2,
       appVersion: packageInfo.version,
       sdkVersion: packageInfo.dependencies["@earendil-works/pi-coding-agent"],
       coverage: {
@@ -282,19 +289,26 @@ export class SessionStatistics {
         this.request = null;
         break;
       }
-      case "tool_execution_start":
-        this.tools.set(event.toolCallId, this.clock());
+      case "tool_execution_start": {
+        const args = object(event.args);
+        this.tools.set(event.toolCallId, {
+          startedAt: this.clock(),
+          shellCommandKey: isShellTool(event.toolName)
+            ? classifyShellCommand(event.toolName, args.command)
+            : undefined,
+        });
         this.emit(
           event.type,
           {
             tool: event.toolName,
-            argumentFields: Object.keys(object(event.args)).length,
+            argumentFields: Object.keys(args).length,
           },
           { call: event.toolCallId, parentCall: event.parentToolCallId },
         );
         break;
+      }
       case "tool_execution_end": {
-        const started = this.tools.get(event.toolCallId);
+        const call = this.tools.get(event.toolCallId);
         this.tools.delete(event.toolCallId);
         this.emit(
           event.type,
@@ -304,7 +318,10 @@ export class SessionStatistics {
             executionDurationMs: number(event.durationMs),
             executionObserved: event.durationMs !== undefined,
             observedDurationMs:
-              started === undefined ? null : this.clock() - started,
+              call === undefined ? null : this.clock() - call.startedAt,
+            ...(isShellTool(event.toolName)
+              ? { shellCommandKey: call?.shellCommandKey ?? "unclassified" }
+              : {}),
             ...toolMetadata(event.toolName, event.result),
           },
           { call: event.toolCallId, parentCall: event.parentToolCallId },
@@ -416,7 +433,10 @@ export class SessionStatistics {
   }
 
   private finish(status: string) {
-    if (!this.run) return;
+    if (!this.run) {
+      this.tools.clear();
+      return;
+    }
     this.emit("run_end", {
       status,
       durationMs: this.clock() - this.runStarted,

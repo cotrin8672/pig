@@ -1,4 +1,5 @@
 import type { StatisticValue } from "./contracts";
+import { isShellTool } from "./shell-command";
 
 export function object(value: unknown): Record<string, unknown> {
   return value && typeof value === "object" && !Array.isArray(value)
@@ -82,7 +83,7 @@ export function toolMetadata(
   const details = object(result.details);
   const truncation = object(details.truncation);
   const output = object(result.structuredContent);
-  const shell = tool === "bash" || tool === "powershell";
+  const shell = isShellTool(tool);
   return {
     ...contentMetadata(result.content),
     exitCode: shell ? signed(output.exit_code ?? details.exitCode) : null,

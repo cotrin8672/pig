@@ -132,6 +132,9 @@ test.skipIf(!existsSync(edge) && !process.env.PIG_REQUIRE_UI_TESTS)(
             cards: boolean;
             tokenColumns: number;
             colors: number;
+            commands: string[];
+            commandsFit: boolean;
+            coverage: string;
           }>(`(() => {
             const page=document.querySelector('.statistics-overview');
             const cards=[...page.querySelectorAll('[data-ui-surface="card"]')];
@@ -139,13 +142,28 @@ test.skipIf(!existsSync(edge) && !process.env.PIG_REQUIRE_UI_TESTS)(
             const glass=cards.every(el=>{const c=getComputedStyle(el);return c.opacity==='1'&&c.backgroundColor.startsWith('rgba(')});
             const model=document.querySelector('.stats-models .stats-scroll');
             const colors=new Set([...page.querySelectorAll('.stats-stack span')].map(el=>getComputedStyle(el).backgroundColor));
-            return {scroll:page.scrollHeight>page.clientHeight+1,cards:visible&&glass&&model.scrollWidth<=model.clientWidth+1,tokenColumns:page.querySelectorAll('.stats-summary > div').length,colors:colors.size};
+            const commands=page.querySelector('.stats-commands .stats-scroll');
+            const daily=page.querySelector('.stats-daily').getBoundingClientRect(), panel=page.querySelector('.stats-commands').getBoundingClientRect();
+            return {scroll:page.scrollHeight>page.clientHeight+1,cards:visible&&glass&&model.scrollWidth<=model.clientWidth+1,tokenColumns:page.querySelectorAll('.stats-summary > div').length,colors:colors.size,
+              commands:[...page.querySelectorAll('.stats-commands tbody th')].map(el=>el.textContent),
+              commandsFit:commands.scrollWidth<=commands.clientWidth+1&&Math.abs(daily.left-panel.left)<1&&Math.abs(daily.width-panel.width)<1&&panel.top>daily.bottom,
+              coverage:page.querySelector('.stats-commands h2 span').textContent};
           })()`);
           expect(layout).toMatchObject({
             scroll: false,
             cards: true,
             tokenColumns: 6,
             colors: 3,
+            commands: [
+              "pnpm testbash",
+              "git diffbash",
+              "Get-ChildItempowershell",
+              "rgbash",
+              "rgpowershell",
+              "git statusbash",
+            ],
+            commandsFit: true,
+            coverage: "未分類 418・未計測 96",
           });
           await Bun.write(
             join(dir, "statistics.png"),
