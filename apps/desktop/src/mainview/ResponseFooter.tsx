@@ -13,6 +13,33 @@ import type { Message, ResponseStats } from "../shared/transcript";
 import { useT } from "./i18n";
 import { forkChat, regenerate } from "./rpc";
 import { showError, useStore } from "./store";
+import { type TipContent, useTooltip } from "./Tooltip";
+
+type T = ReturnType<typeof useT>;
+
+/** Per-response token breakdown for the speed/total chip's Tooltip. */
+export function usageTip(
+  stats: ResponseStats,
+  t: T,
+  language: string,
+): TipContent {
+  const num = new Intl.NumberFormat(language);
+  const rows: [string, string][] = [
+    [t["Input tokens"], num.format(stats.input)],
+    [t["Cache read"], num.format(stats.cacheRead)],
+    [t["Cache write"], num.format(stats.cacheWrite)],
+    [t["Output tokens"], num.format(stats.output)],
+    [t.Requests, num.format(stats.requests)],
+  ];
+  if (stats.tokensPerSecond !== undefined)
+    rows.push([
+      t["Output speed"],
+      t.tokensPerSecond(Math.round(stats.tokensPerSecond)),
+    ]);
+  if (stats.cost > 0)
+    rows.push([t["API-equivalent cost"], `$${stats.cost.toFixed(4)}`]);
+  return { tier: "rich", label: "", rows };
+}
 
 function duration(ms: number) {
   const s = Math.round(ms / 1000);
@@ -40,6 +67,7 @@ export const ResponseFooter = memo(function ResponseFooter({
   const t = useT();
   const language = useStore((s) => s.settings.language);
   const [copied, setCopied] = useState(false);
+  const tooltip = useTooltip();
   const address = useStore(useShallow((s) => s.snapshots[sessionId]?.address));
   const ready = useStore((s) => s.snapshots[sessionId]?.ready !== false);
   const [action, setAction] = useState<"fork" | "regenerate">();
@@ -71,6 +99,10 @@ export const ResponseFooter = memo(function ResponseFooter({
           <span
             className="chip"
             aria-description={t["Output speed · total tokens"]}
+            {...tooltip(() => ({
+              ...usageTip(stats, t, language),
+              side: "top",
+            }))}
           >
             {stats.tokensPerSecond !== undefined &&
               t.tokensPerSecond(Math.round(stats.tokensPerSecond))}

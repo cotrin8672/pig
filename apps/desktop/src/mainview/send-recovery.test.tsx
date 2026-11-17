@@ -116,6 +116,12 @@ if (process.env.PIG_SEND_RECOVERY_CHILD !== "1") {
           timestamp: 1,
           tools: 0,
           totalTokens: 0,
+          input: 0,
+          output: 0,
+          cacheRead: 0,
+          cacheWrite: 0,
+          requests: 1,
+          cost: 0,
           model: "fixture",
           text: "answer",
         }}

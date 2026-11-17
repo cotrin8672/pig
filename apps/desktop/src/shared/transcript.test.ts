@@ -75,6 +75,8 @@ test("response statistics aggregate tool turns without treating custom data as a
     durationMs: 6500,
     tools: 1,
     totalTokens: 300,
+    output: 90,
+    requests: 2,
     tokensPerSecond: 30,
     timestamp: 5000,
     text: "Looking\n\nDone",
