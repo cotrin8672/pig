@@ -49,6 +49,19 @@ const contentOf = ({
   ...(files?.length ? { files } : {}),
   ...(annotations?.length ? { annotations } : {}),
 });
+/** Isolate a flight from later edits. Strings are immutable, so only the
+ * containers are copied; megabytes of base64 image data are shared. */
+const copyContent = (content: DraftContent): DraftContent => ({
+  text: content.text,
+  pastes: content.pastes.map((paste) => ({ ...paste })),
+  images: content.images.map(({ id, image }) => ({ id, image: { ...image } })),
+  ...(content.files
+    ? { files: content.files.map((file) => ({ ...file })) }
+    : {}),
+  ...(content.annotations
+    ? { annotations: content.annotations.map((item) => ({ ...item })) }
+    : {}),
+});
 const ids = (items: { id: string }[] = []) =>
   items.map((item) => item.id).join("\0");
 const equal = (a: DraftContent, b: DraftContent) =>
@@ -302,6 +315,8 @@ export class DraftStore {
     this.put(address, {
       ...draft,
       content: emptyContent(),
+      // A discarded owner keeps no payload, including an unresolved remote side.
+      conflict: undefined,
       dirty: false,
       ...(deleted ? { retired: true } : {}),
     });
@@ -379,8 +394,7 @@ export class DraftStore {
     requestId?: string,
     delivery?: PromptDelivery,
   ): Promise<EditorDraft> {
-    if (requestId)
-      target = { ...target, content: structuredClone(target.content) };
+    if (requestId) target = { ...target, content: copyContent(target.content) };
     const key = addressKey(address);
     const run = async () => {
       for (let attempt = 0; attempt < 2; attempt++) {
@@ -394,7 +408,7 @@ export class DraftStore {
         if (!requestId) {
           if (!draft.dirty) return draft;
           // Queued mirrors and retries must never replay an older local edit.
-          target = { ...draft, content: structuredClone(draft.content) };
+          target = { ...draft, content: copyContent(draft.content) };
         } else if (
           attempt === 0 &&
           draft.version !== target.version &&

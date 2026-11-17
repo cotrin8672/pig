@@ -33,6 +33,41 @@ test("drafts, folded pastes and ordered images survive navigation by exact owner
   expect(store.read(a).content.images[0].image).toEqual(image);
   expect(store.read(b).content.text).toBe("other session");
 });
+test("sync flights are isolated from later edits without copying image data", async () => {
+  const store = new DraftStore();
+  const image = {
+    id: "i",
+    image: { type: "image" as const, mimeType: "image/png", data: "x" },
+  };
+  store.edit(a, () => ({ ...content("sent"), images: [image] }));
+  const seen: DraftSyncParams[] = [];
+  await store.flush(a, async (params) => {
+    seen.push(params);
+    image.image.mimeType = "image/jpeg";
+    store.read(a).content.images.push(image);
+    return { applied: true, draft: { ...params.content, revision: 1 } };
+  });
+  expect(seen[0].content.images).toHaveLength(1);
+  expect(seen[0].content.images[0].image.mimeType).toBe("image/png");
+  expect(seen[0].content.images[0]).not.toBe(image);
+  expect(seen[0].content.images[0].image.data).toBe(image.image.data);
+});
+test("an explicit discard releases conflicting remote payloads and rejects late echoes", () => {
+  const store = new DraftStore();
+  const image = {
+    id: "i",
+    image: { type: "image" as const, mimeType: "image/png", data: "x" },
+  };
+  store.edit(a, () => content("local"));
+  store.receive(a, { ...content("remote"), images: [image], revision: 1 });
+  expect(store.read(a).conflict?.images).toHaveLength(1);
+  store.discard(a, true);
+  expect(store.read(a).content).toEqual(emptyContent());
+  expect(store.read(a).conflict).toBeUndefined();
+  store.receive(a, { ...content("late"), images: [image], revision: 2 });
+  expect(store.read(a).content).toEqual(emptyContent());
+  expect(store.read(a).conflict).toBeUndefined();
+});
 test("extension setText applies to inactive clean draft and does not erase images", () => {
   const store = new DraftStore();
   store.receive(b, {
