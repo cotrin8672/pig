@@ -29,6 +29,9 @@ test.skipIf(!existsSync(fixtureEdge) && !process.env.PIG_REQUIRE_UI_TESTS)(
         if(dot.classList.contains('running')){
           check(style.animationName==='session-dot-breathe','only running status should breathe');
           const animation=dot.getAnimations()[0];
+          // Compositor-only: box-shadow keyframes restyle the page every frame while a chat runs.
+          const animated=new Set(animation.effect.getKeyframes().flatMap(frame=>Object.keys(frame).filter(key=>!['offset','computedOffset','easing','composite'].includes(key))));
+          check([...animated].every(key=>key==='opacity'||key==='transform'),'running dot must animate only compositor properties: '+[...animated]);
           animation.pause();animation.currentTime=0;
         }else{
           check(style.animationName==='none','non-running status must not pulse');
