@@ -96,6 +96,7 @@ import {
   threadView,
 } from "./thread-scroll";
 import { transcriptRequestIds } from "./transcript-requests";
+import { initTypeToCompose } from "./type-to-compose";
 import { UIRequestBroker } from "./UIRequestBroker";
 import { selectAppView, selectConversationView } from "./ui-selectors";
 import { useHistoryPaging } from "./use-history-paging";
@@ -162,6 +163,8 @@ export function App() {
   useEffect(initialize, [initialize]);
   useEffect(initNavigation, []);
   useEffect(initShortcuts, []);
+  // After shortcuts: a handled shortcut is defaultPrevented and never types.
+  useEffect(initTypeToCompose, []);
   useEffect(initSessionLinks, []);
   useEffect(initSessionReadTracking, []);
   useEffect(() => {
