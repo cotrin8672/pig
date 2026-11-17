@@ -9,6 +9,7 @@ import type {
   TerminalClientCommand,
   TerminalHostEvent,
 } from "../shared/terminal-ui";
+import { forgetEditorView } from "./ComposerEditor";
 import {
   addressKey,
   applyChatEvent,
@@ -46,6 +47,7 @@ function retire(address: SessionAddress) {
     Math.max(address.epoch, retired.get(address.sessionId) ?? -1),
   );
   latest.delete(addressKey(address));
+  forgetEditorView(addressKey(address));
 }
 export function liveAddress(address: SessionAddress) {
   const state = useStore.getState();
