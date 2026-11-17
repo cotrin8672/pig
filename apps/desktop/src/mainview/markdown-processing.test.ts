@@ -191,6 +191,16 @@ test("streaming incomplete math stays literal across parse completion, appends a
     expect(edited.tail).toContain("frac{9");
   }
 });
+test("in-flight parses are shared even when many other parses exceed the cache budget", async () => {
+  const texts = Array.from({ length: 12 }, (_, i) => `# pending budget ${i}`);
+  const first = prepareMarkdown(texts[0]);
+  const others = texts.slice(1).map((text) => prepareMarkdown(text));
+  const again = prepareMarkdown(texts[0]);
+  const [a, b] = await Promise.all([first, again]);
+  await Promise.all(others);
+  expect(a).toBeDefined();
+  expect(b).toBe(a);
+});
 test("streaming and final Markdown caches never share an unfinished math rendering", async () => {
   const text = "$$\ncacheSeparation = \\frac{17}{";
   const pending = await prepareMarkdown(text, undefined, true);

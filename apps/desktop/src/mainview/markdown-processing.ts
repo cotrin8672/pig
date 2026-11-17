@@ -8,7 +8,10 @@ type Cached = {
   promise: Promise<ParsedMarkdown | undefined>;
   value?: ParsedMarkdown;
 };
+/** Completed parses, bounded below. In-flight parses are shared separately so
+ * the budget can never evict one and start a duplicate parse of the same text. */
 const cache = new Map<string, Cached>();
+const pending = new Map<string, Cached>();
 const cacheKey = (text: string, streaming: boolean) =>
   `${streaming ? 1 : 0}\0${text}`;
 function trim() {
@@ -66,7 +69,7 @@ export async function prepareMarkdown(
 ): Promise<ParsedMarkdown | undefined> {
   if (signal?.aborted) return undefined;
   const key = cacheKey(text, streaming);
-  let entry = cache.get(key);
+  let entry = cache.get(key) ?? pending.get(key);
   if (!entry) {
     const controller = new AbortController();
     entry = {
@@ -96,17 +99,22 @@ export async function prepareMarkdown(
       (value) => {
         current.done = true;
         current.value = value;
-        trim();
+        if (pending.get(key) === current) {
+          pending.delete(key);
+          if (value) {
+            cache.set(key, current);
+            trim();
+          }
+        }
         return value;
       },
       (error) => {
         current.done = true;
-        if (cache.get(key) === current) cache.delete(key);
+        if (pending.get(key) === current) pending.delete(key);
         throw error;
       },
     );
-    cache.set(key, current);
-    trim();
+    pending.set(key, current);
   }
   const current = entry;
   current.users++;
@@ -123,7 +131,7 @@ export async function prepareMarkdown(
       if (!release()) return;
       if (!current.done && !current.users) {
         current.controller.abort();
-        if (cache.get(key) === current) cache.delete(key);
+        if (pending.get(key) === current) pending.delete(key);
       }
       resolve(undefined);
     };
