@@ -464,7 +464,7 @@ export const en = {
   steeringRestored:
     "Queued input was cancelled before delivery. It has been returned to the composer; it was not resent.",
   sendUnconfirmed:
-    "The send could not be confirmed. Its content remains in the tray as unconfirmed; it has not been resent. Check its status before sending it again.",
+    "The send could not be confirmed after automatic recovery. Your text and attachments have been returned to the composer. Check the conversation before sending again, as the original may have arrived.",
   "Already sending": "This message is already being sent.",
   Send: "Send",
   Resume: "Resume",
@@ -1322,7 +1322,7 @@ export const ja: Dictionary = {
   steeringRestored:
     "未読の送信が取り消されました。内容を入力欄に戻しました。自動再送はしていません。",
   sendUnconfirmed:
-    "送信結果を確認できませんでした。内容はトレイに「未確認」として残しています。二重送信を避けるため、再送前に送信結果を確認してください。",
+    "自動復旧を試しましたが送信結果を確認できないため、本文・添付を入力欄に戻しました。元の送信が届いている可能性があるので、再送前に会話を確認してください。",
   "Already sending": "このメッセージはすでに送信を開始しています。",
   Send: "送信",
   Resume: "再開",

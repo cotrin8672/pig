@@ -2110,6 +2110,10 @@ export class SessionHost {
   acknowledgePromptRecovery(params: SessionAddress & { key: SendKey }) {
     const m = this.current(params, false);
     if (
+      !(
+        addressKey(params) === addressKey(params.key) &&
+        this.receipts.queuedIntent(params.key)
+      ) &&
       !m.projector?.diagnostics.value.recovered.some(
         (item) =>
           item.key &&
@@ -2117,7 +2121,7 @@ export class SessionHost {
           item.key.requestId === params.key.requestId,
       )
     )
-      throw new Error("Queued input was not cancelled in this chat");
+      throw new Error("Input does not belong to this chat");
     this.receipts.acknowledgeRecovery(params.key);
   }
   /** Returns the resulting order of the host-held follow-ups. */

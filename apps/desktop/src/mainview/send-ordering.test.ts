@@ -174,6 +174,7 @@ test("recovery cancels an unknown send whose draft ACK arrives after the history
   await Bun.sleep(0);
   await sends.lookup(address);
   expect(sends.read(address)?.state).toBe("unknown");
+  expect(drafts.read(address).content.text).toBe("late old input");
   await sends.stop(address, async () => {});
   sends.retire(address);
   const next = { ...address, epoch: 2 };
@@ -185,7 +186,7 @@ test("recovery cancels an unknown send whose draft ACK arrives after the history
   expect(prompts).toBe(0);
   expect(withdrawals).toBe(1);
   expect(drafts.read(next).content.text).toBe("new branch draft");
-  expect(sends.retained()[0].content?.text).toBe("late old input");
+  expect(sends.retained()).toEqual([]);
 });
 
 test("a send made while stopping is accepted immediately and dispatched after Stop finishes", async () => {
@@ -203,6 +204,49 @@ test("a send made while stopping is accepted immediately and dispatched after St
   expect(f.log).toEqual(["prompt:after stop"]);
   f.responses[0].resolve({ disposition: "started" });
   await sent;
+});
+
+test("returning an undispatched input cancels a delayed CAS even without Stop", async () => {
+  const ack = Promise.withResolvers<void>();
+  const drafts = new DraftStore();
+  let prompts = 0;
+  let cancellations = 0;
+  const sends = new SendController(
+    drafts,
+    {
+      syncDraft: async (params) => {
+        await ack.promise;
+        return {
+          applied: true,
+          draft: { ...params.content, revision: params.expectedRevision + 1 },
+        };
+      },
+      prompt: async () => {
+        prompts++;
+        return { disposition: "started" };
+      },
+      getPromptReceipt: async (key) => ({
+        ...key,
+        state: "unknown",
+        reason: "not-found",
+      }),
+      cancelPrompt: async () => {
+        cancellations++;
+      },
+    },
+    () => {},
+  );
+  drafts.edit(address, () => text("edit me"));
+  const sending = sends.send(address);
+  await Bun.sleep(0);
+  await sends.lookup(address);
+  expect(drafts.read(address).content.text).toBe("edit me");
+  drafts.edit(address, () => text("edited after return"));
+  ack.resolve();
+  await sending;
+  expect(prompts).toBe(0);
+  expect(cancellations).toBe(1);
+  expect(drafts.read(address).content.text).toBe("edited after return");
 });
 
 function readerFixture() {

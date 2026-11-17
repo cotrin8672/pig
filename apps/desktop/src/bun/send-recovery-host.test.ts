@@ -40,12 +40,17 @@ test("real SessionHost separates lost CAS ACK from dispatch and accepts the froz
           return result;
         },
         prompt:async input=>{await host.prompt(input);throw new Error("prompt accepted; reply dropped");},
-        getPromptReceipt:async key=>host.getPromptReceipt(key)
+        getPromptReceipt:async key=>host.getPromptReceipt(key),
+        acknowledgeRecovery:async params=>host.acknowledgePromptRecovery(params)
       },()=>{});
       await sends.send(chat.address);
       const prepared = sends.read(chat.address);
       expect(invocations).toBe(0);
       expect(prepared.state).toBe("unknown");
+      expect(prepared.returned).toBe(true);
+      expect(renderer.read(chat.address).content.text).toBe("CAS ACK lost");
+      await Bun.sleep(0);
+      expect(host.runtimeState().sendIntents.find(intent=>intent.receipt.requestId===prepared.key.requestId).recovered).toBe(true);
       expect(host.getPromptReceipt(prepared.key)).toMatchObject({state:"pending",stage:"prepared"});
       await host.abort(chat.address);
       const original = {text:"[paste #1 6 chars]",pastes:[{id:"p",marker:"[paste #1 6 chars]",text:"frozen"}],images:[]};

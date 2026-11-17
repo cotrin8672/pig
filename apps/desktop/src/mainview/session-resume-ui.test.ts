@@ -38,7 +38,8 @@ for (const action of ["fork", "rewind"]) {
     window.__requests={
       listSlashCommands:()=>[],listSessions:()=>[],
       syncDraft:params=>({applied:true,draft:{...params.content,revision:params.expectedRevision+1}}),
-      prompt:params=>{requests.push(params);if(requests.length===1)throw new Error('Lost send response');return {disposition:'started'};},
+      prompt:params=>{requests.push(params);if(params.text==='failed steering')throw new Error('Lost send response');return {disposition:'started'};},
+      acknowledgePromptRecovery:()=>{},
       getPromptReceipt:()=>{throw new Error('Receipt service unavailable');},
       abort:async()=>{events.push('stop');await stopped.promise;},
       forkSession:()=>{events.push('fork');return recovered;},
@@ -56,20 +57,20 @@ for (const action of ["fork", "rewind"]) {
     check(events[0]==='stop','history must not change before Stop is confirmed');
     stopped.resolve();await recovery;
     check(events.join(',')==='stop,${action}','recovery must succeed despite unavailable receipt lookup');
-    check(sends.retained().some(send=>send.detached&&send.content?.text==='failed steering'),'unknown payload must stay retained on the old operation');
+    check(drafts.read(nextAddress).content.text==='failed steering','the returned composer draft must survive an explicit history change');
     if(${JSON.stringify(action)}==='fork'){
-      check(requests.length===1,'branching must not resend the unknown input');
+      check(requests.length===3,'branching must not resend the unknown input after bounded retries');
       drafts.edit(nextAddress,content=>({...content,text:'new branch request'}));await sends.send(nextAddress);
     }
-    check(requests.length===2&&requests[1].text===(${JSON.stringify(action)}==='fork'?'new branch request':'original request'),'only the explicit recovery instruction may be sent');
+    check(requests.length===4&&requests[3].text===(${JSON.stringify(action)}==='fork'?'new branch request':'original request'),'only the explicit recovery instruction may be sent');
     snapshot={...recovered,snapshotSeq:3,transcript:{...recovered.transcript,records:[
-      {...original,id:'recovered-user',entryId:'recovered-user',requestId:requests[1].requestId,message:{...user,content:requests[1].text}},
+      {...original,id:'recovered-user',entryId:'recovered-user',requestId:requests[3].requestId,message:{...user,content:requests[3].text}},
       {id:'answer',entryId:'answer',parentId:'recovered-user',branchId:'root',order:1,kind:'message',message:fauxAssistantMessage('recovered response')},
     ]}};
     await render();
     check(!document.querySelector('.message-queue-steer')&&!document.querySelector('.send-button.waiting'),'recovered chat must have no stuck steering or send spinner');
     check(document.querySelector('.send-button').getAttribute('aria-label')==='Send','recovered chat must be usable for the next send');
-    check(requests.length===2,'recovery must never replay the failed input');
+    check(requests.length===4,'history recovery must never replay the failed input');
     root.unmount();
   `,
         { realRpc: true },
@@ -150,7 +151,7 @@ test.skipIf(!existsSync(fixtureEdge) && !process.env.PIG_REQUIRE_UI_TESTS)(
 );
 
 test.skipIf(!existsSync(fixtureEdge) && !process.env.PIG_REQUIRE_UI_TESTS)(
-  "unconfirmed sends stay labelled in the tray, notify and allow read-only status checks",
+  "unconfirmed sends retry three times, then return to the composer without losing newer typing",
   () =>
     runUiFixture(
       "unconfirmed-send",
@@ -169,6 +170,7 @@ test.skipIf(!existsSync(fixtureEdge) && !process.env.PIG_REQUIRE_UI_TESTS)(
     window.__requests={
       listSlashCommands:async()=>[],
       syncDraft:async params=>({applied:true,draft:{...params.content,revision:params.expectedRevision+1}}),
+      acknowledgePromptRecovery:()=>{},
       prompt:params=>{requests.push(params);return gate.promise;},
       getPromptReceipt:async params=>{checks++;if(confirmed)return {...params,state:'accepted',accepted:{disposition:'queued'},acceptedAt:1};throw new Error('Disconnected');},
     };
@@ -181,22 +183,22 @@ test.skipIf(!existsSync(fixtureEdge) && !process.env.PIG_REQUIRE_UI_TESTS)(
     const sending=sends.send(address);
     await until(()=>requests.length===1&&document.querySelector('.message-queue-steer'),'pending input must initially appear as steering');
     gate.reject(new Error('Prompt response disconnected'));await sending;
+    drafts.edit(address,content=>({...content,text:'newer typing'}));
     await sends.lookup(address);await sends.lookup(address);
     snapshot={...snapshot,failure:'Request failed',transcript:{...snapshot.transcript,running:false}};
     await render();
     check(sends.read(address).state==='unknown','repeated receipt failures must leave an honest unknown state');
     check(!document.querySelector('.message.user'),'unknown input must not remain as steering or a normal optimistic bubble');
-    const unconfirmed=document.querySelector('.message-queue-check');
-    check(unconfirmed?.textContent==='Unconfirmed','unknown input must remain labelled in the existing tray');
+    check(!document.querySelector('.message-queue-check'),'unknown input must not be stranded in the tray');
     check(useStore.getState().noticeHistory.some(notice=>notice.message.includes('could not be confirmed')),'unknown results must notify once instead of disappearing');
-    const queueBox=document.querySelector('.message-queue').getBoundingClientRect();
-    const composerBox=document.querySelector('.composer').getBoundingClientRect();
-    check(queueBox.top<composerBox.top,'unconfirmed input belongs above, never below the editor');
-    check(sends.retained()[0].content.text==='作業を続けて','unknown payload must remain recoverable');
-    check(requests.length===1,'unknown input must never resend automatically');
-    const before=checks;confirmed=true;unconfirmed.click();
+    check(drafts.read(address).content.text==='作業を続けて\\n\\nnewer typing','failed input must return ahead of newer typing');
+    check(document.querySelector('.composer textarea').value==='作業を続けて\\n\\nnewer typing','the actual editor must display the restored draft');
+    check(!document.querySelector('.composer-error,.composer-hint'),'no status row belongs below the editor');
+    check(requests.length===3&&requests.every(request=>request.requestId===requests[0].requestId),'automatic retries must reuse one send identity');
+    const before=checks;confirmed=true;await sends.lookup(address);
     await until(()=>sends.read(address).state==='accepted','manual check must accept a late receipt');
-    check(checks===before+1&&requests.length===1,'checking must only read the receipt, never resend');
+    check(checks===before+1&&requests.length===3,'checking must only read the receipt after recovery');
+    check(drafts.read(address).content.text==='作業を続けて\\n\\nnewer typing','late acceptance must not erase newer typing');
     snapshot={...snapshot,transcript:{...snapshot.transcript,records:[{
       id:'committed',requestId:requests[0].requestId,parentId:null,branchId:'root',order:0,kind:'message',
       message:{role:'user',content:'作業を続けて',timestamp:1},
@@ -205,7 +207,7 @@ test.skipIf(!existsSync(fixtureEdge) && !process.env.PIG_REQUIRE_UI_TESTS)(
     check(sends.read(address).state==='accepted','confirmed history must resolve unknown status even when receipt lookup is still disconnected');
     await sends.wait(address);
     check(document.querySelectorAll('.message.user').length===1&&document.querySelector('.user-bubble').textContent==='作業を続けて','confirmed history must remain visible exactly once');
-    check(requests.length===1,'history reconciliation must not replay input');
+    check(requests.length===3,'history reconciliation must not replay input');
     root.unmount();
   `,
       { realRpc: true },

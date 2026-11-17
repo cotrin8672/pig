@@ -204,5 +204,5 @@ test.each([
   }
   expect(sends.read(address)?.state).toBe("accepted");
   expect(drafts.read(address).content.text).toBe("new draft");
-  expect(calls).toBe(1);
+  expect(calls).toBe(status === "unknown" ? 3 : 1);
 });
