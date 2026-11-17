@@ -73,9 +73,11 @@ function Start-ScheduledTask { param($TaskName) }
   const action = JSON.parse(
     (await readFile(capture, "utf8")).replace(/^\uFEFF/, ""),
   );
-  expect(action.Execute).toBe(ps);
+  expect(action.Execute).toBe(
+    join(process.env.SystemRoot ?? "C:\\Windows", "System32/conhost.exe"),
+  );
   expect(action.Arguments).toBe(
-    `-NoProfile -NonInteractive -WindowStyle Hidden -ExecutionPolicy Bypass -File "${script}" -Config "${config}"`,
+    `--headless "${ps}" -NoProfile -NonInteractive -WindowStyle Hidden -ExecutionPolicy Bypass -File "${script}" -Config "${config}"`,
   );
   expect(action.WorkingDirectory).toBe(base);
 });
