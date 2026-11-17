@@ -55,6 +55,15 @@ function fixture(): Transcript {
 const throughIPC = (value: Transcript) =>
   unpackTranscript(JSON.parse(JSON.stringify(packTranscript(value))));
 
+test("a publication whose identities are already shared is returned without copies", () => {
+  const current = fixture();
+  const incoming = { ...current, records: [...current.records] };
+  expect(shareTranscript(current, incoming)).toBe(incoming);
+  const shared = shareTranscript(current, structuredClone(current));
+  expect(shared.records[0]).toBe(current.records[0]);
+  expect(shareTranscript(shared, shared)).toBe(shared);
+});
+
 test("IPC clones reuse immutable entries and canonical results, never live records", () => {
   const current = fixture();
   for (const incoming of [structuredClone(current), throughIPC(current)]) {
