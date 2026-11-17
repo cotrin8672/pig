@@ -1,0 +1,109 @@
+diff --git a/dist/extensions/mcp/index.d.ts b/dist/extensions/mcp/index.d.ts
+index 2ee96fad28b6b73c84a3a9410e56cc78c16ab807..4a738253e9fa719a4dc754e57a8f959c2a148138 100644
+--- a/dist/extensions/mcp/index.d.ts
++++ b/dist/extensions/mcp/index.d.ts
+@@ -31,6 +31,18 @@ import type { McpOAuthCredentialStore } from "./oauth.ts";
+ import type { McpTransportFactory } from "./runtime.ts";
+ export type { McpTransportFactory } from "./runtime.ts";
+ export interface McpExtensionOptions {
++    /**
++     * Synchronous, best-effort host integration after a server tool completes. Return lightweight
++     * host-only details; they never enter model-facing content or codemode structuredContent.
++     * The reader reuses the executing connection and rejects after disconnect/replacement/disable.
++     */
++    onToolResult?: (event: {
++        toolCallId: string;
++        server: string;
++        tool: import("@earendil-works/pi-mcp").Tool;
++        isError: boolean;
++        readResource: (uri: string, options: import("@earendil-works/pi-mcp").McpRequestOptions) => Promise<import("@earendil-works/pi-mcp").ReadResourceResult>;
++    }) => Record<string, unknown> | undefined;
+     /** Defaults to reading `mcp.json` from the agent directory and the trusted project. */
+     loadConfig?: (ctx: ExtensionContext) => LoadedMcpConfig;
+     /** Defaults to stdio and streamable HTTP transports built from the server config. */
+diff --git a/dist/extensions/mcp/index.js b/dist/extensions/mcp/index.js
+index 69edd29690f5a1513723e842e2ea4933658082e2..688246b22ff31d42b8295eab0f1452bc8f5f11e0 100644
+--- a/dist/extensions/mcp/index.js
++++ b/dist/extensions/mcp/index.js
+@@ -332,6 +332,24 @@ export function createMcpExtension(options = {}) {
+                         return client;
+                     },
+                     readableResources: () => resourceServers().some((current) => current.name === server),
++                    onResult: options.onToolResult ? ({ toolCallId, client, result }) => {
++                        const offeredTools = client.tools;
++                        return options.onToolResult({
++                            toolCallId,
++                            server,
++                            tool: offeredTools.find((offered) => offered.name === tool.name) ?? tool,
++                            isError: result.isError === true,
++                            readResource: (uri, requestOptions) => {
++                                const current = findServer(server);
++                                if (!current || !isEnabled(current) || current.connection !== client ||
++                                    client.state !== "connected" || !client.hasResources || client.tools !== offeredTools ||
++                                    getMcpToolExposure(current.entry.config, tool.name) === "hidden" ||
++                                    !client.tools.some((offered) => offered.name === tool.name))
++                                    return Promise.reject(new Error("MCP resource connection is no longer available."));
++                                return client.readResource(uri, requestOptions);
++                            },
++                        });
++                    } : undefined,
+                 });
+                 definitions.set(definition.name, definition);
+                 pi.registerTool(definition);
+diff --git a/dist/extensions/mcp/tools.d.ts b/dist/extensions/mcp/tools.d.ts
+index becb9cf884f1d63604edcd3d8c7371a9dbb80501..5e58aaa287e18c42a6a7aba5ab151b5f509b60a8 100644
+--- a/dist/extensions/mcp/tools.d.ts
++++ b/dist/extensions/mcp/tools.d.ts
+@@ -33,6 +33,7 @@ export interface McpToolDetails {
+ export declare function saveToTempFile(data: string | Uint8Array, extension: string): Promise<string>;
+ export interface McpToolCaller {
+     callTool(name: string, args: Record<string, unknown>, options: McpRequestOptions): Promise<CallToolResult>;
++    readResource?(uri: string, options: McpRequestOptions): Promise<import("@earendil-works/pi-mcp").ReadResourceResult>;
+ }
+ /**
+  * Output schema of every MCP tool: the `CallToolResult` scripts receive (without `_meta`, which
+@@ -59,6 +60,12 @@ export declare function createMcpToolDefinition(options: {
+     getClient: () => Promise<McpToolCaller>;
+     /** Whether `read_mcp_resource` can read the server's resources. */
+     readableResources?: () => boolean;
++    /** Synchronous host-only details; never included in structuredContent. Observer errors are ignored. */
++    onResult?: (event: {
++        toolCallId: string;
++        client: McpToolCaller;
++        result: AgentToolResult<McpToolDetails>;
++    }) => Record<string, unknown> | undefined;
+ }): ToolDefinition<TSchema, McpToolDetails>;
+ /** Renderers of calls to an MCP tool, labeled `server/tool`, also used before the tool is registered. */
+ export declare function createMcpToolRenderers(label: string): ToolRenderers;
+diff --git a/dist/extensions/mcp/tools.js b/dist/extensions/mcp/tools.js
+index 67aa2b865615914fa39c3c8edbace40ee1bed325..a94f110927dbd366b3754ab44c8204e4668b42f1 100644
+--- a/dist/extensions/mcp/tools.js
++++ b/dist/extensions/mcp/tools.js
+@@ -200,7 +200,7 @@ export function createMcpToolDefinition(options) {
+         namespace: options.namespace,
+         ...(annotations ? { annotations } : {}),
+         ...createMcpToolRenderers(label),
+-        async execute(_toolCallId, params, signal, onUpdate) {
++        async execute(toolCallId, params, signal, onUpdate) {
+             const client = await options.getClient();
+             const result = await client.callTool(tool.name, (params ?? {}), {
+                 signal,
+@@ -211,7 +211,17 @@ export function createMcpToolDefinition(options) {
+                     onUpdate?.({ content: [{ type: "text", text }], details: { server, tool: tool.name } });
+                 },
+             });
+-            return convertMcpResult(server, tool.name, result, { readableResources: options.readableResources?.() });
++            const converted = await convertMcpResult(server, tool.name, result, { readableResources: options.readableResources?.() });
++            // A host observer is synchronous and best-effort; it must not delay or fail the tool.
++            try {
++                const details = options.onResult?.({ toolCallId, client, result: converted });
++                if (details)
++                    converted.details = { ...converted.details, ...details };
++            }
++            catch {
++                // Presentation failures do not change the model-facing result.
++            }
++            return converted;
+         },
+     };
+ }
