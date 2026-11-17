@@ -128,6 +128,7 @@ jobs:
           path: |
             ${{ env.RELEASE_DIR }}/pig-windows-x64.zip
             ${{ env.RELEASE_DIR }}/pig-windows-x64.zip.sha256
+            ${{ env.RELEASE_DIR }}/install.ps1
           if-no-files-found: error
           compression-level: 0
           retention-days: 7
@@ -149,8 +150,8 @@ jobs:
             gh release edit nightly --prerelease --latest=false --title 'pig nightly' --notes "$notes"
           else
             gh release create "$TAG" --verify-tag --latest --title "pig $VERSION" \
-              --notes "Unsigned Windows x64 portable build; requires WebView2. Install with Scoop using the repository bucket." \
-              "$RELEASE_DIR/pig-windows-x64.zip" "$RELEASE_DIR/pig-windows-x64.zip.sha256"
+              --notes "Unsigned Windows x64 portable build; requires WebView2. Install with Scoop or run: irm https://github.com/cotrin8672/pig/releases/latest/download/install.ps1 | iex" \
+              "$RELEASE_DIR/pig-windows-x64.zip" "$RELEASE_DIR/pig-windows-x64.zip.sha256" "$RELEASE_DIR/install.ps1"
           fi
       # checkver/autoupdate are metadata, not a scheduler. Commit the actual
       # published hash so ordinary 'scoop update' works without Excavator.
