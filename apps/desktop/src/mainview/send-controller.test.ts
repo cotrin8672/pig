@@ -1,4 +1,5 @@
 import { expect, test } from "bun:test";
+import { SendReceipts } from "../bun/sdk-send-receipts";
 import type { Snapshot } from "../shared/rpc-schema";
 import type {
   DraftSyncParams,
@@ -42,6 +43,103 @@ function fixture(
   );
   return { drafts, sends, callbacks, delays };
 }
+test("a lost prompt RPC is retried with the exact reserved payload and succeeds", async () => {
+  const payloads: PromptParams[] = [];
+  const f = fixture(
+    async (payload) => {
+      payloads.push(structuredClone(payload));
+      if (payloads.length === 1) throw new Error("RPC never arrived");
+      return accepted;
+    },
+    async (key) => ({ ...key, state: "pending", stage: "prepared" }),
+  );
+  await f.sends.send(address);
+  await Bun.sleep(0);
+  expect(payloads).toHaveLength(2);
+  expect(payloads[1]).toEqual(payloads[0]);
+  expect(f.sends.read(address)?.state).toBe("accepted");
+  expect(f.drafts.read(address).content).toEqual(emptyContent());
+});
+test("retry after a lost acceptance ACK executes SDK input only once", async () => {
+  const ledger = new SendReceipts(address.hostId);
+  let sdkCalls = 0;
+  let rpcCalls = 0;
+  const f = fixture(
+    async (payload) => {
+      const response = await ledger.send(
+        payload,
+        {
+          prompt: async (_text, options) => {
+            sdkCalls++;
+            options?.preflightResult?.("started");
+          },
+        },
+        async () => ({ text: payload.text, images: payload.images }),
+        () => {},
+      );
+      if (++rpcCalls === 1) throw new Error("ACK lost");
+      return response;
+    },
+    async () => {
+      throw new Error("receipt RPC unavailable");
+    },
+  );
+  await f.sends.send(address);
+  await Bun.sleep(0);
+  expect(rpcCalls).toBe(2);
+  expect(sdkCalls).toBe(1);
+  expect(f.sends.read(address)?.state).toBe("accepted");
+  expect(f.drafts.read(address).content).toEqual(emptyContent());
+  await ledger.settled();
+});
+test("exhausted retries preserve expanded paste, attachments and newer typing exactly once", async () => {
+  const f = fixture(
+    async () => {
+      throw new Error("disconnected");
+    },
+    async (key) => ({ ...key, state: "unknown", reason: "not-found" }),
+  );
+  f.drafts.edit(address, (content) => ({
+    ...content,
+    text: "[paste #1 8 chars]",
+    pastes: [{ id: "p", marker: "[paste #1 8 chars]", text: "expanded" }],
+    files: [{ id: "file", name: "notes", path: "/notes" }],
+  }));
+  await f.sends.send(address);
+  f.drafts.edit(address, () => ({ ...emptyContent(), text: "newer typing" }));
+  await f.sends.lookup(address);
+  await f.sends.lookup(address);
+  expect(f.drafts.read(address).content.text).toBe("expanded\n\nnewer typing");
+  expect(f.drafts.read(address).content.images).toHaveLength(1);
+  expect(f.drafts.read(address).content.files?.[0].id).toBe("file");
+  await f.sends.lookup(address);
+  expect(f.drafts.read(address).content.text).toBe("expanded\n\nnewer typing");
+  expect(f.sends.pendingSteering(address, false)).toEqual([]);
+});
+test("late acceptance after returning input preserves subsequent composer edits", async () => {
+  let confirm = false;
+  const f = fixture(
+    async () => {
+      throw new Error("lost reply");
+    },
+    async (key) =>
+      confirm
+        ? { ...key, state: "accepted", accepted, acceptedAt: 1 }
+        : { ...key, state: "unknown", reason: "not-found" },
+  );
+  await f.sends.send(address);
+  await f.sends.lookup(address);
+  await f.sends.lookup(address);
+  f.drafts.edit(address, (content) => ({
+    ...content,
+    text: "edited returned input",
+  }));
+  confirm = true;
+  await f.sends.lookup(address);
+  expect(f.sends.read(address)?.state).toBe("accepted");
+  expect(f.sends.pendingSteering(address, false)).toEqual([]);
+  expect(f.drafts.read(address).content.text).toBe("edited returned input");
+});
 test("SDK startup settles before CAS; failure restores input without reservation or dispatch", async () => {
   const drafts = new DraftStore();
   drafts.edit(address, () => ({
@@ -255,7 +353,7 @@ test("preaccept rejection retains text and images, shows backend error", async (
   expect(f.drafts.read(address).content.text).toBe("Hello");
   expect(f.drafts.read(address).content.images).toHaveLength(1);
 });
-test("unknown acceptance retains the payload without a phantom bubble, automatic retry or a confirmation gate", async () => {
+test("host restart returns text and images to the composer without replaying across hosts", async () => {
   const ids: string[] = [];
   const f = fixture(
     async (params) => {
@@ -270,23 +368,27 @@ test("unknown acceptance retains the payload without a phantom bubble, automatic
   expect(f.sends.read(address)?.state).toBe("unknown");
   expect(f.sends.read(address)?.message).toBeUndefined();
   expect(isSendUnconfirmed(f.sends.read(address))).toBe(true);
-  await f.sends.send(address);
-  expect(ids).toHaveLength(1);
+  expect(f.sends.read(address)?.returned).toBe(true);
+  expect(f.drafts.read(address).content.text).toBe("Hello");
+  expect(f.drafts.read(address).content.images).toHaveLength(1);
+  expect(f.sends.pendingSteering(address, false)).toEqual([]);
+  await f.sends.lookup(address);
+  expect(f.drafts.read(address).content.text).toBe("Hello");
   f.drafts.edit(address, () => ({ ...emptyContent(), text: "new message" }));
   await f.sends.send(address);
   expect(ids).toHaveLength(2);
   expect(ids[0]).not.toBe(ids[1]);
   expect(f.sends.optimistic(address)).toEqual([]);
-  expect(f.sends.retained().map((send) => send.content?.text)).toEqual([
-    "Hello",
-    "new message",
-  ]);
+  expect(f.sends.retained()).toEqual([]);
+  expect(f.drafts.read(address).content.text).toBe("new message");
 });
-test("repeated receipt failures stop showing active input without dropping it or retransmitting", async () => {
+test("receipt failures retry the same request three times then return all content once", async () => {
   let calls = 0;
+  const payloads: PromptParams[] = [];
   const f = fixture(
-    async () => {
+    async (payload) => {
       calls++;
+      payloads.push(structuredClone(payload));
       throw new Error("transport disconnected");
     },
     async () => {
@@ -300,12 +402,14 @@ test("repeated receipt failures stop showing active input without dropping it or
   await f.sends.lookup(address);
   expect(f.sends.read(address)?.state).toBe("unknown");
   expect(f.sends.optimistic(address)).toEqual([]);
-  expect(f.sends.retained()[0].content?.text).toBe("Hello");
-  expect(f.sends.retained()[0].content?.images).toHaveLength(1);
+  expect(f.drafts.read(address).content.text).toBe("Hello");
+  expect(f.drafts.read(address).content.images).toHaveLength(1);
+  expect(f.sends.retained()).toEqual([]);
   const callbacks = f.callbacks.length;
   await f.sends.lookup(address);
   expect(f.callbacks).toHaveLength(callbacks);
-  expect(calls).toBe(1);
+  expect(calls).toBe(3);
+  expect(payloads).toEqual([payloads[0], payloads[0], payloads[0]]);
 });
 test("late acceptance preserves edits made during pending prompt", async () => {
   let finish: (value: PromptAccepted) => void = () => {};
@@ -546,6 +650,7 @@ test("a hung lookup has a finite UI budget and only one underlying request; late
   drafts.edit(address, () => ({ ...emptyContent(), text: "one" }));
   const receipt = Promise.withResolvers<PromptReceipt>();
   let calls = 0;
+  const callbacks: (() => void)[] = [];
   let key: SendKey | undefined;
   const sends = new SendController(
     drafts,
@@ -560,11 +665,15 @@ test("a hung lookup has a finite UI budget and only one underlying request; late
         return receipt.promise;
       },
     },
-    () => {},
+    (callback) => callbacks.push(callback),
     5,
   );
   await sends.send(address);
+  expect(sends.read(address)?.state).toBe("checking");
+  callbacks.shift()?.();
+  callbacks.shift()?.();
   expect(sends.read(address)?.state).toBe("unknown");
+  expect(drafts.read(address).content.text).toBe("one");
   await Promise.all([sends.lookup(address), sends.lookup(address)]);
   expect(calls).toBe(1);
   receipt.resolve({
@@ -656,9 +765,9 @@ test("a lost preflight CAS ACK is checked independently and never dispatches pro
   await sends.send(address);
   expect({ prompts, lookups }).toEqual({ prompts: 0, lookups: 1 });
   expect(sends.read(address)?.state).toBe("unknown");
-  expect(drafts.read(address).content.text).toBe("");
+  expect(drafts.read(address).content.text).toBe("not dispatched");
   expect(sends.optimistic(address)).toEqual([]);
-  expect(sends.retained()[0].content?.text).toBe("not dispatched");
+  expect(sends.retained()).toEqual([]);
 });
 
 test("checking an old unknown ID after a new send does not query or overwrite the current operation", async () => {
@@ -667,7 +776,7 @@ test("checking an old unknown ID after a new send does not query or overwrite th
   const f = fixture(
     async (input) => {
       ids.push(input.requestId);
-      if (ids.length === 1) throw new Error("lost reply");
+      if (input.text === "Hello") throw new Error("lost reply");
       return accepted;
     },
     async (input) => {
@@ -676,6 +785,8 @@ test("checking an old unknown ID after a new send does not query or overwrite th
     },
   );
   await f.sends.send(address);
+  await f.sends.lookup(address);
+  await f.sends.lookup(address);
   const old = f.sends.read(address) as NonNullable<
     ReturnType<typeof f.sends.read>
   >;
@@ -683,11 +794,12 @@ test("checking an old unknown ID after a new send does not query or overwrite th
   await f.sends.send(address);
   const current = f.sends.read(address);
   await f.sends.lookup(old.key, old.key);
-  expect(lookedUp).toEqual([ids[0], ids[0]]);
-  expect(ids).toHaveLength(2);
-  expect(ids[0]).not.toBe(ids[1]);
+  expect(lookedUp).toEqual([ids[0], ids[0], ids[0], ids[0]]);
+  expect(ids).toHaveLength(4);
+  expect(ids[0]).not.toBe(ids[3]);
   expect(f.sends.read(address)).toBe(current);
-  expect(f.sends.retained()[0].key.requestId).toBe(ids[0]);
+  expect(f.sends.retained()).toEqual([]);
+  expect(f.drafts.read(address).content.text).toBe("");
 });
 
 test("same and fresh controllers both restore retired queued payloads without rolling back acceptance or replaying", async () => {
@@ -771,7 +883,7 @@ test.each([
     const sending = f.sends.send(address);
     while (!prompts) await Bun.sleep(0);
     await f.sends.lookup(address);
-    expect(f.sends.read(address)?.state).toBe("unknown");
+    expect(f.sends.read(address)?.state).toBe("checking");
     const key = f.sends.read(address)?.key as SendKey;
     await f.sends.stop(address, async () => {});
     // Ownership events can beat the fork RPC response.
@@ -801,6 +913,6 @@ test.each([
     });
     expect(f.drafts.read(next).content.text).toBe("recovered draft");
     await f.sends.wait(next);
-    expect(prompts).toBe(1);
+    expect(prompts).toBe(2);
   }
 });
