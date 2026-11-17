@@ -23,6 +23,23 @@ export const en = {
     success: "Success",
     definition: "Definition",
     definitionHint: "Estimated initial tool declaration tokens",
+    commands: "Shell commands",
+    command: "Command",
+    runs: "Runs",
+    commandCoverage: (unclassified: number, unmeasured: number) =>
+      `Unclassified ${unclassified.toLocaleString()} · not measured ${unmeasured.toLocaleString()}`,
+    commandCoverageHint:
+      "Unclassified: compound or unlisted commands. Not measured: recorded before command collection.",
+    commandSuccessHint:
+      "From the exit code. Bash rg exit 1 (no match) counts as success; calls with an unknown outcome are excluded.",
+    unknownOutcome: "Unknown",
+    unknownHint:
+      "No exit code (rejected, aborted, timed out), or PowerShell rg exit 1, which cannot tell no match from an error",
+    sdkErrors: "Tool errors",
+    sdkErrorsHint: "Calls the tool reported to the model as errors",
+    failureOutput: "Failed output",
+    failureOutputHint:
+      "Result text bytes returned by failed calls (after truncation, not tokens)",
     speedHint:
       "Mean output tokens / response duration (including initial wait)",
     speedSamples: (measured: number, requests: number) =>
@@ -896,6 +913,23 @@ export const ja: Dictionary = {
     success: "成功率",
     definition: "定義",
     definitionHint: "初期コンテキストでのツール定義の推定トークン",
+    commands: "シェルコマンド",
+    command: "コマンド",
+    runs: "実行",
+    commandCoverage: (unclassified: number, unmeasured: number) =>
+      `未分類 ${unclassified.toLocaleString()}・未計測 ${unmeasured.toLocaleString()}`,
+    commandCoverageHint:
+      "未分類：複合・対象外のコマンド。未計測：コマンド別の記録を始める前の実行",
+    commandSuccessHint:
+      "終了コードで判定。Bashのrgの終了コード1（一致なし）は成功に含め、判定不能は除く",
+    unknownOutcome: "判定不能",
+    unknownHint:
+      "終了コードなし（拒否・中断・タイムアウト）、または一致なしとエラーを区別できないPowerShellのrgの終了コード1",
+    sdkErrors: "ツールエラー",
+    sdkErrorsHint: "ツールがモデルにエラーとして返した回数",
+    failureOutput: "失敗時の出力",
+    failureOutputHint:
+      "失敗した実行がモデルに返した結果テキストのバイト数（切り詰め後。トークン数ではない）",
     speedHint:
       "出力トークン ÷ 応答時間の平均（最初の出力までの待ち時間を含む）",
     speedSamples: (measured: number, requests: number) =>

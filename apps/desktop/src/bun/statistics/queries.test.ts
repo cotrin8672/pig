@@ -96,6 +96,11 @@ test("statistics aggregates known tokens, exact time boundaries, tool outcomes a
       { tool: "read", calls: 2, failures: 1, definitionTokens: null },
       { tool: "unused", calls: 0, failures: 0, definitionTokens: 123 },
     ]);
+    expect(snapshot.commands).toEqual({
+      rows: [],
+      unclassified: 0,
+      unmeasured: 0,
+    });
     const daily = snapshot.daily[snapshot.models[0].id][0];
     expect(daily).toEqual(snapshot.models[0].tokens);
     expect(snapshot.initialContext.contextWindow).toBe(200000);
@@ -130,6 +135,103 @@ test("statistics aggregates known tokens, exact time boundaries, tool outcomes a
     store.forget(event.owner);
     expect(store.snapshot("today", now).models).toHaveLength(0);
     expect(store.snapshot("today", now).initialContext.parts).toHaveLength(0);
+  } finally {
+    store.close();
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("shell commands derive outcomes from exit codes, separately from SDK errors", async () => {
+  const root = await mkdtemp(join(tmpdir(), "pig-statistics-commands-"));
+  const now = new Date(2026, 10, 13, 12).getTime();
+  const start = statisticsRange("today", now).start;
+  const { events } = fixture();
+  const store = new StatisticsStore(join(root, "stats.sqlite"));
+  let n = 0;
+  const end = (
+    tool: string,
+    command: string | undefined,
+    exitCode: number | null,
+    textBytes = 10,
+    at = start,
+  ) => ({
+    ...events[0],
+    id: `command-${n++}`,
+    type: "tool_execution_end",
+    at,
+    data: {
+      tool,
+      isError: exitCode !== 0,
+      exitCode,
+      textBytes,
+      ...(command === undefined ? {} : { shellCommandKey: command }),
+    },
+  });
+  try {
+    store.save([
+      end("bash", "git diff", 0),
+      end("bash", "git diff", 128, 300),
+      end("bash", "git diff", null, 900),
+      end("bash", "rg", 1),
+      end("bash", "rg", 2, 40),
+      end("powershell", "rg", 1, 70),
+      end("powershell", "git diff", 1, 50),
+      end("bash", "unclassified", 1),
+      end("powershell", undefined, 1),
+      end("read", "git diff", 1),
+      end("bash", "git diff", 1, 10, start - 1),
+      {
+        ...events[0],
+        id: "unfinished",
+        type: "tool_execution_start",
+        at: start,
+        data: { tool: "bash", shellCommandKey: "git diff" },
+      },
+    ]);
+    expect(store.snapshot("today", now).commands).toEqual({
+      rows: [
+        {
+          shell: "bash",
+          command: "git diff",
+          calls: 3,
+          failures: 1,
+          unknown: 1,
+          sdkErrors: 2,
+          failureBytes: 300,
+        },
+        {
+          shell: "powershell",
+          command: "git diff",
+          calls: 1,
+          failures: 1,
+          unknown: 0,
+          sdkErrors: 1,
+          failureBytes: 50,
+        },
+        {
+          shell: "bash",
+          command: "rg",
+          calls: 2,
+          failures: 1,
+          unknown: 0,
+          sdkErrors: 2,
+          failureBytes: 40,
+        },
+        {
+          shell: "powershell",
+          command: "rg",
+          calls: 1,
+          failures: 0,
+          unknown: 1,
+          sdkErrors: 1,
+          failureBytes: 0,
+        },
+      ],
+      unclassified: 1,
+      unmeasured: 1,
+    });
+    store.forget(events[0].owner);
+    expect(store.snapshot("today", now).commands.rows).toEqual([]);
   } finally {
     store.close();
     await rm(root, { recursive: true, force: true });

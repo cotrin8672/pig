@@ -11,6 +11,7 @@ const empty: StatisticsData = {
   daily: {},
   models: [],
   tools: [],
+  commands: { rows: [], unclassified: 0, unmeasured: 0 },
   initialContext: {
     parts: [],
     sections: [],

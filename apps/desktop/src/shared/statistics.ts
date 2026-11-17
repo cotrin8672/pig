@@ -22,6 +22,19 @@ export type ToolStatistics = {
   failures: number;
   definitionTokens: number | null;
 };
+/** Command outcome from the structured shell exit code, not the SDK `isError`. */
+export type ShellCommandStatistics = {
+  shell: string;
+  command: string;
+  /** Finished calls, including those whose outcome is unknown. */
+  calls: number;
+  failures: number;
+  /** No exit code, or one that cannot be told apart (PowerShell `rg` exit 1). */
+  unknown: number;
+  sdkErrors: number;
+  /** Result text bytes returned to the model by failed calls. Not tokens. */
+  failureBytes: number;
+};
 export type InitialContext = {
   parts: { id: string; label: string; tokens: number }[];
   /** System prompt sections by SDK name (`content` for unsectioned text). */
@@ -41,6 +54,12 @@ export type StatisticsData = {
   daily: Record<string, TokenSplit[]>;
   models: ModelStatistics[];
   tools: ToolStatistics[];
+  commands: {
+    rows: ShellCommandStatistics[];
+    unclassified: number;
+    /** Shell calls recorded before command keys were collected. */
+    unmeasured: number;
+  };
   initialContext: InitialContext;
   coverage: {
     unknownUsage: number;

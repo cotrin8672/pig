@@ -2,11 +2,12 @@
 .statistics-overview .content-page-shell {
   display: grid;
   grid-template-columns: minmax(0, 3fr) minmax(280px, 2fr);
-  grid-template-rows: auto auto minmax(160px, 1fr) auto;
+  grid-template-rows: auto auto minmax(140px, 1fr) minmax(150px, 1fr) auto;
   grid-template-areas:
     "header header"
     "summary summary"
     "daily side"
+    "commands side"
     "models side";
   gap: 8px;
   max-width: none;
@@ -510,6 +511,15 @@
   color: var(--ds-text-muted);
   font-size: inherit;
 }
+.stats-commands {
+  grid-area: commands;
+  min-height: 0;
+}
+.stats-shell {
+  margin-left: 6px;
+  color: var(--ds-text-muted);
+  font-size: var(--text-4xs);
+}
 .stats-models {
   grid-area: models;
   max-height: min(28cqh, 220px);
@@ -609,12 +619,13 @@
   .statistics-overview .content-page-shell {
     grid-template-columns: minmax(0, 1fr) auto;
     grid-template-rows:
-      max-content max-content 200px max-content
+      max-content max-content 200px 240px max-content
       minmax(min-content, 1fr);
     grid-template-areas:
       "header header"
       "summary summary"
       "daily daily"
+      "commands commands"
       "models models"
       "side side";
   }

@@ -48,7 +48,7 @@ const meta = {
     docs: {
       description: {
         component:
-          "設定・Provider画面と共通のContentPageを使う本番のStatisticsViewをサンプルデータで表示。本文は利用可能な幅・高さに追従し、期間タブは見出しと同じ行、円グラフは同じ直径・位置に揃える。Storybookの期間切替は表示のみ。",
+          "設定・Provider画面と共通のContentPageを使う本番のStatisticsViewをサンプルデータで表示。本文は利用可能な幅・高さに追従し、日別グラフの下にシェルコマンド別の成否を置く。期間タブは見出しと同じ行、円グラフは同じ直径・位置に揃える。Storybookの期間切替は表示のみ。",
       },
     },
   },

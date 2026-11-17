@@ -1,5 +1,6 @@
 import type { Database } from "bun:sqlite";
 import {
+  type ShellCommandStatistics,
   type StatisticsData,
   type StatisticsPeriod,
   type TokenSplit,
@@ -136,6 +137,50 @@ export function queryStatistics(
     calls: number;
     failures: number;
   }[];
+  // Outcome from the structured exit code; `isError` stays a separate count.
+  const commandRows = db
+    .query(`
+    SELECT shell, command, count(*) AS calls,
+      sum(outcome = 'failure') AS failures, sum(outcome = 'unknown') AS unknown,
+      sum(is_error) AS sdkErrors,
+      sum(CASE WHEN outcome = 'failure' THEN coalesce(bytes, 0) ELSE 0 END) AS failureBytes
+    FROM (
+      SELECT shell, command, is_error, bytes, CASE
+        WHEN exit_type IS NOT 'integer' THEN 'unknown'
+        WHEN exit_code = 0 THEN 'success'
+        WHEN command = 'rg' AND exit_code = 1 AND shell = 'bash' THEN 'success'
+        WHEN command = 'rg' AND exit_code = 1 THEN 'unknown'
+        ELSE 'failure' END AS outcome
+      FROM (
+        SELECT json_extract(data, '$.tool') AS shell,
+          json_extract(data, '$.shellCommandKey') AS command,
+          json_type(data, '$.exitCode') AS exit_type,
+          json_extract(data, '$.exitCode') AS exit_code,
+          coalesce(json_extract(data, '$.isError') = 1, 0) AS is_error,
+          json_extract(data, '$.textBytes') AS bytes
+        FROM events WHERE type = 'tool_execution_end' AND at >= ? AND at < ?
+          AND json_extract(data, '$.tool') IN ('bash', 'powershell')))
+    GROUP BY shell, command
+  `)
+    .all(start, range.end) as (Omit<ShellCommandStatistics, "command"> & {
+    command: string | null;
+  })[];
+  const commands: StatisticsData["commands"] = {
+    rows: [],
+    unclassified: 0,
+    unmeasured: 0,
+  };
+  for (const { command, ...row } of commandRows) {
+    if (command === null) commands.unmeasured += row.calls;
+    else if (command === "unclassified") commands.unclassified += row.calls;
+    else commands.rows.push({ ...row, command });
+  }
+  commands.rows.sort(
+    (a, b) =>
+      b.failures - a.failures ||
+      b.failureBytes - a.failureBytes ||
+      b.calls - a.calls,
+  );
   const contextRow = db
     .query(`
     SELECT data FROM events WHERE type = 'initial_context' AND at >= ? AND at < ? ORDER BY at DESC LIMIT 1
@@ -236,6 +281,7 @@ export function queryStatistics(
     daily,
     models,
     tools,
+    commands,
     initialContext: {
       parts: context?.parts ?? [],
       sections: context?.sections ?? [],
