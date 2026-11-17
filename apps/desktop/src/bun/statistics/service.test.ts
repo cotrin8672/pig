@@ -54,6 +54,37 @@ test("storage failure never escapes record or close and exposes only a safe code
   }
 });
 
+test("a failed worker is replaced after backoff and keeps the dropped count", async () => {
+  const root = await mkdtemp(join(tmpdir(), "pig-statistics-recover-"));
+  try {
+    const dir = join(root, "data");
+    await writeFile(dir, "blocks the directory");
+    const file = join(dir, "statistics.sqlite");
+    const service = new StatisticsService(file);
+    const { events } = fixture();
+    service.record({ ...events[0], id: "lost" });
+    await expect(service.flush()).rejects.toThrow("Statistics unavailable");
+    expect(service.error).toBe("storage");
+    await rm(dir);
+    await Bun.sleep(1100);
+    service.record({ ...events[0], id: "kept" });
+    await service.flush();
+    expect(service.error).toBeUndefined();
+    expect((await service.snapshot("today")).collectingSince).not.toBeNull();
+    await service.close();
+    const db = new Database(file, { readonly: true });
+    expect(db.query("SELECT id FROM events").all()).toEqual([{ id: "kept" }]);
+    expect(
+      db
+        .query("SELECT value FROM collection_state WHERE key = 'dropped'")
+        .get(),
+    ).toEqual({ value: 1 });
+    db.close();
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
 test("oversized metadata is dropped with a persisted counter, without stopping later tool facts", async () => {
   const root = await mkdtemp(join(tmpdir(), "pig-statistics-overflow-"));
   try {
