@@ -6,6 +6,7 @@ import {
   useRef,
   useSyncExternalStore,
 } from "react";
+import type { DraftFile } from "../shared/attachments";
 import { composerAction } from "../shared/keymap";
 import type { ModelSelection, Snapshot } from "../shared/rpc-schema";
 import type { DraftContent, PromptDelivery } from "../shared/runtime-contract";
@@ -18,6 +19,7 @@ import { ContextIndicator } from "./ContextIndicator";
 import { addressKey } from "./chat-snapshot";
 import { composerHistory } from "./composer-input-history";
 import { drafts, emptyContent, expandedDraft } from "./draft-store";
+import { fileIcon } from "./file-icon";
 import { ImagePreview } from "./ImageGallery";
 import { useT } from "./i18n";
 import { UserMessage } from "./MessageContent";
@@ -39,6 +41,7 @@ import "./composer.css";
 
 const OpeningId = createContext<string | undefined>(undefined);
 const noImages: DraftContent["images"] = [];
+const noFiles: DraftFile[] = [];
 function useOpeningTarget() {
   const id = useContext(OpeningId);
   return useStore((s) => (id ? s.pendingOpens[id] : s.openingTarget));
@@ -67,18 +70,24 @@ export function OpeningComposer({ preview }: { preview?: Snapshot }) {
   const newText = useStore((s) =>
     target ? (s.newChatDrafts[openingDraftKey(target)] ?? "") : "",
   );
-  const readText = () =>
-    snapshot ? drafts.read(snapshot.address).content.text : "";
-  const existingText = useSyncExternalStore(
+  const readContent = () =>
+    snapshot ? drafts.read(snapshot.address).content : undefined;
+  const existingContent = useSyncExternalStore(
     drafts.subscribe,
-    readText,
-    readText,
+    readContent,
+    readContent,
   );
-  // Only a chat that does not exist yet holds images here; existing chats use their draft.
+  const existingText = existingContent?.text ?? "";
+  // Only a chat that does not exist yet holds attachments here; existing chats use their draft.
   const imageKey = target && !snapshot ? openingDraftKey(target) : undefined;
-  const images = useStore((s) =>
+  const newImages = useStore((s) =>
     imageKey ? (s.newChatImages[imageKey] ?? noImages) : noImages,
   );
+  const newFiles = useStore((s) =>
+    imageKey ? (s.newChatFiles[imageKey] ?? noFiles) : noFiles,
+  );
+  const images = existingContent ? existingContent.images : newImages;
+  const files = existingContent ? (existingContent.files ?? noFiles) : newFiles;
   const imageSources = images.map(
     ({ image }) => `data:${image.mimeType};base64,${image.data}`,
   );
@@ -109,35 +118,66 @@ export function OpeningComposer({ preview }: { preview?: Snapshot }) {
   function setImages(
     change: (images: DraftContent["images"]) => DraftContent["images"],
   ) {
-    if (!imageKey) return;
-    useStore.setState((s) => ({
-      newChatImages: {
-        ...s.newChatImages,
-        [imageKey]: change(s.newChatImages[imageKey] ?? []),
-      },
-    }));
+    if (snapshot)
+      drafts.edit(
+        snapshot.address,
+        (content) => ({ ...content, images: change(content.images) }),
+        true,
+      );
+    else if (imageKey)
+      useStore.setState((s) => ({
+        newChatImages: {
+          ...s.newChatImages,
+          [imageKey]: change(s.newChatImages[imageKey] ?? []),
+        },
+      }));
+  }
+  function setFiles(change: (files: DraftFile[]) => DraftFile[]) {
+    if (snapshot)
+      drafts.edit(
+        snapshot.address,
+        (content) => ({ ...content, files: change(content.files ?? []) }),
+        true,
+      );
+    else if (imageKey)
+      useStore.setState((s) => ({
+        newChatFiles: {
+          ...s.newChatFiles,
+          [imageKey]: change(s.newChatFiles[imageKey] ?? []),
+        },
+      }));
   }
   function addImage(data: string | null, mimeType: string) {
     if (!data) return showError("No image could be read from the clipboard.");
     if (data.length > maxImageBase64)
       return showError(t["Each image must be at most 4.5 MiB of base64 data."]);
-    if ((useStore.getState().newChatImages[imageKey ?? ""]?.length ?? 0) >= 8)
+    if (images.length >= 8)
       return showError(t["You can attach up to 8 images."]);
     setImages((current) => [
       ...current,
       { id: crypto.randomUUID(), image: { type: "image", data, mimeType } },
     ]);
   }
-  function attach(files: File[]) {
-    for (const file of files) {
-      if (!imageTypes.has(file.type)) continue;
+  function attach(dropped: File[]) {
+    for (const file of dropped) {
+      const image = imageTypes.has(file.type);
       const reader = new FileReader();
-      reader.onload = () =>
-        addImage(
-          String(reader.result).replace(/^data:[^,]*;base64,/, ""),
-          file.type,
-        );
-      reader.onerror = () => showError(`${file.name}: Could not read image.`);
+      reader.onload = () => {
+        const data = String(reader.result).replace(/^data:[^,]*;base64,/, "");
+        if (image) return addImage(data, file.type);
+        // Non-image files go to the agent as a stored path, like the chat composer.
+        void rpc.request
+          .storeAttachment({ name: file.name, data })
+          .then(
+            (path) =>
+              setFiles((current) => [
+                ...current,
+                { id: crypto.randomUUID(), path, name: file.name },
+              ]),
+            showError,
+          );
+      };
+      reader.onerror = () => showError(`Could not read ${file.name}`);
       reader.readAsDataURL(file);
     }
   }
@@ -151,9 +191,10 @@ export function OpeningComposer({ preview }: { preview?: Snapshot }) {
     if (!id || !opening) return;
     const content = snapshot
       ? { ...drafts.read(snapshot.address).content, text }
-      : { ...emptyContent(), text, images };
+      : { ...emptyContent(), text, images, files };
     queueOpeningSend(id, content, delivery);
     setImages(() => []);
+    setFiles(() => []);
     if (snapshot) drafts.edit(snapshot.address, emptyContent, true);
     useStore.setState((s) => ({
       newChatDrafts: { ...s.newChatDrafts, [openingDraftKey(opening)]: "" },
@@ -166,7 +207,7 @@ export function OpeningComposer({ preview }: { preview?: Snapshot }) {
       ? `opening:${target.id}`
       : `new:${target?.draftId ?? target?.cwd}`;
   return (
-    <ComposerFrame>
+    <ComposerFrame onFiles={imageKey || snapshot ? attach : undefined}>
       <MessageQueue
         items={openingSends(target).filter(
           (send) => send.delivery === "followUp",
@@ -192,28 +233,19 @@ export function OpeningComposer({ preview }: { preview?: Snapshot }) {
           else {
             changeText([send.content.text, text].filter(Boolean).join("\n\n"));
             setImages((current) => [...send.content.images, ...current]);
+            setFiles((current) => [...(send.content.files ?? []), ...current]);
           }
           textareaRef.current?.focus();
         }}
       />
       <form
         className="composer"
-        onDragOver={(event) => {
-          if (!imageKey) return;
-          event.preventDefault();
-          event.dataTransfer.dropEffect = "copy";
-        }}
-        onDrop={(event) => {
-          if (!imageKey) return;
-          event.preventDefault();
-          attach(Array.from(event.dataTransfer.files));
-        }}
         onSubmit={(event) => {
           event.preventDefault();
           send();
         }}
       >
-        {images.length > 0 && (
+        {images.length + files.length > 0 && (
           <div className="composer-attachments">
             {images.map(({ id }, index) => (
               <div className="composer-attachment" key={id}>
@@ -236,6 +268,31 @@ export function OpeningComposer({ preview }: { preview?: Snapshot }) {
                 </button>
               </div>
             ))}
+            {files.map(({ id, name, path }) => {
+              const Icon = fileIcon(name);
+              return (
+                <div
+                  className="composer-attachment file"
+                  key={id}
+                  aria-description={path}
+                >
+                  <Icon size={28} aria-hidden />
+                  <span>{name}</span>
+                  <button
+                    type="button"
+                    className="composer-attachment-remove"
+                    aria-label={`${t["Remove attachment"]}: ${name}`}
+                    onClick={() =>
+                      setFiles((current) =>
+                        current.filter((item) => item.id !== id),
+                      )
+                    }
+                  >
+                    <X size={14} />
+                  </button>
+                </div>
+              );
+            })}
           </div>
         )}
         <ComposerEditor
@@ -253,11 +310,11 @@ export function OpeningComposer({ preview }: { preview?: Snapshot }) {
           }
           onChange={(event) => changeText(event.currentTarget.value)}
           onPaste={(event) => {
-            if (!imageKey) return;
-            const files = Array.from(event.clipboardData.files);
-            if (files.length) {
+            if (!imageKey && !snapshot) return;
+            const pasted = Array.from(event.clipboardData.files);
+            if (pasted.length) {
               event.preventDefault();
-              attach(files);
+              attach(pasted);
               return;
             }
             // Windows screenshots can arrive as native-only clipboard data.
@@ -303,8 +360,8 @@ export function OpeningComposer({ preview }: { preview?: Snapshot }) {
             <ComposerSubmit
               busy={false}
               waiting={queued}
-              hasContent={!!text || images.length > 0}
-              disabled={!text.trim() && !images.length}
+              hasContent={!!text || images.length + files.length > 0}
+              disabled={!text.trim() && !images.length && !files.length}
               onStop={() => {
                 const id = currentOpenId();
                 if (id) restoreOpeningSends(id);

@@ -58,6 +58,28 @@
   font-size: 12px;
 }
 
+/* Covers the whole chat pane while files are dragged over it; never shifts layout. */
+.file-drop-overlay {
+  position: absolute;
+  inset: 8px;
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border: 2px dashed var(--ds-accent);
+  border-radius: var(--radius-lg);
+  background: var(--ds-bg-popover);
+  backdrop-filter: blur(var(--ds-popover-blur));
+  color: var(--ds-text-primary);
+  font-weight: 600;
+  pointer-events: none;
+}
+.file-drop-overlay svg {
+  color: var(--ds-accent);
+}
+
 .composer-attachments {
   display: flex;
   flex-wrap: wrap;

@@ -217,6 +217,7 @@ export const en = {
   Cancelled: "Cancelled",
   "Output truncated": "Output truncated",
   "Remove attachment": "Remove attachment",
+  "Drop files to attach": "Drop files to attach",
   Attachments: "Attachments",
   "Only PNG, JPEG, GIF, and WebP images are supported.":
     "Only PNG, JPEG, GIF, and WebP images are supported.",
@@ -1083,7 +1084,8 @@ export const ja: Dictionary = {
   "Exit code": "終了コード",
   Cancelled: "キャンセル済み",
   "Output truncated": "出力は省略されています",
-  "Remove attachment": "添付画像を削除",
+  "Remove attachment": "添付を削除",
+  "Drop files to attach": "ドロップして添付",
   Attachments: "添付",
   "Only PNG, JPEG, GIF, and WebP images are supported.":
     "PNG、JPEG、GIF、WebP形式の画像のみ対応しています。",

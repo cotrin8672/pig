@@ -1,13 +1,8 @@
 import {
   BookOpen,
   ClipboardPaste,
-  FileArchive,
-  FileAudio,
-  FileCode,
-  FileSpreadsheet,
   FileText,
-  FileVideo,
-  File as GenericFile,
+  Folder,
   LoaderCircle,
   Puzzle,
   X,
@@ -47,6 +42,7 @@ import { attachmentReads } from "./composer-attachments";
 import { composerHistory } from "./composer-input-history";
 import { createDraftMirror } from "./draft-mirror";
 import { drafts, emptyContent, expandedDraft } from "./draft-store";
+import { fileIcon } from "./file-icon";
 import { ImagePreview } from "./ImageGallery";
 import { useT } from "./i18n";
 import { MessageQueue } from "./MessageQueue";
@@ -67,20 +63,6 @@ import { transcriptRequestIds } from "./transcript-requests";
 import "./composer.css";
 
 const categoryIcons = { extension: Puzzle, skill: BookOpen, prompt: FileText };
-
-const fileIcons: [RegExp, typeof GenericFile][] = [
-  [/\.(zip|7z|rar|tar|gz|tgz|bz2|xz)$/i, FileArchive],
-  [/\.(mp3|wav|flac|ogg|m4a|aac)$/i, FileAudio],
-  [/\.(mp4|mov|mkv|webm|avi)$/i, FileVideo],
-  [/\.(csv|tsv|xlsx?|ods)$/i, FileSpreadsheet],
-  [/\.(md|txt|pdf|docx?|rtf|log)$/i, FileText],
-  [
-    /\.(ts|tsx|js|jsx|json|ya?ml|toml|py|rs|go|java|kt|c|cc|cpp|h|hpp|cs|rb|php|sh|ps1|html|css|sql|xml)$/i,
-    FileCode,
-  ],
-];
-const fileIcon = (name: string) =>
-  fileIcons.find(([pattern]) => pattern.test(name))?.[1] ?? GenericFile;
 
 export function Composer({
   snapshot,
@@ -364,7 +346,7 @@ export function Composer({
     }
   }
   return (
-    <ComposerFrame>
+    <ComposerFrame onFiles={attach}>
       {annotationRoot && (
         <AnnotationPopover
           selectionRoot={annotationRoot}
@@ -461,14 +443,6 @@ export function Composer({
       )}
       <form
         className="composer"
-        onDragOver={(event) => {
-          event.preventDefault();
-          event.dataTransfer.dropEffect = "copy";
-        }}
-        onDrop={(event) => {
-          event.preventDefault();
-          void attach(Array.from(event.dataTransfer.files));
-        }}
         onSubmit={(event) => {
           event.preventDefault();
           send();

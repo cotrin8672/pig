@@ -121,6 +121,8 @@ export const useStore = create<{
   newChatDrafts: Record<string, string>;
   /** Images pasted into a chat that has not been created yet. */
   newChatImages: Record<string, DraftContent["images"]>;
+  /** Non-image files dropped into a chat that has not been created yet. */
+  newChatFiles: Record<string, NonNullable<DraftContent["files"]>>;
   /** Chats whose deletion is in flight: hidden now, restored if it fails. */
   deletingSessions: Record<string, true>;
   /**
@@ -182,6 +184,7 @@ export const useStore = create<{
   notices: [],
   newChatDrafts: {},
   newChatImages: {},
+  newChatFiles: {},
   deletingSessions: {},
   rewinds: {},
   noticeHistory: loadNoticeHistory(),

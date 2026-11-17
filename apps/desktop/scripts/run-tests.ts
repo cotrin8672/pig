@@ -72,6 +72,7 @@ const ui = [
   "context-indicator-ui",
   "effort-chip-ui",
   "markdown-blocks-ui",
+  "file-drop-ui",
 ].map((name) => `src/mainview/${name}.test.ts`);
 
 export function testFiles(suite: TestSuite): string[] {

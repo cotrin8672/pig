@@ -124,6 +124,13 @@ export function restoreOpeningSends(openId: string) {
           ...s.newChatImages,
           [key]: [...send.content.images, ...(s.newChatImages[key] ?? [])],
         },
+        newChatFiles: {
+          ...s.newChatFiles,
+          [key]: [
+            ...(send.content.files ?? []),
+            ...(s.newChatFiles[key] ?? []),
+          ],
+        },
       }));
     }
   }
