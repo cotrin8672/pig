@@ -414,12 +414,11 @@ p {
     0 0 12px 4px color-mix(in srgb, var(--ds-accent) 20%, transparent);
   animation: session-dot-breathe 2.4s ease-in-out infinite;
 }
+/* Opacity only, on the dot itself: the glow fades with it on the compositor.
+ * Animating box-shadow (or a pseudo-element) restyles every frame while running. */
 @keyframes session-dot-breathe {
   50% {
     opacity: 0.45;
-    box-shadow:
-      0 0 2px 0 color-mix(in srgb, var(--ds-accent) 15%, transparent),
-      0 0 6px 1px color-mix(in srgb, var(--ds-accent) 8%, transparent);
   }
 }
 @media (prefers-reduced-motion: reduce) {
