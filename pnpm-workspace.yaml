@@ -5,3 +5,6 @@ packages:
 onlyBuiltDependencies:
   - electrobun
   - esbuild
+
+patchedDependencies:
+  '@earendil-works/pi-coding-agent@1.5.2': patches/@earendil-works__pi-coding-agent@1.5.2.patch
