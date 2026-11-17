@@ -16,7 +16,7 @@
   padding: 0;
   color: var(--ds-text-secondary);
 }
-/* Sidebar icon status dots share one position so icons never shift. */
+/* Dots overlay the icons so status changes never shift the layout. */
 .sidebar-provider-dot,
 .sidebar-update-dot {
   position: absolute;
@@ -38,6 +38,8 @@
 }
 /* A found update is "new", so it takes the highlight, not a status colour. */
 .sidebar-update-dot {
+  top: 3px;
+  bottom: auto;
   background: var(--ds-highlight);
 }
 .notification-center {

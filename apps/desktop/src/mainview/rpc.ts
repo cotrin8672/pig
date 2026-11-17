@@ -575,6 +575,18 @@ export async function refresh() {
       },
     },
   }));
+  // Check package updates without delaying startup or overwriting newer events.
+  const previousInstalled = useStore.getState().installed;
+  void rpc.request
+    .listInstalled()
+    .then((installed) =>
+      useStore.setState((s) =>
+        s.installed === previousInstalled
+          ? { installed, installedLoaded: true }
+          : {},
+      ),
+    )
+    .catch(console.warn);
   await refreshSessions();
 }
 export const sends = new SendController(

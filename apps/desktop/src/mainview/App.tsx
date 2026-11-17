@@ -329,6 +329,9 @@ function SidebarFooter({
 }) {
   const t = useT();
   const tooltip = useTooltip();
+  const extensionUpdateAvailable = useStore((s) =>
+    s.installed.some((pkg) => pkg.updateAvailable),
+  );
   const tip = (label: string) => tooltip({ tier: "label", side: "top", label });
   const toggle = (target: Parameters<typeof navigate>[0]) =>
     navigate(page === target ? "chat" : target);
@@ -362,11 +365,18 @@ function SidebarFooter({
       <button
         type="button"
         className={`sidebar-icon ${page === "extensions" ? "active" : ""}`}
-        aria-label={t.Extensions}
+        aria-label={
+          extensionUpdateAvailable
+            ? `${t.Extensions}: ${t["Update available"]}`
+            : t.Extensions
+        }
         onClick={() => toggle("extensions")}
         {...tip(t.Extensions)}
       >
         <Puzzle size={16} aria-hidden="true" />
+        {extensionUpdateAvailable && (
+          <span className="sidebar-update-dot" aria-hidden="true" />
+        )}
       </button>
       <button
         type="button"
