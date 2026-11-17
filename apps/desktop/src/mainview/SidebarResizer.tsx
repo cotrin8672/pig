@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { type CSSProperties, useRef, useState } from "react";
 import { clampSidebarWidth, SIDEBAR_WIDTH } from "../shared/desktop-state";
 import { useT } from "./i18n";
 
@@ -11,8 +11,10 @@ export function SidebarResizer({
   onResize,
   onCommit,
   onCollapse,
+  style,
 }: {
   width: number;
+  style?: CSSProperties;
   /** Live width while dragging; not persisted. */
   onResize(width: number): void;
   onCommit(width: number): void;
@@ -37,6 +39,7 @@ export function SidebarResizer({
   return (
     <hr
       className="sidebar-resizer electrobun-webkit-app-region-no-drag"
+      style={style}
       tabIndex={0}
       aria-label={t["Resize sidebar"]}
       aria-orientation="vertical"

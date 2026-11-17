@@ -40,7 +40,14 @@ test.skipIf(!existsSync(fixtureEdge) && !process.env.PIG_REQUIRE_UI_TESTS)(
     await mouse('mousePressed',centre(h),y);await mouse('mouseMoved',centre(h)+80,y);
     check(Math.round(sidebar().width)===340,'width follows the pointer while dragging');
     check(Math.abs(main().left-sidebar().right-0)<=1,'content follows the sidebar edge without lag');
+    const shell=document.querySelector('.app-shell');
+    check(shell.style.getPropertyValue('--ds-sidebar-width')==='260px','dragging must not restyle every conversation through the shell variable');
+    check(Math.abs(centre(handle())-sidebar().right)<=5,'the handle follows the live width');
+    const bar=document.querySelector('.window-titlebar');
+    check(Math.abs(bar.getBoundingClientRect().left-sidebar().right)<=1,'the window toolbar follows the live width');
     await mouse('mouseReleased',centre(h)+80,y);
+    await wait();
+    check(shell.style.getPropertyValue('--ds-sidebar-width')==='340px'&&!document.querySelector('.sidebar').style.getPropertyValue('--ds-sidebar-width'),'release moves the committed width back to the shell');
     check(useStore.getState().bootstrap.desktop.sidebarWidth===340,'release commits the width');
     await until(()=>saved.some(p=>p.sidebarWidth===340),'the width is persisted');
     h=handle();

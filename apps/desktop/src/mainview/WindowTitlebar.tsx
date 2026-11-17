@@ -1,5 +1,11 @@
 import { Columns2, Copy, Minus, Rows2, Square, X } from "lucide-react";
-import { type ReactNode, useEffect, useRef, useState } from "react";
+import {
+  type CSSProperties,
+  type ReactNode,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
 import { useT } from "./i18n";
 import type { SplitAxis } from "./pane-layout";
 
@@ -76,12 +82,15 @@ export function WindowTitlebar({
   onSplit,
   splitDisabled = false,
   children,
+  style,
 }: {
   maximized: boolean;
   onAction: (action: WindowAction) => void;
   onSplit?: (axis: SplitAxis) => void;
   splitDisabled?: boolean;
   children?: ReactNode;
+  /** Live sidebar width while dragging (see App). */
+  style?: CSSProperties;
 }) {
   const t = useT();
   const root = useRef<HTMLDivElement>(null);
@@ -147,6 +156,7 @@ export function WindowTitlebar({
     <div
       ref={root}
       className="window-titlebar"
+      style={style}
       role="toolbar"
       aria-label={t["Window controls"]}
       // biome-ignore lint/a11y/noNoninteractiveTabindex: Keyboard entry point reveals the collapsed toolbar before its buttons can receive focus.
