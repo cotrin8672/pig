@@ -61,12 +61,17 @@ UIの追加・変更・レビュー時に適用する。スクリーンショッ
   （`ContentPage` 等の見出し用 `title` propは別）。
 - サイドバーの「新しいチャット」ボタン（プロジェクト内も含む）にTooltipは付けず、アクセシブル名は残す。
 - ホバーの補足はnative `title` ではなく共通Tooltipを使う。面は `mainview/tooltip.css` の
-  `ui-tooltip`：アクセント色を28%混ぜた `--ds-bg-popover` を50%に固定し、`blur(4px) saturate(140%)`、
-  アクセント40%の1px枠、`--ds-shadow-dialog`。強調する見出しは `ui-tooltip-title`。
-- Tooltipは文字の上に小さく重なるため、Popoverの `blur(20px)` を使わない（細かい文字が均一な色に溶けて
+  `ui-tooltip`：`--ds-bg-popover` にアクセント色4%を混ぜ、さらに明るい中性色
+  `--ds-text-primary` を12%混ぜた面を50%に固定する。テーマ色を減らした分の暗さを白みで補う。
+  `blur(4px) saturate(140%)`、アクセント16%の1px枠、`--ds-shadow-dialog`。
+  通常のTooltip・使用量の詳細・統計グラフのホバー表示で同じ面を使う。強調する見出しは `ui-tooltip-title`。
+- Tooltipは文字の上に小さく重なるため、Popoverの `blur(var(--ds-popover-blur))` を使わない（細かい文字が均一な色に溶けて
   不透明に見える）。アクセント色を混ぜるとalphaが上がるので、`rgb(from … / 0.5)` で戻す。
 - 中身の型（1行／キーキャップ付き／見出し＋説明／見出し＋値の一覧）とキーキャップの有無は用途で選ぶ。
   見た目の例はStorybookの `Components/Tooltip`。
+- Storybookで色を比較するときはTooltipだけでなくウィンドウ全体に同じテーマを適用し、
+  壁紙も同じ基準に揃える。半透明の合成色は背景で変わるため、seedの一致を見た目の一致と扱わない。
+  `tooltip-theme-ui.test.ts` でシェル・壁紙・Tooltipのテーマ一致を検査する。
 - 実装は `mainview/Tooltip.tsx`：アプリに1つの `TooltipLayer` と、アンカーに展開する `useTooltip()`。
   個別に表示処理を書かない。チャット名など長い文字は `clipTooltipText` で上限（80字）に切る。
 - 出現アニメーション（`tooltip-in`、`data-side` 方向へ3pxのフェード）は `ui-tooltip` 側に持たせ、

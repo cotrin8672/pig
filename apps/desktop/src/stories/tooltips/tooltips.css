@@ -145,6 +145,34 @@
   animation: none;
 }
 
+/* ---- lighter tint comparison (Storybook only) ---- */
+.tt-surface-compare {
+  display: grid;
+  align-content: start;
+  gap: 24px;
+}
+.tt-surface-original .ui-tooltip {
+  border-color: color-mix(in srgb, var(--ds-accent) 40%, transparent);
+  background: rgb(
+    from color-mix(in srgb, var(--ds-accent) 28%, var(--ds-bg-popover)) r g b /
+    0.5
+  );
+}
+.tt-surface-light .ui-tooltip {
+  border-color: color-mix(in srgb, var(--ds-accent) 24%, transparent);
+  background: rgb(
+    from color-mix(in srgb, var(--ds-accent) 14%, var(--ds-bg-popover)) r g b /
+    0.5
+  );
+}
+.tt-surface-faint .ui-tooltip {
+  border-color: color-mix(in srgb, var(--ds-accent) 16%, transparent);
+  background: rgb(
+    from color-mix(in srgb, var(--ds-accent) 4%, var(--ds-bg-popover)) r g b /
+    0.5
+  );
+}
+
 /* ---- row-to-row switch proposals (TooltipSwitchLab) ---- */
 .tt-lab {
   display: grid;

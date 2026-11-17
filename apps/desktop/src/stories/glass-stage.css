@@ -22,6 +22,9 @@
   position: absolute;
   inset: 0;
 }
+.glass-stage[data-neutral-wallpaper="true"] > .glass-wallpaper {
+  background: var(--ds-bg-primary);
+}
 .glass-shell > .glass-scroll {
   flex: 1;
   min-width: 0;
