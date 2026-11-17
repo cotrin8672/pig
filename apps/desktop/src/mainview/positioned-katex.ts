@@ -14,7 +14,8 @@ declare module "hast" {
 const classes = (node: Element) =>
   Array.isArray(node.properties.className) ? node.properties.className : [];
 
-function complete(scope: Element, math: Element, source: string) {
+/** Whether a fenced block's closing fence is in the source (EOF is not one). */
+export function complete(scope: Element, math: Element, source: string) {
   if (classes(math).includes("math-inline")) return true;
   const start = scope.position?.start.offset;
   const end = scope.position?.end.offset;
@@ -82,7 +83,7 @@ export function positionedKatex({
             type: "element",
             tagName: "span",
             properties: { className: ["markdown-pending-source"] },
-            data: { pendingMath: true },
+            data: { pendingMath: true, position: {} },
             position: node.position,
             children: [
               {

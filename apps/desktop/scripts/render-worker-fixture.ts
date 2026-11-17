@@ -6,7 +6,7 @@ import { workerModuleAliases } from "./worker-build";
  * ?worker&inline production build, rather than silently testing a UI fallback. */
 export async function renderWorkerFixturePlugin(): Promise<BunPlugin> {
   const sources = new Map<string, string>();
-  for (const name of ["syntax", "markdown"]) {
+  for (const name of ["syntax", "markdown", "mermaid"]) {
     const built = await Bun.build({
       entrypoints: [
         fileURLToPath(
@@ -15,6 +15,9 @@ export async function renderWorkerFixturePlugin(): Promise<BunPlugin> {
       ],
       target: "browser",
       format: "iife",
+      // Bun rewrites browserify's `typeof require&&require` (elkjs) to an
+      // undeclared `__require` in IIFE output; declare it as absent.
+      banner: "var __require;",
       minify: true,
       define: { "process.env.NODE_ENV": '"production"' },
       plugins: [
@@ -39,9 +42,9 @@ export async function renderWorkerFixturePlugin(): Promise<BunPlugin> {
     name: "inline-render-workers",
     setup(build) {
       build.onResolve(
-        { filter: /\/(syntax|markdown)\.worker\?worker&inline$/ },
+        { filter: /\/(syntax|markdown|mermaid)\.worker\?worker&inline$/ },
         (args) => ({
-          path: args.path.includes("syntax.worker") ? "syntax" : "markdown",
+          path: /(\w+)\.worker\?/.exec(args.path)?.[1] ?? "markdown",
           namespace: "inline-render-worker",
         }),
       );

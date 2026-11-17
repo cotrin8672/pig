@@ -34,6 +34,8 @@ import { dataText } from "./custom-data";
 import { CodeText } from "./HighlightedCode";
 import { ImageGallery } from "./ImageGallery";
 import { useT } from "./i18n";
+import { MarkdownBlockquote, MarkdownPre } from "./MarkdownBlocks";
+import { markdownExtensions } from "./markdown-extensions";
 import {
   browserMarkdown,
   cachedMarkdown,
@@ -89,6 +91,8 @@ const RenderedMarkdown = memo(function RenderedMarkdown({
 const LOCAL_PATH = /^(?:[A-Za-z]:[\\/]|\\\\[^\\/\s]+[\\/])[^<>"|?*\n]*$/;
 
 export const markdownComponents: Components = {
+  pre: MarkdownPre,
+  blockquote: MarkdownBlockquote,
   table: ({ children }) => (
     <div className="markdown-table-scroll">
       <table>{children}</table>
@@ -117,12 +121,29 @@ export const markdownComponents: Components = {
         )}
       </code>
     ),
-  a: ({ href, children }) => (
+  a: ({ href, children, id, ...props }) => (
     <a
       href={href}
+      // Footnote anchors: jump targets and their accessible relations.
+      id={id}
+      aria-describedby={props["aria-describedby"]}
+      aria-label={props["aria-label"]}
+      data-footnote-ref={
+        (props as Record<string, unknown>)["data-footnote-ref"] as string
+      }
+      data-footnote-backref={
+        (props as Record<string, unknown>)["data-footnote-backref"] as string
+      }
       onClick={(e) => {
         e.preventDefault();
-        if (href) {
+        // In-message anchors (GFM footnotes). Every message reuses the same
+        // ids, so resolve within this Markdown body rather than the document.
+        if (href?.startsWith("#")) {
+          const id = decodeURIComponent(href.slice(1));
+          (e.currentTarget.closest(".prose") ?? document)
+            .querySelector(`#${CSS.escape(id)}`)
+            ?.scrollIntoView({ block: "center" });
+        } else if (href) {
           if (sessionIdFromLink(href)) void openChatLink(href);
           else rpc.send.openExternal({ url: href });
         }
@@ -221,7 +242,10 @@ export function BuiltinMarkdown({
     <ReactMarkdown
       remarkPlugins={[remarkGfm, remarkMath]}
       // Invalid TeX renders as red source text instead of throwing.
-      rehypePlugins={[[positionedKatex, { streaming }]]}
+      rehypePlugins={[
+        [positionedKatex, { streaming }],
+        [markdownExtensions, { streaming }],
+      ]}
       urlTransform={(url) =>
         sessionIdFromLink(url) ? url : defaultUrlTransform(url)
       }

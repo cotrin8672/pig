@@ -1,0 +1,90 @@
+/* Fenced code: one shared surface; the header and pre never stack backgrounds. */
+.prose .markdown-code {
+  margin: 12px 0;
+  background: var(--ds-bg-secondary);
+  border-radius: var(--radius-sm);
+}
+.markdown-code-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 4px 6px 0 14px;
+  color: var(--ds-text-muted);
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+}
+.markdown-code-language {
+  display: flex;
+  gap: 8px;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.markdown-code-note {
+  color: var(--ds-text-faint);
+  font-family: var(--font-sans);
+}
+.markdown-code-copy {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border-radius: var(--radius-3xs);
+  color: inherit;
+}
+.markdown-code-copy:hover:not(:disabled) {
+  background: var(--ds-bg-hover);
+  color: var(--ds-text-secondary);
+}
+.markdown-code > pre {
+  padding-top: 4px;
+  background: transparent;
+  border-radius: 0 0 var(--radius-sm) var(--radius-sm);
+}
+.markdown-mermaid {
+  --scrollbar-inset: var(--radius-sm);
+  padding: 8px 14px 14px;
+  overflow-x: auto;
+}
+
+/* GitHub alerts (> [!NOTE] …) reuse the blockquote shape with a state color. */
+.prose .markdown-alert {
+  --alert-color: var(--ds-accent);
+  border-left-color: var(--alert-color);
+  color: inherit;
+}
+.prose .markdown-alert[data-alert="tip"] {
+  --alert-color: var(--ds-success);
+}
+.prose .markdown-alert[data-alert="important"] {
+  --alert-color: var(--ds-purple);
+}
+.prose .markdown-alert[data-alert="warning"] {
+  --alert-color: var(--ds-warning);
+}
+.prose .markdown-alert[data-alert="caution"] {
+  --alert-color: var(--ds-error);
+}
+.prose .markdown-alert-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 4px;
+  color: var(--alert-color);
+  font-weight: var(--font-weight-semibold);
+}
+.prose .markdown-alert-title + p {
+  margin-top: 4px;
+}
+
+/* GFM footnotes */
+.prose .footnotes {
+  margin-top: 20px;
+  padding-top: 8px;
+  border-top: 1px solid var(--ds-border-strong);
+  color: var(--ds-text-secondary);
+  font-size: var(--text-sm);
+}
