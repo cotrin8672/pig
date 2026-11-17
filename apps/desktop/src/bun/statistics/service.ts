@@ -32,6 +32,9 @@ export class StatisticsService implements StatisticsSink {
   private closing = false;
   private disposal?: Promise<void>;
   private forgotten = new Set<string>();
+  // A failed worker is replaced on the next use; repeated failures back off.
+  private retryAt = 0;
+  private retryDelay = 1000;
   error?: "storage" | "worker" | "overflow" | "metadata";
 
   constructor(
@@ -46,6 +49,7 @@ export class StatisticsService implements StatisticsSink {
 
   record(event: StatisticEvent) {
     if (this.closing || this.forgotten.has(event.owner)) return;
+    this.start();
     if (this.error && this.error !== "overflow") {
       this.dropped++;
       return;
@@ -93,7 +97,12 @@ export class StatisticsService implements StatisticsSink {
   }
 
   private start() {
-    if (this.worker) return;
+    if (this.worker || this.closing) return;
+    if (this.error && this.error !== "overflow") {
+      if (Date.now() < this.retryAt) return;
+      this.error = undefined;
+      this.ready = Promise.withResolvers<void>();
+    }
     let worker: Worker;
     try {
       worker = new Worker(this.workerUrl.href, { name: "pig-statistics" });
@@ -104,6 +113,7 @@ export class StatisticsService implements StatisticsSink {
     this.worker = worker;
     this.readyTimer = setTimeout(() => this.fail("worker"), 5000);
     worker.onmessage = ({ data }: MessageEvent<StatisticsReply>) => {
+      if (this.worker !== worker) return;
       if (data.type === "ready") {
         clearTimeout(this.readyTimer);
         this.ready.resolve();
@@ -115,12 +125,13 @@ export class StatisticsService implements StatisticsSink {
         if (!pending) return;
         clearTimeout(pending.timer);
         this.pending.delete(data.id);
+        this.retryDelay = 1000;
         pending.resolve(data.type === "snapshot" ? data.data : undefined);
       }
     };
     worker.onerror = (event) => {
       event.preventDefault();
-      this.fail("worker");
+      if (this.worker === worker) this.fail("worker");
     };
     worker.postMessage({
       type: "open",
@@ -129,8 +140,10 @@ export class StatisticsService implements StatisticsSink {
   }
 
   private fail(code: "storage" | "worker" | "metadata") {
-    if (this.error === code) return;
+    if (this.error === code && !this.worker) return;
     this.error = code;
+    this.retryAt = Date.now() + this.retryDelay;
+    this.retryDelay = Math.min(this.retryDelay * 2, 60_000);
     console.error(`[statistics] collection unavailable (${code})`);
     clearTimeout(this.timer);
     clearTimeout(this.readyTimer);
@@ -144,6 +157,7 @@ export class StatisticsService implements StatisticsSink {
     }
     this.pending.clear();
     this.worker?.terminate();
+    this.worker = undefined;
   }
 
   private command(
