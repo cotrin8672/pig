@@ -34,9 +34,16 @@ export function shareTranscript(
   )
     return incoming;
   const previous = transcriptIndex(current.records);
-  const tools = { ...incoming.tools };
-  let changed = false;
-  const records = incoming.records.map((record) => {
+  // Copy-on-write: an unchanged publication allocates no records/tools copies.
+  let tools = incoming.tools;
+  let records: TranscriptRecord[] | undefined;
+  incoming.records.forEach((record, index) => {
+    const shared = shareRecord(record);
+    if (shared === record) return;
+    records ??= incoming.records.slice();
+    records[index] = shared;
+  });
+  function shareRecord(record: TranscriptRecord): TranscriptRecord {
     const old = previous.get(record.id);
     if (
       !old?.entryId ||
@@ -56,7 +63,6 @@ export function shareTranscript(
     const shared = sameEnvelope(old, record)
       ? old
       : ({ ...record, ...recordPayload(old) } as TranscriptRecord);
-    changed ||= shared !== record;
     if (
       old.kind === "message" &&
       old.message.role === "toolResult" &&
@@ -86,19 +92,26 @@ export function shareTranscript(
         const prior = current.tools[id];
         const { result: _result, ...metadata } = state;
         const { result: _priorResult, ...priorMetadata } = prior ?? {};
-        tools[id] =
+        const next =
           prior?.result &&
           typeof prior.result === "object" &&
           shallowEqual(metadata, priorMetadata) &&
           shallowEqual(canonical, prior.result as Record<string, unknown>)
             ? prior
             : { ...state, result: canonical };
-        changed ||= tools[id] !== state;
+        if (next !== state) {
+          if (tools === incoming.tools) tools = { ...incoming.tools };
+          tools[id] = next;
+        }
       }
     }
     return shared;
-  });
-  return changed
-    ? preserveTranscriptWireBase(incoming, { ...incoming, records, tools })
+  }
+  return records || tools !== incoming.tools
+    ? preserveTranscriptWireBase(incoming, {
+        ...incoming,
+        records: records ?? incoming.records,
+        tools,
+      })
     : incoming;
 }
