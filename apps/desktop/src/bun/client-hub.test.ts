@@ -62,6 +62,26 @@ test("each window gets its own delta base and one transcript per publication", (
   expect(runtimeEvents(second.received).at(-1)).toBe("snapshotDelta");
 });
 
+test("windows with the same base receive identical encodings of one shared packing", () => {
+  const hub = new ClientHub("host");
+  const first = client();
+  const second = client();
+  hub.add("first", first.send);
+  hub.add("second", second.send);
+  for (let seq = 1; seq <= 3; seq++)
+    hub.runtime({ type: "snapshot", snapshot: snapshot(seq) });
+  const events = (received: { name: string; payload: unknown }[]) =>
+    received.map((item) =>
+      JSON.stringify((item.payload as { event: unknown }).event),
+    );
+  expect(events(second.received)).toEqual(events(first.received));
+  expect(runtimeEvents(first.received)).toEqual([
+    "snapshot",
+    "snapshotDelta",
+    "snapshotDelta",
+  ]);
+});
+
 test("full RPC reads reset the owner's base in every window without resetting other chats", () => {
   const hub = new ClientHub("host");
   const first = client();
