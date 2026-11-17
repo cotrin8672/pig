@@ -28,7 +28,9 @@ export type TipContent = {
   label: string;
   keys?: string[];
   description?: string;
-  rows?: [string, string][];
+  /** Full monospace text (e.g. a clipped shell command), up to 8 lines. */
+  code?: string;
+  rows?: [string, ReactNode][];
 };
 export type TooltipAnchor = TipContent & { side: TooltipSide };
 type Source = TooltipAnchor | (() => TooltipAnchor);
@@ -66,7 +68,7 @@ function Keys({ keys }: { keys?: string[] }) {
 }
 
 export function TooltipBody({ content }: { content: TipContent }) {
-  const { tier, label, keys, description, rows } = content;
+  const { tier, label, keys, description, code, rows } = content;
   if (tier === "label")
     return <span className="tooltip-label ui-tooltip-title">{label}</span>;
   if (tier === "shortcut")
@@ -78,11 +80,14 @@ export function TooltipBody({ content }: { content: TipContent }) {
     );
   return (
     <>
-      <span className="tooltip-head ui-tooltip-title">
-        <span className="tooltip-label">{label}</span>
-        <Keys keys={keys} />
-      </span>
+      {(label || keys) && (
+        <span className="tooltip-head ui-tooltip-title">
+          <span className="tooltip-label">{label}</span>
+          <Keys keys={keys} />
+        </span>
+      )}
       {description && <span className="tooltip-desc">{description}</span>}
+      {code && <code className="tooltip-code">{code}</code>}
       {rows && (
         <dl className="tooltip-rows">
           {rows.map(([key, value]) => (
@@ -208,6 +213,7 @@ export function useTooltip() {
   return (source: Source) =>
     layer
       ? {
+          "data-tooltip-anchor": "",
           onPointerEnter: (event: PointerEvent<HTMLElement>) =>
             layer.schedule(event.currentTarget, source),
           onPointerLeave: layer.close,

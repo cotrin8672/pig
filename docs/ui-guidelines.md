@@ -73,7 +73,12 @@ UIの追加・変更・レビュー時に適用する。スクリーンショッ
   壁紙も同じ基準に揃える。半透明の合成色は背景で変わるため、seedの一致を見た目の一致と扱わない。
   `tooltip-theme-ui.test.ts` でシェル・壁紙・Tooltipのテーマ一致を検査する。
 - 実装は `mainview/Tooltip.tsx`：アプリに1つの `TooltipLayer` と、アンカーに展開する `useTooltip()`。
+  アンカーには `data-tooltip-anchor` が付き、文字の上でもIビームではなく矢印カーソルになる
+  （`:where()` で詳細度0。ボタン等の `pointer` は維持）。
   個別に表示処理を書かない。チャット名など長い文字は `clipTooltipText` で上限（80字）に切る。
+- 例外として、見切れたシェルコマンドの見出し（`.tool-cmd`）は、見切れているか複数行のときだけ
+  全文を `code`（等幅・折り返し・8行まで、幅420px）で出し、下に状態・実行時間・シェル・タイムアウト・出力行数を
+  値の一覧で添える（`ToolBlock.tsx` の `shellTip`、Storybookの `Components/Tooltip`）。
 - 出現アニメーション（`tooltip-in`、`data-side` 方向へ3pxのフェード）は `ui-tooltip` 側に持たせ、
   独自の面（使用量の詳細など）も同じ動きにする。行の移動で中身を差し替えるときは再生しない。
   描画テストは `tooltip-in` を `finish()` してから画素を測る。

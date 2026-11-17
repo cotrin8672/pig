@@ -1,4 +1,5 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
+import { ShellCommandTips, type ShellPhase } from "./ShellCommandTip";
 import { type Backdrop, TooltipShapes, TooltipStage } from "./TooltipPreview";
 import { TooltipSwitchLab } from "./TooltipSwitchLab";
 
@@ -83,6 +84,30 @@ export const RowSwitch: Story = {
   render: () => (
     <div className="tt-page">
       <TooltipSwitchLab />
+    </div>
+  ),
+};
+
+export const ShellCommand: StoryObj<{ phase: ShellPhase }> = {
+  name: "シェルコマンドの全文",
+  parameters: {
+    docs: {
+      description: {
+        story:
+          "見切れたBash/PowerShellの見出しにホバーすると、全文と状態・実行時間・シェル・タイムアウト・出力行数を出す（本番の `shellTip`）。ここでは実物の見出しの下に固定表示する。コマンドは等幅・折り返し・8行まで。",
+      },
+    },
+  },
+  args: { phase: "error" },
+  argTypes: {
+    phase: {
+      control: "inline-radio",
+      options: ["running", "done", "error"],
+    },
+  },
+  render: ({ phase }) => (
+    <div className="tt-page">
+      <ShellCommandTips phase={phase} />
     </div>
   ),
 };

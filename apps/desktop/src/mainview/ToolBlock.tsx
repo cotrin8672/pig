@@ -53,6 +53,7 @@ import { DisclosureContext, DisclosureScope } from "./LazyDetails";
 import { Markdown, MessageContent, ToolResultContent } from "./MessageContent";
 import { SyntaxRangesContext } from "./SyntaxText";
 import { languageFromPath, terminalText } from "./syntax-highlighting";
+import { type TooltipAnchor, useTooltip } from "./Tooltip";
 import { WidgetFrame } from "./WidgetFrame";
 
 type ToolState = Transcript["tools"][string] | undefined;
@@ -285,24 +286,87 @@ function wallTime(result: unknown) {
     : undefined;
 }
 
+type Dictionary = ReturnType<typeof useT>;
+/** Full command plus run facts for a clipped shell header. */
+export function shellTip(
+  t: Dictionary,
+  {
+    command,
+    language,
+    status,
+    exitCode,
+    seconds,
+    timeout,
+    lines,
+  }: {
+    command: string;
+    language: string;
+    status: Tone;
+    exitCode?: number;
+    seconds?: number;
+    timeout?: number;
+    lines: number;
+  },
+): TooltipAnchor {
+  const state =
+    status === "running"
+      ? t.Running
+      : status === "done"
+        ? `${t.Succeeded} · exit 0`
+        : exitCode === undefined
+          ? t.Failed
+          : `${t.Failed} · exit ${exitCode}`;
+  const rows: [string, ReactNode][] = [
+    [
+      t.Status,
+      <span key="status" className={`tooltip-state ${status}`}>
+        {state}
+      </span>,
+    ],
+  ];
+  if (seconds !== undefined) rows.push([t["Run time"], shellDuration(seconds)]);
+  rows.push([t.Shell, language === "powershell" ? "PowerShell" : "bash"]);
+  if (timeout) rows.push([t.Timeout, shellDuration(timeout)]);
+  if (status !== "running") rows.push([t.Output, t.outputLines(lines)]);
+  return { tier: "detail", side: "bottom", label: "", code: command, rows };
+}
+
+// Multi-line commands collapse into one header line even when they fit.
+const clipped = (el: HTMLElement, command: string) =>
+  el.scrollWidth > el.clientWidth || command.includes("\n");
+
 function Shell({
   command,
   state,
   status,
   language,
+  timeout,
 }: {
   command: string;
   state: ToolState;
   status: Tone;
   language: string;
+  timeout?: number;
 }) {
   const t = useT();
+  const tooltip = useTooltip();
   const { output, exitCode } = shellOutcome(resultText(state?.result));
   const text = terminalText(output).trimEnd();
   const lines = text ? text.split("\n") : [];
   const seconds = wallTime(state?.result);
   const statusLabel =
     status === "running" ? t.Running : status === "done" ? "exit 0" : t.Failed;
+  const tip = tooltip(() =>
+    shellTip(t, {
+      command,
+      language,
+      status,
+      exitCode,
+      seconds,
+      timeout,
+      lines: lines.length,
+    }),
+  );
   return (
     <Details
       className={`tool-term ${status}`}
@@ -310,7 +374,15 @@ function Shell({
       summary={
         <summary>
           <span className="tool-prompt">$</span>
-          <code className="tool-cmd" aria-description={command}>
+          <code
+            className="tool-cmd"
+            aria-description={command}
+            {...tip}
+            onPointerEnter={(event) => {
+              if (clipped(event.currentTarget, command))
+                tip.onPointerEnter?.(event);
+            }}
+          >
             <CodeText text={command} language={language} />
           </code>
           <span className="tool-meta">
@@ -477,6 +549,7 @@ export function BuiltinTool({
         state={state}
         status={status}
         language={call.name}
+        timeout={typeof args.timeout === "number" ? args.timeout : undefined}
       />
     );
   switch (call.name) {
