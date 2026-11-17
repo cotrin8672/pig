@@ -30,6 +30,7 @@ test.skipIf(!existsSync(edge) && !process.env.PIG_REQUIRE_UI_TESTS)(
       import {createRoot} from ${JSON.stringify(fileURLToPath(import.meta.resolve("react-dom/client")))};
       import {flushSync} from ${JSON.stringify(fileURLToPath(import.meta.resolve("react-dom")))};
       import {SearchPalette} from ${source("./SearchPalette.tsx")};
+      import {DynamicTheme} from ${source("./DynamicTheme.tsx")};
       import {Settings} from ${source("./Settings.tsx")};
       import {Chat} from ${source("./App.tsx")};
       import {useStore} from ${source("./store.ts")};
@@ -51,15 +52,29 @@ test.skipIf(!existsSync(edge) && !process.env.PIG_REQUIRE_UI_TESTS)(
         };
         const sessions={[general]:Array.from({length:60},(_,i)=>({id:'chat-'+i,cwd:general,title:'Chat number '+i,modified:1000-i}))};
         useStore.setState(s=>({initialized:true,sessions,bootstrap:{...s.bootstrap,generalCwd:general,projects:['C:/work/pig']},settings:{...s.settings,language:'en'},appUpdate:{version:'0.6.0',method:'disabled',status:'idle'}}));
-        flushSync(()=>root.render(<><Settings/><SearchPalette/></>));
+        flushSync(()=>root.render(<><DynamicTheme/><Settings/><SearchPalette/></>));
         for(const category of settingsCategories){
           flushSync(()=>useStore.setState({settingsCategory:category.id}));
           await until(()=>settingTargets.filter(t=>t.category===category.id).every(t=>document.querySelector('[data-setting="'+t.id+'"]')),'every '+category.id+' search target must be rendered');
         }
 
-        flushSync(()=>useStore.setState({searchOpen:true}));await wait();
+        const transcriptFixture=document.createElement('main');
+        transcriptFixture.style.cssText='position:fixed;inset:0;overflow:auto;z-index:50';
+        transcriptFixture.innerHTML=('<article><p>Message <strong>body</strong></p><pre>Code</pre><button>copy</button></article>').repeat(20000);
+        document.body.prepend(transcriptFixture);
+        transcriptFixture.getBoundingClientRect();
+        const openingStart=performance.now();
+        flushSync(()=>useStore.setState({searchOpen:true}));
+        const openingMs=performance.now()-openingStart;
+        check(openingMs<250,'palette opens without restyling a long transcript: '+openingMs+'ms');
+        await wait();
         const dialog=document.querySelector('.search-palette');
-        check(dialog?.open&&dialog.matches(':modal'),'palette opens as a modal dialog');
+        check(dialog?.open&&!dialog.matches(':modal')&&dialog.getAttribute('aria-modal')==='false','palette avoids native modal inert traversal');
+        const front=dialog.getBoundingClientRect();
+        check(dialog.contains(document.elementFromPoint(front.left+20,front.top+20)),'palette stays above other floating surfaces');
+        check(document.elementFromPoint(2,2)?.classList.contains('search-palette-backdrop'),'outside pointer input reaches the dismiss layer, not the transcript');
+        check(transcriptFixture.querySelectorAll('article').length===20000,'opening retains the entire transcript');
+        transcriptFixture.remove();
         const input=dialog.querySelector('input');
         check(document.activeElement===input,'input is focused');
         const list=dialog.querySelector('.search-results');
@@ -76,6 +91,8 @@ test.skipIf(!existsSync(edge) && !process.env.PIG_REQUIRE_UI_TESTS)(
         check(inputStyle.borderTopWidth==='0px'&&inputStyle.outlineStyle==='none'&&inputStyle.backgroundColor==='rgba(0, 0, 0, 0)','focused search input draws no inner box');
         const listHeight=list.getBoundingClientRect().height;
         const dialogRect=dialog.getBoundingClientRect();
+        check(dialogRect.top<=innerHeight*.21&&dialogRect.top>=innerHeight*.04-1,'palette sits near the upper fifth of the window');
+        check(dialogRect.bottom<=innerHeight,'palette fits inside the window');
         const same=()=>{const r=dialog.getBoundingClientRect();return Math.abs(list.getBoundingClientRect().height-listHeight)<0.5&&Math.abs(r.height-dialogRect.height)<0.5&&Math.abs(r.top-dialogRect.top)<0.5;};
         check(list.scrollHeight>list.clientHeight,'long result lists scroll inside the palette');
         list.scrollTop=list.scrollHeight;await wait();
@@ -123,8 +140,13 @@ test.skipIf(!existsSync(edge) && !process.env.PIG_REQUIRE_UI_TESTS)(
         check(document.activeElement?.id==='window-opacity'&&useStore.getState().settingsFocus===undefined,'setting control is focused');
 
         flushSync(()=>useStore.setState({searchOpen:true}));await wait();
-        document.querySelector('.search-palette').dispatchEvent(new Event('cancel',{cancelable:true}));await wait();
+        const previous=document.querySelector('#window-opacity');
+        document.querySelector('.search-palette input').dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true,cancelable:true}));await wait();
         check(!document.querySelector('.search-palette'),'Escape closes the palette');
+        check(document.activeElement===previous,'closing restores the previous input focus');
+        flushSync(()=>useStore.setState({searchOpen:true}));await wait();
+        document.querySelector('.search-palette-backdrop').dispatchEvent(new MouseEvent('mousedown',{bubbles:true}));await wait();
+        check(!document.querySelector('.search-palette')&&!document.querySelector('.search-palette-backdrop'),'outside click removes both palette and backdrop');
 
         const record=(id,order)=>({id,entryId:id,parentId:null,branchId:'b',order,kind:'message',message:{role:'user',content:'Question '+order+' '+'words '.repeat(30),timestamp:order}});
         const page=(from,to,before)=>({records:Array.from({length:to-from},(_,i)=>record('r'+(from+i),from+i)),tools:{},history:{revision:'b',...(before?{before}:{})},current:null,running:false,liveToEntry:{}});
@@ -144,7 +166,7 @@ test.skipIf(!existsSync(edge) && !process.env.PIG_REQUIRE_UI_TESTS)(
         await until(()=>useStore.getState().notices.some(n=>n.message===en.searchMessageMissing),'missing message is reported through notifications');
         check(useStore.getState().jump===undefined&&history.length===2,'missing message stops without more history requests');
 
-        flushSync(()=>root.render(<SearchPalette/>));
+        flushSync(()=>root.render(<><DynamicTheme/><SearchPalette/></>));
         flushSync(()=>useStore.setState({searchOpen:true}));await wait();
         const last=document.querySelector('.search-palette input');
         setter.call(last,'scroll');last.dispatchEvent(new Event('input',{bubbles:true}));

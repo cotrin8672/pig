@@ -1,7 +1,11 @@
 .search-palette {
-  /* Input row sits just above the middle; on short windows it rises so the fixed-height
+  /* Keep the input in the upper part; on short windows it rises so the fixed-height
      results still fit (72px ≈ input row + borders + bottom gap). */
-  margin: max(4vh, min(36vh, calc(100vh - min(400px, 52vh) - 72px))) auto auto;
+  position: fixed;
+  inset: 0;
+  z-index: 61;
+  height: fit-content;
+  margin: max(4vh, min(20vh, calc(100vh - min(400px, 52vh) - 72px))) auto auto;
   width: min(640px, calc(100vw - 32px));
   padding: 0;
   overflow: hidden;
@@ -18,7 +22,10 @@
   display: flex;
   flex-direction: column;
 }
-.search-palette::backdrop {
+.search-palette-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
   background: color-mix(in srgb, var(--ds-bg-inset) 32%, transparent);
 }
 .search-palette-input {

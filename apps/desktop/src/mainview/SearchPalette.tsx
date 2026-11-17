@@ -16,6 +16,7 @@ import {
   useRef,
   useState,
 } from "react";
+import { createPortal } from "react-dom";
 import { useShallow } from "zustand/react/shallow";
 import { searchTerms } from "../shared/fuzzy";
 import type { ConversationHit } from "../shared/rpc-schema";
@@ -53,7 +54,19 @@ export function SearchPalette({
   initialQuery?: string;
 }) {
   const open = useStore((s) => s.searchOpen);
-  return open ? <SearchDialog initialQuery={initialQuery} /> : null;
+  return open
+    ? createPortal(
+        <>
+          <div
+            className="search-palette-backdrop"
+            aria-hidden="true"
+            onMouseDown={() => useStore.setState({ searchOpen: false })}
+          />
+          <SearchDialog initialQuery={initialQuery} />
+        </>,
+        document.body,
+      )
+    : null;
 }
 
 function go(target: PaletteTarget) {
@@ -146,7 +159,8 @@ function SearchDialog({ initialQuery }: { initialQuery: string }) {
 
   useLayoutEffect(() => {
     const previous = document.activeElement;
-    dialog.current?.showModal();
+    // Native modality restyles the entire transcript to make it inert.
+    dialog.current?.show();
     input.current?.focus();
     return () => {
       dialog.current?.close();
@@ -199,6 +213,7 @@ function SearchDialog({ initialQuery }: { initialQuery: string }) {
     <dialog
       ref={dialog}
       className="search-palette"
+      aria-modal="false"
       aria-label={t["Search everything"]}
       onCancel={(event) => {
         event.preventDefault();
@@ -230,7 +245,11 @@ function SearchDialog({ initialQuery }: { initialQuery: string }) {
           onKeyDown={(event) => {
             if (event.nativeEvent.isComposing || event.keyCode === 229) return;
             const count = results.length;
-            if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+            if (event.key === "Escape") {
+              event.preventDefault();
+              event.stopPropagation();
+              close();
+            } else if (event.key === "ArrowDown" || event.key === "ArrowUp") {
               event.preventDefault();
               if (count)
                 setActive(
