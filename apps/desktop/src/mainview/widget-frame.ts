@@ -18,10 +18,12 @@ const FONT_FILES = "https://fonts.gstatic.com https://fonts.bunny.net";
 export const widgetSandbox = (scripts: boolean) =>
   scripts ? "allow-scripts" : "";
 
-const csp = (scripts: boolean) =>
-  scripts
-    ? `default-src 'none'; script-src 'unsafe-inline' ${CDN}; style-src 'unsafe-inline' ${CDN} ${FONTS}; img-src data: blob:; font-src data: ${FONT_FILES}; connect-src 'none'; form-action 'none'; base-uri 'none'`
-    : "default-src 'none'; style-src 'unsafe-inline'; img-src data:; font-src data:; form-action 'none'; base-uri 'none'";
+const csp = (scripts: boolean, preview: boolean) =>
+  preview
+    ? "default-src 'none'; script-src 'none'; style-src 'unsafe-inline'; img-src data:; font-src 'none'; connect-src 'none'; frame-src 'none'; object-src 'none'; form-action 'none'; base-uri 'none'"
+    : scripts
+      ? `default-src 'none'; script-src 'unsafe-inline' ${CDN}; style-src 'unsafe-inline' ${CDN} ${FONTS}; img-src data: blob:; font-src data: ${FONT_FILES}; connect-src 'none'; form-action 'none'; base-uri 'none'`
+      : "default-src 'none'; style-src 'unsafe-inline'; img-src data:; font-src data:; form-action 'none'; base-uri 'none'";
 
 /** Theme tokens a widget can use, resolved from the app's design tokens. */
 const THEME: [string, string][] = [
@@ -34,11 +36,14 @@ const THEME: [string, string][] = [
   ["--warning", "--ds-warning"],
   ["--font-sans", "--font-sans"],
   ["--font-mono", "--font-mono"],
+  ["--ds-scrollbar-thumb", "--ds-scrollbar-thumb"],
+  ["--ds-scrollbar-thumb-hover", "--ds-scrollbar-thumb-hover"],
+  ["--radius-full", "--radius-full"],
 ];
 
 export function widgetTheme(style: CSSStyleDeclaration) {
   // A frame whose color scheme differs from its embedder gets an opaque backdrop.
-  const scheme = `color-scheme:${style.colorScheme || "normal"};`;
+  const scheme = `color-scheme:${style.colorScheme || "normal"};font-size:${style.fontSize || "14px"};line-height:${style.lineHeight || "1.5"};`;
   return (
     scheme +
     THEME.map(([name, token]) => {
@@ -46,6 +51,33 @@ export function widgetTheme(style: CSSStyleDeclaration) {
       return value ? `${name}:${value};` : "";
     }).join("")
   );
+}
+
+let scrollbarCss = "";
+/** The app's shared scrollbar rules, so scrolling inside a frame looks the same. */
+function sharedScrollbarCss() {
+  if (scrollbarCss || typeof document === "undefined") return scrollbarCss;
+  const rules: string[] = [];
+  const visit = (list: CSSRuleList) => {
+    for (const rule of list)
+      if (rule instanceof CSSImportRule && rule.styleSheet)
+        visit(rule.styleSheet.cssRules);
+      else if (rule instanceof CSSGroupingRule) visit(rule.cssRules);
+      else if (
+        rule instanceof CSSStyleRule &&
+        /::-webkit-scrollbar|--scrollbar-/.test(rule.cssText)
+      )
+        rules.push(rule.cssText);
+  };
+  for (const sheet of document.styleSheets) {
+    try {
+      visit(sheet.cssRules);
+    } catch {
+      // Cross-origin sheets are unreadable; the app's own CSS is not.
+    }
+  }
+  scrollbarCss = rules.join("");
+  return scrollbarCss;
 }
 
 export const SIZE_MESSAGE = "piris:widget-size";
@@ -59,7 +91,9 @@ export function widgetDocument(
   block: WidgetBlock,
   options: { scripts: boolean; theme: string },
 ) {
-  return `<!doctype html><html><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="${csp(options.scripts)}"><style>:root{${options.theme}}html,body{margin:0;background:transparent}body{color:var(--foreground);font:14px/1.5 var(--font-sans,system-ui)${options.scripts ? ";overflow:hidden" : ""}}svg{max-width:100%;height:auto}</style>${options.scripts ? runtime(block.id) : ""}</head><body>${block.source}</body></html>`;
+  const preview = block.origin === "mcp";
+  const scripts = options.scripts && !preview;
+  return `<!doctype html><html><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="${csp(scripts, preview)}"><style>:root{font:14px/1.5 system-ui;${options.theme}}html,body{margin:0;background:transparent}body{color:var(--foreground);font-family:var(--font-sans,system-ui)${scripts ? ";overflow:hidden" : ""}}svg{max-width:100%;height:auto}${preview ? sharedScrollbarCss() : ""}</style>${scripts ? runtime(block.id) : ""}</head><body>${block.source}</body></html>`;
 }
 
 let isolation: Promise<boolean> | undefined;

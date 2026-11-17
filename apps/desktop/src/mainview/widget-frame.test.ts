@@ -46,3 +46,12 @@ test("frame documents allow script and network only in script mode", () => {
   expect(scripted).toContain("connect-src 'none'");
   expect(scripted).toContain("piris:widget-size");
 });
+
+test("MCP documents cannot inherit the dynamic widget policy", () => {
+  const block = widgetBlock("<p>static</p>", { origin: "mcp" });
+  const html = widgetDocument(block, { scripts: true, theme: "" });
+  expect(html).toContain("script-src 'none'");
+  expect(html).toContain("connect-src 'none'");
+  expect(html).toContain("frame-src 'none'");
+  expect(html).not.toContain("piris:widget-size");
+});

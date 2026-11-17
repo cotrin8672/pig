@@ -370,6 +370,7 @@ const hostRequests = {
   cancelOpen: (input) => sessionHost.cancelOpen(input),
   getSessionSnapshot: async (input) =>
     fullSnapshot(await sessionHost.readSessionSnapshot(input)),
+  getMcpAppPreview: (input) => sessionHost.getMcpAppPreview(input),
   wakeSession: async (input) =>
     fullSnapshot(await sessionHost.wakeSession(input)),
   getSessionHistory: async (input) =>

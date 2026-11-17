@@ -28,6 +28,7 @@ import { withDraftFiles } from "../shared/attachments";
 import { IMPORTED_HISTORY_PROVIDER } from "../shared/chat-history-import";
 import { displayedEffort } from "../shared/effort";
 import type { ExtensionUIEvent, UIReply } from "../shared/extension-ui";
+import type { McpAppPreviewResult } from "../shared/mcp-app";
 import { createModelCatalogCache } from "../shared/model-catalog-cache";
 import { isModelEnabled } from "../shared/models";
 import { unfoldPastes } from "../shared/paste";
@@ -71,6 +72,8 @@ import { desktopConfigDir } from "./desktop-config";
 import { createExtensionUIHost, type ExtensionUIHost } from "./extension-ui";
 import { fastModeExtension } from "./fast-mode";
 import { createQueuedImagePolicy, scrubImages } from "./image-policy";
+import { McpApps } from "./mcp-apps";
+import { desktopMcpExtensions } from "./mcp-extensions";
 import {
   createModelRuntime,
   releaseModelRuntime,
@@ -146,6 +149,7 @@ type Managed = {
   unsubscribe?: () => void;
   statistics?: SessionStatistics;
   eventBus: EventBusController;
+  mcpApps?: McpApps;
   adapterSource?: ReturnType<typeof createAdapterSource>;
   adapters?: AdapterRuntime;
   adapterSnapshot?: Snapshot["sessionUI"];
@@ -552,6 +556,7 @@ export class SessionHost {
           aborted: m.projector?.aborted,
         };
         this.cancelPublish(m);
+        m.mcpApps?.dispose();
         // dispose emits session_shutdown and awaits the SDK's credential writes.
         m.suspensionCleanup = required(m.runtime).dispose();
         await stopBudget(m.suspensionCleanup, "idle SDK shutdown");
@@ -1148,6 +1153,9 @@ export class SessionHost {
         await this.options.configureModels?.(models);
         controller.signal.throwIfAborted();
         transitionSignal.throwIfAborted();
+        managed.mcpApps?.dispose();
+        const mcpApps = new McpApps(controller.signal);
+        managed.mcpApps = mcpApps;
         const services = await loadExclusive(async () => {
           const settingsManager = SettingsManager.create(target.cwd, agentDir, {
             projectTrusted: trust.trusted,
@@ -1169,6 +1177,7 @@ export class SessionHost {
               )),
               eventBus: managed.eventBus,
               extensionFactories: [
+                ...desktopMcpExtensions(mcpApps),
                 { name: "pig-image-policy", factory: managed.images.extension },
                 {
                   name: "pig-fast-mode",
@@ -1195,6 +1204,9 @@ export class SessionHost {
             controller.signal,
           );
           services.settingsManager.setProjectTrusted(nextTrust.trusted);
+          managed.mcpApps?.dispose();
+          const reloadedMcpApps = new McpApps(controller.signal);
+          managed.mcpApps = reloadedMcpApps;
           const next = new DefaultResourceLoader({
             cwd: target.cwd,
             agentDir,
@@ -1206,6 +1218,7 @@ export class SessionHost {
             )),
             eventBus: managed.eventBus,
             extensionFactories: [
+              ...desktopMcpExtensions(reloadedMcpApps),
               { name: "pig-image-policy", factory: managed.images.extension },
               {
                 name: "pig-fast-mode",
@@ -1310,6 +1323,7 @@ export class SessionHost {
       });
       managed.runtime.setBeforeSessionInvalidate(() => {
         this.cancelPublish(managed);
+        managed.mcpApps?.dispose();
         this.invalidated.add(required(managed.runtime).session);
         this.detachAdapters(managed);
         managed.unsubscribe?.();
@@ -1994,6 +2008,44 @@ export class SessionHost {
   getSessionSnapshot(address: SessionAddress) {
     return this.snapshot(this.current(address, false));
   }
+  /** Sanitized static HTML for a live call, or null. Never wakes a suspended runtime. */
+  async getMcpAppPreview(
+    input: SessionAddress & { appId: string; toolCallId: string },
+  ): Promise<McpAppPreviewResult> {
+    try {
+      if (
+        typeof input.appId !== "string" ||
+        typeof input.toolCallId !== "string"
+      )
+        return null;
+      const m = this.current(input, false);
+      const apps = m.mcpApps;
+      if (!apps) return null;
+      const html = await apps.readStatic(
+        input.appId,
+        input.toolCallId,
+        AbortSignal.timeout(10_000),
+      );
+      return this.current(input, false) === m && m.mcpApps === apps
+        ? { html }
+        : null;
+    } catch {
+      // Optional preview: the normal tool result stays the fallback.
+      return null;
+    }
+  }
+  /** Internal raw resource boundary; never expose this HTML through RPC or render it unsanitized. */
+  async readMcpAppResource(
+    input: SessionAddress & { appId: string; toolCallId: string },
+    signal: AbortSignal,
+  ) {
+    const m = this.current(input, false);
+    const apps = required(m.mcpApps);
+    const result = await apps.read(input.appId, input.toolCallId, signal);
+    if (this.current(input, false) !== m || m.mcpApps !== apps)
+      throw new Error("STALE_SESSION_ADDRESS");
+    return result;
+  }
   async getSessionHistory(
     input: SessionAddress & { revision: string; before: string },
   ) {
@@ -2511,6 +2563,7 @@ export class SessionHost {
   }
   private destroy(m: Managed, keepDraft = false) {
     this.cancelPublish(m);
+    m.mcpApps?.dispose();
     if (m.disposing) return m.disposing;
     this.recoverQueue(m);
     const cleanup = Promise.resolve().then(async () => {

@@ -14,6 +14,7 @@ const integration = [
   "extension-ui",
   "fonts",
   "install-windows",
+  "mcp-apps-sdk",
   "model-runtime",
   "model-runtime-performance",
   "model-settings",
@@ -41,6 +42,7 @@ const integration = [
   "statistics-host",
 ].map((name) => `src/bun/${name}.test.ts`);
 const ui = [
+  "mcp-apps-ui",
   "chat-history-import-ui",
   "statistics-ui",
   "transcript-ui",

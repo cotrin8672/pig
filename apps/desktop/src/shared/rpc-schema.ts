@@ -14,6 +14,7 @@ import type {
   UiPreferences,
 } from "./desktop-state";
 import type { ExtensionUIEvent, UIReply } from "./extension-ui";
+import type { McpAppPreviewResult } from "./mcp-app";
 import type { ModelOverride } from "./model-overrides";
 import type { ProjectFlags } from "./projects";
 import type { AccountTarget, ProviderAccount } from "./provider-accounts";
@@ -351,6 +352,10 @@ export type RPCSchema = {
       // biome-ignore lint/suspicious/noConfusingVoidType: Electrobun convention.
       cancelOpen: { params: { openId: string }; response: void };
       getSessionSnapshot: { params: SessionAddress; response: Snapshot };
+      getMcpAppPreview: {
+        params: SessionAddress & { appId: string; toolCallId: string };
+        response: McpAppPreviewResult;
+      };
       getSessionHistory: {
         params: SessionAddress & { revision: string; before: string };
         response: WireTranscript;
