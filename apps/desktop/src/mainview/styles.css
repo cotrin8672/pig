@@ -2019,6 +2019,9 @@ input:where(:not([type="range"], [type="checkbox"], [type="radio"])) {
 .model-search button:hover {
   color: var(--ds-text-primary);
 }
+.model-search button[aria-pressed="true"] {
+  color: var(--ds-accent);
+}
 .model-browser {
   /* Six 28px rows. */
   height: min(168px, max(84px, calc(100dvh - 240px)));

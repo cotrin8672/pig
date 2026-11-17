@@ -28,6 +28,7 @@ import {
 } from "../shared/statistics";
 import type { TerminalHostEvent } from "../shared/terminal-ui";
 import { desktopConfigDir } from "./desktop-config";
+import { supportsFastMode } from "./fast-mode";
 import { manualModelRefresh } from "./manual-model-refresh";
 import {
   applyRuntimeModelSettings,
@@ -192,6 +193,7 @@ export function modelInfo(model: Model<Api>) {
         ? (model.compat as { forceAdaptiveThinking?: boolean } | undefined)
             ?.forceAdaptiveThinking
         : undefined,
+    fastMode: supportsFastMode(model) || undefined,
     thinkingLevels,
     effortLevels,
     defaultEffort: preferred,

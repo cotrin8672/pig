@@ -471,7 +471,7 @@ export const en = {
   resumePrompt: "continue",
   "Choose an enabled model to send a message.":
     "Choose an enabled model to send a message.",
-  "Manage models": "Manage models",
+  "Fast mode": "Fast mode",
   Recent: "Recent",
   "Select model": "Select model",
   "Search models": "Search models",
@@ -1329,7 +1329,7 @@ export const ja: Dictionary = {
   resumePrompt: "continue",
   "Choose an enabled model to send a message.":
     "有効なモデルを選択してメッセージを送信してください。",
-  "Manage models": "モデルを管理",
+  "Fast mode": "高速モード",
   Recent: "最近使用",
   "Select model": "モデルを選択",
   "Search models": "モデルを検索",

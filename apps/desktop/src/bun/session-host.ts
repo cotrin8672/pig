@@ -69,6 +69,7 @@ import { storeImage, withAttachmentPaths } from "./attachments";
 import { ComposerBridge } from "./composer-bridge";
 import { desktopConfigDir } from "./desktop-config";
 import { createExtensionUIHost, type ExtensionUIHost } from "./extension-ui";
+import { fastModeExtension } from "./fast-mode";
 import { createQueuedImagePolicy, scrubImages } from "./image-policy";
 import {
   createModelRuntime,
@@ -1169,6 +1170,10 @@ export class SessionHost {
               eventBus: managed.eventBus,
               extensionFactories: [
                 { name: "pig-image-policy", factory: managed.images.extension },
+                {
+                  name: "pig-fast-mode",
+                  factory: fastModeExtension(() => this.settings.fastMode),
+                },
               ],
             },
             resourceLoaderReloadOptions: {
@@ -1202,6 +1207,10 @@ export class SessionHost {
             eventBus: managed.eventBus,
             extensionFactories: [
               { name: "pig-image-policy", factory: managed.images.extension },
+              {
+                name: "pig-fast-mode",
+                factory: fastModeExtension(() => this.settings.fastMode),
+              },
             ],
           });
           await next.reload({

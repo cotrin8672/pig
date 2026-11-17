@@ -97,6 +97,8 @@ export interface ModelInfo {
   effectiveDefaultEffort?: Effort;
   // Present only for anthropic-messages models, where the protocol applies.
   adaptiveThinking?: boolean;
+  /** Accepts OpenAI `service_tier: "priority"` (Fast mode). */
+  fastMode?: boolean;
 }
 export interface SessionInfo {
   id: string;
