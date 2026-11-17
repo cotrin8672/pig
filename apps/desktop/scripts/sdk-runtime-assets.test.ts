@@ -256,6 +256,7 @@ describe("SDK runtime production packaging", () => {
       "contracts.ts",
       "queries.ts",
       "normalize.ts",
+      "shell-command.ts",
     ])
       copyFileSync(
         join(import.meta.dir, "../src/bun/statistics", name),
