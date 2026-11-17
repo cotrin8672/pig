@@ -13,6 +13,7 @@ const integration = [
   "app-update-windows",
   "extension-ui",
   "fonts",
+  "install-windows",
   "model-runtime",
   "model-runtime-performance",
   "model-settings",

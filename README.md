@@ -5,6 +5,35 @@ Electrobun **2.0.6**, Bun, React 19, Vite, Tailwind v4, and zustand.
 
 ## Install
 
+### PowerShell (without Scoop)
+
+On Windows x64 with Microsoft Edge WebView2 Runtime, run in PowerShell:
+
+```powershell
+irm https://github.com/cotrin8672/pig/releases/latest/download/install.ps1 | iex
+```
+
+Available after a stable release publishes `install.ps1`. Review
+[`install.ps1`](install.ps1) before running downloaded code. No administrator
+rights, Node, Bun, pnpm or manual ZIP extraction are needed. The script downloads
+the latest stable ZIP, verifies its SHA256 and bundle metadata, then installs:
+
+- App: `%LOCALAPPDATA%\Programs\pig` (Windows' per-user program directory).
+- Command: `%USERPROFILE%\.local\bin\pig.cmd`, added to the user and current
+  process `PATH` without replacing existing entries.
+- Start menu: `%APPDATA%\Microsoft\Windows\Start Menu\Programs\pig.lnk`.
+
+Run `pig` or use the Start menu. Reopen other terminals if `pig` is not found.
+Re-running the script repairs command/PATH/shortcut registration but **does not
+replace an existing app**; update it from **Settings → About & updates**.
+Unrelated files at those locations are never overwritten. WebView2 is a
+prerequisite, not installed by the script. To uninstall, remove the app directory,
+`pig.cmd` and `pig.lnk`; leave `.local\bin` on PATH if other apps use it.
+If another `pig` command (for example Scoop's) is already available, the script
+stops instead of creating a conflicting installation.
+
+### Scoop
+
 On Windows x64, install [Scoop](https://scoop.sh/) and the Microsoft Edge
 WebView2 Runtime, then run in PowerShell (after the corresponding pig build is published):
 
@@ -60,7 +89,8 @@ then tag a commit on `main` (the workflow rejects tags outside `main`):
 git tag v0.1.0 && git push --tags
 ```
 
-The workflow uploads `pig-windows-x64.zip` plus its `.sha256`, then commits the
+The workflow uploads `pig-windows-x64.zip` plus its `.sha256` (and `install.ps1`
+for stable releases), then commits the
 stable Scoop version/hash to `main` using `GITHUB_TOKEN` (`contents: write`).
 No Excavator service is needed; checkver/autoupdate metadata is also provided.
 Wait for that bucket commit before installing the first stable build, then

@@ -24,5 +24,6 @@ Compress-Archive -Path "$stage/pig/*" -DestinationPath $zip -Force
 if ($LASTEXITCODE -ne 0) { throw 'Portable ZIP integrity check failed' }
 $hash = (Get-FileHash $zip -Algorithm SHA256).Hash.ToLowerInvariant()
 Set-Content -Path "$zip.sha256" -Value "$hash  pig-windows-x64.zip" -Encoding ascii
+Copy-Item -LiteralPath 'install.ps1' -Destination (Join-Path $OutputDirectory 'install.ps1')
 Write-Output "Portable archive: $zip"
 Write-Output "SHA256: $hash"
