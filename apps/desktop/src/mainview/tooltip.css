@@ -1,13 +1,20 @@
 /*
   Shared tooltip surface (docs/ui-guidelines.md「ツールチップ」).
-  Accent-tinted glass. A light blur keeps the backdrop visible: blur(20px)
+  Faint accent glass with a neutral lift so reducing tint does not darken it.
+  A light blur keeps the backdrop visible: blur(20px)
   melts small text behind into a flat colour and reads as opaque. Mixing in
   the opaque accent raises alpha, so the face is pinned back to 50%.
 */
 .ui-tooltip {
-  border: 1px solid color-mix(in srgb, var(--ds-accent) 40%, transparent);
+  border: 1px solid color-mix(in srgb, var(--ds-accent) 16%, transparent);
   background: rgb(
-    from color-mix(in srgb, var(--ds-accent) 28%, var(--ds-bg-popover)) r g b /
+    from
+      color-mix(
+        in srgb,
+        var(--ds-text-primary) 12%,
+        color-mix(in srgb, var(--ds-accent) 4%, var(--ds-bg-popover))
+      )
+      r g b /
     0.5
   );
   backdrop-filter: blur(4px) saturate(140%);

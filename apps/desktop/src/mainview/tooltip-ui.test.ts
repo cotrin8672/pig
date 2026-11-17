@@ -9,6 +9,59 @@ import {
 
 const local = (path: string) => fixtureImport(new URL(path, import.meta.url));
 
+test(
+  "all tooltip surfaces use the adopted faint tint with a neutral lift",
+  () =>
+    runUiFixture(
+      "tooltip-surface",
+      `
+    const {createRoot}=await import(${fixtureImport(import.meta.resolve("react-dom/client"))});
+    const {flushSync}=await import(${fixtureImport(import.meta.resolve("react-dom"))});
+    const {TooltipShapes}=await import(${local("../stories/tooltips/TooltipPreview.tsx")});
+    const {applyThemeTokens}=await import(${local("./dynamic-theme.ts")});
+    await import(${local("./styles.css")});
+    ${fixtureHelpers}
+    const root=createFixtureRoot(createRoot);
+    flushSync(()=>root.render(<div className="app-shell" style={{display:'block',padding:24}}>
+      <TooltipShapes backdrop="text"/>
+      <div className="usage-popover ui-tooltip" style={{left:24,top:400}}>Usage details</div>
+      <div className="stats-tip ui-tooltip" style={{left:320,top:400}}>Statistics</div>
+    </div>));
+    await wait();
+    document.getAnimations().filter(a=>a.animationName==='tooltip-in').forEach(a=>a.finish());
+    const reference=document.createElement('div');
+    reference.style.backgroundColor='rgb(from color-mix(in srgb, var(--ds-text-primary) 12%, color-mix(in srgb, var(--ds-accent) 4%, var(--ds-bg-popover))) r g b / 0.5)';
+    reference.style.border='1px solid color-mix(in srgb, var(--ds-accent) 16%, transparent)';
+    document.body.append(reference);
+    const dark=document.createElement('div');
+    dark.style.backgroundColor='rgb(from color-mix(in srgb, var(--ds-accent) 4%, var(--ds-bg-popover)) r g b / 0.5)';
+    document.body.append(dark);
+    const canvas=document.createElement('canvas'),ctx=canvas.getContext('2d');
+    const rgba=color=>{
+      ctx.clearRect(0,0,1,1);ctx.fillStyle=color;ctx.fillRect(0,0,1,1);
+      return [...ctx.getImageData(0,0,1,1).data];
+    };
+    const brightness=color=>{const [r,g,b]=rgba(color);return 0.2126*r+0.7152*g+0.0722*b};
+    for(const seed of ['#7DBFBD','#809cce','#dc91b6','#a8a8a8']){
+      applyThemeTokens(document.documentElement.style,seed);await wait();
+      const expected=getComputedStyle(reference),surfaces=[...document.querySelectorAll('.ui-tooltip')];
+      check(surfaces.length===6,'all four shapes, usage and statistics surfaces');
+      for(const surface of surfaces){
+        const style=getComputedStyle(surface);
+        check(style.backgroundColor===expected.backgroundColor,'surface matches adopted white tint: '+seed);
+        check(style.borderTopColor===expected.borderTopColor,'surface uses 16% accent border');
+        check(Math.abs(rgba(style.backgroundColor)[3]-128)<=1&&style.opacity==='1','50% background alpha without fading text');
+        check(style.backdropFilter==='blur(4px) saturate(1.4)','blur and saturation are unchanged');
+        check(brightness(style.backgroundColor)>brightness(getComputedStyle(dark).backgroundColor),'white lift prevents the faint tint from becoming dark');
+      }
+    }
+    reference.remove();dark.remove();
+    applyThemeTokens(document.documentElement.style,'#7DBFBD');await wait();
+  `,
+    ),
+  60_000,
+);
+
 test.skipIf(!existsSync(fixtureEdge) && !process.env.PIG_REQUIRE_UI_TESTS)(
   "tooltip glides between gapless rows and re-enters across gaps",
   () =>

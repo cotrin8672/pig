@@ -1,5 +1,6 @@
 import type { Preview } from "@storybook/react-vite";
 import type { CSSProperties, ReactNode } from "react";
+import { createThemeTokens } from "../src/mainview/dynamic-theme";
 import { StoryTurn } from "../src/stories/StoryTurn";
 import "katex/dist/katex.min.css";
 import "../src/stories/glass-stage.css";
@@ -13,13 +14,25 @@ function GlassStage({
   children,
   windowPreview,
   appPreview,
+  themeColor,
+  neutralWallpaper,
 }: {
   children: ReactNode;
   windowPreview?: boolean;
   appPreview?: boolean;
+  themeColor?: string;
+  neutralWallpaper?: boolean;
 }) {
   return (
-    <div className="glass-stage">
+    <div
+      className="glass-stage"
+      data-neutral-wallpaper={neutralWallpaper || undefined}
+      style={
+        themeColor
+          ? (createThemeTokens(themeColor) as CSSProperties)
+          : undefined
+      }
+    >
       <div className="glass-wallpaper" aria-hidden="true" />
       {appPreview ? (
         children
@@ -74,6 +87,8 @@ export default {
       <GlassStage
         windowPreview={parameters.windowPreview}
         appPreview={parameters.appPreview}
+        themeColor={parameters.themeColor}
+        neutralWallpaper={parameters.neutralWallpaper}
       >
         {parameters.gallery ||
         parameters.windowPreview ||
