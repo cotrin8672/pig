@@ -28,6 +28,8 @@ const histories = new Map<string, ComposerInputHistory>();
 // Recorded from scroll events: reading scrollTop while a pane unmounts forces a
 // synchronous layout of the whole remaining document.
 const scrollTops = new Map<string, number>();
+// Retired owners still on screen are released when their editor unmounts.
+const releasing = new Set<string>();
 const noPastes: EditorText["pastes"] = [];
 function editorView(input: HTMLTextAreaElement, key: string): EditorView {
   return {
@@ -56,6 +58,21 @@ export function transferEditorView(from: string, to: string, prefix = "") {
   if (history && !prefix) histories.set(to, history);
   histories.delete(from);
 }
+
+/** A retired owner's editor can never be shown again; drop its text and Undo history. */
+export function forgetEditorView(key: string) {
+  if (mounted.has(key)) {
+    releasing.add(key);
+    return;
+  }
+  views.delete(key);
+  histories.delete(key);
+  scrollTops.delete(key);
+}
+
+/** Number of retained editor states, for lifetime tests. */
+export const editorViewCount = () =>
+  new Set([...views.keys(), ...histories.keys(), ...scrollTops.keys()]).size;
 
 export function insertEditorNewline(
   input: HTMLTextAreaElement,
@@ -157,8 +174,10 @@ export function ComposerEditor({
     let width = input.clientWidth;
     observer.observe(input);
     return () => {
-      remember(input);
       if (mounted.get(viewKey) === input) mounted.delete(viewKey);
+      if (releasing.delete(viewKey)) {
+        forgetEditorView(viewKey);
+      } else remember(input);
       observer.disconnect();
       resize.dispose();
     };

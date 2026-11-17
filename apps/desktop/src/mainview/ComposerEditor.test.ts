@@ -1,5 +1,31 @@
 import { expect, test } from "bun:test";
-import { insertEditorNewline, sizeEditor } from "./ComposerEditor";
+import { createElement } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
+import {
+  ComposerEditor,
+  editorViewCount,
+  forgetEditorView,
+  insertEditorNewline,
+  sizeEditor,
+} from "./ComposerEditor";
+
+test("retired owners release their editor history and folded paste payloads", () => {
+  const before = editorViewCount();
+  const paste = { id: "1", marker: "[paste #1 9 chars]", text: "long text" };
+  for (const key of ["retired-a", "retired-b"])
+    renderToStaticMarkup(
+      createElement(ComposerEditor, {
+        viewKey: key,
+        value: paste.marker,
+        pastes: [paste],
+        onRestore: () => {},
+      }),
+    );
+  expect(editorViewCount()).toBe(before + 2);
+  forgetEditorView("retired-a");
+  forgetEditorView("retired-b");
+  expect(editorViewCount()).toBe(before);
+});
 
 function editor(contentHeight: number, scrollTop = 0) {
   const input = {
