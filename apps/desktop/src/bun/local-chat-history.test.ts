@@ -252,6 +252,75 @@ test("Claude Code: active branch only, sidechains and meta skipped, untitled ses
   }
 });
 
+test("thread titles come from Codex names and Claude Code title records", async () => {
+  const home = await mkdtemp(join(tmpdir(), "pig-local-titles-"));
+  try {
+    await codexHome(home);
+    const db = new Database(join(home, ".codex", "state_5.sqlite"));
+    db.run("alter table threads add column name text");
+    db.run("update threads set name = 'Scrollbar fix' where id = 'main'");
+    db.close();
+    await claudeHome(home);
+    const dir = join(home, ".claude", "projects", "C--work-piris");
+    const user = {
+      type: "user",
+      uuid: "u1",
+      parentUuid: null,
+      cwd: "C:\\work\\piris",
+      message: { role: "user", content: "First prompt" },
+    };
+    // Title records land after the head; the last of each kind wins.
+    const filler = { type: "attachment", text: "x".repeat(300 * 1024) };
+    await writeFile(
+      join(dir, "session-b.jsonl"),
+      jsonl([
+        user,
+        filler,
+        { type: "ai-title", aiTitle: "Generated title" },
+        filler,
+        { type: "custom-title", customTitle: "Old name" },
+        { type: "custom-title", customTitle: "Renamed" },
+      ]),
+    );
+    await writeFile(
+      join(dir, "session-c.jsonl"),
+      jsonl([user, { type: "ai-title", aiTitle: "Generated title" }]),
+    );
+    const history = new LocalChatHistory(home);
+    expect(
+      (await history.list("codex")).conversations.map((item) => item.title),
+    ).toEqual(["Scrollbar fix"]);
+    const claude = await history.list("claude-code");
+    expect(
+      Object.fromEntries(
+        claude.conversations.map((item) => [item.id, item.title]),
+      ),
+    ).toEqual({
+      "C--work-piris/session-a": "Explain the build",
+      "C--work-piris/session-b": "Renamed",
+      "C--work-piris/session-c": "Generated title",
+    });
+    const out = join(home, "out");
+    await history.import(
+      {
+        previewId: claude.id,
+        cwd: home,
+        ids: ["C--work-piris/session-b"],
+      },
+      out,
+    );
+    const manager = SessionManager.open(join(out, (await readdir(out))[0]));
+    expect(manager.getSessionName()).toBe("Renamed");
+  } finally {
+    await rm(home, {
+      recursive: true,
+      force: true,
+      maxRetries: 10,
+      retryDelay: 100,
+    });
+  }
+});
+
 test("Codex Windows namespace prefixes never reach SDK session directory names", async () => {
   for (const [source, expected] of [
     ["\\\\?\\C:\\work\\piris", "C:\\work\\piris"],
