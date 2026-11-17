@@ -26,6 +26,7 @@ import {
 } from "react";
 import type { ToolCard, ToolCardBlock } from "../../../../packages/config/src";
 import { parseGrepOutput } from "../shared/grep-output";
+import { type McpAppRef, mcpAppRef } from "../shared/mcp-app";
 import {
   diffStats,
   resultText,
@@ -50,6 +51,7 @@ import {
 } from "./HighlightedCode";
 import { useT } from "./i18n";
 import { DisclosureContext, DisclosureScope } from "./LazyDetails";
+import { McpAppContext, McpAppPreview } from "./McpAppPreview";
 import { Markdown, MessageContent, ToolResultContent } from "./MessageContent";
 import { SyntaxRangesContext } from "./SyntaxText";
 import { languageFromPath, terminalText } from "./syntax-highlighting";
@@ -483,10 +485,48 @@ function CardBlock({ block }: { block: ToolCardBlock }) {
 
 const ICON = 14;
 
+function McpToolPreview({
+  appRef,
+  toolCallId,
+}: {
+  appRef: McpAppRef;
+  toolCallId: string;
+}) {
+  const address = useContext(McpAppContext);
+  const t = useT();
+  if (!address) return null;
+  return (
+    <DisclosureScope id={`mcp-app:${appRef.id}`}>
+      <Row
+        defaultOpen
+        icon={<Shapes size={ICON} />}
+        verb="MCP App"
+        target={[t.mcpAppStatic, appRef.title].filter(Boolean).join(" · ")}
+        state={undefined}
+        status="done"
+      >
+        <McpAppPreview
+          address={address}
+          appRef={appRef}
+          toolCallId={toolCallId}
+        />
+      </Row>
+    </DisclosureScope>
+  );
+}
+
 export const ToolBlock = memo(function ToolBlock(data: ChatRenderData["tool"]) {
   const saved = useContext(SavedOutputContext);
   const ranges = useContext(SyntaxRangesContext);
   const final = data.state?.status === "done" || data.state?.status === "error";
+  const result = data.state?.result;
+  const app =
+    data.state?.status === "done" &&
+    result &&
+    typeof result === "object" &&
+    "details" in result
+      ? mcpAppRef(result.details)
+      : undefined;
   return (
     <ToolCallContext.Provider value={data.call.id}>
       <SyntaxRangesContext.Provider value={ranges && !data.card}>
@@ -498,6 +538,7 @@ export const ToolBlock = memo(function ToolBlock(data: ChatRenderData["tool"]) {
               contentKey={data.call.id}
               builtin={BuiltinTool}
             />
+            {app && <McpToolPreview appRef={app} toolCallId={data.call.id} />}
           </DisclosureScope>
         </SavedOutputContext.Provider>
       </SyntaxRangesContext.Provider>

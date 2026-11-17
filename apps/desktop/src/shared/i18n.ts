@@ -679,6 +679,9 @@ export const en = {
   Write: "Write",
   Visualize: "Visualization",
   widgetTooLarge: "This visualization is too large to show.",
+  mcpAppStatic: "Static preview · no scripts or network",
+  mcpAppUnavailable:
+    "Preview unavailable. The normal tool result is still available.",
   Patch: "Patch",
   patchAdded: "Added",
   patchUpdated: "Updated",
@@ -1541,6 +1544,9 @@ export const ja: Dictionary = {
   Write: "作成",
   Visualize: "ビジュアル",
   widgetTooLarge: "このビジュアルは大きすぎるため表示できません。",
+  mcpAppStatic: "静的プレビュー · スクリプト・通信なし",
+  mcpAppUnavailable:
+    "プレビューを表示できません。通常のツール結果は引き続き確認できます。",
   Patch: "パッチ",
   patchAdded: "追加",
   patchUpdated: "変更",

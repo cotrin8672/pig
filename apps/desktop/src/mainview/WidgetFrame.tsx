@@ -22,6 +22,7 @@ import {
 export const MAX_LIVE_WIDGETS = 8;
 const DEFAULT_HEIGHT = 240;
 const STREAM_INTERVAL = 250;
+const MAX_HEIGHTS = 256;
 
 /** Last measured height per block, so remounted frames reserve the same space. */
 const heights = new Map<string, number>();
@@ -38,17 +39,17 @@ function release(owner: object) {
   for (const wake of waiting) wake();
 }
 
-function useWidgetScripts() {
+function useWidgetScripts(allowed: boolean) {
   const [scripts, setScripts] = useState(false);
   useEffect(() => {
-    if (!widgetScriptPolicy.requested) return;
+    if (!allowed || !widgetScriptPolicy.requested) return;
     let alive = true;
     void widgetIsolation().then((isolated) => alive && setScripts(isolated));
     return () => {
       alive = false;
     };
-  }, []);
-  return scripts;
+  }, [allowed]);
+  return allowed && scripts;
 }
 
 /** While a tool call streams, update the frame at most every STREAM_INTERVAL ms. */
@@ -103,31 +104,105 @@ function useLiveSlot(target: RefObject<HTMLElement | null>) {
 export const WidgetFrame = memo(function WidgetFrame({
   block,
   streaming = false,
+  load,
 }: {
   block: WidgetBlock;
   streaming?: boolean;
+  /** Lazy static source, acquired only while this frame owns a visible slot. */
+  load?: () => Promise<string | undefined>;
 }) {
   const t = useT();
   const box = useRef<HTMLDivElement>(null);
   const frame = useRef<HTMLIFrameElement>(null);
   const mounted = useLiveSlot(box);
-  const scripts = useWidgetScripts();
-  const shown = useThrottled(block, streaming);
+  const scripts = useWidgetScripts(block.origin !== "mcp" && !load);
+  const throttled = useThrottled(block, streaming);
+  const [loaded, setLoaded] = useState<{
+    id: string;
+    loader: typeof load;
+    source?: string;
+    failed: boolean;
+  }>();
+  const [attempt, setAttempt] = useState(0);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: Retry bumps `attempt` to load again.
+  useEffect(() => {
+    if (!mounted || !load) {
+      setLoaded(undefined);
+      return;
+    }
+    const controller = new AbortController();
+    setLoaded(undefined);
+    void Promise.resolve()
+      .then(() => {
+        controller.signal.throwIfAborted();
+        return load();
+      })
+      .then(
+        (source) => {
+          if (!controller.signal.aborted)
+            setLoaded({
+              id: block.id,
+              loader: load,
+              source,
+              failed: source === undefined,
+            });
+        },
+        () => {
+          if (!controller.signal.aborted)
+            setLoaded({ id: block.id, loader: load, failed: true });
+        },
+      );
+    return () => controller.abort();
+  }, [mounted, load, block.id, attempt]);
+  const shown = useMemo(
+    () =>
+      load
+        ? {
+            ...throttled,
+            source:
+              loaded?.id === block.id && loaded.loader === load
+                ? (loaded.source ?? "")
+                : "",
+          }
+        : throttled,
+    [load, throttled, loaded, block.id],
+  );
+  const available =
+    !load ||
+    (loaded?.id === block.id &&
+      loaded.loader === load &&
+      loaded.source !== undefined);
+  const failed =
+    load && loaded?.id === block.id && loaded.loader === load && loaded.failed;
+  const preview = block.origin === "mcp";
   const [height, setHeight] = useState(
     () => heights.get(block.id) ?? DEFAULT_HEIGHT,
   );
-  const tooLarge = shown.source.length > WIDGET_MAX_BYTES;
+  const tooLarge = useMemo(
+    () =>
+      shown.source.length > WIDGET_MAX_BYTES ||
+      new TextEncoder().encode(shown.source).length > WIDGET_MAX_BYTES,
+    [shown.source],
+  );
   const srcDoc = useMemo(
     () =>
-      widgetDocument(shown, {
-        scripts,
-        theme: widgetTheme(getComputedStyle(document.documentElement)),
-      }),
-    [shown, scripts],
+      mounted && available && !tooLarge
+        ? widgetDocument(shown, {
+            scripts,
+            theme: widgetTheme(getComputedStyle(document.documentElement)),
+          })
+        : "",
+    [mounted, available, tooLarge, shown, scripts],
   );
   const remember = (value: number) => {
     if (value <= 0) return;
+    if (preview) return;
+    heights.delete(shown.id);
     heights.set(shown.id, value);
+    while (heights.size > MAX_HEIGHTS) {
+      const oldest = heights.keys().next().value;
+      if (oldest !== undefined) heights.delete(oldest);
+    }
     setHeight(value);
   };
 
@@ -147,7 +222,7 @@ export const WidgetFrame = memo(function WidgetFrame({
   });
 
   const onLoad = () => {
-    if (scripts || !frame.current) return;
+    if (preview || scripts || !frame.current) return;
     const measured = measureFrame(frame.current);
     if (measured !== undefined) remember(measured);
   };
@@ -155,14 +230,15 @@ export const WidgetFrame = memo(function WidgetFrame({
   return (
     <div
       ref={box}
-      className={`widget-frame${shown.width === "wide" ? " wide" : ""}`}
-      style={tooLarge ? undefined : { height }}
+      className={`widget-frame${shown.width === "wide" ? " wide" : ""}${preview ? " preview" : ""}`}
+      style={tooLarge || preview ? undefined : { height }}
       data-widget-id={shown.id}
     >
       {tooLarge ? (
         <p className="widget-frame-note">{t.widgetTooLarge}</p>
       ) : (
-        mounted && (
+        mounted &&
+        (available ? (
           // biome-ignore lint/a11y/useIframeTitle: named via aria-label; native title tooltips are banned (lint:ui).
           <iframe
             // Sandbox flags apply per navigation; a new frame avoids mixing them.
@@ -173,7 +249,19 @@ export const WidgetFrame = memo(function WidgetFrame({
             srcDoc={srcDoc}
             onLoad={onLoad}
           />
-        )
+        ) : (
+          <p className="widget-frame-note">
+            {failed ? t.mcpAppUnavailable : t["Loading…"]}
+            {failed && (
+              <button
+                type="button"
+                onClick={() => setAttempt((value) => value + 1)}
+              >
+                {t.Retry}
+              </button>
+            )}
+          </p>
+        ))
       )}
     </div>
   );

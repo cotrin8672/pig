@@ -51,6 +51,7 @@ import { NotificationCenter } from "./NotificationCenter";
 import { OptimisticMessages } from "./OptimisticMessages";
 import "./model-dividers.css";
 import { MainViewport } from "./MainViewport";
+import { McpAppScope } from "./McpAppPreview";
 import { Notifications } from "./Notifications";
 import { initNavigation, navigate } from "./navigation";
 import { PaneWorkspace } from "./PaneWorkspace";
@@ -893,7 +894,7 @@ export const Chat = memo(function Chat({
       element.scrollTop = element.scrollHeight;
     }
   }, [transcript, notices, view]);
-  return (
+  const layout = (
     <ChatLayout
       threadRef={thread}
       onContentResize={resizeContent}
@@ -1182,4 +1183,5 @@ export const Chat = memo(function Chat({
       )}
     </ChatLayout>
   );
+  return <McpAppScope address={snapshot.address}>{layout}</McpAppScope>;
 });

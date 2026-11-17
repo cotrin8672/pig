@@ -1011,6 +1011,10 @@ details[open] > summary .tool-chevron,
 .widget-frame.wide {
   max-width: 1024px;
 }
+.widget-frame.preview {
+  height: calc(8lh + var(--scrollbar-size));
+  max-width: 100%;
+}
 .widget-frame > iframe {
   display: block;
   width: 100%;

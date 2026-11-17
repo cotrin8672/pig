@@ -6,7 +6,7 @@ export type WidgetBlock = {
   source: string;
   title?: string;
   width: "regular" | "wide";
-  origin: "tool" | "codex";
+  origin: "tool" | "codex" | "mcp";
   /** The fragment carries script; without script execution parts of it stay empty. */
   interactive: boolean;
 };
