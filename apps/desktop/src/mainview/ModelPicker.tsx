@@ -7,9 +7,9 @@ import {
   Lock,
   LogIn,
   Search,
-  Settings2,
   SquarePen,
   X,
+  Zap,
 } from "lucide-react";
 import {
   type FocusEvent,
@@ -40,7 +40,6 @@ import { EffortPicker } from "./EffortPicker";
 import { EffortSlider } from "./EffortSlider";
 import { useT } from "./i18n";
 import type { ModelPickerSnapshot } from "./model-picker-view";
-import { navigate } from "./navigation";
 import { changeSelection, usePicker } from "./Picker";
 import { ProviderIcon } from "./ProviderIcon";
 import { startProviderLogin } from "./provider-login";
@@ -49,6 +48,7 @@ import {
   openChat,
   requestSelection,
   rpc,
+  updateSettings,
   updateUiPreferences,
 } from "./rpc";
 import { showError, useStore } from "./store";
@@ -109,6 +109,7 @@ export const ModelPicker = memo(function ModelPicker({
   const t = useT();
   const current = selection ?? snapshot ?? { effort: "off", effortLevels: [] };
   const bootstrap = useStore((state) => state.bootstrap);
+  const fastMode = useStore((state) => state.settings.fastMode);
   const [open, setOpen] = useState(false);
   useEffect(() => {
     if (open && snapshot?.suspended)
@@ -381,13 +382,12 @@ export const ModelPicker = memo(function ModelPicker({
             )}
             <button
               type="button"
-              aria-label={t["Manage models"]}
-              onClick={() => {
-                close();
-                navigate("providers");
-              }}
+              aria-label={t["Fast mode"]}
+              aria-pressed={fastMode}
+              disabled={!current.model?.fastMode}
+              onClick={() => updateSettings({ fastMode: !fastMode })}
             >
-              <Settings2 size={14} />
+              <Zap size={14} />
             </button>
           </div>
           <div

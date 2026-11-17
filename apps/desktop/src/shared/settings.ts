@@ -11,6 +11,8 @@ export interface Settings {
   usageDisplay: "remaining" | "used";
   shell: "git-bash" | "powershell";
   blockImages: boolean;
+  /** OpenAI priority processing for Responses/Codex models. */
+  fastMode: boolean;
   fontFamily: string;
   codeFontFamily: string;
   keybindings: KeyOverrides;
@@ -24,6 +26,7 @@ export const defaultSettings: Settings = {
   usageDisplay: "remaining",
   shell: "git-bash",
   blockImages: false,
+  fastMode: false,
   fontFamily: "",
   codeFontFamily: "",
   keybindings: {},
@@ -56,10 +59,12 @@ export function validateSettings(value: unknown): Settings {
     input.usageDisplay === undefined ? "remaining" : input.usageDisplay;
   const shell = input.shell ?? "git-bash";
   const blockImages = input.blockImages ?? false;
+  const fastMode = input.fastMode ?? false;
   if (
     !["en", "ja"].includes(language) ||
     !["git-bash", "powershell"].includes(shell) ||
     typeof blockImages !== "boolean" ||
+    typeof fastMode !== "boolean" ||
     !["remaining", "used"].includes(contextDisplay) ||
     !["remaining", "used"].includes(usageDisplay)
   )
@@ -91,6 +96,7 @@ export function validateSettings(value: unknown): Settings {
     usageDisplay,
     shell,
     blockImages,
+    fastMode,
     fontFamily: validateFontFamily(input.fontFamily),
     codeFontFamily: validateFontFamily(input.codeFontFamily),
     keybindings,

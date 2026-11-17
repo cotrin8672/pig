@@ -28,6 +28,7 @@ test("missing and corrupt settings default without overwriting; valid saves roun
       usageDisplay: "remaining",
       shell: "git-bash",
       blockImages: false,
+      fastMode: false,
       fontFamily: "",
       codeFontFamily: "",
       imageGenerationModel: null,
