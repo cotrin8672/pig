@@ -368,6 +368,11 @@ export type RPCSchema = {
         params: SessionAddress & { name: string; argumentPrefix: string };
         response: { value: string; label: string; description?: string }[];
       };
+      /** Paths relative to `cwd` (a registered project) for `@` mentions. */
+      searchProjectPaths: {
+        params: { cwd: string; query: string };
+        response: { path: string; directory: boolean }[];
+      };
       getPromptReceipt: { params: SendKey; response: PromptReceipt };
       cancelPrompt: { params: SendKey; response: PromptReceipt };
       acknowledgePromptRecovery: {

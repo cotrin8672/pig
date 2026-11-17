@@ -168,6 +168,9 @@ const request = {
   async listSlashCommands() {
     return [];
   },
+  async searchProjectPaths() {
+    return [];
+  },
   async completeSlashArguments() {
     return [];
   },

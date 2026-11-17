@@ -111,6 +111,7 @@ import {
   setSessionModel,
   utilityModels,
 } from "./pi-service";
+import { searchProjectPaths } from "./project-files";
 import { ProjectStore } from "./project-store";
 import { providerAccounts } from "./provider-accounts";
 import { agentDir, agentDirSource } from "./runtime-profile";
@@ -487,6 +488,11 @@ const hostRequests = {
   listSessions: async ({ cwd }) => {
     await validateScope(cwd);
     return listSessions(cwd);
+  },
+  searchProjectPaths: async ({ cwd, query }) => {
+    if (typeof query !== "string") throw new Error("Invalid search.");
+    await validateScope(cwd);
+    return searchProjectPaths(cwd, query.slice(0, 200));
   },
   searchConversations: ({ query, refresh }) => {
     if (typeof query !== "string") throw new Error("Invalid search.");
