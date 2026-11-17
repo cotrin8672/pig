@@ -46,6 +46,27 @@
 .pane-view[data-active="true"] .pane-winbar-title {
   color: var(--ds-text-primary);
 }
+/* The composer of an inactive pane recedes as one unit: a quieter tile instead
+   of the floating glass, no shadow, every ink faded. It stays typeable (a click
+   activates the pane) and keeps its size. No opacity: the chat stays readable. */
+.pane-view[data-active="false"] .composer {
+  box-shadow: none;
+}
+.pane-view[data-active="false"] .composer::before {
+  background: var(--ds-tile);
+  box-shadow: inset 0 0 0 1px var(--ds-border-default);
+}
+/* faint and muted are almost the same tone; fade the ink itself. */
+.pane-view[data-active="false"] .composer *,
+.pane-view[data-active="false"] .composer ::placeholder {
+  color: color-mix(in srgb, var(--ds-text-faint) 50%, transparent);
+}
+.pane-view[data-active="false"] .composer .picker-effort-label {
+  background: transparent;
+}
+.pane-view[data-active="false"] .composer .send-button {
+  background: var(--ds-bg-chip);
+}
 .pane-content {
   flex: 1;
   position: relative;

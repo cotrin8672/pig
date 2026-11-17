@@ -15,6 +15,10 @@ const meta = {
   },
   argTypes: {
     initialLayout: { control: false },
+    inactiveComposer: {
+      control: "inline-radio",
+      options: ["normal", "dimmed"],
+    },
     sidebar: { control: false },
   },
 } satisfies Meta<typeof PanePreview>;
@@ -52,4 +56,8 @@ export const FourPanes: Story = {
 export const WithoutSidebar: Story = {
   name: "08 · サイドバーを閉じた上下分割",
   args: { initialLayout: "stacked", sidebar: false },
+};
+export const InactiveComposerDimmed: Story = {
+  name: "09 · 非アクティブpaneのComposerを沈める（入力は可能）",
+  args: { initialLayout: "grid", inactiveComposer: "dimmed" },
 };
