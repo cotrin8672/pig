@@ -111,6 +111,15 @@ export interface ResponseStats {
   timestamp: number;
   tools: number;
   totalTokens: number;
+  /** Breakdown of `totalTokens`, summed over the response's assistant messages. */
+  input: number;
+  output: number;
+  cacheRead: number;
+  cacheWrite: number;
+  /** Model requests (assistant messages) in the response. */
+  requests: number;
+  /** pi-ai's list-price estimate in USD; 0 when pricing is unknown. */
+  cost: number;
   tokensPerSecond?: number;
   model: string;
   text: string;
@@ -127,6 +136,12 @@ export function responseStats(
   let userIndex: number | undefined;
   let tools = 0;
   let totalTokens = 0;
+  let input = 0;
+  let output = 0;
+  let cacheRead = 0;
+  let cacheWrite = 0;
+  let requests = 0;
+  let cost = 0;
   let timedOutput = 0;
   let timedMs = 0;
   const text: string[] = [];
@@ -140,8 +155,16 @@ export function responseStats(
     }
     if (message.role !== "assistant") continue;
     start = message.timestamp;
-    if (message.provider !== IMPORTED_HISTORY_PROVIDER)
-      totalTokens += message.usage.totalTokens;
+    if (message.provider !== IMPORTED_HISTORY_PROVIDER) {
+      const usage = message.usage;
+      totalTokens += usage.totalTokens;
+      input += usage.input;
+      output += usage.output;
+      cacheRead += usage.cacheRead;
+      cacheWrite += usage.cacheWrite;
+      cost += usage.cost?.total ?? 0;
+      requests++;
+    }
     if (message.durationMs && message.provider !== IMPORTED_HISTORY_PROVIDER) {
       timedOutput += message.usage.output;
       timedMs += message.durationMs;
@@ -163,6 +186,12 @@ export function responseStats(
     timestamp: last.timestamp,
     tools,
     totalTokens,
+    input,
+    output,
+    cacheRead,
+    cacheWrite,
+    requests,
+    cost,
     tokensPerSecond: timedMs ? (timedOutput * 1000) / timedMs : undefined,
     model: last.model,
     text: text.reverse().join("\n\n"),
