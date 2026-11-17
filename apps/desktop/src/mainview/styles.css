@@ -1178,6 +1178,8 @@ details[open] > summary .tool-chevron,
 }
 .tool-cmd {
   min-width: 0;
+  /* A Tooltip anchor, but still part of the clickable summary. */
+  cursor: inherit;
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;

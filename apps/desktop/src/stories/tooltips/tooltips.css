@@ -173,6 +173,28 @@
   );
 }
 
+/* ---- shell command tooltip (ShellCommandTip) ---- */
+.sct-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(380px, 1fr));
+  gap: 32px 24px;
+  max-width: 1280px;
+  color: var(--ds-text-primary);
+}
+.sct-case {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+/* Narrow like a split Pane, so the header clips. */
+.sct-chat {
+  width: 340px;
+}
+.sct-tip.tooltip {
+  position: relative;
+  animation: none;
+}
+
 /* ---- row-to-row switch proposals (TooltipSwitchLab) ---- */
 .tt-lab {
   display: grid;

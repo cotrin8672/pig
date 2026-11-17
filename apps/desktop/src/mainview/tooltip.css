@@ -119,6 +119,41 @@
   min-width: 0;
   overflow-wrap: anywhere;
 }
+/* Full text of a clipped command: wider than labels, clamped to ~8 lines. */
+.tooltip:has(.tooltip-code) {
+  max-width: min(420px, calc(100vw - 12px));
+}
+.tooltip-code {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 8;
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.tooltip-state {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.tooltip-state::before {
+  content: "";
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+}
+.tooltip-state.running {
+  color: var(--ds-accent);
+}
+.tooltip-state.done {
+  color: var(--ds-success);
+}
+.tooltip-state.error {
+  color: var(--ds-error);
+}
 .tooltip-desc {
   color: var(--ds-text-muted);
   font-size: var(--text-xs);
@@ -164,4 +199,9 @@
   font-size: var(--text-3xs);
   line-height: 16px;
   text-align: center;
+}
+
+/* Hover targets show the arrow, not the text I-beam; zero specificity keeps button/link pointers. */
+:where([data-tooltip-anchor]) {
+  cursor: default;
 }
