@@ -16,14 +16,23 @@ The `preBuild` hook `pre-build.ts` calls `stageSdkRuntime()` in
 closure** of SDK/pi-ai/pi-tui in `build/sdk-runtime`. It follows dependencies,
 installed optional dependencies and peers, not devDependencies; missing required
 edges fail the build. No install, registry resolution, lifecycle script or source
-patching occurs. The Pi packages are installed from npm without local patches.
+patching occurs during staging. The Pi packages are installed from npm; the
+version-pinned MCP host hook in `patches/` is applied by pnpm at install time.
+Staging copies the resulting installed bytes, including that patch.
 Dependency changes must be installed/locked by the dependency owner before a
 release build.
 
 One package identity per name is hoisted. Conflicting identities are nested in
 ordinary `node_modules` directories with the appropriate visible versions;
-cycles reuse visible identities. Package contents, package.json/exports, assets,
-licenses and source maps remain intact. pnpm package links may resolve only
+cycles reuse visible identities. Package contents, package.json/exports, assets
+and licenses remain intact except for JavaScript/TypeScript source maps
+(`*.js.map`, `*.ts.map` and their `c`/`m` variants) and TypeScript declarations
+(`*.d.ts`, `*.d.cts`, `*.d.mts`),
+which are omitted to reduce portable extraction overhead. Executable TypeScript,
+workers, WASM, native modules, themes, docs/examples and other assets are retained.
+The installed packages are never modified; packaged SDK stack traces no longer
+have external source maps, and the runtime payload is not a TypeScript type SDK.
+pnpm package links may resolve only
 inside the workspace installation. Package-internal links are materialized only
 when contained and acyclic; escaping/broken/cyclic links fail closed. Output has
 no symlinks, no store links and no absolute build-machine dependency paths.
@@ -40,7 +49,10 @@ The same hook bundles the local statistics SQLite worker into
 `bun/`, so standard resolution works from the host and unbundled SDK. No runtime
 `NODE_PATH`, `PI_PACKAGE_DIR`, global cache or repository path is needed. The
 stage is reused when its complete file/directory tree, manifest and dependency
-placements match the installed production sources byte for byte. Missing,
+placements match the filtered installed production sources byte for byte.
+Copying and verification use the same exclusions; an old stage containing
+excluded files is rebuilt, while changes only to excluded source files do not
+invalidate a stage. Missing,
 changed or extra contents, including symlinks, cause a cache miss. The check
 does not repair the stage or modify installed packages.
 
@@ -61,8 +73,8 @@ rtk proxy mise exec -- pnpm exec biome check apps/desktop/electrobun.config.ts a
 rtk proxy mise exec -- bun --no-install apps/desktop/scripts/sdk-runtime-assets.ts
 ```
 
-The root `pnpm test` currently searches `apps/desktop/src`; run the packaging
-suite explicitly. Before release, copy the actual complete runtime payload to a
+The root `pnpm test` includes the packaging suite; the command above runs it
+in isolation. Before release, copy the actual complete runtime payload to a
 fresh directory **outside the repository**, reject all links, validate manifest
 versions/hashes/edges, use empty cwd and isolated HOME/USERPROFILE/AppData/SDK
 profile, strip credentials and module-cache/resolver variables, then execute
