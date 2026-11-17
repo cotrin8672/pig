@@ -28,23 +28,40 @@ function Assert-ScoopManifest {
     }
 }
 
-function Assert-NoRunningApp {
+# Native stderr (e.g. git progress from `scoop update`) must not become a terminating error under 'Stop'.
+function Invoke-Scoop([string[]]$Arguments) {
+    $ErrorActionPreference = 'Continue'
+    & $ps -NoProfile -NonInteractive -WindowStyle Hidden -ExecutionPolicy Bypass -File $c.scoop @Arguments *> $log
+    return $LASTEXITCODE
+}
+
+function Wait-NoRunningApp {
     $roots = @($c.root, $c.originalRoot)
     if ($c.method -eq 'scoop') { $roots += Join-Path (Split-Path -Parent $c.root) 'current' }
-    $processes = Get-CimInstance Win32_Process
-    foreach ($root in ($roots | Where-Object { $_ })) {
-        $prefix = $root.TrimEnd('\') + '\'
-        if ($processes | Where-Object { $_.ExecutablePath -and $_.ExecutablePath.StartsWith($prefix, [StringComparison]::OrdinalIgnoreCase) }) {
-            throw 'Another process is using this installation. Close all pig instances and retry.'
+    $prefixes = $roots | Where-Object { $_ } | ForEach-Object { $_.TrimEnd('\') + '\' }
+    # launcher.exe (the parent of the bun process we waited for) exits slightly later.
+    $deadline = (Get-Date).AddSeconds(30)
+    while ($true) {
+        $running = Get-CimInstance Win32_Process | Where-Object {
+            $path = $_.ExecutablePath
+            $path -and ($prefixes | Where-Object { $path.StartsWith($_, [StringComparison]::OrdinalIgnoreCase) })
         }
+        if (!$running) { return }
+        if ((Get-Date) -gt $deadline) {
+            $names = ($running | ForEach-Object { "$($_.Name) ($($_.ProcessId))" }) -join ', '
+            throw "Another process is using this installation: $names. Close all pig instances and retry."
+        }
+        Start-Sleep -Milliseconds 500
     }
 }
 
 try {
     if ($Launch) {
         # Task Scheduler survives Electrobun's process-tree shutdown without elevation.
-        $exe = Join-Path $env:SystemRoot 'System32/WindowsPowerShell/v1.0/powershell.exe'
-        $arguments = '-NoProfile -NonInteractive -WindowStyle Hidden -ExecutionPolicy Bypass -File "{0}" -Config "{1}"' -f $PSCommandPath, $Config
+        # -WindowStyle Hidden alone still opens a window when Windows Terminal is the default terminal;
+        # a headless conhost never creates a window nor hands off to a terminal.
+        $exe = Join-Path $env:SystemRoot 'System32/conhost.exe'
+        $arguments = '--headless "{0}" -NoProfile -NonInteractive -WindowStyle Hidden -ExecutionPolicy Bypass -File "{1}" -Config "{2}"' -f $ps, $PSCommandPath, $Config
         $action = New-ScheduledTaskAction -Execute $exe -Argument $arguments -WorkingDirectory $work
         $principal = New-ScheduledTaskPrincipal -UserId ([Security.Principal.WindowsIdentity]::GetCurrent().Name) -LogonType Interactive -RunLevel Limited
         $settings = New-ScheduledTaskSettingsSet -ExecutionTimeLimit (New-TimeSpan -Minutes 15) -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries
@@ -54,8 +71,7 @@ try {
     }
     if ($Prepare) {
         if ($c.method -eq 'scoop') {
-            & $ps -NoProfile -NonInteractive -WindowStyle Hidden -ExecutionPolicy Bypass -File $c.scoop update *> $log
-            if ($LASTEXITCODE -ne 0) { throw "Scoop refresh failed. See $log" }
+            if ((Invoke-Scoop @('update')) -ne 0) { throw "Scoop refresh failed. See $log" }
             Assert-ScoopManifest
         } elseif ($c.method -eq 'portable') {
             # .NET directly: Get-FileHash vanishes when PowerShell 7's PSModulePath leaks into 5.1.
@@ -111,11 +127,10 @@ try {
     }
     $parent = Get-Process -Id $c.pid -ErrorAction SilentlyContinue
     if ($parent -and !$parent.WaitForExit(60000)) { throw 'App did not exit; installation was not changed' }
-    Assert-NoRunningApp
+    Wait-NoRunningApp
     if ($c.method -eq 'scoop') {
         Assert-ScoopManifest
-        & $ps -NoProfile -NonInteractive -WindowStyle Hidden -ExecutionPolicy Bypass -File $c.scoop update pig *> $log
-        if ($LASTEXITCODE -ne 0) { throw "Scoop update failed. See $log" }
+        if ((Invoke-Scoop @('update', 'pig')) -ne 0) { throw "Scoop update failed. See $log" }
         $launchRoot = Join-Path (Split-Path -Parent $c.root) 'current'
         Assert-Bundle $launchRoot
     } else {
