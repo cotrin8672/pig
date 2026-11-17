@@ -170,6 +170,22 @@ test("tool-loop model changes never insert a mid-turn divider", () => {
   ]);
 });
 
+test("a hidden resume prompt moves the divider to the visible response", () => {
+  expect([
+    ...modelDividers([
+      user("u1"),
+      assistant("a1", "A"),
+      { ...user("resume"), display: false } as TranscriptRecord,
+      assistant("a2", "B"),
+    ]),
+  ]).toEqual([
+    [
+      "a2",
+      { from: { provider: "p", id: "A" }, to: { provider: "p", id: "B" } },
+    ],
+  ]);
+});
+
 test("a history page starting inside a response does not invent a model change", () => {
   expect(
     modelDividers([assistant("partial-a", "A"), assistant("partial-b", "B")])

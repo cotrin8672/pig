@@ -12,7 +12,8 @@ export function modelDividers(records: TranscriptRecord[]) {
     if (record.kind !== "message") continue;
     const { message } = record;
     if (message.role === "user") {
-      userId = record.id;
+      // Hidden resume prompts are turn boundaries but cannot carry the divider.
+      userId = record.display === false ? undefined : record.id;
       answered = false;
     } else if (message.role === "assistant") {
       const { provider, model: id } = message;
