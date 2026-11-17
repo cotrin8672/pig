@@ -142,6 +142,8 @@ function copyPackage(
         copy(join(actual, entry), join(output, entry), next);
       }
     } else if (info.isFile()) {
+      // Runtime transpilation still needs executable TS, but not declarations or source maps.
+      if (/\.(?:[cm]?[jt]s\.map|d\.[cm]?ts)$/.test(input)) return;
       if (verify) {
         if (
           verify.get(output) !== "file" ||

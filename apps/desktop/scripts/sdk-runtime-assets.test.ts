@@ -98,6 +98,63 @@ describe("SDK runtime production packaging", () => {
     expect(sdkStageMatches(f)).toBe(false);
     expect(readFileSync(entry)).toEqual(original);
   });
+  test("omits source maps and declarations but preserves runtime files and package metadata", () => {
+    const f = fixture();
+    const sdk = pkg(join(f.installRoot, "sdk"), "sdk", "1.0.0", {
+      types: "./index.d.ts",
+    });
+    const omitted = [
+      "index.js.map",
+      "index.cjs.map",
+      "index.mjs.map",
+      "source.ts.map",
+      "source.cts.map",
+      "source.mts.map",
+      "index.d.ts",
+      "index.d.cts",
+      "index.d.mts",
+      "index.d.ts.map",
+      "index.d.cts.map",
+      "index.d.mts.map",
+      "nested/index.js.map",
+    ];
+    const retained = [
+      "index.js",
+      "package.json",
+      "source.ts",
+      "source.cts",
+      "source.mts",
+      "worker.js",
+      "theme.json",
+      "quickjs.wasm",
+      "platform.node",
+      "routes.map",
+      "LICENSE",
+      "docs/guide.md",
+      "examples/extension.ts",
+      "nested/index.js",
+      "nested/runtime.d.ts/data.json",
+    ];
+    for (const file of [...omitted, ...retained]) {
+      mkdirSync(dirname(join(sdk, file)), { recursive: true });
+      if (!existsSync(join(sdk, file))) writeFileSync(join(sdk, file), file);
+    }
+    copySdkRuntime(f);
+    const output = join(f.destination, "node_modules/sdk");
+    for (const file of omitted)
+      expect(existsSync(join(output, file)), file).toBe(false);
+    for (const file of retained)
+      expect(readFileSync(join(output, file)), file).toEqual(
+        readFileSync(join(sdk, file)),
+      );
+    expect(sdkStageMatches(f)).toBe(true);
+    writeFileSync(join(sdk, "index.d.ts"), "changed build-only metadata");
+    expect(sdkStageMatches(f)).toBe(true);
+    // A stage from the old unfiltered copier must be rebuilt, not reused.
+    writeFileSync(join(output, "index.js.map"), "old source map");
+    expect(sdkStageMatches(f)).toBe(false);
+    expect(existsSync(join(output, "index.js.map"))).toBe(true);
+  });
   test("pnpm links, exports-hidden manifests, cycles, assets, versions and manifest edges survive without links", () => {
     const f = fixture();
     const sdk = pkg(
