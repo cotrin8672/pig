@@ -29,6 +29,7 @@ test.skipIf(!existsSync(browser) && !process.env.PIG_REQUIRE_UI_TESTS)(
         `
       import {syntaxWorker} from ${source("./syntax-worker-client.ts")};
       import {markdownWorker} from ${source("./markdown-worker-client.ts")};
+      import {mermaidWorker} from ${source("./mermaid-worker-client.ts")};
       let ticks=0,last=performance.now(),maxGap=0;
       const timer=setInterval(()=>{const now=performance.now();maxGap=Math.max(maxGap,now-last);last=now;ticks++;},5);
       const check=(condition,message)=>{if(!condition)throw new Error(message);};
@@ -42,6 +43,9 @@ test.skipIf(!existsSync(browser) && !process.env.PIG_REQUIRE_UI_TESTS)(
         const math=await markdownWorker.run({text:"$$ x^2 + y^2 = z^2 $$\\n\\n".repeat(100)});
         check(math.tree.type==="root" && JSON.stringify(math.tree).includes("katex"),"production worker must complete real KaTeX without DOM APIs or a UI fallback");
         check(ticks>mathBefore,"math parsing must not monopolize the UI thread");
+        const diagramBefore=ticks,diagram=await mermaidWorker.run("graph TD\\n"+Array.from({length:30},(_,i)=>"  N"+i+" --> N"+(i+1)).join("\\n"));
+        check(diagram.startsWith("<svg")&&diagram.includes("N30")&&!diagram.includes("@import"),"production worker must lay out Mermaid (elkjs) without DOM APIs or font fetches");
+        check(ticks>diagramBefore,"diagram layout must not monopolize the UI thread");
         maxGap=Math.max(maxGap,performance.now()-last);
         return {ok:true,syntaxMs,mathMs:performance.now()-mathStart,maxGapMs:maxGap,ticks,syntax:syntaxWorker.stats(),markdown:markdownWorker.stats()};
       })().catch(error=>({ok:false,error:String(error),syntax:syntaxWorker.stats(),markdown:markdownWorker.stats()})).finally(()=>clearInterval(timer));

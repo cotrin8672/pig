@@ -2,6 +2,7 @@ import type { Root } from "hast";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import remarkMath from "remark-math";
+import { markdownExtensions } from "./markdown-extensions";
 import { markdownUrl } from "./markdown-url";
 import { positionedKatex } from "./positioned-katex";
 
@@ -16,6 +17,7 @@ export function parseMarkdown(text: string, streaming = false): ParsedMarkdown {
     remarkPlugins: [remarkGfm, remarkMath],
     rehypePlugins: [
       [positionedKatex, { streaming }],
+      [markdownExtensions, { streaming }],
       () => (value: Root) => {
         tree = value;
       },
