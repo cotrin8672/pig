@@ -125,9 +125,12 @@ const usage = usageFixtures.filter((entry) =>
 export function PanePreview({
   initialLayout = "single",
   sidebar = true,
+  inactiveComposer = "normal",
 }: {
   initialLayout?: PaneLayout;
   sidebar?: boolean;
+  /** "dimmed" recedes the composer of a pane without focus, as the app does; it stays typeable. */
+  inactiveComposer?: "normal" | "dimmed";
 }) {
   const [tree, setTree] = useState(() => initialPaneTree(initialLayout));
   const { panes: geometry, dividers } = paneGeometry(tree);
@@ -312,7 +315,12 @@ export function PanePreview({
             </details>
           </div>
         </header>
-        <div className={`pane-preview-grid${zoomed ? " is-zoomed" : ""}`}>
+        <div
+          className={`pane-preview-grid${zoomed ? " is-zoomed" : ""}`}
+          data-inactive-composer={
+            inactiveComposer === "normal" ? undefined : inactiveComposer
+          }
+        >
           {panes.map((session, index) => (
             <section
               key={session.id}
