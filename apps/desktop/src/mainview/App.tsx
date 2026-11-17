@@ -197,6 +197,7 @@ export function App() {
       {/* biome-ignore lint/a11y/noStaticElementInteractions: Native drag handles; maximize is also available as a keyboard-accessible button. */}
       <div
         className={`app-shell${sidebarOpen ? "" : " sidebar-collapsed"}`}
+        data-backdrop={state.backdrop}
         onContextMenu={(event) => event.preventDefault()}
         onMouseDown={(event) => {
           // Do not start a second native move while double-clicking a drag handle.

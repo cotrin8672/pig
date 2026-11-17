@@ -33,7 +33,7 @@
   border: 1px solid var(--ds-border-strong);
   border-radius: 10px;
   background: var(--ds-bg-popover);
-  backdrop-filter: blur(20px);
+  backdrop-filter: blur(var(--ds-popover-blur));
   box-shadow: var(--ds-shadow-dialog);
   color: var(--ds-text-primary);
 }

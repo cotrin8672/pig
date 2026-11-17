@@ -77,18 +77,18 @@ test("all seeds produce complete deterministic palettes with translucent surface
       expect(alpha).toBeGreaterThan(0);
       expect(alpha).toBeLessThan(255);
     }
-    expect(tokens["--ds-bg-popover"].slice(7)).toBe("99");
+    expect(tokens["--ds-bg-popover"].slice(7)).toBe("80");
     const seedHct = Hct.fromInt(argbFromHex(seed));
     const popover = Hct.fromInt(
       argbFromHex(tokens["--ds-bg-popover"].slice(0, 7)),
     );
     if (seedHct.chroma >= 4) {
-      // Popover glass must keep the theme hue, not collapse to grey.
+      // Keep only a faint theme hue, like the plain-transparency background.
+      // A pale accent wash: the theme hue is visible but stays muted.
       expect(popover.chroma).toBeGreaterThan(8);
       const delta = Math.abs(popover.hue - seedHct.hue) % 360;
       expect(Math.min(delta, 360 - delta)).toBeLessThan(20);
-      // Cards stay pastel instead of carrying the full primary chroma.
-      expect(popover.chroma).toBeLessThanOrEqual(18);
+      expect(popover.chroma).toBeLessThanOrEqual(16);
     } else expect(popover.chroma).toBeLessThan(4);
   }
   expect(createThemeTokens("#ff0000")["--ds-shell-start"]).not.toBe(
@@ -97,6 +97,27 @@ test("all seeds produce complete deterministic palettes with translucent surface
   expect(createThemeTokens("not-a-color")).toEqual(
     createThemeTokens(defaultThemeColor),
   );
+});
+
+test("large surfaces share a near-neutral tint regardless of backdrop mode", () => {
+  for (const seed of seeds) {
+    const tokens = createThemeTokens(seed);
+    expect(tokens["--ds-shell-start"]).toBe(tokens["--ds-shell-clear-start"]);
+    expect(tokens["--ds-shell-end"]).toBe(tokens["--ds-shell-clear-end"]);
+    for (const role of [
+      "--ds-shell-start",
+      "--ds-shell-end",
+      "--ds-bg-primary",
+      "--ds-bg-secondary",
+      "--ds-bg-inset",
+      "--ds-bg-elevated-opaque",
+      "--ds-bg-composer",
+      "--ds-bg-sidebar",
+    ] as const) {
+      const color = Hct.fromInt(argbFromHex(tokens[role].slice(0, 7)));
+      expect(color.chroma, `${seed}: ${role}`).toBeLessThanOrEqual(10);
+    }
+  }
 });
 
 test("generated foreground/background pairs retain contrast, including saturated and neutral seeds", () => {

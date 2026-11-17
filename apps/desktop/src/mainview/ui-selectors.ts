@@ -60,6 +60,7 @@ export function selectAppView(s: State) {
     language: s.settings.language,
     // Seed previews update CSS independently, never re-render the conversation.
     windowOpacity: s.appearance.opacity[s.appearance.backdrop],
+    backdrop: s.appearance.backdrop,
     connected: s.bootstrap.models.length > 0,
     maximized: s.maximized,
     login: s.login,

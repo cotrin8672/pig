@@ -93,10 +93,14 @@ UIの追加・変更・レビュー時に適用する。スクリーンショッ
   持って閉じる遅延の間に重ねない。クリックによるfocusで開いたままにせず（`:focus-visible`
   のときだけfocusで開く）、ポインター起点のものは一覧のスクロール・リサイズで閉じる
   （`ActionsMenu` と同じ）。面は共通Tooltip（`ui-tooltip`）。`provider-usage-hover-ui.test.ts` が実入力で検査する。
-- 背景系の面（shell・サイドバー・Popover・Composer・elevated等）はメインカラーのprimaryパレットから作る
-  （無彩色seedはneutral）。透過・Acrylic前提なので灰色のneutralは使わない。文字色はneutralのまま。
-  Card系の面（Popover・Composer・elevated・raised・secondary/tertiary）は色が重なって強く見えるため、
-  同じ色相で彩度を抑えたパステル調のパレット（`cardChroma`）から作る。shell・サイドバーはprimaryのまま。
+- 背景系の面（shell・サイドバー・Popover・Composer・elevated等）は、背景透過時と同じごく薄い
+  テーマ色に揃える。primaryと同じ色相・chroma 8上限の共通パレット（`surfaceChroma`）を使い、
+  ただし浮くガラス（`--ds-bg-popover`：Composer・Popover・通知パネル）は、暗い灰色に色相を少し足すのではなく
+  shellの面にアクセント色を12%だけ混ぜ、不透明度50%にする。テーマ色が「ほんのり分かる」薄い色にし、
+  背景が透けて見えることを優先する。ぼかしは共通の `--ds-popover-blur`（8px）。
+  Composerは会話を見ることが大事なのでblurを付けない（`composer-layers-ui.test.ts` で検査）。
+  Acrylicでも彩度や明度を持ち上げない（無彩色seedはneutral）。文字色はneutralのまま。
+  広い面や重ねたCardでテーマ色を主張させず、アクセントは操作・フォーカス・小さな印に残す。
 - 差し色 `--ds-highlight`（面は `--ds-bg-highlight`、上の文字は `--ds-on-highlight`）はtertiaryパレットから作る。
   「ここを見て」を示す小さな印だけに使う：未読（サイドバーの未読点・通知バッジ・未読点）、
   ユーザーの操作待ち（拡張の入力要求ダイアログの枠・待機中リクエストの選択）、
