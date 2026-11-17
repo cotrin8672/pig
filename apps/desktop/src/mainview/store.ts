@@ -1,5 +1,6 @@
 import type { AuthEvent, AuthPrompt } from "@earendil-works/pi-ai";
 import { create } from "zustand";
+import type { ActionKeymap } from "../../../../packages/config/src";
 import type { AppUpdateState } from "../shared/app-update";
 import { defaultAppearance } from "../shared/appearance";
 import type { ChatHistoryFileEvent } from "../shared/chat-history-import";
@@ -142,6 +143,8 @@ export const useStore = create<{
   opening: boolean;
   appearance: Appearance;
   settings: Settings;
+  /** Extra built-in action keys from the user's TS config. */
+  actionKeymaps: ActionKeymap[];
   maximized: boolean;
   /** The sidebar shows the previous launch's list until bootstrap answers. */
   cachedSidebar: boolean;
@@ -190,6 +193,7 @@ export const useStore = create<{
   maximized: false,
   appearance: defaultAppearance,
   settings: defaultSettings,
+  actionKeymaps: [],
 }));
 useStore.subscribe((state, previous) => {
   if (

@@ -5,7 +5,9 @@ import {
   defaultBindings,
   matchesCombo,
   normalizeCombo,
+  normalizeSequence,
   resolveBindings,
+  sequenceStep,
 } from "./keymap";
 
 const event = (key: string, extra = {}) => ({
@@ -79,6 +81,26 @@ test("composer has only newline, queue and steering with exact modifiers", () =>
       action.startsWith("composer."),
     ),
   ).toHaveLength(3);
+});
+
+test("sequences expand <leader> and keep spaced combos whole", () => {
+  expect(normalizeSequence("<leader>p", "Ctrl+Space")).toBe("Ctrl+Space P");
+  expect(normalizeSequence("ctrl+x  ctrl+s")).toBe("Ctrl+X Ctrl+S");
+  expect(normalizeSequence("Ctrl + K")).toBe("Ctrl+K");
+  expect(normalizeSequence("<leader> p")).toBeNull();
+  expect(normalizeSequence("ctrl+x bogus")).toBeNull();
+});
+
+test("sequence steps match, wait for more keys, or fail", () => {
+  const keys = ["Ctrl+Space P", "Ctrl+K"];
+  expect(sequenceStep("", "Ctrl+Space", keys)).toEqual({
+    pending: "Ctrl+Space",
+  });
+  expect(sequenceStep("Ctrl+Space", "P", keys)).toEqual({
+    match: "Ctrl+Space P",
+  });
+  expect(sequenceStep("", "Ctrl+K", keys)).toEqual({ match: "Ctrl+K" });
+  expect(sequenceStep("Ctrl+Space", "Q", keys)).toBeNull();
 });
 
 test("captured punctuation and whitespace round trip through normalization", () => {

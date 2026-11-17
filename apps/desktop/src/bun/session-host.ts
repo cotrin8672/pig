@@ -1,7 +1,10 @@
 import "./runtime-profile";
 import { statSync } from "node:fs";
 import { join } from "node:path";
-import type { SessionActionRequest } from "../../../../packages/config/src";
+import type {
+  ActionKeymap,
+  SessionActionRequest,
+} from "../../../../packages/config/src";
 import { AdapterRuntime } from "./adapter-runtime";
 import { createAdapterSource } from "./adapter-source";
 import { ConfigLoader } from "./config-loader";
@@ -340,6 +343,8 @@ export class SessionHost {
   private readonly configReady: Promise<boolean>;
   private configReloading = false;
   private configReloadPending = false;
+  /** Called after a config reload replaces the active config. */
+  onConfigApplied?: () => void;
   constructor(private readonly options: Options) {
     this.usage = new RuntimeUsageTracker(options.idleNow);
     this.configLoader = new ConfigLoader(
@@ -1766,6 +1771,13 @@ export class SessionHost {
     );
     m.adapters.start();
   }
+  /** Config keys for built-in actions; they work without a session. */
+  async actionKeymaps(): Promise<ActionKeymap[]> {
+    await this.configReady;
+    return (this.configLoader.config.keymaps ?? []).filter(
+      (keymap): keymap is ActionKeymap => "action" in keymap,
+    );
+  }
   async invokeSessionAction(input: SessionAddress & SessionActionRequest) {
     if (this.configReloading) throw new Error("CONFIG_RELOAD_IN_PROGRESS");
     const m = this.current(input);
@@ -1805,6 +1817,7 @@ export class SessionHost {
         if (applied) this.attachAdapters(m);
         this.publish(m);
       }
+      if (applied) this.onConfigApplied?.();
       return { state: applied ? "applied" : "failed" };
     } finally {
       this.configReloading = false;

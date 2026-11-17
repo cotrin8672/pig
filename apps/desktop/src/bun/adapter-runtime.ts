@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import {
   type AdapterContext,
+  type AdapterKeymap,
   type Json,
   type PigConfig,
   type SessionActionRequest,
@@ -62,7 +63,7 @@ export class AdapterRuntime {
   readonly generation = randomUUID();
   private readonly scopes = new Map<string, Scope>();
   private readonly diagnostics = new Map<string, string>();
-  private readonly keymaps: NonNullable<PigConfig["keymaps"]>;
+  private readonly keymaps: AdapterKeymap[];
   private readonly toolViews: ToolView[];
   private readonly failedToolViews = new Set<string>();
   private renderedTools = new Map<string, RenderedTool>();
@@ -78,7 +79,11 @@ export class AdapterRuntime {
     private readonly backend: AdapterBackend,
     private readonly changed: () => void,
   ) {
-    this.keymaps = structuredClone(config.keymaps ?? []);
+    this.keymaps = structuredClone(
+      (config.keymaps ?? []).filter(
+        (keymap): keymap is AdapterKeymap => "adapter" in keymap,
+      ),
+    );
     this.toolViews = [...(config.toolViews ?? [])];
   }
 

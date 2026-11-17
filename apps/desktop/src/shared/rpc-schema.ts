@@ -1,5 +1,6 @@
 import type { AuthEvent, AuthPrompt } from "@earendil-works/pi-ai";
 import type {
+  ActionKeymap,
   SessionActionRequest,
   SessionUIState,
 } from "../../../../packages/config/src";
@@ -278,6 +279,8 @@ export type RPCSchema = {
         params: void;
         response: { state: "pending" | "applied" | "failed" };
       };
+      // biome-ignore lint/suspicious/noConfusingVoidType: Electrobun's parameterless RPC convention.
+      actionKeymaps: { params: void; response: ActionKeymap[] };
       heartbeatUI: {
         params: { clientId: string; usage?: RuntimeUsage };
         response: { connected: boolean };
@@ -542,6 +545,7 @@ export type RPCSchema = {
       desktopState: DesktopState;
       appearance: Appearance;
       settings: Settings;
+      actionKeymaps: ActionKeymap[];
       providerUsage: ProviderUsage[];
       windowState: { maximized: boolean };
       appearanceError: { message: string };

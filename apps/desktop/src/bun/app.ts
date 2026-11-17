@@ -130,6 +130,11 @@ import { UsageService } from "./usage/service";
 await prepareDesktopConfig(Utils.paths.userData);
 /** Every open window's UI; publications go to all of them. */
 const hub = new ClientHub(sessionHost.hostId);
+sessionHost.onConfigApplied = () => {
+  void sessionHost
+    .actionKeymaps()
+    .then((keymaps) => hub.broadcast("actionKeymaps", keymaps));
+};
 // Paths only (never values): GUI env can differ from the user's shell.
 console.info(`Pi agent directory: ${agentDir} (${agentDirSource})`);
 const chatRendererLoader = new ChatRendererLoader(
@@ -400,6 +405,7 @@ const hostRequests = {
   invokeSessionAction: (input) =>
     withRuntime(input, (value) => sessionHost.invokeSessionAction(value)),
   reloadAdapterConfig: () => sessionHost.reloadAdapterConfig(),
+  actionKeymaps: () => sessionHost.actionKeymaps(),
   readClipboardImage,
   attachmentPreview: ({ path }) => attachmentPreview(path),
   saveImage: ({ src }) => saveImage(src),

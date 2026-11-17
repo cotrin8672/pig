@@ -1,4 +1,5 @@
 import { Electroview } from "electrobun/view";
+import type { ActionKeymap } from "../../../../packages/config/src";
 import { accountSourceKey } from "../shared/account-models";
 import {
   legacyUiPreferences,
@@ -142,6 +143,11 @@ function flushSettings() {
   settingsPending = false;
   settingsInFlight = true;
   rpc.send.setSettings(useStore.getState().settings);
+}
+function receiveActionKeymaps(actionKeymaps: ActionKeymap[]) {
+  // Most users have no TS config; skip a store publication for an empty list.
+  if (actionKeymaps.length || useStore.getState().actionKeymaps.length)
+    useStore.setState({ actionKeymaps });
 }
 function receiveSettings(settings: Settings) {
   settingsInFlight = false;
@@ -360,6 +366,7 @@ export const rpc = Electroview.defineRPC<RPCSchema>({
       },
       appearance: receiveAppearance,
       settings: receiveSettings,
+      actionKeymaps: receiveActionKeymaps,
       providerUsage: (providerUsage) => useStore.setState({ providerUsage }),
       windowState: ({ maximized }) => useStore.setState({ maximized }),
       appearanceError: ({ message }) => showError(message),
@@ -513,6 +520,8 @@ export async function refresh() {
     rpc.request.appearance(),
     rpc.request.settings(),
   ]);
+  // Not awaited: the TS config may still be building and must not delay startup.
+  void rpc.request.actionKeymaps().then(receiveActionKeymaps).catch(showError);
   if (bootstrap.desktop) {
     try {
       const patch = legacyUiPreferences(

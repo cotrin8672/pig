@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import type { SessionUIState } from "../../../../packages/config/src";
-import { adapterBinding } from "./adapter-keymap";
+import { adapterBindings } from "./adapter-keymap";
 
 test("adapter keys require matching surface, registered command and idle operation", () => {
   const state: SessionUIState = {
@@ -12,18 +12,11 @@ test("adapter keys require matching surface, registered command and idle operati
       { adapter: "a", command: "toggle", keys: "Ctrl+P", when: "composer" },
     ],
   };
-  const event = {
-    key: "p",
-    ctrlKey: true,
-    altKey: false,
-    shiftKey: false,
-    metaKey: false,
-  };
-  expect(adapterBinding(state, event, "composer")?.command).toBe("toggle");
-  expect(adapterBinding(state, event, "chat")).toBeUndefined();
-  expect(adapterBinding(state, event, null)).toBeUndefined();
+  expect(adapterBindings(state, "composer")[0]?.command).toBe("toggle");
+  expect(adapterBindings(state, "chat")).toEqual([]);
+  expect(adapterBindings(state, null)).toEqual([]);
   state.commands[0].busy = true;
-  expect(adapterBinding(state, event, "composer")).toBeUndefined();
+  expect(adapterBindings(state, "composer")).toEqual([]);
   state.commands = [];
-  expect(adapterBinding(state, event, "composer")).toBeUndefined();
+  expect(adapterBindings(state, "composer")).toEqual([]);
 });

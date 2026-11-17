@@ -66,6 +66,7 @@ if (process.env.PIG_STARTUP_CHILD !== "1") {
               reads.installed.push(read);
               return read.promise;
             },
+            actionKeymaps: async () => [],
           },
         };
       }
