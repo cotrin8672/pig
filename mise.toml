@@ -10,6 +10,11 @@ run = "pnpm exec storybook dev --port 6006 --host 127.0.0.1 --exact-port --disab
 description = "Run the desktop app with live logs in the current terminal"
 run = "pnpm dev"
 
+[tasks.profile]
+description = "Run the installed pig with WebView2 DevTools (CDP) on 127.0.0.1:9229 for CPU/heap profiling; quit the running pig first"
+env = { WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS = "--remote-debugging-port=9229" }
+run = "pig"
+
 [tasks.icons]
 description = "Regenerate app icons (icon.png for Linux, icon.ico for Windows) from apps/desktop/assets/icon.svg; requires ImageMagick 7"
 dir = "apps/desktop/assets"
