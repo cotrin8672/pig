@@ -1127,19 +1127,41 @@ details[open] > summary .tool-chevron,
   color: var(--ds-error);
 }
 .tool-term-dot {
+  position: relative;
   flex: none;
   width: 6px;
   height: 6px;
   border-radius: 50%;
   background: var(--tool-tone);
+}
+/* The glow and the running ring are child layers that cross-fade by opacity on
+ * the compositor. Animating the dot's box-shadow repainted ~1/4 of a frame budget. */
+.tool-term-dot > i {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+}
+.tool-term-glow {
   box-shadow: 0 0 6px color-mix(in srgb, var(--tool-tone) 70%, transparent);
 }
-.tool-term.running .tool-term-dot {
+.tool-term-ring {
+  opacity: 0;
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--tool-tone) 18%, transparent);
+}
+.tool-term.running .tool-term-glow {
+  animation: tool-term-glow 1.4s ease-in-out infinite;
+}
+.tool-term.running .tool-term-ring {
   animation: tool-term-breathe 1.4s ease-in-out infinite;
+}
+@keyframes tool-term-glow {
+  50% {
+    opacity: 0;
+  }
 }
 @keyframes tool-term-breathe {
   50% {
-    box-shadow: 0 0 0 3px color-mix(in srgb, var(--tool-tone) 18%, transparent);
+    opacity: 1;
   }
 }
 /* A block caret that fades slowly in and out while the command runs. */
@@ -1152,14 +1174,15 @@ details[open] > summary .tool-chevron,
   background: color-mix(in srgb, var(--ds-accent) 72%, transparent);
   animation: tool-term-caret 2.2s ease-in-out infinite;
 }
+/* 72% -> 8% accent, as opacity (8 / 72) so the blink never repaints. */
 @keyframes tool-term-caret {
   0%,
   35% {
-    background: color-mix(in srgb, var(--ds-accent) 72%, transparent);
+    opacity: 1;
   }
   60%,
   85% {
-    background: color-mix(in srgb, var(--ds-accent) 8%, transparent);
+    opacity: 0.111;
   }
 }
 .tool-term > summary {
@@ -1224,7 +1247,7 @@ details[open] > summary .tool-chevron,
   color: var(--ds-error);
 }
 @media (prefers-reduced-motion: reduce) {
-  .tool-term.running .tool-term-dot,
+  .tool-term.running .tool-term-dot > i,
   .tool-term-caret,
   .thinking-shimmer {
     animation: none;

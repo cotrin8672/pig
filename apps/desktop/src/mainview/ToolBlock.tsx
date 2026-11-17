@@ -389,11 +389,10 @@ function Shell({
           </code>
           <span className="tool-meta">
             <span className="tool-term-status">
-              <i
-                className="tool-term-dot"
-                role="img"
-                aria-label={statusLabel}
-              />
+              <i className="tool-term-dot" role="img" aria-label={statusLabel}>
+                <i className="tool-term-glow" />
+                <i className="tool-term-ring" />
+              </i>
               {status === "running" ? (
                 <ShellElapsed />
               ) : status === "error" ? (
