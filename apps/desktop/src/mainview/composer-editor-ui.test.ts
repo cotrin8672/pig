@@ -31,6 +31,7 @@ test.skipIf(!existsSync(fixtureEdge) && !process.env.PIG_REQUIRE_UI_TESTS)(
         info:{id:'editor',cwd:'fixture',title:'Editor',modified:1},model,effort:'off',effortLevels:[],
         transcript:hydrate([{role:'user',content:'first prompt',timestamp:1},{role:'user',content:'second prompt',timestamp:2}])};
       window.__requests={listSlashCommands:()=>[{name:'hello',category:'extension'},{name:'help',category:'extension'}],
+        searchProjectPaths:({query})=>query.startsWith('src/')?[{path:'src/app.ts',directory:false}]:[{path:'src',directory:true},{path:'my dir',directory:true}].filter(i=>i.path.includes(query)),
         syncDraft:params=>({status:'accepted',draft:{...params.content,revision:params.expectedRevision+1,owner:{kind:'user'}}})};
       flushSync(()=>useStore.setState(s=>({bootstrap:{...s.bootstrap,models:[model],disabledModels:[]},
         settings:{...s.settings,language:'en',keybindings:{}}})));
@@ -114,6 +115,25 @@ test.skipIf(!existsSync(fixtureEdge) && !process.env.PIG_REQUIRE_UI_TESTS)(
       const command=field().value;await press('ArrowUp');
       check(field().value===command,'slash completion takes precedence over recall');
       await press('Escape');
+
+      await setText('');await insert('see @s');
+      await until(()=>document.querySelector('.slash-options [role=option][aria-selected=true]'),'mention options');
+      await press('Enter');
+      check(field().value==='see @src/','a folder mention stays open for its children');
+      await until(()=>document.querySelector('.slash-options [role=option][aria-selected=true]')?.textContent.includes('src/app.ts'),'folder children');
+      await press('Tab');
+      check(field().value==='see @src/app.ts ' && !document.querySelector('.slash-options'),'a file mention closes with a space');
+      await setText('');await insert('@my');
+      await until(()=>document.querySelector('.slash-options [role=option][aria-selected=true]'),'mention options');
+      await press('Enter');
+      check(field().value==='@"my dir/','paths with spaces are quoted');
+      await setText('');await insert('@');
+      await until(()=>document.querySelectorAll('.slash-options [role=option]').length===2 && document.querySelector('.slash-options [aria-selected=true]'),'all top-level paths');
+      await press('ArrowDown');
+      check(document.querySelector('.slash-options [aria-selected=true]')?.textContent.includes('my dir'),'arrows move through mention options');
+      await press('Escape');
+      await setText('a@b');field().setSelectionRange(3,3);await wait();
+      check(!document.querySelector('.slash-options'),'an @ inside a word is not a mention');
 
       await setText('draft');field().setSelectionRange(5,5);
       const pasted=Array.from({length:12},(_,i)=>'line '+i).join('\\n');

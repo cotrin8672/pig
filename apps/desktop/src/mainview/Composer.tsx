@@ -47,6 +47,7 @@ import { ImagePreview } from "./ImageGallery";
 import { useT } from "./i18n";
 import { MessageQueue } from "./MessageQueue";
 import { ModelPicker } from "./ModelPicker";
+import { applyMention, mentionContext } from "./mention-completion";
 import { createModelPickerSelector } from "./model-picker-view";
 import { ensureSessionRuntime, rpc, sends } from "./rpc";
 import { SessionIndicators } from "./SessionIndicators";
@@ -159,6 +160,37 @@ export function Composer({
       ? slashContext(text, selection.start, selection.end)
       : undefined;
   const open = !!context;
+  const mention =
+    !context && selection.key === key && focused && !composing && !dismissed
+      ? mentionContext(text, selection.start, selection.end)
+      : undefined;
+  const cwd = snapshot.info.cwd;
+  const mentionPrefix = mention?.prefix;
+  const mentionQuery =
+    mentionPrefix === undefined ? "" : `${key}\0${mentionPrefix}`;
+  const [mentionState, setMentionState] = useState<{
+    key: string;
+    query: string;
+    items: { path: string; directory: boolean }[];
+  }>({ key: "", query: "", items: [] });
+  useEffect(() => {
+    if (mentionPrefix === undefined) return;
+    let live = true;
+    void rpc.request
+      .searchProjectPaths({ cwd, query: mentionPrefix })
+      .then((items) => {
+        if (live) setMentionState({ key, query: mentionQuery, items });
+      })
+      .catch((error) => {
+        if (!live) return;
+        setMentionState({ key, query: mentionQuery, items: [] });
+        showError(error);
+      });
+    return () => {
+      live = false;
+    };
+  }, [mentionQuery, mentionPrefix, cwd, key]);
+  const mentionPending = !!mention && mentionState.query !== mentionQuery;
   useEffect(() => {
     if (open) return;
     let live = true;
@@ -220,8 +252,20 @@ export function Composer({
   }, [query, name, prefix, hasExtension, slashAddress, argumentOwner]);
   const argumentsPending =
     !!query && hasExtension && argumentState.query !== query;
-  const options =
-    context?.kind === "command"
+  const options: {
+    label: string;
+    value: string;
+    description?: string;
+    category?: SlashCommand["category"] | "file" | "folder";
+  }[] = mention
+    ? mentionState.key === key
+      ? mentionState.items.map((item) => ({
+          label: item.directory ? `${item.path}/` : item.path,
+          value: item.path,
+          category: item.directory ? "folder" : "file",
+        }))
+      : []
+    : context?.kind === "command"
       ? commands
           .filter((c) => matchesSlashCommand(c, context.prefix))
           .map((c) => ({
@@ -233,7 +277,8 @@ export function Composer({
       : query && hasExtension && argumentState.owner === argumentOwner
         ? argumentState.items.map((item) => ({ ...item, category: undefined }))
         : [];
-  const active = argumentsPending ? -1 : Math.min(selected, options.length - 1);
+  const optionsPending = argumentsPending || mentionPending;
+  const active = optionsPending ? -1 : Math.min(selected, options.length - 1);
   useEffect(() => {
     if (active >= 0)
       document
@@ -246,6 +291,14 @@ export function Composer({
     !annotations.length &&
     extensionCommand(expanded, commands);
   function updateSelection(target: HTMLTextAreaElement) {
+    // React also reports onSelect for keys that leave the caret in place.
+    if (
+      selection.key === key &&
+      selection.start === target.selectionStart &&
+      selection.end === target.selectionEnd &&
+      text === target.value
+    )
+      return;
     setSelection({
       key,
       start: target.selectionStart,
@@ -255,6 +308,27 @@ export function Composer({
     setSelected(0);
   }
   function acceptOption(index: number) {
+    if (mention) {
+      if (mentionPending || !options[index]) return;
+      const directory = options[index].category === "folder";
+      const { text: next, cursor } = applyMention(
+        text,
+        mention,
+        options[index].value,
+        directory,
+      );
+      drafts.edit(address, (content) => ({ ...content, text: next }));
+      setSelection({ key, start: cursor, end: cursor });
+      setSelected(0);
+      setDismissed(!directory);
+      requestAnimationFrame(() => {
+        textareaRef.current?.focus();
+        textareaRef.current?.setSelectionRange(cursor, cursor);
+        // A programmatic caret move fires no select event; keep completing.
+        setSelection({ key, start: cursor, end: cursor });
+      });
+      return;
+    }
     if (!context || argumentsPending || !options[index]) return;
     const { text: next, cursor } = applySlashCompletion(
       text,
@@ -579,8 +653,8 @@ export function Composer({
             className="slash-options"
             id={listId}
             role="listbox"
-            aria-label={t.slashSuggestions}
-            aria-busy={argumentsPending}
+            aria-label={mention ? t.mentionSuggestions : t.slashSuggestions}
+            aria-busy={optionsPending}
           >
             {options.map((option, index) => (
               <div
@@ -589,7 +663,7 @@ export function Composer({
                 role="option"
                 tabIndex={-1}
                 aria-selected={index === active}
-                aria-disabled={argumentsPending}
+                aria-disabled={optionsPending}
                 onKeyDown={(event) => {
                   if (event.key === "Enter" || event.key === " ") {
                     event.preventDefault();
@@ -601,7 +675,12 @@ export function Composer({
               >
                 {option.category &&
                   (() => {
-                    const Icon = categoryIcons[option.category];
+                    const Icon =
+                      option.category === "file"
+                        ? fileIcon(option.value)
+                        : option.category === "folder"
+                          ? Folder
+                          : categoryIcons[option.category];
                     return (
                       <span
                         role="img"
@@ -761,7 +840,7 @@ export function Composer({
             ) {
               if (event.key === "ArrowDown" || event.key === "ArrowUp") {
                 event.preventDefault();
-                if (!argumentsPending)
+                if (!optionsPending)
                   setSelected(
                     (active +
                       (event.key === "ArrowDown" ? 1 : -1) +
