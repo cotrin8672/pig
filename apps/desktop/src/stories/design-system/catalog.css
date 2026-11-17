@@ -231,7 +231,7 @@
   background: var(--ds-bg-popover);
   color: var(--ds-text-primary);
   box-shadow: var(--ds-shadow-dialog);
-  backdrop-filter: blur(20px);
+  backdrop-filter: blur(var(--ds-popover-blur));
   --scrollbar-inset: var(--radius-lg);
 }
 .ds-review .ds-review-dialog form {

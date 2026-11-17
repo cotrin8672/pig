@@ -146,7 +146,7 @@
   max-height: min(320px, 50vh);
   overflow-y: auto;
   background: var(--ds-bg-popover);
-  backdrop-filter: blur(20px);
+  backdrop-filter: blur(var(--ds-popover-blur));
   border: 1px solid var(--ds-border-strong);
   border-radius: var(--radius-lg);
   box-shadow: var(--ds-shadow-dialog);

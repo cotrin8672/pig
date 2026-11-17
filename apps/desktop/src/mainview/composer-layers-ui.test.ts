@@ -10,7 +10,7 @@ import {
 const local = (path: string) => fixtureImport(new URL(path, import.meta.url));
 
 test.skipIf(!existsSync(fixtureEdge) && !process.env.PIG_REQUIRE_UI_TESTS)(
-  "composer popovers in Edge: model picker blurs the chat and covers the jump button",
+  "composer popovers in Edge: model picker blurs the chat, the composer does not, and the picker covers the jump button",
   () =>
     runUiFixture(
       "composer-layers",
@@ -58,7 +58,7 @@ test.skipIf(!existsSync(fixtureEdge) && !process.env.PIG_REQUIRE_UI_TESTS)(
       const composerGlass=lineDeviation(pixel,composer.right-width-14,composer.top+3,width);
       check(raw>60,'stripes must be sharp outside the glass: '+raw);
       check(picker<8,'model picker must blur the chat behind it (nested backdrop root): '+picker);
-      check(composerGlass<8,'composer must still blur the chat behind it: '+composerGlass);
+      check(composerGlass>20,'composer must show the chat behind it unblurred: '+composerGlass);
       `,
     ),
   60_000,

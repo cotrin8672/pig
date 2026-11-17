@@ -122,7 +122,7 @@
   border: 1px solid #ffffff14;
   border-radius: 10px;
   background: var(--ds-bg-popover);
-  backdrop-filter: blur(20px);
+  backdrop-filter: blur(var(--ds-popover-blur));
   box-shadow: 0 8px 24px #0003;
   color: var(--ds-text-primary);
 }
@@ -323,7 +323,7 @@
   width: 100%;
   padding: 6px;
   background: var(--ds-bg-popover);
-  backdrop-filter: blur(20px);
+  backdrop-filter: blur(var(--ds-popover-blur));
   color: var(--ds-text-primary);
   font-size: var(--text-md);
   z-index: 10;

@@ -77,7 +77,7 @@
   left: 0;
   width: min(340px, calc(100vw - 36px));
   background: var(--ds-bg-popover);
-  backdrop-filter: blur(20px);
+  backdrop-filter: blur(var(--ds-popover-blur));
   border: 1px solid var(--ds-border-strong);
   border-radius: 10px;
   box-shadow: var(--ds-shadow-dialog);

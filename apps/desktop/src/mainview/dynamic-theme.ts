@@ -9,10 +9,21 @@ import {
 } from "@material/material-color-utilities";
 import { defaultThemeColor, normalizeThemeColor } from "../shared/theme-color";
 
-/** Chroma for card-like surfaces: keeps the theme hue without saturating cards. */
-const cardChroma = 16;
-/** Chroma for the translucent window tint: a soft pastel wash, not a deep fill. */
-const shellChroma = 24;
+/** All large surfaces use the faint tint of the plain-transparency background. */
+const surfaceChroma = 8;
+
+/** sRGB mix like CSS `color-mix(in srgb, a, b amount)`. */
+function mixHex(a: string, b: string, amount: number) {
+  const channel = (color: string, i: number) =>
+    Number.parseInt(color.slice(i, i + 2), 16);
+  return `#${[1, 3, 5]
+    .map((i) =>
+      Math.round(channel(a, i) * (1 - amount) + channel(b, i) * amount)
+        .toString(16)
+        .padStart(2, "0"),
+    )
+    .join("")}`;
+}
 
 /** Stable spec/version; no image extraction, network requests or DOM needed. */
 export function createThemeTokens(
@@ -38,26 +49,13 @@ export function createThemeTokens(
         tone,
       ),
     );
-  // Surfaces sit on Acrylic/transparency, so they carry the main colour itself;
-  // TonalSpot's neutral (~chroma 4) reads as grey. Text stays on neutral/ink.
+  // Stacked glass amplifies colour: keep only a hint of the theme in large fills.
+  const surfacePalette = TonalPalette.fromHueAndChroma(
+    scheme.primaryPalette.hue,
+    Math.min(surfaceChroma, scheme.primaryPalette.chroma),
+  );
   const surface = (tone: number) =>
-    hct.chroma < 4 ? neutral(tone) : primary(tone);
-  // Cards float over the tinted shell, so the full primary chroma stacks up and
-  // looks loud. Keep the hue but use a pastel chroma for card-like surfaces.
-  const cardPalette = TonalPalette.fromHueAndChroma(
-    scheme.primaryPalette.hue,
-    Math.min(cardChroma, scheme.primaryPalette.chroma),
-  );
-  const card = (tone: number) =>
-    hct.chroma < 4 ? neutral(tone) : hex(cardPalette.tone(tone));
-  // The window tint covers the whole wallpaper; full primary chroma at low tone
-  // reads as a heavy navy. A lighter, low-chroma wash keeps it pastel.
-  const shellPalette = TonalPalette.fromHueAndChroma(
-    scheme.primaryPalette.hue,
-    Math.min(shellChroma, scheme.primaryPalette.chroma),
-  );
-  const shell = (tone: number) =>
-    hct.chroma < 4 ? neutral(tone) : hex(shellPalette.tone(tone));
+    hct.chroma < 4 ? neutral(tone) : hex(surfacePalette.tone(tone));
   const ink = hex(scheme.onSurface);
   const success = extended("#249c64");
   const warning = extended("#d99a20");
@@ -72,22 +70,25 @@ export function createThemeTokens(
     "--ds-on-highlight": tertiary(20),
     "--ds-bg-highlight": `${tertiary(80)}29`,
     "--ds-bg-chip": `${ink}0d`,
-    "--ds-bg-composer": `${card(25)}e6`,
-    "--ds-bg-elevated": `${card(22)}f5`,
-    "--ds-bg-elevated-opaque": card(22),
-    // 60%: readable over busy backdrops while the wallpaper still shows through.
-    "--ds-bg-popover": `${card(22)}99`,
+    "--ds-bg-composer": `${surface(25)}e6`,
+    "--ds-bg-elevated": `${surface(22)}f5`,
+    "--ds-bg-elevated-opaque": surface(22),
+    // Floating glass (composer, popovers, panels): a pale wash of the accent
+    // over the shell tone, 50% so the backdrop stays visible.
+    "--ds-bg-popover": `${mixHex(surface(22), hex(scheme.primary), 0.12)}80`,
     "--ds-bg-hover": `${ink}0d`,
     "--ds-bg-inset": surface(12),
     "--ds-bg-primary": surface(18),
-    "--ds-bg-secondary": card(25),
+    "--ds-bg-secondary": surface(25),
     "--ds-bg-sidebar": `${surface(6)}1f`,
     // Near-neutral dark veil over the chat: mutes the shell tint for long reading.
     "--ds-bg-chat": `${neutral(8)}38`,
-    "--ds-bg-tertiary": card(23),
+    "--ds-bg-tertiary": surface(23),
     "--ds-bg-under": surface(18),
-    "--ds-shell-start": shell(34),
-    "--ds-shell-end": shell(28),
+    "--ds-shell-start": surface(22),
+    "--ds-shell-end": surface(18),
+    "--ds-shell-clear-start": surface(22),
+    "--ds-shell-clear-end": surface(18),
     "--ds-border-default": "transparent",
     "--ds-border-subtle": "transparent",
     "--ds-border-strong": `${hex(scheme.outline)}60`,
@@ -96,7 +97,7 @@ export function createThemeTokens(
     // Accent tone (not the near-white 90) so focus rings read as the theme.
     "--ds-focus": hex(scheme.primary),
     "--ds-placeholder-ink": neutral(72),
-    "--ds-raised": card(25),
+    "--ds-raised": surface(25),
     "--ds-shadow-composer": `0 6px 18px ${neutral(3)}3d, inset 0 1px 0 ${ink}08`,
     "--ds-shadow-dialog": `0 16px 48px ${neutral(3)}66`,
     "--ds-text-faint": neutral(69),
