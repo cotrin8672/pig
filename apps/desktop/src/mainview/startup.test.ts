@@ -1,6 +1,10 @@
 import { beforeEach, expect, mock, test } from "bun:test";
 import { fileURLToPath } from "node:url";
-import type { Appearance, Bootstrap } from "../shared/rpc-schema";
+import type {
+  Appearance,
+  Bootstrap,
+  InstalledPackage,
+} from "../shared/rpc-schema";
 import type { Settings } from "../shared/settings";
 
 if (process.env.PIG_STARTUP_CHILD !== "1") {
@@ -25,11 +29,14 @@ if (process.env.PIG_STARTUP_CHILD !== "1") {
     bootstrap: [] as ReturnType<typeof Promise.withResolvers<Bootstrap>>[],
     appearance: [] as ReturnType<typeof Promise.withResolvers<Appearance>>[],
     settings: [] as ReturnType<typeof Promise.withResolvers<Settings>>[],
+    installed: [] as ReturnType<
+      typeof Promise.withResolvers<InstalledPackage[]>
+    >[],
   };
   let messages: {
     settings: (settings: Settings) => void;
     appearance: (appearance: Appearance) => void;
-    installed: (installed: never[]) => void;
+    installed: (installed: InstalledPackage[]) => void;
   };
   mock.module("electrobun/view", () => ({
     Electroview: class {
@@ -52,6 +59,11 @@ if (process.env.PIG_STARTUP_CHILD !== "1") {
             settings: () => {
               const read = Promise.withResolvers<Settings>();
               reads.settings.push(read);
+              return read.promise;
+            },
+            listInstalled: () => {
+              const read = Promise.withResolvers<InstalledPackage[]>();
+              reads.installed.push(read);
               return read.promise;
             },
           },
@@ -78,6 +90,7 @@ if (process.env.PIG_STARTUP_CHILD !== "1") {
     reads.bootstrap.length =
       reads.appearance.length =
       reads.settings.length =
+      reads.installed.length =
         0;
     useStore.setState(initial, true);
   });
@@ -150,5 +163,37 @@ if (process.env.PIG_STARTUP_CHILD !== "1") {
       installed: [],
       installedLoaded: true,
     });
+  });
+
+  test("startup loads packages in the background and preserves newer update events", async () => {
+    const pending = refresh();
+    reads.bootstrap[0].resolve(bootstrap);
+    reads.appearance[0].resolve(appearance);
+    reads.settings[0].resolve(settings);
+    await pending;
+    expect(reads.installed).toHaveLength(1);
+    expect(useStore.getState().installedLoaded).toBe(false);
+    const pkg: InstalledPackage = {
+      source: "npm:fixture",
+      scope: "user",
+      types: ["extension"],
+      updateAvailable: false,
+    };
+    reads.installed[0].resolve([pkg]);
+    await tick();
+    expect(useStore.getState()).toMatchObject({
+      installed: [pkg],
+      installedLoaded: true,
+    });
+    const next = refresh();
+    reads.bootstrap[1].resolve(bootstrap);
+    reads.appearance[1].resolve(appearance);
+    reads.settings[1].resolve(settings);
+    await next;
+    const updated = [{ ...pkg, updateAvailable: true }];
+    messages.installed(updated);
+    reads.installed[1].resolve([pkg]);
+    await tick();
+    expect(useStore.getState().installed).toBe(updated);
   });
 }
