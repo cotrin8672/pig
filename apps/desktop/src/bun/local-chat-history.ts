@@ -213,8 +213,14 @@ async function listCodex(home: string): Promise<LocalItem[]> {
   const db = new Database(file, { readonly: true });
   // prepare(), not the cached query(): a finalized statement lets close() release
   // Codex's live database file instead of holding it open.
+  // `name` is the thread title shown by Codex (generated or renamed); `title`
+  // is only the first prompt. Older databases lack the column.
+  const named = (
+    db.query("pragma table_info(threads)").all() as { name: string }[]
+  ).some((column) => column.name === "name");
   const statement = db.prepare(
-    `select id, rollout_path, title, preview, cwd, updated_at_ms, updated_at
+    `select id, rollout_path, ${named ? "nullif(name, '')" : "null"} as name,
+       title, preview, cwd, updated_at_ms, updated_at
      from threads where source not like '{"subagent%'
      order by coalesce(updated_at_ms, updated_at * 1000) desc`,
   );
@@ -222,6 +228,7 @@ async function listCodex(home: string): Promise<LocalItem[]> {
     const rows = statement.all() as {
       id: string;
       rollout_path: string;
+      name: string | null;
       title: string;
       preview: string | null;
       cwd: string | null;
@@ -240,7 +247,7 @@ async function listCodex(home: string): Promise<LocalItem[]> {
           file: path,
           source: "codex" as const,
           title:
-            (row.title || row.preview || "Codex")
+            (row.name || row.title || row.preview || "Codex")
               .replace(/\s+/g, " ")
               .trim()
               .slice(0, 200) || "Codex",
@@ -256,18 +263,23 @@ async function listCodex(home: string): Promise<LocalItem[]> {
   }
 }
 
-/** Title and project from the head of a session, without reading the whole file. */
+/**
+ * Title and project from the head and tail of a session, without reading the
+ * whole file. Claude Code appends title records and re-appends them at the end.
+ */
 async function claudeHead(file: string) {
   const handle = await open(file, "r");
   try {
-    const buffer = Buffer.alloc(256 * 1024);
-    const { bytesRead } = await handle.read(buffer, 0, buffer.length, 0);
-    let title = "";
+    const chunk = 256 * 1024;
+    const { size } = await handle.stat();
+    const head = Buffer.alloc(Math.min(chunk, size));
+    await handle.read(head, 0, head.length, 0);
+    const tail = Buffer.alloc(Math.max(0, Math.min(chunk, size - chunk)));
+    await handle.read(tail, 0, tail.length, size - tail.length);
+    const titles = { custom: "", ai: "", summary: "" };
+    let prompt = "";
     let cwd = "";
-    for (const line of buffer
-      .subarray(0, bytesRead)
-      .toString("utf8")
-      .split("\n")) {
+    for (const line of `${head}\n${tail}`.split("\n")) {
       let value: JsonObject | undefined;
       try {
         value = object(JSON.parse(line));
@@ -276,8 +288,13 @@ async function claudeHead(file: string) {
       }
       if (!value) continue;
       cwd ||= text(value.cwd);
-      if (value.type === "summary") title = text(value.summary) || title;
-      if (title || value.type !== "user" || value.isMeta || value.isSidechain)
+      if (value.type === "custom-title")
+        titles.custom = text(value.customTitle).trim() || titles.custom;
+      if (value.type === "ai-title")
+        titles.ai = text(value.aiTitle).trim() || titles.ai;
+      if (value.type === "summary")
+        titles.summary = text(value.summary).trim() || titles.summary;
+      if (prompt || value.type !== "user" || value.isMeta || value.isSidechain)
         continue;
       const content = object(value.message)?.content;
       const body =
@@ -286,8 +303,9 @@ async function claudeHead(file: string) {
           : Array.isArray(content)
             ? content.map((part) => text(object(part)?.text)).join(" ")
             : "";
-      if (body.trim() && !injected.test(body)) title = body.trim();
+      if (body.trim() && !injected.test(body)) prompt = body.trim();
     }
+    const title = titles.custom || titles.ai || titles.summary || prompt;
     return { title: title.replace(/\s+/g, " ").slice(0, 200), cwd };
   } finally {
     await handle.close();
