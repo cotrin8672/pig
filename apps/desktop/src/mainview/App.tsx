@@ -139,6 +139,15 @@ export function App() {
   );
   const [draggedSidebarWidth, setDraggedSidebarWidth] = useState<number>();
   const sidebarWidth = draggedSidebarWidth ?? savedSidebarWidth;
+  // The shell's inherited variable keeps the saved width. While dragging, only
+  // the elements that position against it get the live width: changing an
+  // inherited variable on the shell restyles every conversation each move.
+  const liveSidebar =
+    draggedSidebarWidth === undefined
+      ? undefined
+      : ({
+          "--ds-sidebar-width": `${draggedSidebarWidth}px`,
+        } as React.CSSProperties);
   const [startupFailed, setStartupFailed] = useState(false);
   const initialize = useCallback(() => {
     setStartupFailed(false);
@@ -191,6 +200,7 @@ export function App() {
       aria-expanded={sidebarOpen}
       aria-controls="app-sidebar"
       hidden={!state.sidebarReady}
+      style={liveSidebar}
       onClick={() => setSidebarOpen((open) => !open)}
     >
       <PanelLeft size={16} aria-hidden="true" />
@@ -215,13 +225,18 @@ export function App() {
         style={
           {
             "--window-opacity": state.windowOpacity,
-            "--ds-sidebar-width": `${sidebarWidth}px`,
+            "--ds-sidebar-width": `${savedSidebarWidth}px`,
           } as React.CSSProperties
         }
       >
         <DynamicTheme />
         {sidebarOpen && sidebarToggle}
-        <aside id="app-sidebar" className="sidebar" inert={!sidebarOpen}>
+        <aside
+          id="app-sidebar"
+          className="sidebar"
+          inert={!sidebarOpen}
+          style={liveSidebar}
+        >
           <header className="electrobun-webkit-app-region-drag">
             <strong className="sidebar-brand">
               <img src={appIcon} alt="" width={20} height={20} />
@@ -260,6 +275,7 @@ export function App() {
         {sidebarOpen && state.sidebarReady && (
           <SidebarResizer
             width={sidebarWidth}
+            style={liveSidebar}
             onResize={setDraggedSidebarWidth}
             onCommit={(width) => {
               setDraggedSidebarWidth(undefined);
@@ -299,6 +315,7 @@ export function App() {
         <UIRequestBroker />
         <SearchPalette />
         <WindowTitlebar
+          style={liveSidebar}
           maximized={state.maximized}
           onAction={(action) => rpc.send.windowControl({ action })}
           onSplit={createPane}
