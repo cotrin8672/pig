@@ -926,7 +926,8 @@ test.skipIf(!existsSync(edge) && !process.env.PIG_REQUIRE_UI_TESTS)(
         const term=document.querySelector('.tool-term');
         if(!term.open)await click(term.querySelector('summary'));
         const dot=term.querySelector('.tool-term-dot'),caret=term.querySelector('.tool-term-caret'),clock=term.querySelector('.tool-term-time');
-        const animations=[dot,caret].map(node=>node.getAnimations()[0]);
+        // The dot's glow/ring layers animate as children (compositor-only opacity).
+        const animations=[dot,caret].map(node=>node.getAnimations({subtree:true})[0]);
         await Promise.all(animations.filter(Boolean).map(animation=>animation.ready));
         const starts=animations.map(animation=>animation?.startTime);
         const started=performance.now(),elapsed=parseFloat(clock.textContent);
@@ -941,7 +942,7 @@ test.skipIf(!existsSync(edge) && !process.env.PIG_REQUIRE_UI_TESTS)(
           check(dot===term.querySelector('.tool-term-dot') && caret===term.querySelector('.tool-term-caret') && clock===term.querySelector('.tool-term-time') && term.isConnected,'output updates and live-to-saved commits must preserve the shell dot, caret and elapsed-time DOM');
           check(term.closest('[data-record-id]').dataset.recordId===(i<4?liveId:savedId),'preserving React identity must still publish the canonical saved record ID');
           for(const [index,node] of [dot,caret].entries()){
-            const current=node.getAnimations()[0];
+            const current=node.getAnimations({subtree:true})[0];
             check(reducedMotion?!current:current===animations[index] && current.startTime===starts[index],'output updates must not restart shell status animations');
           }
           check(term.querySelector('.tool-term-output').textContent.startsWith('progress '+i),'status continuity must not suppress new output');
