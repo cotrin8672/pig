@@ -31,6 +31,7 @@ const integration = [
   "session-delete",
   "session-diagnostics",
   "session-files",
+  "session-fork",
   "session-history",
   "session-host",
   "session-host-model-error",

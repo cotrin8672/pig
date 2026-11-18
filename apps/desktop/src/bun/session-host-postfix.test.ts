@@ -10,6 +10,7 @@ const extension = `export default function(pi) {
   });
   pi.registerCommand("fixture-new", {handler: async (_args, ctx) => {await ctx.newSession();}});
   pi.registerCommand("fixture-switch", {handler: async (path, ctx) => {await ctx.switchSession(path);}});
+  pi.registerCommand("fixture-fork", {handler: async (entryId, ctx) => {await ctx.fork(entryId,{position:"at"});}});
 }`;
 
 test("F1/F2: target selection, metadata-only restore, transitions reject sends and cancellation closes dead runtimes", async () => {
@@ -50,7 +51,9 @@ test("F1/F2: target selection, metadata-only restore, transitions reject sends a
       chat = host.getSessionSnapshot(chat.address);
       const answer = chat.transcript.records.find(r=>r.kind === "message" && r.message.role === "assistant");
       // Do not call setModel after fork: that masked the original restore bug.
-      chat = await host.forkSession({...chat.address,entryId:answer.entryId}); assertB(chat);
+      const source = chat;
+      chat = await host.forkSession({...source.address,entryId:answer.entryId}); assertB(chat);
+      await host.closeSession(source.address);
       const persistedId = chat.info.id;
       await host.closeSession(chat.address);
       chat = await host.openSession({cwd,id:persistedId,openId:"reopen"}); assertB(chat);
@@ -77,7 +80,7 @@ test("F1/F2: target selection, metadata-only restore, transitions reject sends a
         const gate = Promise.withResolvers(); globalThis.__holdShutdown = true; globalThis.__shutdownEntered = false; globalThis.__shutdownGate = gate.promise;
         const prior = chat.address;
         const target = chat.transcript.records.find(r=>r.kind === "message" && r.message.role === "assistant");
-        const operation = kind === "reload" ? host.reloadSession(prior) : kind === "fork" ? host.forkSession({...prior,entryId:target.entryId}) : send(chat,kind === "new" ? "/fixture-new" : "/fixture-switch " + metadataPath);
+        const operation = kind === "reload" ? host.reloadSession(prior) : send(chat,kind === "fork" ? "/fixture-fork " + target.entryId : kind === "new" ? "/fixture-new" : "/fixture-switch " + metadataPath);
         while(!globalThis.__shutdownEntered) await Bun.sleep(1);
         expect(()=>host.prompt({...prior,text:"must not execute",requestId:"during-"+kind,draftRevision:host.drafts.read(prior).revision})).toThrow("STALE");
         expect(()=>host.syncDraft({...prior,expectedRevision:host.drafts.read(prior).revision,content:{text:"blocked",pastes:[],images:[]}})).toThrow("STALE");
@@ -87,20 +90,22 @@ test("F1/F2: target selection, metadata-only restore, transitions reject sends a
         chat = host.runtimeState().sessions.find(s=>s.phase === "ready").snapshot;
         await send(chat,"next answer"); chat = host.getSessionSnapshot(chat.address);
       }
-      // R2: changed fingerprint forces Trust AFTER old fork runtime teardown.
+      // A failed branch startup leaves the source runtime and history intact.
       await writeFile(join(cwd,".pi/SYSTEM.md"),"changed trust fingerprint"); trust = "hold";
       const before = chat.address;
       const target = chat.transcript.records.find(r=>r.kind === "message" && r.message.role === "assistant");
       const failed = host.forkSession({...before,entryId:target.entryId}).then(()=>"ready",()=>"failed");
       while(!waitingTrust) await Bun.sleep(1);
-      expect(()=>host.prompt({...before,text:"during trust",requestId:"trust-send",draftRevision:0})).toThrow("STALE");
-      // Cancellation reply must be accepted even though prompt mutations are blocked.
+      expect(waitingTrust.sessionId).not.toBe(before.sessionId);
+      const shutdowns = globalThis.__shutdown.slice();
+      expect(host.getSessionSnapshot(before).address).toEqual(before);
       host.resolveExtensionUI({...waitingTrust,kind:"cancel"});
       expect(await failed).toBe("failed");
-      while(host.runtimeState().sessions.length) await Bun.sleep(1);
+      expect(host.runtimeState().sessions.filter(s=>s.phase==="ready").map(s=>s.address)).toEqual([before]);
       expect(events.some(e=>e.type === "closed" && e.reason === "failed")).toBe(true);
-      // The disposed old runtime already emitted fork shutdown; no fake quit replay.
-      expect(globalThis.__shutdown.at(-1)).toBe("fork");
+      expect(globalThis.__shutdown).toEqual(shutdowns);
+      await host.closeSession(waitingTrust);
+      await host.closeSession(before);
       trust = "once"; waitingTrust = undefined;
       chat = await host.openSession({cwd,openId:"after-failure"});
       const gate = Promise.withResolvers(); globalThis.__holdShutdown = true; globalThis.__shutdownEntered = false; globalThis.__shutdownGate = gate.promise;

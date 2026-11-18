@@ -11,7 +11,9 @@ const local = (path: string) => fixtureImport(new URL(path, import.meta.url));
 
 for (const action of ["fork", "rewind"]) {
   test.skipIf(!existsSync(fixtureEdge) && !process.env.PIG_REQUIRE_UI_TESTS)(
-    `unknown sends can recover through ${action} after confirmed Stop without replay`,
+    action === "fork"
+      ? "branching preserves the running source and its unconfirmed draft"
+      : "unknown sends can recover through rewind after confirmed Stop without replay",
     () =>
       runUiFixture(
         `unknown-send-${action}`,
@@ -20,9 +22,10 @@ for (const action of ["fork", "rewind"]) {
     const {flushSync}=await import(${fixtureImport(import.meta.resolve("react-dom"))});
     const {fauxAssistantMessage}=await import(${fixtureImport(import.meta.resolve("@earendil-works/pi-ai"))});
     const {Chat}=await import(${local("./App.tsx")});
+    const {ResponseFooter}=await import(${local("./ResponseFooter.tsx")});
     const {useStore}=await import(${local("./store.ts")});
     const {drafts}=await import(${local("./draft-store.ts")});
-    const {sends,forkChat,regenerate}=await import(${local("./rpc.ts")});
+    const {sends,regenerate}=await import(${local("./rpc.ts")});
     await import(${local("./styles.css")});
     ${fixtureHelpers}
     const root=createFixtureRoot(createRoot),requests=[],events=[],stopped=Promise.withResolvers();
@@ -47,20 +50,31 @@ for (const action of ["fork", "rewind"]) {
     };
     useStore.setState(s=>({hostId:address.hostId,addresses:{[address.sessionId]:address},snapshots:{[address.sessionId]:snapshot},active:address.sessionId,page:'chat',
       settings:{...s.settings,language:'en'},bootstrap:{...s.bootstrap,models:[model],disabledModels:[]}}));
-    const render=async()=>{flushSync(()=>{sends.reconcile(snapshot);root.render(<Chat snapshot={snapshot}/>);});await wait();};
+    const isFork=${JSON.stringify(action)}==='fork';
+    const render=async()=>{flushSync(()=>{sends.reconcile(snapshot);root.render(<>
+      <Chat snapshot={snapshot}/>
+      {isFork&&snapshot.address===address&&<ResponseFooter sessionId={address.sessionId} entryId="answer-entry" stats={{stopReason:"stop",durationMs:10,endedAt:2,timestamp:1,tools:0,totalTokens:0,model:"Fixture",text:"previous answer"}}/>}
+    </>);});await wait();};
     await render();
     drafts.edit(address,content=>({...content,text:'failed steering'}));await sends.send(address);
     await sends.lookup(address);await sends.lookup(address);
     check(sends.read(address).state==='unknown','fixture must begin with an unconfirmed failed send');
-    const recovery=${JSON.stringify(action)}==='fork'?forkChat(address.sessionId,'user-entry'):regenerate(address.sessionId,user,'user-entry');
-    await until(()=>events.length===1,'recovery must request Stop first');
-    check(events[0]==='stop','history must not change before Stop is confirmed');
-    stopped.resolve();await recovery;
-    check(events.join(',')==='stop,${action}','recovery must succeed despite unavailable receipt lookup');
-    check(drafts.read(nextAddress).content.text==='failed steering','the returned composer draft must survive an explicit history change');
-    if(${JSON.stringify(action)}==='fork'){
+    if(isFork){
+      document.querySelector('button[aria-label="Branch into new chat"]').click();
+      await until(()=>useStore.getState().active===nextAddress.sessionId,'the branch should open after the RPC');
+      check(events.join(',')==='fork','branching must not request Stop');
+      check(useStore.getState().snapshots[address.sessionId].transcript.running,'source must still be running');
+      check(drafts.read(address).content.text==='failed steering','the returned draft must stay with the source');
+      check(!drafts.read(nextAddress).content.text,'the branch must start without the source draft');
       check(requests.length===3,'branching must not resend the unknown input after bounded retries');
       drafts.edit(nextAddress,content=>({...content,text:'new branch request'}));await sends.send(nextAddress);
+    } else {
+      const recovery=regenerate(address.sessionId,user,'user-entry');
+      await until(()=>events.length===1,'recovery must request Stop first');
+      check(events[0]==='stop','history must not change before Stop is confirmed');
+      stopped.resolve();await recovery;
+      check(events.join(',')==='stop,rewind','recovery must succeed despite unavailable receipt lookup');
+      check(drafts.read(nextAddress).content.text==='failed steering','the returned composer draft must survive a rewind');
     }
     check(requests.length===4&&requests[3].text===(${JSON.stringify(action)}==='fork'?'new branch request':'original request'),'only the explicit recovery instruction may be sent');
     snapshot={...recovered,snapshotSeq:3,transcript:{...recovered.transcript,records:[
@@ -103,7 +117,8 @@ test.skipIf(!existsSync(fixtureEdge) && !process.env.PIG_REQUIRE_UI_TESTS)(
       prompt:params=>{requests.push(params);const gate=Promise.withResolvers();pending.push(gate);return gate.promise;},
       getPromptReceipt:params=>({...params,state:'rejected',code:'PREFLIGHT_FAILED',message:'Send failed'}),
     };
-    useStore.setState(s=>({settings:{...s.settings,language:'en'},bootstrap:{...s.bootstrap,models:[model],disabledModels:[]}}));
+    useStore.setState(s=>({hostId:address.hostId,addresses:{[address.sessionId]:address},
+      settings:{...s.settings,language:'en'},bootstrap:{...s.bootstrap,models:[model],disabledModels:[]}}));
     let snapshot={address,info:{id:'chat',cwd:'fixture',title:'Fixture',modified:1},model,effort:'off',effortLevels:[],
       transcript:{records:[],tools:{},running:true,current:null,liveToEntry:{}}};
     const render=async()=>{flushSync(()=>{sends.reconcile(snapshot);root.render(<Chat snapshot={snapshot}/>);});await wait();};
@@ -174,7 +189,7 @@ test.skipIf(!existsSync(fixtureEdge) && !process.env.PIG_REQUIRE_UI_TESTS)(
       prompt:params=>{requests.push(params);return gate.promise;},
       getPromptReceipt:async params=>{checks++;if(confirmed)return {...params,state:'accepted',accepted:{disposition:'queued'},acceptedAt:1};throw new Error('Disconnected');},
     };
-    useStore.setState(s=>({settings:{...s.settings,language:'en'}}));
+    useStore.setState(s=>({hostId:address.hostId,addresses:{[address.sessionId]:address},settings:{...s.settings,language:'en'}}));
     let snapshot={address,info:{id:'chat',cwd:'fixture',title:'Fixture',modified:1},effort:'off',effortLevels:[],
       transcript:{records:[],tools:{},running:true,current:null,liveToEntry:{}}};
     const render=async()=>{flushSync(()=>root.render(<Chat snapshot={snapshot}/>));await wait();};
@@ -246,7 +261,7 @@ test.skipIf(!existsSync(fixtureEdge) && !process.env.PIG_REQUIRE_UI_TESTS)(
       prompt:params=>{requests.push(params);const gate=Promise.withResolvers();pending.push(gate);return gate.promise;},
       getPromptReceipt:params=>({...params,state:'pending'}),
     };
-    useStore.setState(s=>({initialized:true,hostId:address.hostId,active:address.sessionId,page:'chat',
+    useStore.setState(s=>({initialized:true,hostId:address.hostId,addresses:{[address.sessionId]:address,[other.address.sessionId]:other.address},active:address.sessionId,page:'chat',
       settings:{...s.settings,language:'en'},sessions:{project:[info,other.info]},
       bootstrap:{...s.bootstrap,projects:['project'],generalCwd:'',models:[model],disabledModels:[],desktop:{sessions:{[info.id]:{completion:{id:'error',outcome:'error'}}}}}}));
     const render=async()=>{

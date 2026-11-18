@@ -130,11 +130,7 @@ export const useStore = create<{
    * Resends in flight by chat: the transcript is shown cut at the rewound
    * entry, with the new message pending, until the host's rewind lands.
    */
-  rewinds: Record<
-    string,
-    | { kind: "resend"; entryId: string; user: UserMessage }
-    | { kind: "fork"; entryId: string }
-  >;
+  rewinds: Record<string, { entryId: string; user: UserMessage }>;
   installed: InstalledPackage[];
   packageOps: Record<string, PackageOpStatus>;
   notices: (Notice & { id: string })[];

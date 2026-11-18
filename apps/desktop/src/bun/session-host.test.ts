@@ -4,7 +4,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 const extension = `export default function(pi) {
-  pi.on("session_start", async (_event, ctx) => {
+  pi.on("session_start", async (event, ctx) => {
+    globalThis.__startReason = event.reason;
     if (ctx.mode !== "rpc") throw new Error("Expected rpc extension mode, received " + ctx.mode);
     globalThis.__starts++;
     await ctx.ui.confirm("Startup", "Ready?");
@@ -16,6 +17,7 @@ const extension = `export default function(pi) {
     ctx.ui.setStatus("fixture", "ready");
     pi.appendEntry("fixture", {saved: true});
   });
+  pi.on("session_before_fork", () => globalThis.__denyFork ? {cancel:true} : undefined);
   pi.on("session_shutdown", (event) => {globalThis.__shutdown.push(event.reason);});
   pi.registerCommand("boom", {description: "Fixture error", handler: async () => {throw new Error("command failure fixture");}});
   pi.registerCommand("complete", {description:"Complete fixture", getArgumentCompletions: async prefix => [{value:prefix + "-value", label:prefix, description:"result"}], handler: async () => {}});
@@ -90,12 +92,21 @@ test("SDK fork/rewind/reload/shutdown, root startup UI and stale epochs", async 
       await send("first", "first answer"); await send("second", "old answer");
       const second = chat.transcript.records.filter(r => r.kind === "message" && r.message.role === "user")[1];
       const last = chat.transcript.records.filter(r => r.kind === "message" && r.message.role === "assistant").at(-1);
+      const originalDraft = host.drafts.read(initial);
+      globalThis.__denyFork = true;
+      await expect(host.forkSession({...chat.address, entryId:last.entryId})).rejects.toThrow("Branch cancelled");
+      globalThis.__denyFork = false;
       const fork = await host.forkSession({...chat.address, entryId:last.entryId});
       expect(fork.info.id).not.toBe(chat.info.id); expect(fork.address.epoch).toBeGreaterThan(chat.address.epoch);
+      expect(host.getSessionSnapshot(initial).address).toEqual(initial);
+      expect(host.drafts.read(initial)).toEqual(originalDraft);
+      expect(globalThis.__startReason).toBe("fork");
+      expect(globalThis.__shutdown).toEqual([]);
+      await host.closeSession(initial);
       expect(() => host.getSessionSnapshot(initial)).toThrow("STALE");
       expect(() => host.listSlashCommands(initial)).toThrow("STALE");
       await expect(host.completeSlashArguments({...initial,name:"complete",argumentPrefix:""})).rejects.toThrow("STALE");
-      expect(globalThis.__shutdown).toEqual(["fork"]);
+      expect(globalThis.__shutdown).toEqual(["quit"]);
       chat = fork;
       await host.setModel({...chat.address, provider:faux.getModel().provider, id:faux.getModel().id});
       chat = await host.rewindSession({...chat.address, entryId:second.entryId});
@@ -107,7 +118,7 @@ test("SDK fork/rewind/reload/shutdown, root startup UI and stale epochs", async 
       expect(await host.reloadSession(chat.address)).toEqual({state:"applied"});
       chat = host.runtimeState().sessions[0].snapshot;
       expect(chat.address.sessionId).toBe(old.sessionId); expect(chat.address.epoch).toBeGreaterThan(old.epoch);
-      expect(globalThis.__starts).toBe(3); expect(globalThis.__shutdown).toEqual(["fork", "reload"]);
+      expect(globalThis.__starts).toBe(3); expect(globalThis.__shutdown).toEqual(["quit", "reload"]);
       const errorSend = {...chat.address, requestId:"handled-error", draftRevision:host.drafts.read(chat.address).revision, text:"/boom"};
       expect(await host.prompt(errorSend)).toEqual({disposition:"handled"}); await host.receipts.settled();
       expect(host.getSessionSnapshot(chat.address).failure).toContain("command failure fixture");
@@ -174,7 +185,7 @@ test("SDK fork/rewind/reload/shutdown, root startup UI and stale epochs", async 
       expect(await deferred).toEqual({disposition:"started"}); await host.receipts.settled();
       expect(host.getPromptReceipt(deferredRequest).state).toBe("accepted");
       await host.closeSession(chat.address);
-      expect(globalThis.__shutdown).toEqual(["fork", "reload", "quit"]);
+      expect(globalThis.__shutdown).toEqual(["quit", "reload", "quit"]);
       expect(await flags.settled()).toEqual(stored);
       // Root listener exists before open; cancellation destroys late startup results.
       holdStartup = true;

@@ -1,5 +1,6 @@
 import "./runtime-profile";
 import { statSync } from "node:fs";
+import { unlink } from "node:fs/promises";
 import { join } from "node:path";
 import type {
   ActionKeymap,
@@ -213,8 +214,14 @@ type HistoryHandle = {
   reading?: Promise<Snapshot>;
   waking?: Promise<Snapshot>;
 };
+type BranchOrigin = {
+  manager: SDKSessionManager;
+  previousSessionFile: string;
+  accounts: SessionAccounts;
+};
 type Opening = {
   input: OpenSessionParams;
+  branch?: BranchOrigin;
   state: OpenState;
   promise: Promise<Snapshot>;
   controller: AbortController;
@@ -870,6 +877,12 @@ export class SessionHost {
     }
   }
   openSession(input: OpenSessionParams): Promise<Snapshot> {
+    return this.startOpen(input);
+  }
+  private startOpen(
+    input: OpenSessionParams,
+    branch?: BranchOrigin,
+  ): Promise<Snapshot> {
     if (this.shuttingDown)
       return Promise.reject(new Error("Session host is shutting down"));
     if (!input.openId || input.openId.length > 256 || !input.cwd)
@@ -902,6 +915,7 @@ export class SessionHost {
     const deferred = Promise.withResolvers<Snapshot>();
     const open: Opening = {
       input: { ...input },
+      branch,
       state: { state: "unknown" },
       controller,
       promise: deferred.promise,
@@ -944,7 +958,7 @@ export class SessionHost {
       | undefined;
     let resuming: HistoryHandle | undefined;
     try {
-      const { input, controller } = open;
+      const { input, controller, branch } = open;
       controller.signal.throwIfAborted();
       if (input.id && this.sessions.has(input.id)) {
         const existing = this.sessions.get(input.id) as Managed;
@@ -962,9 +976,11 @@ export class SessionHost {
         open.state = { state: "ready", snapshot };
         return snapshot;
       }
-      const file = input.id
-        ? await resolveSessionFile(input.cwd, input.id)
-        : undefined;
+      const file = branch
+        ? branch.manager.getSessionFile()
+        : input.id
+          ? await resolveSessionFile(input.cwd, input.id)
+          : undefined;
       controller.signal.throwIfAborted();
       // Another openId may have acquired this persisted session while the
       // membership scan awaited. Never construct two runtimes for one SDK ID.
@@ -1034,9 +1050,11 @@ export class SessionHost {
       if (resuming && (!file || !sameSessionPath(file, resuming.file)))
         throw new Error("Session file changed while suspended");
       // open() derives the directory from the file, which matches sessionDirFor.
-      const manager = file
-        ? SessionManager.open(file)
-        : SessionManager.create(input.cwd, await sessionDirFor(input.cwd));
+      const manager =
+        branch?.manager ??
+        (file
+          ? SessionManager.open(file)
+          : SessionManager.create(input.cwd, await sessionDirFor(input.cwd)));
       controller.signal.throwIfAborted();
       if (
         resuming &&
@@ -1066,11 +1084,13 @@ export class SessionHost {
         resuming: !!resuming,
         openId: input.openId,
         manager,
-        accounts: resuming
-          ? { ...resuming.accounts }
-          : validateSessionAccounts(
-              this.options.sessionAccounts?.read(address.sessionId) ?? {},
-            ),
+        accounts:
+          branch?.accounts ??
+          (resuming
+            ? { ...resuming.accounts }
+            : validateSessionAccounts(
+                this.options.sessionAccounts?.read(address.sessionId) ?? {},
+              )),
         projector: new SDKProjector(
           manager,
           address.epoch,
@@ -1106,6 +1126,20 @@ export class SessionHost {
       open.managed = m;
       this.sessions.set(address.sessionId, m);
       open.state = { state: "opening", address };
+      // Claim the new session before awaiting account persistence, so another
+      // window cannot open the new file under a different account.
+      if (branch && file && Object.keys(branch.accounts).length) {
+        try {
+          await this.options.sessionAccounts?.write(
+            address.sessionId,
+            branch.accounts,
+          );
+        } catch (error) {
+          await unlink(file);
+          throw error;
+        }
+        controller.signal.throwIfAborted();
+      }
       if (!resuming)
         this.options.emit({
           type: "opening",
@@ -1325,6 +1359,13 @@ export class SessionHost {
         cwd: input.cwd,
         agentDir,
         sessionManager: manager,
+        sessionStartEvent: branch
+          ? {
+              type: "session_start",
+              reason: "fork",
+              previousSessionFile: branch.previousSessionFile,
+            }
+          : undefined,
       });
       managed.runtime.setBeforeSessionInvalidate(() => {
         this.cancelPublish(managed);
@@ -2186,7 +2227,7 @@ export class SessionHost {
           item.key.requestId === params.key.requestId,
       )
     )
-      throw new Error("Input does not belong to this chat");
+      throw new Error("Queued input was not cancelled in this chat");
     this.receipts.acknowledgeRecovery(params.key);
   }
   /** Returns the resulting order of the host-held follow-ups. */
@@ -2836,15 +2877,41 @@ export class SessionHost {
     });
   }
   async forkSession(params: SessionAddress & { entryId: string }) {
+    if (this.shuttingDown) throw new Error("Session host is shutting down");
     const m = this.current(params);
-    if (!m.manager.getEntry(params.entryId)) throw new Error("Entry not found");
-    if (this.receipts.pending(params) || m.adapters?.busy)
-      throw new Error("SESSION_TRANSITION_BUSY");
-    return this.transition(m, () =>
-      this.serialize(m, async () => {
-        await required(m.runtime).fork(params.entryId, { position: "at" });
-        return this.snapshot(m);
-      }),
+    const { entryId } = params;
+    const entry = m.manager.getEntry(entryId);
+    if (
+      entry?.type !== "message" ||
+      (entry.message.role !== "user" && entry.message.role !== "assistant")
+    )
+      throw new Error("Select a saved message to branch from");
+    const runner = required(m.runtime).session.extensionRunner;
+    if (runner.hasHandlers("session_before_fork")) {
+      const result = await runner.emit({
+        type: "session_before_fork",
+        entryId,
+        position: "at",
+      });
+      if (result?.cancel) throw new Error("Branch cancelled");
+      this.current(params);
+    }
+    const source = m.manager.getSessionFile();
+    if (!source || !statSync(source, { throwIfNoEntry: false })?.isFile())
+      throw new Error("Session history has not been saved");
+    // Branching changes the manager's file and leaf. Never use the live manager.
+    const copy = SessionManager.open(source, m.manager.getSessionDir());
+    if (copy.getSessionId() !== params.sessionId)
+      throw new Error("Session history changed before branching");
+    const file = copy.createBranchedSession(entryId);
+    if (!file) throw new Error("Failed to save branch");
+    return this.startOpen(
+      { cwd: m.cwd, id: copy.getSessionId(), openId: crypto.randomUUID() },
+      {
+        manager: copy,
+        previousSessionFile: source,
+        accounts: { ...m.accounts },
+      },
     );
   }
   async rewindSession(params: SessionAddress & { entryId: string }) {
