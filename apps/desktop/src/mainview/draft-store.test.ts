@@ -155,7 +155,13 @@ test("late old-epoch ACK and accepted clear cannot mutate transferred draft", as
   store.receive(a, { ...emptyContent(), revision: 99 });
   expect(store.clearAccepted(a, version)).toBe(false);
   expect(store.read(next).content.text).toBe("unsynced");
-  await expect(store.flush(a, mirror())).rejects.toThrow("replaced");
+  const sync = async () => {
+    throw new Error("Retired drafts must not be synced");
+  };
+  expect(await store.flush(a, sync)).toMatchObject({ retired: true });
+  await expect(store.flush(a, sync, undefined, "send")).rejects.toThrow(
+    "replaced",
+  );
 });
 for (const echoFirst of [false, true])
   test(`suspension's empty mirror echo ${echoFirst ? "before" : "after"} ownership preserves late input without a false conflict`, async () => {
@@ -234,7 +240,10 @@ test("transfers release old payloads and conflicts, retaining only the destinati
   expect(store.retained()).toEqual([]);
 });
 
-test("a late CAS conflict cannot reattach payloads to a transferred owner", async () => {
+test.each([
+  "conflict",
+  "rejection",
+] as const)("a late mirror %s cannot reattach payloads to a transferred owner", async (result) => {
   const store = new DraftStore();
   store.edit(a, () => content("local"));
   const response = Promise.withResolvers<DraftSyncResult>();
@@ -246,11 +255,14 @@ test("a late CAS conflict cannot reattach payloads to a transferred owner", asyn
   await started.promise;
   const next = { ...a, epoch: 2 };
   store.transfer(a, next);
-  response.resolve({
-    applied: false,
-    draft: { ...content("remote payload"), revision: 99 },
-  });
-  await expect(flush).rejects.toThrow("conflict");
+  if (result === "rejection")
+    response.reject(new Error("STALE_SESSION_ADDRESS"));
+  else
+    response.resolve({
+      applied: false,
+      draft: { ...content("remote payload"), revision: 99 },
+    });
+  expect(await flush).toMatchObject({ retired: true });
   expect(store.read(a).content).toEqual(emptyContent());
   expect(store.read(a).conflict).toBeUndefined();
   expect(store.read(next).content.text).toBe("local");

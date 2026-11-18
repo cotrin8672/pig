@@ -58,6 +58,11 @@ export type RuntimeEvent =
     }
   | { type: "snapshot"; snapshot: Snapshot };
 export type SendKey = SessionAddress & { requestId: string };
+export type PromptRecoveryAck = SessionAddress & {
+  key: SendKey;
+  /** Returned after an inconclusive receipt check, not a cancelled queue entry. */
+  unconfirmed?: true;
+};
 export const RESUME_REQUEST_PREFIX = "resume:";
 export type PromptDelivery = "steer" | "followUp";
 export type PromptAccepted = { disposition: "started" | "queued" | "handled" };

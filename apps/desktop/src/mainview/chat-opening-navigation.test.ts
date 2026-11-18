@@ -1,7 +1,12 @@
 import { afterAll, expect, mock, test } from "bun:test";
 import { fileURLToPath } from "node:url";
 import type { ModelInfo, Snapshot } from "../shared/rpc-schema";
-import type { OpenSessionParams, OpenState } from "../shared/runtime-contract";
+import type {
+  OpenSessionParams,
+  OpenState,
+  RuntimeRecoveryState,
+  RuntimeStateSnapshot,
+} from "../shared/runtime-contract";
 import { emptyTranscript } from "../shared/transcript";
 
 if (process.env.PIG_OPEN_NAVIGATION_CHILD !== "1") {
@@ -29,6 +34,11 @@ if (process.env.PIG_OPEN_NAVIGATION_CHILD !== "1") {
   const states = new Map<string, OpenState>();
   const cancelled: string[] = [];
   let failRecovery = false;
+  let recovery: Omit<RuntimeRecoveryState, "hostId"> = {};
+  let startupState: Partial<RuntimeStateSnapshot> = {};
+  const unexpectedSync = mock(async () => {
+    throw new Error("Cannot sync an inactive draft");
+  });
   mock.module("electrobun/view", () => ({
     Electroview: class {
       constructor(readonly options: unknown) {}
@@ -43,6 +53,7 @@ if (process.env.PIG_OPEN_NAVIGATION_CHILD !== "1") {
               pendingUI: [],
               drafts: [],
               statuses: [],
+              ...startupState,
             }),
             heartbeatUI: async () => ({ connected: true }),
             getRecovery: () => {
@@ -50,10 +61,10 @@ if (process.env.PIG_OPEN_NAVIGATION_CHILD !== "1") {
                 throw new Error("Recovery transport failed synchronously");
               return Promise.resolve({
                 hostId: "navigation",
-                sendIntents: [],
-                retainedDrafts: [],
+                ...recovery,
               });
             },
+            syncDraft: unexpectedSync,
             listSessions: async () => [],
             openSession: (params: OpenSessionParams) => {
               const deferred = Promise.withResolvers<Snapshot>();
@@ -89,6 +100,7 @@ if (process.env.PIG_OPEN_NAVIGATION_CHILD !== "1") {
     cancelOpening,
     connectRuntime,
     initRuntimeConnection,
+    sends,
   } = await import("./rpc");
   const { useStore } = await import("./store");
   const { navigate } = await import("./navigation");
@@ -440,6 +452,49 @@ if (process.env.PIG_OPEN_NAVIGATION_CHILD !== "1") {
       failRecovery = false;
     }
   });
+  test("reopening after a restart does not restore or sync inactive sends", async () => {
+    const chat = await start("reopened");
+    const current = chat.ready.address;
+    const previous = { ...current, hostId: "previous-host" };
+    const closed = { ...current, epoch: current.epoch - 1 };
+    const unopened = { ...current, sessionId: "unopened" };
+    const owner = { cwd: "project", sessionFile: null, branchId: null };
+    const content = { text: "interrupted input", pastes: [], images: [] };
+    const notices = useStore.getState().noticeHistory;
+    recovery = {
+      retainedDrafts: [
+        { address: previous, owner, draft: { ...content, revision: 1 } },
+      ],
+      sendIntents: [previous, closed, unopened].map((address) => ({
+        receipt: {
+          ...address,
+          state: "unknown",
+          reason: address === previous ? "host-restarted" : "not-found",
+          requestId: "interrupted",
+        },
+        hash: "saved",
+        draftRevision: 1,
+        owner,
+        content,
+      })),
+    };
+    try {
+      chat.deferred.resolve(chat.ready);
+      await chat.promise;
+      await Bun.sleep(0);
+      expect(unexpectedSync).not.toHaveBeenCalled();
+      expect(useStore.getState().noticeHistory).toBe(notices);
+      expect(drafts.read(current).content.text).toBe("");
+      expect(drafts.read(previous).content).toEqual(content);
+      expect(sends.retained().map((state) => state.content)).toEqual([
+        content,
+        content,
+        content,
+      ]);
+    } finally {
+      recovery = {};
+    }
+  });
   test("splitting the initial welcome creates two local editors and closing one never opens the SDK", async () => {
     const { createPane, closePane } = await import("./pane-state");
     useStore.setState((state) => ({
@@ -469,5 +524,44 @@ if (process.env.PIG_OPEN_NAVIGATION_CHILD !== "1") {
     closePane();
     expect(useStore.getState().pendingOpens[closedId]).toBeUndefined();
     expect(calls).toHaveLength(count);
+  });
+  test("another window's initial runtime read must not recover a closing chat", async () => {
+    const closing = snapshot("closing-in-other-window");
+    const previous = { ...closing.address, epoch: closing.address.epoch - 1 };
+    const content = { text: "interrupted send", pastes: [], images: [] };
+    const draft = { ...content, text: "saved draft", revision: 2 };
+    startupState = {
+      sessions: [
+        { address: closing.address, phase: "closing", snapshot: closing },
+      ],
+      drafts: [{ address: closing.address, draft }],
+      sendIntents: [closing.address, previous].map((address) => ({
+        receipt: {
+          ...address,
+          requestId: "interrupted",
+          state: "unknown",
+          reason: "not-found",
+        },
+        content,
+        draftRevision: 1,
+        hash: "saved",
+        owner: { cwd: closing.info.cwd, sessionFile: null, branchId: null },
+      })),
+    };
+    const notices = useStore.getState().noticeHistory;
+    try {
+      window.dispatchEvent(new Event("pagehide"));
+      await connectRuntime();
+      await Bun.sleep(0);
+      expect(unexpectedSync).not.toHaveBeenCalled();
+      expect(useStore.getState().noticeHistory).toBe(notices);
+      expect(drafts.read(closing.address)).toMatchObject({
+        retired: true,
+        content: { text: draft.text },
+      });
+      expect(sends.read(closing.address)?.content).toEqual(content);
+    } finally {
+      startupState = {};
+    }
   });
 }

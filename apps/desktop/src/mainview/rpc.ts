@@ -637,6 +637,10 @@ subscribeOwnership((previous, next) => {
     selections.take(previous) ??
     selectionTransfers.get(addressKey(previous))?.desired;
   selectionTransfers.delete(addressKey(previous));
+  (address) => {
+    const current = useStore.getState().addresses[address.sessionId];
+    return !!current && sameAddress(current, address) && liveAddress(address);
+  },
   if (desired)
     selectionTransfers.set(addressKey(next), { address: next, desired });
 });

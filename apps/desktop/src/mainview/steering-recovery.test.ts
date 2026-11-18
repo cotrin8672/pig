@@ -196,6 +196,39 @@ test("recovery acknowledgement waits for persistence and prevents restoration on
   expect(reload.notices).toEqual([]);
 });
 
+test("recovery finishing after the draft owner closes does not acknowledge it", async () => {
+  const started = Promise.withResolvers<void>();
+  const saved = Promise.withResolvers<void>();
+  const f = fixture(async () => {
+    started.resolve();
+    await saved.promise;
+  });
+  f.sends.restore([intent]);
+  f.sends.reconcile(snapshot());
+  await started.promise;
+  f.drafts.retire(address);
+  saved.resolve();
+  await Bun.sleep(0);
+  expect(f.acknowledged).toEqual([]);
+  expect(f.errors).toEqual([]);
+  expect(f.drafts.read(address).content).toMatchObject(content);
+});
+
+test("unknown input can follow an explicit transfer without acknowledging across owners", async () => {
+  const f = fixture();
+  f.sends.restore([
+    { ...intent, receipt: { ...key, state: "unknown", reason: "not-found" } },
+  ]);
+  const next = { ...address, epoch: address.epoch + 1 };
+  f.drafts.transfer(address, next);
+  f.sends.transfer(address, next);
+  await Bun.sleep(0);
+  expect(f.drafts.read(next).content).toMatchObject(content);
+  expect(f.acknowledged).toEqual([]);
+  expect(f.errors).toEqual([]);
+  expect(f.notices).toEqual(["unknown"]);
+});
+
 test("failed draft persistence retains recovery data and reports the error without acknowledging", async () => {
   const f = fixture(async () => {
     throw new Error("disk unavailable");

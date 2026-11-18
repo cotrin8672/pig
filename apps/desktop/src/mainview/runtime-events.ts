@@ -473,6 +473,10 @@ export function receiveRuntimeState(state: RuntimeViewState) {
   }
   for (const item of state.drafts)
     if (liveAddress(item.address)) drafts.receive(item.address, item.draft);
+  // Another window can connect between the start and end of Close. Keep its
+  // last draft, but never treat that address as writable during recovery.
+  for (const session of state.sessions)
+    if (session.phase === "closing") drafts.retire(session.address);
   for (const item of state.statuses)
     receiveExtension({ type: "status", ...item });
   for (const request of state.pendingUI) {

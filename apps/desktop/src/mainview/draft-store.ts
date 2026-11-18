@@ -399,8 +399,10 @@ export class DraftStore {
     const run = async () => {
       for (let attempt = 0; attempt < 2; attempt++) {
         const draft = this.read(address);
-        if (draft.retired)
+        if (draft.retired) {
+          if (!requestId) return draft;
           throw new Error("This draft belongs to a replaced or closed session");
+        }
         if (draft.conflict)
           throw new Error(
             "Extension changed the editor. Choose which draft to keep before sending.",
@@ -426,15 +428,18 @@ export class DraftStore {
         this.flights.set(key, flight);
         try {
           const result = await sync({
-            ...address,
+            hostId: address.hostId,
+            sessionId: address.sessionId,
+            epoch: address.epoch,
             expectedRevision: flight.expectedRevision,
             content: flight.content,
             ...(requestId ? { requestId, delivery } : {}),
           });
           this.receive(address, result.draft);
+          const now = this.read(address);
+          if (!requestId && now.retired) return now;
           if (result.applied)
             return { ...target, revision: result.draft.revision, dirty: false };
-          const now = this.read(address);
           const recoverable =
             equal(flight.content, result.draft) ||
             consumes(result.draft, flight.expectedRevision) ||
@@ -450,6 +455,10 @@ export class DraftStore {
             );
           if (!requestId && !now.dirty) return now;
           // Sends must still perform an applied CAS to reserve their request ID.
+        } catch (error) {
+          const now = this.read(address);
+          if (!requestId && now.retired) return now;
+          throw error;
         } finally {
           this.flights.delete(key);
         }

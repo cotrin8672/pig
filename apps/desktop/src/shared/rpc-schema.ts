@@ -34,6 +34,7 @@ import type {
   RuntimeStateSnapshot,
   RuntimeUsage,
   SendKey,
+  PromptRecoveryAck,
   SessionAddress,
 } from "./runtime-contract";
 import type { Settings, SettingsPatch } from "./settings";
@@ -377,7 +378,7 @@ export type RPCSchema = {
       getPromptReceipt: { params: SendKey; response: PromptReceipt };
       cancelPrompt: { params: SendKey; response: PromptReceipt };
       acknowledgePromptRecovery: {
-        params: SessionAddress & { key: SendKey };
+        params: PromptRecoveryAck;
         // biome-ignore lint/suspicious/noConfusingVoidType: Electrobun convention.
         response: void;
       };
