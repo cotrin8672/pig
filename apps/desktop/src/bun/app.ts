@@ -10,9 +10,15 @@ import { accountSourceKey } from "../shared/account-models";
 import { dictionary } from "../shared/i18n";
 import { sanitizeOverride } from "../shared/model-overrides";
 import { isModelEnabled } from "../shared/models";
+import {
+  type NewNotice,
+  type NoticeRecord,
+  newNoticeRecord,
+} from "../shared/notification-history";
 import { knownProject, withoutProject } from "../shared/projects";
 import type {
   InstalledPackage,
+  PackageOpStatus,
   RPCSchema,
   SessionTarget,
   Snapshot,
@@ -69,6 +75,7 @@ import {
   writeDefaultEffort,
   writeModelOverride,
 } from "./model-settings";
+import { NotificationHistory } from "./notification-history";
 import { coalescePackageReload, withPackageLock } from "./package-queue";
 import {
   listInstalled,
@@ -114,6 +121,7 @@ import {
 import { searchProjectPaths } from "./project-files";
 import { ProjectStore } from "./project-store";
 import { providerAccounts } from "./provider-accounts";
+import { revealPath } from "./reveal-path";
 import { agentDir, agentDirSource } from "./runtime-profile";
 import { defaultSessionDir, SearchIndex } from "./search-index";
 import { sessionDirFor } from "./session-files";
@@ -121,7 +129,6 @@ import { loadSettings, saveSettings } from "./settings";
 import { TerminalRouter } from "./terminal-router";
 import {
   packRuntimeState,
-import { revealPath } from "./reveal-path";
   packSnapshot,
   packTranscript,
 } from "./transcript-wire";
@@ -142,6 +149,20 @@ const desktopState = new DesktopStateStore(
   join(desktopConfigDir, "desktop.json"),
   (state) => hub.broadcast("desktopState", state),
 );
+const notificationHistory = new NotificationHistory(
+  join(desktopConfigDir, "notifications.json"),
+  (state) => hub.broadcast("noticeHistory", state),
+);
+function publishNotice(notice: NewNotice, windowId?: string) {
+  const toast = (record: NoticeRecord) => {
+    if (windowId === undefined) hub.broadcast("notification", record);
+    else hub.to(windowId, "notification", record);
+  };
+  void notificationHistory.append(notice, toast).catch((error) => {
+    console.error("Cannot save notification history:", error);
+    toast(newNoticeRecord(notice));
+  });
+}
 
 const modelPreferences = new ModelPreferences(
   join(desktopConfigDir, "disabled-models.json"),
@@ -152,6 +173,7 @@ const projectStore = new ProjectStore(
 );
 await Promise.all([
   desktopState.load(),
+  notificationHistory.load(),
   modelPreferences.load(),
   projectStore.load(),
 ]);
@@ -261,15 +283,30 @@ function updateAppearance(value: unknown) {
       hub.broadcast("appearance", appearance);
     })
     .catch((error) => {
-      hub.broadcast("appearanceError", { message: String(error) });
+      report(error);
       // Let the UI revert to what is actually applied.
       hub.broadcast("appearance", appearance);
     });
 }
 const report = (error: unknown) => {
   console.error(error);
-  hub.broadcast("error", { message: String(error) });
+  publishNotice({ level: "error", message: String(error) });
 };
+function publishPackageOp(op: PackageOpStatus) {
+  hub.broadcast("packageOp", op);
+  if (op.status === "running") return;
+  publishNotice({
+    kind: "package",
+    level: op.status === "error" ? "error" : "success",
+    message:
+      op.status === "error"
+        ? op.message
+        : dictionary(settings.language).packageDone(
+            op.action,
+            op.source.replace(/^npm:/, ""),
+          ),
+  });
+}
 /** The window whose image context menu is open. */
 let imageMenuOwner: AppWindow | undefined;
 initImageMenu(report, () => imageMenuOwner?.window.ptr ?? null);
@@ -644,7 +681,7 @@ const hostRequests = {
   setEffort: (input) => withRuntime(input, setSessionEffort),
 } satisfies Omit<
   RequestHandlers,
-  "copyImage" | "terminalCommand" | "importChatHistory"
+  "copyImage" | "terminalCommand" | "importChatHistory" | "noticeHistory"
 >;
 /** Window-independent messages. */
 const hostMessages = {
@@ -716,30 +753,30 @@ const hostMessages = {
     void packageOperation(
       "install",
       input,
-      (event) => hub.broadcast("packageOp", event),
+      publishPackageOp,
       publishInstalled,
       reloadPackages,
-      (message) => hub.broadcast("error", { message }),
+      report,
     ).catch(console.error);
   },
   uninstallPackage: (input) => {
     void packageOperation(
       "uninstall",
       input,
-      (event) => hub.broadcast("packageOp", event),
+      publishPackageOp,
       publishInstalled,
       reloadPackages,
-      (message) => hub.broadcast("error", { message }),
+      report,
     ).catch(console.error);
   },
   updatePackage: (input) => {
     void packageOperation(
       "update",
       input,
-      (event) => hub.broadcast("packageOp", event),
+      publishPackageOp,
       publishInstalled,
       reloadPackages,
-      (message) => hub.broadcast("error", { message }),
+      report,
     ).catch(console.error);
   },
 } satisfies Omit<
@@ -758,7 +795,7 @@ const notifyCompletion = createCompletionNotifier({
   desktopState,
   language: () => settings.language,
   report,
-  notify: (notice) => hub.broadcast("notification", notice),
+  notify: publishNotice,
   attended: () =>
     [...windows.values()].some(
       (target) => target.focused && !target.window.isMinimized(),
@@ -772,6 +809,8 @@ configureSessionHost(
     terminal: (event) => terminals.event(event),
     runtime: (event) => {
       hub.runtime(event);
+      if (event.type === "closed" && event.reason === "failed" && event.message)
+        publishNotice({ level: "error", message: event.message });
       notifyCompletion(event);
     },
   },
@@ -827,6 +866,10 @@ function createWindow() {
     handlers: {
       requests: {
         ...hostRequests,
+        noticeHistory: (input) =>
+          notificationHistory.request(input, (record) =>
+            hub.to(id, "notification", record),
+          ),
         importChatHistory: async (input) => {
           const scopes = new Set<string>();
           const place = async (workspace?: string) => {
@@ -1025,7 +1068,7 @@ function createWindow() {
       }
     } catch (error) {
       console.error("Cannot apply backdrop:", error);
-      hub.to(id, "appearanceError", { message: String(error) });
+      publishNotice({ level: "error", message: String(error) }, id);
     }
   });
   window.on("close", () => {
@@ -1083,6 +1126,7 @@ Electrobun.events.on("before-quit", (event) => {
     .then(async (close) => {
       if (!close) return;
       await disposeSessions();
+      await notificationHistory.settled();
       quitReady = true;
       Utils.quit();
     })

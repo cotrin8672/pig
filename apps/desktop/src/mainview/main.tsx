@@ -4,7 +4,7 @@ import { applyPatchRenderer } from "./ApplyPatchRenderer";
 import { reloadChatRenderers } from "./chat-renderer-client";
 import { registerBuiltinChatRenderers } from "./chat-renderer-registry";
 import { piLensRenderer } from "./PiLensRenderer";
-import { rpc } from "./rpc";
+import { initNoticeHistory, rpc } from "./rpc";
 import "katex/dist/katex.min.css";
 import "./styles.css";
 
@@ -18,6 +18,7 @@ for (const type of ["dragover", "drop"] as const)
   });
 
 registerBuiltinChatRenderers([piLensRenderer, applyPatchRenderer]);
+initNoticeHistory();
 const root = document.getElementById("root");
 if (root) createRoot(root).render(<App />);
 

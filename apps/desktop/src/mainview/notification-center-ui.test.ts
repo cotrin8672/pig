@@ -10,7 +10,7 @@ import {
 const local = (path: string) => fixtureImport(new URL(path, import.meta.url));
 
 test.skipIf(!existsSync(fixtureEdge) && !process.env.PIG_REQUIRE_UI_TESTS)(
-  "notification panel paints above the sidebar usage bars",
+  "notification panel paints above usage bars and follows shared read state",
   () =>
     runUiFixture(
       "notification-center",
@@ -19,7 +19,7 @@ test.skipIf(!existsSync(fixtureEdge) && !process.env.PIG_REQUIRE_UI_TESTS)(
     const {flushSync}=await import(${fixtureImport(import.meta.resolve("react-dom"))});
     const {NotificationCenter}=await import(${local("./NotificationCenter.tsx")});
     const {ProviderUsageView}=await import(${local("./ProviderUsageView.tsx")});
-    const {useStore}=await import(${local("./store.ts")});
+    const {connectNoticeHistory,receiveNoticeHistory,useStore}=await import(${local("./store.ts")});
     const {usageFixtures,usageFixtureTime}=await import(${local("../stories/providers/usage-fixtures.ts")});
     await import(${local("./styles.css")});
     ${fixtureHelpers}
@@ -43,6 +43,25 @@ test.skipIf(!existsSync(fixtureEdge) && !process.env.PIG_REQUIRE_UI_TESTS)(
       const r=el.getBoundingClientRect(),hit=document.elementFromPoint((r.left+r.right)/2,(r.top+r.bottom)/2);
       check(hit?.closest('.notification-panel'),'usage content must not paint above the notification panel: '+el.className);
     }
+    const [initial]=useStore.getState().noticeHistory;
+    const snapshot={revision:1,notices:[initial,{...initial,id:'n2',message:'Second notification'}]};
+    const sent=[];
+    await connectNoticeHistory(async request=>{
+      sent.push(request);
+      return snapshot;
+    },[]);
+    await wait();
+    check(document.querySelector('.notification-badge').textContent==='2','both notices should be unread');
+    document.querySelector('.notification-entry:last-child').click();
+    check(sent.at(-1).type==='read'&&sent.at(-1).ids.join()==='n1','click must submit only the selected ID');
+    receiveNoticeHistory({revision:2,notices:[{...initial,read:true},snapshot.notices[1]]});
+    await wait();
+    check(document.querySelector('.notification-badge').textContent==='1','first read should update the badge');
+    receiveNoticeHistory({revision:3,notices:snapshot.notices.map(n=>({...n,read:true}))});
+    receiveNoticeHistory(snapshot);
+    await wait();
+    check(!document.querySelector('.notification-badge'),'another window should clear the badge without reloading');
+    check(!document.querySelector('.notification-unread-dot'),'a stale reply must not bring back unread dots');
   `,
     ),
   60_000,
