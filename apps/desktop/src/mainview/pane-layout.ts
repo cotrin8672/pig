@@ -118,6 +118,89 @@ export function removePane(node: PaneNode, id: number): PaneNode | undefined {
       : group(node.axis, children, weights);
 }
 
+export type PaneDropSide = "top" | "bottom" | "left" | "right" | "center";
+
+/** Which pane and zone a workspace-relative point (0..1) drops onto. The inner box swaps. */
+export function paneDropAt(tree: PaneNode, x: number, y: number) {
+  const hit = paneGeometry(tree).panes.find(
+    ({ bounds: b }) =>
+      x >= b.x && x <= b.x + b.width && y >= b.y && y <= b.y + b.height,
+  );
+  if (!hit) return;
+  const rx = (x - hit.bounds.x) / hit.bounds.width;
+  const ry = (y - hit.bounds.y) / hit.bounds.height;
+  const edges = [
+    ["left", rx],
+    ["right", 1 - rx],
+    ["top", ry],
+    ["bottom", 1 - ry],
+  ] as const;
+  const [side, distance] = edges.reduce((a, b) => (b[1] < a[1] ? b : a));
+  return {
+    target: hit.id,
+    side: (distance > 0.3 ? "center" : side) as PaneDropSide,
+  };
+}
+
+function insertPane(
+  node: PaneNode,
+  target: number,
+  id: number,
+  axis: SplitAxis,
+  before: boolean,
+): PaneNode {
+  if (node.type === "pane")
+    return node.id === target
+      ? group(axis, before ? [pane(id), node] : [node, pane(id)])
+      : node;
+  const index = node.children.findIndex(
+    (child) => child.type === "pane" && child.id === target,
+  );
+  if (node.axis === axis && index >= 0) {
+    // Join the existing group by halving only the target, so siblings keep their size.
+    const children = [...node.children];
+    const weights = [...node.weights];
+    weights.splice(index, 1, weights[index] / 2, weights[index] / 2);
+    children.splice(before ? index : index + 1, 0, pane(id));
+    return { ...node, children, weights };
+  }
+  return {
+    ...node,
+    children: node.children.map((child) =>
+      insertPane(child, target, id, axis, before),
+    ),
+  };
+}
+
+function swapPanes(node: PaneNode, a: number, b: number): PaneNode {
+  if (node.type === "pane")
+    return node.id === a ? pane(b) : node.id === b ? pane(a) : node;
+  return {
+    ...node,
+    children: node.children.map((child) => swapPanes(child, a, b)),
+  };
+}
+
+/** Drop pane `id` onto a side of `target`; the center swaps the two panes. */
+export function movePane(
+  tree: PaneNode,
+  id: number,
+  target: number,
+  side: PaneDropSide,
+): PaneNode {
+  if (id === target) return tree;
+  if (side === "center") return swapPanes(tree, id, target);
+  const rest = removePane(tree, id);
+  if (!rest) return tree;
+  return insertPane(
+    rest,
+    target,
+    id,
+    side === "top" || side === "bottom" ? "rows" : "columns",
+    side === "top" || side === "left",
+  );
+}
+
 export function paneGeometry(tree: PaneNode) {
   const panes: { id: number; bounds: PaneRect }[] = [];
   const dividers: PaneDivider[] = [];

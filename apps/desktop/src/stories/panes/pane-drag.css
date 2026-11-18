@@ -1,0 +1,18 @@
+.pane-drag-window {
+  position: relative;
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+}
+.pane-drag-clip {
+  position: absolute;
+  inset: 0;
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  background: var(--ds-bg-chat);
+}
+.pane-drag-window .pane-content {
+  display: flex;
+  flex-direction: column;
+}

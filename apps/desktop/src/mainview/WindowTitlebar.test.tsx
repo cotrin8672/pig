@@ -32,13 +32,13 @@ function setup() {
   };
 }
 
-test("the trigger extends 32px down without covering the sidebar", () => {
+test("the trigger extends 16px down without covering the sidebar", () => {
   const collapsed = { left: 260, right: 1272, top: 0, bottom: 0 };
-  expect(isTitlebarHotzone(600, 24, collapsed)).toBe(true);
-  expect(isTitlebarHotzone(600, 32, collapsed)).toBe(true);
-  expect(isTitlebarHotzone(600, 33, collapsed)).toBe(false);
-  expect(isTitlebarHotzone(200, 24, collapsed)).toBe(false);
-  expect(isTitlebarHotzone(1280, 24, collapsed)).toBe(false);
+  expect(isTitlebarHotzone(600, 0, collapsed)).toBe(true);
+  expect(isTitlebarHotzone(600, 16, collapsed)).toBe(true);
+  expect(isTitlebarHotzone(600, 17, collapsed)).toBe(false);
+  expect(isTitlebarHotzone(200, 8, collapsed)).toBe(false);
+  expect(isTitlebarHotzone(1280, 8, collapsed)).toBe(false);
   expect(isTitlebarHotzone(600, -1, collapsed)).toBe(false);
   expect(isTitlebarHotzone(600, 34, { ...collapsed, bottom: 34 })).toBe(true);
 });

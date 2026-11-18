@@ -95,6 +95,10 @@ export const en = {
   paneSplitRows: "Split pane top/bottom",
   paneSplitColumns: "Split pane left/right",
   paneClose: "Close pane (keep session)",
+  paneDropPrompt: "Drag onto a pane",
+  paneDropSwap: (title: string) => `Swap with ${title}`,
+  paneDropPlace: (title: string, side: "top" | "bottom" | "left" | "right") =>
+    `Place ${{ top: "above", bottom: "below", left: "left of", right: "right of" }[side]} ${title}`,
   sessionStatuses: "Status",
   sessionWidgets: "Widgets",
   sessionIndicator: (label: string, count: number) => `${label}: ${count}`,
@@ -985,6 +989,10 @@ export const ja: Dictionary = {
   paneSplitRows: "Paneを上下に分割",
   paneSplitColumns: "Paneを左右に分割",
   paneClose: "Paneを閉じる（セッションは残す）",
+  paneDropPrompt: "移動先のPaneへドラッグ",
+  paneDropSwap: (title: string) => `${title}と入れ替え`,
+  paneDropPlace: (title: string, side: "top" | "bottom" | "left" | "right") =>
+    `${title}${{ top: "の上", bottom: "の下", left: "の左", right: "の右" }[side]}に配置`,
   sessionStatuses: "ステータス",
   sessionWidgets: "ウィジェット",
   sessionIndicator: (label: string, count: number) => `${label}: ${count}件`,
