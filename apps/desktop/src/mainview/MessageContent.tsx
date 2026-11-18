@@ -16,14 +16,12 @@ import {
   useState,
   useSyncExternalStore,
 } from "react";
-import ReactMarkdown, {
-  type Components,
-  defaultUrlTransform,
-} from "react-markdown";
+import ReactMarkdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import remarkMath from "remark-math";
 import { parseAnnotations, withAnnotations } from "../shared/annotations";
 import { splitAttachmentPaths } from "../shared/attachments";
+import { isFileLink } from "../shared/file-links";
 import { composerAction } from "../shared/keymap";
 import { normalizeMath } from "../shared/math";
 import { sessionIdFromLink } from "../shared/session-links";
@@ -45,14 +43,18 @@ import {
   prepareMarkdown,
   retainedMarkdown,
 } from "./markdown-processing";
+import { markdownUrl } from "./markdown-url";
 import { editKey, messageEdits } from "./message-edits";
 import { positionedKatex } from "./positioned-katex";
 import { openChatLink, regenerate, rpc } from "./rpc";
 import { SentAttachments } from "./SentAttachments";
 import { showError, useStore } from "./store";
 import { createTextSampler } from "./streaming-text";
+import { clipTooltipText, type TooltipAnchor, useTooltip } from "./Tooltip";
 
 const MarkdownStreaming = createContext(false);
+export const MarkdownCwd = createContext<string | undefined>(undefined);
+const InsideMarkdownLink = createContext(false);
 
 export const Markdown = memo(function Markdown({
   text,
@@ -92,6 +94,38 @@ const RenderedMarkdown = memo(function RenderedMarkdown({
 // always end with a newline, so they never match.
 const LOCAL_PATH = /^(?:[A-Za-z]:[\\/]|\\\\[^\\/\s]+[\\/])[^<>"|?*\n]*$/;
 
+/** Hover summary of where a link goes and what clicking does. */
+function linkTip(
+  t: ReturnType<typeof useT>,
+  href: string,
+  kind: "file" | "chat" | "web",
+): TooltipAnchor {
+  let label = href;
+  if (kind === "web")
+    try {
+      label = new URL(href).host || href;
+    } catch {}
+  else if (kind === "file") {
+    let path = href.split(/[?#]/, 1)[0];
+    try {
+      path = decodeURIComponent(path);
+    } catch {}
+    label = path.split(/[\\/]/).filter(Boolean).pop() ?? path;
+  }
+  return {
+    tier: "detail",
+    side: "top",
+    label: clipTooltipText(label),
+    description:
+      kind === "file"
+        ? t["Show in Explorer"]
+        : kind === "chat"
+          ? t["Open chat"]
+          : t["Open in browser"],
+    code: href.length > 400 ? `${href.slice(0, 399)}…` : href,
+  };
+}
+
 export const markdownComponents: Components = {
   pre: MarkdownPre,
   blockquote: MarkdownBlockquote,
@@ -100,18 +134,30 @@ export const markdownComponents: Components = {
       <table>{children}</table>
     </div>
   ),
-  code: ({ className, children }) =>
-    !className && typeof children === "string" && LOCAL_PATH.test(children) ? (
-      <a
-        href={children}
-        onClick={(e) => {
-          e.preventDefault();
-          rpc.send.revealPath({ path: children });
-        }}
-      >
-        <code>{children}</code>
-      </a>
-    ) : (
+  code: function MarkdownCode({ className, children }) {
+    const linked = useContext(InsideMarkdownLink);
+    const t = useT();
+    const tooltip = useTooltip();
+    if (
+      !linked &&
+      !className &&
+      typeof children === "string" &&
+      LOCAL_PATH.test(children)
+    )
+      return (
+        // biome-ignore lint/a11y/useValidAnchor: Keyboard-accessible native link; the WebView must not navigate to the file URL.
+        <a
+          href="#"
+          {...tooltip(() => linkTip(t, children, "file"))}
+          onClick={(e) => {
+            e.preventDefault();
+            rpc.send.revealPath({ path: children });
+          }}
+        >
+          <code>{children}</code>
+        </a>
+      );
+    return (
       <code className={className}>
         {typeof children === "string" ? (
           <CodeText
@@ -122,38 +168,56 @@ export const markdownComponents: Components = {
           children
         )}
       </code>
-    ),
-  a: ({ href, children, id, ...props }) => (
-    <a
-      href={href}
-      // Footnote anchors: jump targets and their accessible relations.
-      id={id}
-      aria-describedby={props["aria-describedby"]}
-      aria-label={props["aria-label"]}
-      data-footnote-ref={
-        (props as Record<string, unknown>)["data-footnote-ref"] as string
-      }
-      data-footnote-backref={
-        (props as Record<string, unknown>)["data-footnote-backref"] as string
-      }
-      onClick={(e) => {
-        e.preventDefault();
-        // In-message anchors (GFM footnotes). Every message reuses the same
-        // ids, so resolve within this Markdown body rather than the document.
-        if (href?.startsWith("#")) {
-          const id = decodeURIComponent(href.slice(1));
-          (e.currentTarget.closest(".prose") ?? document)
-            .querySelector(`#${CSS.escape(id)}`)
-            ?.scrollIntoView({ block: "center" });
-        } else if (href) {
-          if (sessionIdFromLink(href)) void openChatLink(href);
-          else rpc.send.openExternal({ url: href });
+    );
+  },
+  a: function MarkdownLink({ href, children, id, ...props }) {
+    const cwd = useContext(MarkdownCwd);
+    const t = useT();
+    const tooltip = useTooltip();
+    const file = href !== undefined && isFileLink(href);
+    const kind = file
+      ? "file"
+      : href && sessionIdFromLink(href)
+        ? "chat"
+        : "web";
+    const tip =
+      href && !href.startsWith("#")
+        ? tooltip(() => linkTip(t, href, kind))
+        : {};
+    return (
+      <a
+        href={file ? "#" : href || undefined}
+        {...tip}
+        // Footnote anchors: jump targets and their accessible relations.
+        id={id}
+        aria-describedby={props["aria-describedby"]}
+        aria-label={props["aria-label"]}
+        data-footnote-ref={
+          (props as Record<string, unknown>)["data-footnote-ref"] as string
         }
-      }}
-    >
-      {children}
-    </a>
-  ),
+        data-footnote-backref={
+          (props as Record<string, unknown>)["data-footnote-backref"] as string
+        }
+        onClick={(e) => {
+          e.preventDefault();
+          if (!href) return;
+          // Footnote ids repeat; resolve within this Markdown body.
+          if (href.startsWith("#")) {
+            const id = decodeURIComponent(href.slice(1));
+            (e.currentTarget.closest(".prose") ?? document)
+              .querySelector(`#${CSS.escape(id)}`)
+              ?.scrollIntoView({ block: "center" });
+          } else if (file) rpc.send.revealPath({ href, cwd });
+          else if (sessionIdFromLink(href)) void openChatLink(href);
+          else rpc.send.openExternal({ url: href });
+        }}
+      >
+        <InsideMarkdownLink.Provider value={true}>
+          {children}
+        </InsideMarkdownLink.Provider>
+      </a>
+    );
+  },
   img: ({ src, alt }) =>
     typeof src === "string" && src ? (
       <ImageGallery sources={[src]} alt={alt} />
@@ -170,9 +234,7 @@ const MarkdownTree = memo(function MarkdownTree({ tree }: { tree: Root }) {
     <ReactMarkdown
       rehypePlugins={plugins}
       components={markdownComponents}
-      urlTransform={(url) =>
-        sessionIdFromLink(url) ? url : defaultUrlTransform(url)
-      }
+      urlTransform={markdownUrl}
     >
       {""}
     </ReactMarkdown>
@@ -248,9 +310,7 @@ export function BuiltinMarkdown({
         [positionedKatex, { streaming }],
         [markdownExtensions, { streaming }],
       ]}
-      urlTransform={(url) =>
-        sessionIdFromLink(url) ? url : defaultUrlTransform(url)
-      }
+      urlTransform={markdownUrl}
       components={markdownComponents}
     >
       {source}

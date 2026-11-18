@@ -1,5 +1,5 @@
 import { stat } from "node:fs/promises";
-import { dirname, isAbsolute, join, resolve } from "node:path";
+import { join, resolve } from "node:path";
 import Electrobun, {
   BrowserView,
   BrowserWindow,
@@ -121,6 +121,7 @@ import { loadSettings, saveSettings } from "./settings";
 import { TerminalRouter } from "./terminal-router";
 import {
   packRuntimeState,
+import { revealPath } from "./reveal-path";
   packSnapshot,
   packTranscript,
 } from "./transcript-wire";
@@ -708,17 +709,8 @@ const hostMessages = {
   openExternal: ({ url }) => {
     if (/^https?:\/\//i.test(url)) Utils.openExternal(url);
   },
-  revealPath: ({ path }) => {
-    if (!isAbsolute(path)) return;
-    // Select an existing file; open the nearest existing folder otherwise.
-    void (async () => {
-      for (let target = resolve(path); ; target = dirname(target)) {
-        const info = await stat(target).catch(() => undefined);
-        if (info?.isFile()) return Utils.showItemInFolder(target);
-        if (info?.isDirectory()) return Utils.openPath(target);
-        if (dirname(target) === target) return;
-      }
-    })();
+  revealPath: (input) => {
+    void revealPath(input, Utils, validateScope).catch(report);
   },
   installPackage: (input) => {
     void packageOperation(

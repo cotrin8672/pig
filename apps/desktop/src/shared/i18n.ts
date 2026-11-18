@@ -556,6 +556,9 @@ export const en = {
   pasteSize: (lines: number, chars: number) =>
     lines > 10 ? `${lines} lines` : `${chars} chars`,
   "Scroll to bottom": "Scroll to bottom",
+  "Open in browser": "Open in browser",
+  "Show in Explorer": "Show in Explorer",
+  "Open chat": "Open chat",
   "Packages from your user and project configuration.":
     "Packages from your user and project configuration.",
   "Loading installed packages…": "Loading installed packages…",
@@ -1449,6 +1452,9 @@ export const ja: Dictionary = {
   removePaste: "貼り付けた本文を削除",
   pasteSize: (lines, chars) => (lines > 10 ? `${lines} 行` : `${chars} 文字`),
   "Scroll to bottom": "一番下に移動",
+  "Open in browser": "ブラウザで開く",
+  "Show in Explorer": "エクスプローラーで表示",
+  "Open chat": "チャットを開く",
   "Packages from your user and project configuration.":
     "ユーザーとプロジェクトの設定にあるパッケージ。",
   "Loading installed packages…": "インストール済みパッケージを読み込み中…",

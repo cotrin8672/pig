@@ -96,3 +96,68 @@ test(
     ),
   60_000,
 );
+
+test(
+  "Markdown file links reveal files relative to the clicked chat, not the active chat",
+  () =>
+    runUiFixture(
+      "markdown-file-links",
+      `
+  const {createRoot}=await import(${fixtureImport(import.meta.resolve("react-dom/client"))});
+  const {flushSync}=await import(${fixtureImport(import.meta.resolve("react-dom"))});
+  const {fauxAssistantMessage}=await import(${fixtureImport(import.meta.resolve("@earendil-works/pi-ai"))});
+  const {Chat}=await import(${fixtureImport(new URL("./App.tsx", import.meta.url))});
+  const {useStore}=await import(${fixtureImport(new URL("./store.ts", import.meta.url))});
+  const {TooltipLayer}=await import(${fixtureImport(new URL("./Tooltip.tsx", import.meta.url))});
+  await import(${fixtureImport(new URL("./styles.css", import.meta.url))});
+  ${fixtureHelpers}
+  const reveals=[], external=[];
+  window.__messages={revealPath:params=>reveals.push(params),openExternal:params=>external.push(params)};
+  window.__requests={listSlashCommands:async()=>[]};
+  const relative='docs/replise-inline-performance-request.md';
+  const absolute='C:/shared/report.md';
+  const fileUri='file:///C:/shared/notes%20final.md#L42';
+  const code='\\u0060';
+  const markdown=[
+    '['+code+relative+code+']('+relative+')',
+    '['+code+absolute+code+']('+absolute+')',
+    '[File URL]('+fileUri+')',
+    '[Website](https://example.com/docs)',
+    '[Unsafe](javascript:alert)',
+  ].join('\\n\\n');
+  const snapshot=(id,cwd,epoch)=>({
+    address:{hostId:'file-links',sessionId:id,epoch},snapshotSeq:1,
+    info:{id,cwd,title:id,modified:1},effort:'off',effortLevels:[],
+    transcript:{records:[{id:'result',parentId:null,branchId:'root',order:0,kind:'message',
+      message:fauxAssistantMessage(markdown)}],tools:{},running:false,current:null,liveToEntry:{}},
+  });
+  const left=snapshot('left','C:/left',1),right=snapshot('right','C:/right',2);
+  useStore.setState({hostId:'file-links',active:'right',addresses:{left:left.address,right:right.address},snapshots:{left,right}});
+  const root=createFixtureRoot(createRoot);
+  flushSync(()=>root.render(<TooltipLayer><div id="left"><Chat snapshot={left}/></div><div id="right"><Chat snapshot={right}/></div></TooltipLayer>));
+  await until(()=>document.querySelectorAll('.prose a').length>=10,'the Markdown worker rendered both chats');
+  const links=id=>document.querySelectorAll('#'+id+' .prose a');
+  check(!document.querySelector('.prose a a'),'a linked Windows path in code must not create a nested link');
+  const hover=async(link,label,action)=>{
+    link.dispatchEvent(new PointerEvent('pointerover',{bubbles:true,pointerType:'mouse'}));
+    await until(()=>document.querySelector('[role=tooltip] .tooltip-label')?.textContent===label,'link hover shows its target: '+label);
+    const tip=document.querySelector('[role=tooltip]');
+    check(tip.classList.contains('ui-tooltip')&&tip.textContent.includes(action),'link hover uses the shared tooltip with the click action');
+    link.dispatchEvent(new PointerEvent('pointerout',{bubbles:true,pointerType:'mouse',relatedTarget:document.body}));
+    await until(()=>!document.querySelector('[role=tooltip]'),'link tooltip closes');
+  };
+  await hover(links('left')[0],'replise-inline-performance-request.md','Explorer');
+  await hover(links('left')[3],'example.com','browser');
+  for (const index of [0,1,2,3,4]) links('left')[index].click();
+  links('right')[0].click();
+  check(JSON.stringify(reveals)===JSON.stringify([
+    {href:relative,cwd:'C:/left'},{href:absolute,cwd:'C:/left'},
+    {href:fileUri,cwd:'C:/left'},{href:relative,cwd:'C:/right'},
+  ]),'clicks send only local link destinations with the originating cwd: '+JSON.stringify(reveals));
+  check(external.length===1&&external[0].url==='https://example.com/docs','web and unsafe URLs do not enter the native reveal path');
+  root.unmount();
+  `,
+      { realRpc: true },
+    ),
+  60_000,
+);

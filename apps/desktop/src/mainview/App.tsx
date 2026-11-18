@@ -45,7 +45,7 @@ import { fontFamilyValue } from "./font-family";
 import { SavedOutputContext } from "./HighlightedCode";
 import { getT, useT } from "./i18n";
 import { DisclosureScope, LazyDetails } from "./LazyDetails";
-import { Markdown, UserMessage } from "./MessageContent";
+import { Markdown, MarkdownCwd, UserMessage } from "./MessageContent";
 import { modelDividers } from "./model-dividers";
 import { NotificationCenter } from "./NotificationCenter";
 import { OptimisticMessages } from "./OptimisticMessages";
@@ -1203,5 +1203,9 @@ export const Chat = memo(function Chat({
       )}
     </ChatLayout>
   );
-  return <McpAppScope address={snapshot.address}>{layout}</McpAppScope>;
+  return (
+    <MarkdownCwd.Provider value={info.cwd}>
+      <McpAppScope address={snapshot.address}>{layout}</McpAppScope>
+    </MarkdownCwd.Provider>
+  );
 });

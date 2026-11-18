@@ -48,6 +48,17 @@ test("worker HAST renders identically to the original Markdown/GFM/KaTeX pipelin
   ])
     expect(renderTree(parseMarkdown(text).tree)).toBe(baseline(text));
 });
+test("file destinations survive worker and React URL processing only on links", () => {
+  const text =
+    "[Drive](C:/work/docs/note.md) [File URL](file:///C:/work/note.md)\n\n" +
+    "![Not an image](file:///C:/work/note.md) [Script](javascript:blocked)";
+  const html = renderTree(parseMarkdown(text).tree);
+  expect(html).toBe(baseline(text));
+  expect(html).toContain('href="C:/work/docs/note.md"');
+  expect(html).toContain('href="file:///C:/work/note.md"');
+  expect(html.match(/file:\/\/\//g)).toHaveLength(1);
+  expect(html).not.toContain("javascript:");
+});
 test("the immediate plain-prose path preserves paragraph/soft-break geometry exactly", () => {
   for (const text of [
     "",

@@ -151,6 +151,7 @@ const send = {
   imageMenu: () => {},
   startLogin: () => {},
   cancelLogin: () => {},
+  revealPath: () => {},
   openExternal: ({ url }: { url: string }) => {
     const safe = safeTerminalURL(url);
     if (!safe) return;
