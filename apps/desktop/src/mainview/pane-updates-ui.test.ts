@@ -477,6 +477,7 @@ test.skipIf(!existsSync(fixtureEdge) && !process.env.PIG_REQUIRE_UI_TESTS)(
     const {createRoot}=await import(${fixtureImport(import.meta.resolve("react-dom/client"))});
     const {flushSync}=await import(${fixtureImport(import.meta.resolve("react-dom"))});
     const {App}=await import(${fixtureImport(new URL("./App.tsx", import.meta.url))});
+    const {openChat}=await import(${fixtureImport(new URL("./rpc.ts", import.meta.url))});
     const {useStore}=await import(${fixtureImport(new URL("./store.ts", import.meta.url))});
     await import(${fixtureImport(new URL("./styles.css", import.meta.url))});
     ${fixtureHelpers}
@@ -502,8 +503,11 @@ test.skipIf(!existsSync(fixtureEdge) && !process.env.PIG_REQUIRE_UI_TESTS)(
     const tops=threads.map(t=>t.scrollTop);
     check(tops[0]>0&&tops[1]>tops[0],'fixture histories must scroll');
     editors[0].focus();
-    for(const [page,selector] of [['settings','.settings-page'],['providers','.content-page'],['extensions','.content-page'],['statistics','.content-page']]){
-      flushSync(()=>useStore.setState({page}));await wait();
+    const pages=[['Settings','.settings-page'],['Providers: Not connected','.content-page'],['Extensions','.content-page'],['Statistics','.content-page']];
+    const openPage=label=>flushSync(()=>document.querySelector('.sidebar-footer button[aria-label="'+label+'"]').click());
+    const backToChat=()=>flushSync(()=>document.querySelector('.content-page .back-button').click());
+    for(const [page,selector] of pages){
+      openPage(page);await wait();
       const shown=document.querySelector(selector);
       check(shown,page+': the page must render');
       const r=shown.getBoundingClientRect();
@@ -512,11 +516,41 @@ test.skipIf(!existsSync(fixtureEdge) && !process.env.PIG_REQUIRE_UI_TESTS)(
       check(layer.inert&&getComputedStyle(layer).visibility==='hidden',page+': covered chats must be hidden and inert');
       check(document.activeElement!==editors[0],page+': a covered composer must not keep focus');
       check(editors.every(e=>e.isConnected)&&threads.every(t=>t.isConnected),page+': opening a page must not unmount the chats');
-      flushSync(()=>useStore.setState({page:'chat'}));await wait();
+      backToChat();await wait();
       check([1,2].every(id=>pane(id).querySelector('textarea')===editors[id-1]&&pane(id).querySelector('.thread-scroll')===threads[id-1]),page+': returning must reuse the same chat DOM');
       check(threads.every((t,i)=>Math.abs(t.scrollTop-tops[i])<=1),page+': returning must keep each scroll position');
       check(!pane(1).closest('.main-layer').inert&&getComputedStyle(pane(1).closest('.main-layer')).visibility==='visible',page+': returning must reveal the chats');
     }
+    await openChat('work-project');
+    await until(()=>pane(1).querySelector('textarea')&&pane(1).querySelector('textarea')!==editors[0],'new project editor must mount');
+    const draft=pane(1).querySelector('textarea');
+    const openId=useStore.getState().panes[1].openId;
+    draft.focus();
+    Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype,'value').set.call(draft,'unfinished message');
+    draft.dispatchEvent(new InputEvent('input',{bubbles:true,inputType:'insertText',data:'unfinished message'}));
+    await wait();
+    const checkDraft=()=>{
+      check(useStore.getState().page==='chat','returning must reveal the chat');
+      check(pane(1).querySelector('textarea')===draft&&draft.value==='unfinished message','returning must keep the same unsent editor and draft text');
+      check(useStore.getState().panes[1].openId===openId&&pane(1).querySelector('.pane-winbar-project').textContent==='work-project','returning must keep the selected project');
+      check(pane(2).querySelector('textarea')===editors[1],'returning must keep the other pane');
+    };
+    for(const [label] of pages){
+      openPage(label);await wait();
+      check(draft.isConnected,'covering a local draft must not unmount it');
+      backToChat();await wait();
+      checkDraft();
+    }
+    openPage('Settings');
+    history.back();
+    await until(()=>useStore.getState().page==='chat','history back must return to chat');
+    await wait();checkDraft();
+    history.forward();
+    await until(()=>useStore.getState().page==='settings','history forward must reopen settings');
+    await wait();
+    history.back();
+    await until(()=>useStore.getState().page==='chat','history back must return to the same chat again');
+    await wait();checkDraft();
     root.unmount();
   `,
       { realRpc: true },

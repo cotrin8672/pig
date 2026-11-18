@@ -23,15 +23,34 @@ export function historyEntry(value: unknown): HistoryEntry {
   };
 }
 export let navigationRevision = 0;
-export function navigate(
-  page: Page,
-  sessionKey: string | null | undefined = useStore.getState().active,
-) {
+
+function showPage(page: Page) {
+  useStore.setState((state) => {
+    if (page !== "chat") return { page };
+    const pane = state.panes[state.activePane];
+    const openId = pane?.openId;
+    return {
+      page,
+      active: state.active ?? pane?.sessionId,
+      // An unsent chat is owned by the pane, not by a saved session key.
+      ...(openId &&
+      openId === state.openId &&
+      state.pendingOpens[openId]?.draftId
+        ? { openingViewRevision: navigationRevision }
+        : {}),
+    };
+  });
+}
+
+export function navigate(page: Page, sessionKey?: string | null) {
   navigationRevision++;
-  const entry = { page, sessionKey: sessionKey ?? undefined };
+  const key =
+    sessionKey === undefined ? useStore.getState().active : sessionKey;
+  const entry = { page, sessionKey: key ?? undefined };
   const current = historyEntry(history.state);
-  if (current.page !== page || current.sessionKey !== sessionKey)
+  if (current.page !== page || current.sessionKey !== key)
     history.pushState(entry, "");
+  if (sessionKey === undefined) return showPage(page);
   useStore.setState((state) => ({
     page,
     active: sessionKey ?? undefined,
@@ -47,6 +66,13 @@ export function initNavigation() {
     navigationRevision++;
     const entry = historyEntry(history.state);
     const state = useStore.getState();
+    if (
+      (entry.page !== "chat" || state.page !== "chat") &&
+      entry.sessionKey === state.active &&
+      (!entry.sessionKey ||
+        entry.sessionKey === state.panes[state.activePane]?.sessionId)
+    )
+      return showPage(entry.page);
     const session = Object.values(state.sessions)
       .flat()
       .find((s) => s.id === entry.sessionKey);
