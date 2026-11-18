@@ -6,6 +6,10 @@ import {
   type UiPreferences,
 } from "../shared/desktop-state";
 import { isModelEnabled } from "../shared/models";
+import {
+  NOTICE_HISTORY_KEY,
+  parseNoticeHistory,
+} from "../shared/notification-history";
 import type {
   Appearance,
   ModelSelection,
@@ -65,8 +69,11 @@ import { lane } from "./session-lane";
 import { visibleCompletion } from "./session-read";
 import { createSnapshotRecovery } from "./snapshot-recovery";
 import {
+  connectNoticeHistory,
   type OpeningTarget,
   readViewedNotices,
+  receiveNoticeHistory,
+  receiveNoticeToast,
   receivePackageOp,
   showError,
   showNotice,
@@ -203,7 +210,7 @@ export const rpc = Electroview.defineRPC<RPCSchema>({
         void refreshSessions(cwd).catch(showError);
       },
       appUpdate: (appUpdate) => useStore.setState({ appUpdate }),
-      packageOp: receivePackageOp,
+      packageOp: (op) => receivePackageOp(op, false),
       installed: (installed) =>
         useStore.setState({ installed, installedLoaded: true }),
       runtimeEvent: (publication) => {
@@ -217,12 +224,6 @@ export const rpc = Electroview.defineRPC<RPCSchema>({
               drafts.discard(event.address, true);
               sends.discard(event.address);
             }
-            if (
-              event.type === "closed" &&
-              event.reason === "failed" &&
-              event.message
-            )
-              showNotice({ level: "error", message: event.message });
             return;
           }
           if (event.type === "snapshotDelta") {
@@ -259,7 +260,7 @@ export const rpc = Electroview.defineRPC<RPCSchema>({
             event = { type: "snapshot", snapshot };
           }
           if (event.type === "closed" && event.discardDraft) {
-            receiveRuntime(event);
+            receiveRuntime(event, false);
             drafts.discard(event.address, true);
             sends.discard(event.address);
             return;
@@ -291,7 +292,7 @@ export const rpc = Electroview.defineRPC<RPCSchema>({
                   ),
                 )
               : undefined);
-          receiveRuntime(event);
+          receiveRuntime(event, false);
           const current = useStore.getState().snapshots[address.sessionId];
           if (
             event.type === "suspended" &&
@@ -369,7 +370,6 @@ export const rpc = Electroview.defineRPC<RPCSchema>({
       actionKeymaps: receiveActionKeymaps,
       providerUsage: (providerUsage) => useStore.setState({ providerUsage }),
       windowState: ({ maximized }) => useStore.setState({ maximized }),
-      appearanceError: ({ message }) => showError(message),
       projects: (projects) => {
         useStore.setState((s) => ({
           bootstrap: { ...s.bootstrap, projects: overlayProjects(projects) },
@@ -377,8 +377,8 @@ export const rpc = Electroview.defineRPC<RPCSchema>({
         // Only the project list changed; its chats are all that needs loading.
         void refreshSessions().catch(showError);
       },
-      error: ({ message }) => showError(message),
-      notification: showNotice,
+      notification: receiveNoticeToast,
+      noticeHistory: receiveNoticeHistory,
       desktopState: (desktop) => {
         useStore.setState((s) => ({
           bootstrap: {
@@ -460,6 +460,18 @@ export const rpc = Electroview.defineRPC<RPCSchema>({
   },
 });
 new Electroview({ rpc });
+export function initNoticeHistory() {
+  let legacy: ReturnType<typeof parseNoticeHistory> | undefined;
+  try {
+    legacy = parseNoticeHistory(localStorage.getItem(NOTICE_HISTORY_KEY));
+  } catch (error) {
+    console.warn("Cannot read legacy notification history:", error);
+  }
+  void connectNoticeHistory(
+    (input) => rpc.request.noticeHistory(input),
+    legacy,
+  ).catch((error) => console.error("Cannot load notification history:", error));
+}
 const sessionRefreshes = new Map<
   string,
   { dirty: boolean; promise: Promise<void> }
@@ -625,6 +637,10 @@ export const sends = new SendController(
       message:
         kind === "restored" ? getT().steeringRestored : getT().sendUnconfirmed,
     }),
+  (address) => {
+    const current = useStore.getState().addresses[address.sessionId];
+    return !!current && sameAddress(current, address) && liveAddress(address);
+  },
 );
 const selectionTransfers = new Map<
   string,
@@ -637,10 +653,6 @@ subscribeOwnership((previous, next) => {
     selections.take(previous) ??
     selectionTransfers.get(addressKey(previous))?.desired;
   selectionTransfers.delete(addressKey(previous));
-  (address) => {
-    const current = useStore.getState().addresses[address.sessionId];
-    return !!current && sameAddress(current, address) && liveAddress(address);
-  },
   if (desired)
     selectionTransfers.set(addressKey(next), { address: next, desired });
 });

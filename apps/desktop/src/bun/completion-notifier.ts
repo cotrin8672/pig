@@ -1,6 +1,6 @@
 import type { SessionFlags } from "../shared/desktop-state";
 import { dictionary } from "../shared/i18n";
-import type { Notice } from "../shared/rpc-schema";
+import type { NewNotice } from "../shared/notification-history";
 import type { RuntimeEvent } from "../shared/runtime-contract";
 import type { Settings } from "../shared/settings";
 import { createCompletionTracker } from "./notifications";
@@ -17,7 +17,7 @@ type Options = {
   language: () => Settings["language"];
   report: (error: unknown) => void;
   /** In-app notice for every connected window. */
-  notify: (notice: Notice) => void;
+  notify: (notice: NewNotice) => void;
   /** True while the user is looking at any app window. */
   attended: () => boolean;
   showSystemNotification: (body: string) => void;
@@ -62,7 +62,7 @@ export function createCompletionNotifier(options: Options) {
       .completeSession(sessionId, outcome)
       .catch(options.report);
     const t = dictionary(options.language());
-    const notice: Notice = {
+    const notice: NewNotice = {
       kind: "completion",
       message:
         outcome === "error"
@@ -70,6 +70,7 @@ export function createCompletionNotifier(options: Options) {
           : t["Agent finished"],
       level: outcome,
       session: { id: sessionId, cwd: snapshot.info.cwd },
+      title: snapshot.info.title,
     };
     options.notify(notice);
     if (!options.attended()) {

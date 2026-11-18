@@ -18,6 +18,11 @@ import type { ExtensionUIEvent, UIReply } from "./extension-ui";
 import type { FileReveal } from "./file-links";
 import type { McpAppPreviewResult } from "./mcp-app";
 import type { ModelOverride } from "./model-overrides";
+import type {
+  NoticeHistoryRequest,
+  NoticeHistorySnapshot,
+  NoticeRecord,
+} from "./notification-history";
 import type { ProjectFlags } from "./projects";
 import type { AccountTarget, ProviderAccount } from "./provider-accounts";
 import type { ProviderUsage } from "./provider-usage";
@@ -29,12 +34,12 @@ import type {
   PromptAccepted,
   PromptParams,
   PromptReceipt,
+  PromptRecoveryAck,
   RuntimePublication,
   RuntimeRecoveryState,
   RuntimeStateSnapshot,
   RuntimeUsage,
   SendKey,
-  PromptRecoveryAck,
   SessionAddress,
 } from "./runtime-contract";
 import type { Settings, SettingsPatch } from "./settings";
@@ -305,6 +310,10 @@ export type RPCSchema = {
       };
       // biome-ignore lint/suspicious/noConfusingVoidType: Electrobun's parameterless RPC convention.
       bootstrap: { params: void; response: Bootstrap };
+      noticeHistory: {
+        params: NoticeHistoryRequest;
+        response: NoticeHistorySnapshot;
+      };
       // biome-ignore lint/suspicious/noConfusingVoidType: Electrobun's parameterless RPC convention.
       appearance: { params: void; response: Appearance };
       // biome-ignore lint/suspicious/noConfusingVoidType: Electrobun's parameterless RPC convention.
@@ -554,15 +563,14 @@ export type RPCSchema = {
       actionKeymaps: ActionKeymap[];
       providerUsage: ProviderUsage[];
       windowState: { maximized: boolean };
-      appearanceError: { message: string };
       agentEvent: {
         sessionId: string;
         event: WireEvent;
         contextUsage?: ContextUsage | null;
       };
       loginFrame: LoginFrame;
-      notification: Notice;
-      error: { message: string };
+      notification: NoticeRecord;
+      noticeHistory: NoticeHistorySnapshot;
     };
   };
 };

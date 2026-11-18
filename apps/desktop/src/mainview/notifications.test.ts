@@ -1,10 +1,10 @@
 import { afterEach, expect, jest, test } from "bun:test";
-import { emptyTranscript } from "../shared/transcript";
-import { navigationRevision } from "./navigation";
 import {
   NOTICE_HISTORY_LIMIT,
   parseNoticeHistory,
-} from "./notification-history";
+} from "../shared/notification-history";
+import { emptyTranscript } from "../shared/transcript";
+import { navigationRevision } from "./navigation";
 import {
   clearNotices,
   dismissNotice,

@@ -217,7 +217,7 @@ export function receiveWire(event: WireEvent) {
     };
   });
 }
-export function receiveRuntime(event: RuntimeEvent) {
+export function receiveRuntime(event: RuntimeEvent, notifyFailure = true) {
   if (event.type === "suspended") {
     receiveSuspended(event);
   } else if (event.type === "opening") {
@@ -275,7 +275,7 @@ export function receiveRuntime(event: RuntimeEvent) {
       }
       return { snapshots };
     });
-    if (event.reason === "failed" && event.message)
+    if (notifyFailure && event.reason === "failed" && event.message)
       showNotice({ level: "error", message: event.message });
   }
 }

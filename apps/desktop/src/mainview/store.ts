@@ -6,6 +6,14 @@ import { defaultAppearance } from "../shared/appearance";
 import type { ChatHistoryFileEvent } from "../shared/chat-history-import";
 import type { ExtensionStatus, UIRequest } from "../shared/extension-ui";
 import { dictionary } from "../shared/i18n";
+import {
+  type NewNotice,
+  NOTICE_HISTORY_LIMIT,
+  type NoticeHistoryRequest,
+  type NoticeHistorySnapshot,
+  type NoticeRecord,
+  newNoticeRecord,
+} from "../shared/notification-history";
 import type { AccountTarget } from "../shared/provider-accounts";
 import type { ProviderUsage } from "../shared/provider-usage";
 import type {
@@ -28,12 +36,6 @@ import type { TerminalOpenEvent } from "../shared/terminal-ui";
 import type { Message } from "../shared/transcript";
 import type { ChatSnapshot } from "./chat-snapshot";
 import type { ExtensionNotice } from "./extension-notices";
-import {
-  loadNoticeHistory,
-  NOTICE_HISTORY_KEY,
-  NOTICE_HISTORY_LIMIT,
-  type NoticeRecord,
-} from "./notification-history";
 import type { PaneNode } from "./pane-layout";
 import { isViewedNotice } from "./session-read";
 import { loadSidebarCache, saveSidebarCache } from "./sidebar-cache";
@@ -186,7 +188,7 @@ export const useStore = create<{
   newChatFiles: {},
   deletingSessions: {},
   rewinds: {},
-  noticeHistory: loadNoticeHistory(),
+  noticeHistory: [],
   opening: false,
   pendingOpens: {},
   maximized: false,
@@ -216,26 +218,81 @@ useStore.subscribe((state, previous) => {
     });
   }, 500);
 });
-useStore.subscribe((state, previous) => {
-  if (state.noticeHistory === previous.noticeHistory) return;
-  try {
-    if (typeof localStorage === "undefined") return;
-    localStorage.setItem(
-      NOTICE_HISTORY_KEY,
-      JSON.stringify(state.noticeHistory),
+type RequestNoticeHistory = (
+  input: NoticeHistoryRequest,
+) => Promise<NoticeHistorySnapshot>;
+let requestNoticeHistory: RequestNoticeHistory | undefined;
+let noticeRevision = -1;
+const pendingAutoRead = new Set<string>();
+
+export function connectNoticeHistory(
+  request: RequestNoticeHistory,
+  legacy?: NoticeRecord[],
+) {
+  requestNoticeHistory = request;
+  return request({ type: "open", legacy }).then(receiveNoticeHistory);
+}
+
+export function receiveNoticeHistory(snapshot: NoticeHistorySnapshot) {
+  if (snapshot.revision <= noticeRevision) return;
+  noticeRevision = snapshot.revision;
+  useStore.setState((state) => {
+    const unread = new Set(
+      snapshot.notices
+        .filter((notice) => !notice.read)
+        .map((notice) => notice.id),
     );
-  } catch (error) {
-    console.warn("Cannot save notification history:", error);
-  }
-});
+    const previous = new Set(state.noticeHistory.map((notice) => notice.id));
+    return {
+      noticeHistory: snapshot.notices,
+      notices: state.notices.filter(
+        (notice) => unread.has(notice.id) || !previous.has(notice.id),
+      ),
+    };
+  });
+}
+
+function notifyHistoryFailure(error: unknown) {
+  console.error("Cannot update notification history:", error);
+  // Do not send an error about the history back through the failing history RPC.
+  receiveNoticeToast(
+    newNoticeRecord({ level: "error", message: String(error) }),
+  );
+}
+
 export function markNoticeRead(id?: string) {
+  const ids =
+    id === undefined
+      ? useStore
+          .getState()
+          .noticeHistory.filter((notice) => !notice.read)
+          .map((notice) => notice.id)
+      : [id];
+  if (!ids.length) return;
+  if (requestNoticeHistory) {
+    void requestNoticeHistory({ type: "read", ids }).then(
+      receiveNoticeHistory,
+      notifyHistoryFailure,
+    );
+    return;
+  }
+  const selected = new Set(ids);
   useStore.setState((s) => ({
     noticeHistory: s.noticeHistory.map((notice) =>
-      id === undefined || notice.id === id ? { ...notice, read: true } : notice,
+      selected.has(notice.id) && !notice.read
+        ? { ...notice, read: true }
+        : notice,
     ),
   }));
 }
 export function clearNotices() {
+  if (requestNoticeHistory) {
+    void requestNoticeHistory({ type: "clear" }).then(
+      receiveNoticeHistory,
+      notifyHistoryFailure,
+    );
+    return;
+  }
   useStore.setState({ noticeHistory: [], notices: [] });
 }
 export function dismissNotice(id: string) {
@@ -247,6 +304,24 @@ export function readViewedNotices(visible: boolean, focused: boolean) {
   const state = useStore.getState();
   const viewed = (notice: Notice) =>
     isViewedNotice(notice, state, visible, focused);
+  if (requestNoticeHistory) {
+    const ids = state.noticeHistory
+      .filter(
+        (notice) =>
+          !notice.read && !pendingAutoRead.has(notice.id) && viewed(notice),
+      )
+      .map((notice) => notice.id);
+    if (!ids.length) return;
+    for (const id of ids) pendingAutoRead.add(id);
+    void requestNoticeHistory({ type: "read", ids })
+      .then(receiveNoticeHistory, (error) =>
+        console.error("Cannot mark viewed notifications read:", error),
+      )
+      .finally(() => {
+        for (const id of ids) pendingAutoRead.delete(id);
+      });
+    return;
+  }
   if (
     !state.notices.some(viewed) &&
     !state.noticeHistory.some((n) => !n.read && viewed(n))
@@ -259,42 +334,61 @@ export function readViewedNotices(visible: boolean, focused: boolean) {
     ),
   });
 }
-export function showNotice(notice: Notice) {
-  const read =
+function viewingNotice(notice: Notice) {
+  return (
     typeof document !== "undefined" &&
     isViewedNotice(
       notice,
       useStore.getState(),
       document.visibilityState === "visible",
       document.hasFocus(),
-    );
-  const id = crypto.randomUUID();
-  useStore.setState((s) => ({
-    notices: read ? s.notices : [...s.notices, { ...notice, id }].slice(-3),
-    noticeHistory: [
-      ...s.noticeHistory,
-      {
-        ...notice,
-        id,
-        createdAt: Date.now(),
-        read,
-        title: notice.session
-          ? s.snapshots[notice.session.id]?.info.title
-          : undefined,
+    )
+  );
+}
+export function receiveNoticeToast(record: NoticeRecord) {
+  const state = useStore.getState();
+  if (
+    record.read ||
+    viewingNotice(record) ||
+    state.noticeHistory.some((notice) => notice.id === record.id && notice.read)
+  )
+    return;
+  useStore.setState({ notices: [...state.notices, record].slice(-3) });
+  setTimeout(() => dismissNotice(record.id), 7000);
+}
+export function showNotice(notice: Notice) {
+  const item: NewNotice = {
+    ...notice,
+    title: notice.session
+      ? useStore.getState().snapshots[notice.session.id]?.info.title
+      : undefined,
+  };
+  if (requestNoticeHistory) {
+    void requestNoticeHistory({ type: "append", notice: item }).then(
+      receiveNoticeHistory,
+      (error) => {
+        console.error("Cannot save notification:", error);
+        receiveNoticeToast(newNoticeRecord(item));
       },
-    ].slice(-NOTICE_HISTORY_LIMIT),
+    );
+    return;
+  }
+  // Storybook and standalone UI tests have no desktop host.
+  const record = newNoticeRecord(item, viewingNotice(item));
+  useStore.setState((s) => ({
+    noticeHistory: [...s.noticeHistory, record].slice(-NOTICE_HISTORY_LIMIT),
   }));
-  if (!read) setTimeout(() => dismissNotice(id), 7000);
+  receiveNoticeToast(record);
 }
 export function showError(error: unknown) {
   showNotice({ message: String(error), level: "error" });
 }
 
-export function receivePackageOp(op: PackageOpStatus) {
+export function receivePackageOp(op: PackageOpStatus, notify = true) {
   useStore.setState((s) => ({
     packageOps: { ...s.packageOps, [op.opId]: op },
   }));
-  if (op.status === "running") return;
+  if (!notify || op.status === "running") return;
   showNotice({
     kind: "package",
     message:
