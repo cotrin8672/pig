@@ -1,11 +1,18 @@
 import { SquarePen, X } from "lucide-react";
-import { memo, type ReactNode, useMemo } from "react";
+import {
+  type HTMLAttributes,
+  memo,
+  type ReactNode,
+  useMemo,
+  useRef,
+} from "react";
 import { useShallow } from "zustand/react/shallow";
 import { ChatOpening } from "./ChatOpening";
 import type { ChatSnapshot } from "./chat-snapshot";
-import { useT } from "./i18n";
+import { getT, useT } from "./i18n";
+import { PaneDragGrip, PaneDropOverlay, usePaneDrag } from "./PaneDrag";
 import { paneGeometry } from "./pane-layout";
-import { closePane, focusPane, newChatInPane } from "./pane-state";
+import { closePane, dropPane, focusPane, newChatInPane } from "./pane-state";
 import { ResizeDivider } from "./ResizeDivider";
 import { useStore } from "./store";
 import { selectPaneHeading } from "./ui-selectors";
@@ -31,8 +38,11 @@ export function PaneWorkspace({
     })),
   );
   const geometry = useMemo(() => paneGeometry(tree), [tree]);
+  const workspace = useRef<HTMLDivElement>(null);
+  const { dragging, winbarProps } = usePaneDrag(tree, workspace, dropPane);
+  const movable = geometry.panes.length > 1;
   return (
-    <div className="pane-workspace">
+    <div className="pane-workspace" ref={workspace} data-dragging={!!dragging}>
       {geometry.panes.map(({ id, bounds }) => (
         <section
           key={id}
@@ -53,7 +63,7 @@ export function PaneWorkspace({
             height: `${bounds.height * 100}%`,
           }}
         >
-          <PaneWinbar paneId={id} />
+          <PaneWinbar paneId={id} {...winbarProps(id, movable)} />
           <PaneContent
             sessionId={panes[id]?.sessionId}
             openId={panes[id]?.openId}
@@ -85,24 +95,41 @@ export function PaneWorkspace({
           </div>
         </section>
       ))}
-      {geometry.dividers.map((divider) => (
-        <ResizeDivider
-          key={`${divider.path.join(".")}:${divider.index}`}
-          divider={divider}
-          tree={tree}
-          onChange={(paneTree) => useStore.setState({ paneTree })}
-        />
-      ))}
+      {!dragging &&
+        geometry.dividers.map((divider) => (
+          <ResizeDivider
+            key={`${divider.path.join(".")}:${divider.index}`}
+            divider={divider}
+            tree={tree}
+            onChange={(paneTree) => useStore.setState({ paneTree })}
+          />
+        ))}
+      {dragging && (
+        <PaneDropOverlay tree={tree} drag={dragging} label={paneLabel} />
+      )}
     </div>
   );
 }
-const PaneWinbar = memo(function PaneWinbar({ paneId }: { paneId: number }) {
+function paneLabel(id: number) {
+  const t = getT();
+  const heading = selectPaneHeading(useStore.getState(), id);
+  return {
+    project: (heading.general ? t.Chats : heading.project) ?? "",
+    title: heading.title ?? t["New chat"],
+  };
+}
+
+const PaneWinbar = memo(function PaneWinbar({
+  paneId,
+  ...drag
+}: { paneId: number } & HTMLAttributes<HTMLElement>) {
   const t = useT();
   const heading = useStore(useShallow((s) => selectPaneHeading(s, paneId)));
   const project = heading.general ? t.Chats : heading.project;
   const title = heading.title ?? t["New chat"];
   return (
-    <header className="pane-winbar">
+    <header className="pane-winbar" {...drag}>
+      {"data-draggable" in drag && <PaneDragGrip />}
       <span className="pane-winbar-project" aria-description={project}>
         {project}
       </span>

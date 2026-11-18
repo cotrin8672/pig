@@ -2,6 +2,8 @@ import { expect, test } from "bun:test";
 import {
   adjacentPane,
   initialPaneTree,
+  movePane,
+  paneDropAt,
   paneGeometry,
   removePane,
   replacePane,
@@ -120,4 +122,49 @@ test("directional focus follows adjacent panes, not diagonal ones", () => {
   const nested = initialPaneTree("bottomSplit");
   expect(adjacentPane(nested, 1, "left")).toBeUndefined();
   expect(adjacentPane(nested, 3, "up")).toBe(1);
+});
+
+test("dropping a column pane below its sibling turns the columns into rows", () => {
+  expect(movePane(initialPaneTree("columns"), 2, 1, "bottom")).toEqual(
+    initialPaneTree("stacked"),
+  );
+  expect(movePane(initialPaneTree("columns"), 2, 1, "top")).toEqual({
+    type: "split",
+    axis: "rows",
+    children: [
+      { type: "pane", id: 2 },
+      { type: "pane", id: 1 },
+    ],
+    weights: [0.5, 0.5],
+  });
+});
+
+test("moving into a same-axis group halves only the target", () => {
+  const moved = movePane(initialPaneTree("bottomSplit"), 1, 3, "right");
+  expect(moved).toEqual({
+    type: "split",
+    axis: "columns",
+    children: [
+      { type: "pane", id: 2 },
+      { type: "pane", id: 3 },
+      { type: "pane", id: 1 },
+    ],
+    weights: [0.5, 0.25, 0.25],
+  });
+});
+
+test("the center swaps panes and self drops change nothing", () => {
+  const grid = initialPaneTree("grid");
+  expect(
+    paneGeometry(movePane(grid, 1, 4, "center")).panes.map((p) => p.id),
+  ).toEqual([4, 2, 3, 1]);
+  expect(movePane(grid, 2, 2, "left")).toBe(grid);
+});
+
+test("drop zones pick the nearest edge and an inner center box", () => {
+  const tree = initialPaneTree("columns");
+  expect(paneDropAt(tree, 0.25, 0.5)).toEqual({ target: 1, side: "center" });
+  expect(paneDropAt(tree, 0.25, 0.95)).toEqual({ target: 1, side: "bottom" });
+  expect(paneDropAt(tree, 0.55, 0.5)).toEqual({ target: 2, side: "left" });
+  expect(paneDropAt(tree, 1.2, 0.5)).toBeUndefined();
 });

@@ -22,7 +22,7 @@ export function isTitlebarHotzone(
     x >= bounds.left - margin &&
     x <= bounds.right + margin &&
     y >= bounds.top - margin &&
-    y <= Math.max(bounds.top + 32, bounds.bottom) + margin
+    y <= Math.max(bounds.top + 16, bounds.bottom) + margin
   );
 }
 
