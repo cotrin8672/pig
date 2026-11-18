@@ -1145,7 +1145,7 @@ function currentAddress(sessionId: string): SessionAddress {
   return address;
 }
 type Rewind = ReturnType<typeof useStore.getState>["rewinds"][string];
-/** Shows the transcript as it will be after a rewind or branch, until it lands. */
+/** Shows the transcript as it will be after a rewind, until it lands. */
 function beginRewind(sessionId: string, rewind: Rewind) {
   if (useStore.getState().rewinds[sessionId])
     throw new Error("This chat is already changing");
@@ -1161,32 +1161,21 @@ function beginRewind(sessionId: string, rewind: Rewind) {
 }
 export async function forkChat(sessionId: string, entryId: string) {
   const previous = currentAddress(sessionId);
-  if (useStore.getState().snapshots[sessionId]?.suspended)
-    await ensureSessionRuntime(previous);
   const revision = navigationRevision;
-  // The branch keeps this chat's view; it never blanks into a loading screen.
-  const settle = beginRewind(sessionId, { kind: "fork", entryId });
-  try {
-    await sends.stop(previous, () => rpc.request.abort(previous));
-    await selections.flush(previous);
-    const snapshot = await rpc.request.forkSession({ ...previous, entryId });
-    await settleRuntimeRead();
-    if (!liveAddress(snapshot.address))
-      throw new Error("The branch response belongs to a replaced session");
-    sends.retire(previous);
-    receiveRuntime({ type: "replaced", previous, snapshot });
-    const state = useStore.getState();
-    if (
-      revision === navigationRevision &&
-      state.page === "chat" &&
-      state.active === snapshot.info.id
-    )
-      navigate("chat", snapshot.info.id);
-    void refreshSessions(snapshot.info.cwd).catch(showError);
-    return useStore.getState().snapshots[snapshot.info.id];
-  } finally {
-    settle();
-  }
+  const snapshot = await rpc.request.forkSession({ ...previous, entryId });
+  await settleRuntimeRead();
+  if (!liveAddress(snapshot.address))
+    throw new Error("The branch response belongs to a replaced session");
+  receiveSnapshot(snapshot);
+  const state = useStore.getState();
+  if (
+    revision === navigationRevision &&
+    state.page === "chat" &&
+    state.active === sessionId
+  )
+    navigate("chat", snapshot.info.id);
+  void refreshSessions(snapshot.info.cwd).catch(showError);
+  return useStore.getState().snapshots[snapshot.info.id];
 }
 /** Rewind by exact persisted entry identity; timestamps are never identities. */
 export async function regenerate(
@@ -1198,7 +1187,7 @@ export async function regenerate(
   if (useStore.getState().snapshots[sessionId]?.suspended)
     await ensureSessionRuntime(previous);
   // Display only: the persisted transcript changes when the rewind lands.
-  const settle = beginRewind(sessionId, { kind: "resend", entryId, user });
+  const settle = beginRewind(sessionId, { entryId, user });
   let sending: Promise<void> | undefined;
   try {
     await sends.stop(previous, () => rpc.request.abort(previous));

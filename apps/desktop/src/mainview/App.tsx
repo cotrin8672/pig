@@ -726,13 +726,11 @@ export const Chat = memo(function Chat({
     readOnly && opening ? s.openMessage : undefined,
   );
   const rewind = useStore((s) => s.rewinds[info.id]);
-  const rewound = rewind
+  const cut = rewind
     ? transcript.records.findIndex(
         (record) => record.entryId === rewind.entryId,
       )
     : -1;
-  // A resend replaces its message onward; a branch keeps the chosen entry.
-  const cut = rewound >= 0 && rewind?.kind === "fork" ? rewound + 1 : rewound;
   const ja = useStore((s) => s.settings.language === "ja");
   const thread = useRef<HTMLElement>(null);
   const [view] = useState(() => threadView(snapshot.address.hostId, info.id));
@@ -1160,7 +1158,7 @@ export const Chat = memo(function Chat({
           </div>
         );
       })}
-      {rewind?.kind === "resend" && cut >= 0 && (
+      {rewind && cut >= 0 && (
         <div className="response-turn">
           <article className="message user">
             <UserMessage message={rewind.user} sessionId={info.id} disabled />

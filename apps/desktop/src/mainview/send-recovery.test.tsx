@@ -1,4 +1,4 @@
-import { expect, mock, spyOn, test } from "bun:test";
+import { describe, expect, mock, spyOn, test } from "bun:test";
 import { fileURLToPath } from "node:url";
 import { renderToStaticMarkup } from "react-dom/server";
 import type { Snapshot } from "../shared/rpc-schema";
@@ -65,8 +65,9 @@ if (process.env.PIG_SEND_RECOVERY_CHILD !== "1") {
       }
     },
   }));
+  const navigate = mock(() => {});
   mock.module("./navigation", () => ({
-    navigate() {},
+    navigate,
     navigationRevision: 0,
   }));
   const { forkChat, regenerate, sends } = await import("./rpc");
@@ -150,6 +151,7 @@ if (process.env.PIG_SEND_RECOVERY_CHILD !== "1") {
       wait,
       retired,
       sent,
+      navigate,
     ])
       mocked.mockClear();
     initial.snapshots = { [id]: snapshot };
@@ -162,16 +164,41 @@ if (process.env.PIG_SEND_RECOVERY_CHILD !== "1") {
       rewinds: {},
     });
   }
-  for (const action of ["fork", "rewind"] as const) {
-    const run = () =>
-      action === "fork"
-        ? forkChat(snapshot.info.id, "answer")
-        : regenerate(snapshot.info.id, user, "prompt");
+  test("fork creates a second chat without stopping or retiring an unknown send", async () => {
+    setup();
+    const result = await forkChat(snapshot.info.id, "answer");
+    expect(events).toEqual(["fork"]);
+    expect(result?.info.id).toBe(`fork-${snapshot.info.id}`);
+    expect(navigate).toHaveBeenCalledWith("chat", result?.info.id);
+    expect(useStore.getState().snapshots[snapshot.info.id]).toBe(snapshot);
+    expect(sendState?.content?.text).toBe("keep unknown input");
+    expect(useStore.getState().rewinds).toEqual({});
+  });
+
+  test("a delayed branch does not switch the pane after leaving the source", async () => {
+    setup();
+    const reply = Promise.withResolvers<Snapshot>();
+    forkRequest.mockImplementationOnce(() => reply.promise);
+    const changed = forkChat(snapshot.info.id, "answer");
+    useStore.setState({ active: "another-chat" });
+    const id = `delayed-${snapshot.info.id}`;
+    reply.resolve({
+      ...snapshot,
+      address: { ...snapshot.address, sessionId: id },
+      info: { ...snapshot.info, id },
+    });
+    await changed;
+    expect(useStore.getState().snapshots[id]?.info.id).toBe(id);
+    expect(navigate).not.toHaveBeenCalled();
+  });
+
+  describe("rewind", () => {
+    const run = () => regenerate(snapshot.info.id, user, "prompt");
     test.each([
       "sending",
       "checking",
       "unknown",
-    ] as const)(`${action} recovers a %s send after confirmed Stop, without waiting for its receipt`, async (state) => {
+    ] as const)("recovers a %s send after confirmed Stop, without waiting for its receipt", async (state) => {
       setup(state);
       expect(render()).not.toContain('disabled=""');
       const changed = run();
@@ -181,20 +208,13 @@ if (process.env.PIG_SEND_RECOVERY_CHILD !== "1") {
       expect(retired).not.toHaveBeenCalled();
       stopping.resolve();
       await changed;
-      expect(events).toEqual([
-        "stop",
-        "selection",
-        action,
-        "retire",
-        ...(action === "rewind" ? ["send"] : []),
-      ]);
+      expect(events).toEqual(["stop", "selection", "rewind", "retire", "send"]);
       expect(wait).not.toHaveBeenCalled();
-      expect(sent).toHaveBeenCalledTimes(action === "rewind" ? 1 : 0);
-      if (action === "rewind")
-        expect(sent.mock.calls[0][1]?.text).toBe("hello");
+      expect(sent).toHaveBeenCalledTimes(1);
+      expect(sent.mock.calls[0][1]?.text).toBe("hello");
       expect(useStore.getState().rewinds).toEqual({});
     });
-    test(`${action} cannot change history when Stop is unconfirmed`, async () => {
+    test("cannot change history when Stop is unconfirmed", async () => {
       setup();
       const changed = run();
       stopping.reject(new Error("Stop unconfirmed"));
@@ -205,10 +225,9 @@ if (process.env.PIG_SEND_RECOVERY_CHILD !== "1") {
       expect(sendState?.content?.text).toBe("keep unknown input");
       expect(useStore.getState().rewinds).toEqual({});
     });
-    test(`${action} failure does not discard or replay the unknown input`, async () => {
+    test("failure does not discard or replay the unknown input", async () => {
       setup();
-      const request = action === "fork" ? forkRequest : rewindRequest;
-      request.mockImplementationOnce(async () => {
+      rewindRequest.mockImplementationOnce(async () => {
         throw new Error("History change failed");
       });
       stopping.resolve();
@@ -218,7 +237,7 @@ if (process.env.PIG_SEND_RECOVERY_CHILD !== "1") {
       expect(sendState?.content?.text).toBe("keep unknown input");
       expect(useStore.getState().rewinds).toEqual({});
     });
-  }
+  });
 
   test.each([
     "accepted",

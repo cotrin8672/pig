@@ -92,6 +92,12 @@ test("account login, session selection, sends, persistence and forks retain cano
       expect(a.sessionAccounts[provider]).toBe(work.id);
       const assistant = a.transcript.records.find(r => r.kind === "message" && r.message.role === "assistant");
       expect(assistant.message.provider).toBe(provider);
+      const beforeFork = (await host.listSessions(home)).map(info=>info.id).sort();
+      failSave = true;
+      await expect(host.forkSession({...a.address,entryId:assistant.entryId})).rejects.toThrow("fixture save failed");
+      expect((await host.listSessions(home)).map(info=>info.id).sort()).toEqual(beforeFork);
+      expect(host.getSessionSnapshot(a.address).accountId).toBe(work.id);
+      failSave = false;
       const fork = await host.forkSession({...a.address,entryId:assistant.entryId});
       expect(fork.accountId).toBe(work.id);
       expect(disk.value.sessions[fork.info.id].accounts[provider]).toBe(work.id);
