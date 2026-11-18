@@ -34,6 +34,7 @@ function responseSelection(root?: HTMLElement | null) {
   const quote = selection.toString().trim();
   if (!article || article !== owner(range.endContainer) || !quote) return;
   if (root !== undefined && !root?.contains(article)) return;
+  if (article.closest("[inert]")) return;
   if (
     Array.from(article.querySelectorAll(annotationUI)).some((element) =>
       range.intersectsNode(element),
@@ -118,6 +119,20 @@ export function AnnotationPopover({
             rect: measure(current.range),
           },
       );
+    // Pages cover the chat by making it inert without unmounting it; the
+    // selection survives there, so drop the bubble instead of floating it
+    // over the covering page.
+    const covered = new MutationObserver(() => {
+      if (!selectionRoot?.current?.closest("[inert]")) return;
+      setEditing(false);
+      setComment("");
+      setTarget(undefined);
+    });
+    covered.observe(document.body, {
+      attributes: true,
+      attributeFilter: ["inert"],
+      subtree: true,
+    });
     document.addEventListener("selectionchange", update);
     document.addEventListener("pointerdown", startSelection, true);
     document.addEventListener("pointerup", finishSelection, true);
@@ -126,6 +141,7 @@ export function AnnotationPopover({
     window.addEventListener("scroll", reposition, true);
     window.addEventListener("resize", reposition);
     return () => {
+      covered.disconnect();
       document.removeEventListener("selectionchange", update);
       document.removeEventListener("pointerdown", startSelection, true);
       document.removeEventListener("pointerup", finishSelection, true);
