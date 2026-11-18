@@ -52,6 +52,10 @@ test("real SessionHost separates lost CAS ACK from dispatch and accepts the froz
       await Bun.sleep(0);
       expect(host.runtimeState().sendIntents.find(intent=>intent.receipt.requestId===prepared.key.requestId).recovered).toBe(true);
       expect(host.getPromptReceipt(prepared.key)).toMatchObject({state:"pending",stage:"prepared"});
+      const missing = {...chat.address,requestId:"never-reserved"};
+      host.acknowledgePromptRecovery({...chat.address,key:missing,unconfirmed:true});
+      expect(host.getPromptReceipt(missing)).toMatchObject({state:"unknown",reason:"not-found"});
+      expect(()=>host.acknowledgePromptRecovery({...chat.address,key:{...missing,epoch:0},unconfirmed:true})).toThrow("Input does not belong to this chat");
       await host.abort(chat.address);
       const original = {text:"[paste #1 6 chars]",pastes:[{id:"p",marker:"[paste #1 6 chars]",text:"frozen"}],images:[]};
       renderer.edit(chat.address,()=>original);
@@ -66,6 +70,9 @@ test("real SessionHost separates lost CAS ACK from dispatch and accepts the froz
       await host.receipts.settled();
       expect(invocations).toBe(1);
       expect(sends.read(chat.address).state).toBe("accepted");
+      const acceptedKey = sends.read(chat.address).key;
+      host.acknowledgePromptRecovery({...chat.address,key:acceptedKey,unconfirmed:true});
+      expect(host.receipts.queuedIntent(acceptedKey)?.recovered).toBeUndefined();
       expect(host.drafts.read(chat.address).text).toBe("newer draft");
       expect(renderer.read(chat.address).content.text).toBe("newer draft");
       const users=host.getSessionSnapshot(chat.address).transcript.records.filter(r=>r.kind === "message" && r.message.role === "user");
@@ -76,6 +83,10 @@ test("real SessionHost separates lost CAS ACK from dispatch and accepts the froz
       expect(host.runtimeState().sendIntents).toHaveLength(0);
       sdk.settingsManager.setProjectTrusted(true);
       expect(host.runtimeState().sendIntents).not.toHaveLength(0);
+      await host.closeSession(chat.address);
+      const history = await host.openSession({cwd,id:chat.info.id,openId:"reopen",historyOnly:true});
+      expect(history.suspended).toBe(true);
+      host.acknowledgePromptRecovery({...history.address,key:{...history.address,requestId:"never-reserved"},unconfirmed:true});
       await host.deleteSession(chat.info);
       expect(host.runtimeState().sendIntents).toHaveLength(0);
       expect(events.some(e=>e.type === "closed" && e.discardDraft)).toBe(true);

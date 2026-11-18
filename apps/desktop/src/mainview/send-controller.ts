@@ -7,6 +7,7 @@ import type {
   PromptDelivery,
   PromptParams,
   PromptReceipt,
+  PromptRecoveryAck,
   SendIntent,
   SendKey,
   SessionAddress,
@@ -62,9 +63,7 @@ type Transport = {
   ): Promise<string[]>;
   /** Sends a waiting follow-up now as steering; false once it has started. */
   steerPrompt?(params: SendKey): Promise<boolean>;
-  acknowledgeRecovery?(
-    params: SessionAddress & { key: SendKey },
-  ): Promise<void>;
+  acknowledgeRecovery?(params: PromptRecoveryAck): Promise<void>;
 };
 export type PendingAttachments = Promise<
   Pick<DraftContent, "images" | "files">
@@ -114,6 +113,7 @@ export class SendController {
     private rejected: (message: string) => void = () => {},
     private sequence: Sequence = (_, step) => step(),
     private notice: (kind: "restored" | "unknown") => void = () => {},
+    private ownsDraft: (address: SessionAddress) => boolean = () => true,
   ) {}
   subscribe = (listener: () => void) => {
     this.listeners.add(listener);
@@ -125,13 +125,16 @@ export class SendController {
     return this.states.get(addressKey(address));
   }
   protectedAddresses(): SessionAddress[] {
-    return [...this.operations].flatMap(([id, state]) =>
-      isSendUnconfirmed(state)
-        ? [this.transfers.get(id)?.address ?? state.key]
-        : [],
-    );
+    return [...this.operations].flatMap(([id, state]) => {
+      const owner = this.transfers.get(id)?.address ?? state.key;
+      return isSendUnconfirmed(state) && this.activeDraft(owner) ? [owner] : [];
+    });
+  }
+  private activeDraft(address: SessionAddress) {
+    return this.ownsDraft(address) && !this.drafts.read(address).retired;
   }
   reconcile(snapshot: Snapshot) {
+    if (!this.operations.size || !this.activeDraft(snapshot.address)) return;
     const recovered: SendState[] = [];
     for (const state of this.operations.values()) {
       if (
@@ -182,17 +185,31 @@ export class SendController {
         this.drafts.restoreSent(snapshot.address, state.content);
     if (recovered.length) {
       this.notice("restored");
-      // Acknowledge only after the restored draft is durable, never before.
-      void this.drafts
-        .flush(snapshot.address, this.transport.syncDraft)
-        .then(async () => {
-          for (const state of recovered)
-            await this.transport.acknowledgeRecovery?.({
-              ...snapshot.address,
-              key: state.key,
-            });
-        })
-        .catch((error) => this.rejected(String(error)));
+      void this.saveRecovery(
+        snapshot.address,
+        recovered.map((state) => state.key),
+      );
+    }
+  }
+  private async saveRecovery(
+    address: SessionAddress,
+    keys: SendKey[],
+    unconfirmed?: true,
+  ) {
+    if (!this.activeDraft(address)) return;
+    try {
+      await this.drafts.flush(address, this.transport.syncDraft);
+      // Acknowledge only after saving, and never against a replaced owner.
+      for (const key of keys) {
+        if (!this.activeDraft(address)) return;
+        await this.transport.acknowledgeRecovery?.({
+          ...address,
+          key,
+          unconfirmed,
+        });
+      }
+    } catch (error) {
+      if (this.activeDraft(address)) this.rejected(String(error));
     }
   }
   /** Pending steering stays in the tray; returned input lives in the composer. */
@@ -427,7 +444,8 @@ export class SendController {
         !latest ||
         latest.returned ||
         latest.detached ||
-        !isSendUnconfirmed(latest)
+        !isSendUnconfirmed(latest) ||
+        !this.activeDraft(this.transfers.get(key)?.address ?? address)
       )
         return;
       // Keep one hung receipt RPC, but still exhaust the bounded send retries.
@@ -441,10 +459,11 @@ export class SendController {
   restore(intents: SendIntent[]) {
     for (const intent of intents) {
       const receipt = intent.receipt;
+      const id = this.operationKey(receipt);
       // A restored reservation may already be running on the host, even after a renderer reload.
       if (receipt.state === "pending" && receipt.stage !== "prepared")
-        this.dispatched.add(this.operationKey(receipt));
-      const existing = this.operations.get(this.operationKey(receipt));
+        this.dispatched.add(id);
+      const existing = this.operations.get(id);
       if (existing?.detached) continue;
       if (existing?.returned) {
         if (receipt.state === "accepted" || receipt.state === "rejected")
@@ -457,9 +476,11 @@ export class SendController {
         continue;
       }
       const draft = this.drafts.read(receipt);
+      // The recovery read includes old owners and other chats in the project.
+      const live = this.activeDraft(this.transfers.get(id)?.address ?? receipt);
       const recoveredQueue = !!(
         !intent.recovered &&
-        draft.retired &&
+        !live &&
         receipt.state === "accepted" &&
         receipt.accepted.disposition === "queued" &&
         intent.content
@@ -487,7 +508,7 @@ export class SendController {
             : -1,
         state:
           receipt.state === "pending"
-            ? intent.recovered
+            ? intent.recovered || !live
               ? "unknown"
               : "checking"
             : receipt.state,
@@ -498,7 +519,7 @@ export class SendController {
         delivery: intent.delivery,
         stage: receipt.state === "pending" ? receipt.stage : undefined,
         timestamp: intent.timestamp,
-        optimistic: !!intent.delivery && !draft.retired,
+        optimistic: !!intent.delivery && live,
         ...(receipt.state === "rejected" ? { message: receipt.message } : {}),
         ...(receipt.state === "accepted"
           ? { disposition: receipt.accepted.disposition }
@@ -510,9 +531,9 @@ export class SendController {
         !this.read(receipt) ||
           this.read(receipt)?.key.requestId === receipt.requestId,
       );
-      if (state.state === "checking") this.poll(receipt, state);
-      if (state.state === "unknown")
-        queueMicrotask(() => this.returnUnknown(receipt, state));
+      if (live && state.state === "checking") this.poll(receipt, state);
+      if (live && state.state === "unknown")
+        queueMicrotask(() => this.returnUnknown(state));
     }
   }
   /**
@@ -799,6 +820,7 @@ export class SendController {
       !state.returned &&
       !this.cancelled.has(id) &&
       !this.transfers.has(id) &&
+      this.activeDraft(address) &&
       retry &&
       retry.attempts < 3
     ) {
@@ -811,7 +833,8 @@ export class SendController {
       // No new CAS, selection or request ID: this is the exact same send.
       void Promise.resolve()
         .then(async () => {
-          if (this.retries.get(id) !== retry) return;
+          if (this.retries.get(id) !== retry || !this.activeDraft(address))
+            return;
           const accepted = await this.transport.prompt(retry.payload);
           this.settle(address, state, {
             state: "accepted",
@@ -822,9 +845,9 @@ export class SendController {
       this.poll(address, state);
       return;
     }
-    this.returnUnknown(address, state);
+    this.returnUnknown(state);
   }
-  private returnUnknown(address: SessionAddress, state: SendState) {
+  private returnUnknown(state: SendState) {
     const id = this.operationKey(state.key);
     const latest = this.operations.get(id);
     if (
@@ -834,11 +857,12 @@ export class SendController {
       !state.content
     )
       return;
+    const next = this.transfers.get(id);
+    const owner = next?.address ?? state.key;
+    if (!this.activeDraft(owner)) return;
     this.retries.delete(id);
     // A delayed CAS ACK must not dispatch input after it was returned for editing.
     if (!this.dispatched.has(id)) this.cancelled.add(id);
-    const next = this.transfers.get(id);
-    const owner = next?.address ?? address;
     const draft = this.drafts.read(owner);
     const empty =
       !expandedDraft(draft.content) &&
@@ -864,12 +888,12 @@ export class SendController {
       this.read(owner)?.key.requestId === state.key.requestId,
     );
     this.notice("unknown");
-    void this.drafts
-      .flush(owner, this.transport.syncDraft)
-      .then(() =>
-        this.transport.acknowledgeRecovery?.({ ...owner, key: state.key }),
-      )
-      .catch((error) => this.rejected(String(error)));
+    // Only cancelled history can prove recovery of a receipt from another owner.
+    void this.saveRecovery(
+      owner,
+      sameAddress(owner, state.key) ? [state.key] : [],
+      true,
+    );
   }
   lookup(
     address: SessionAddress,
@@ -918,13 +942,12 @@ export class SendController {
         // A late non-terminal reply must not put returned input back in the tray.
         if (this.operations.get(id)?.returned) return;
         if (receipt.state === "unknown") {
-          if (receipt.reason === "host-restarted")
-            this.returnUnknown(address, state);
+          if (receipt.reason === "host-restarted") this.returnUnknown(state);
           else this.retryOrReturn(address, state);
           return;
         }
         if (receipt.stage === "prepared" && !this.dispatched.has(id)) {
-          this.returnUnknown(address, { ...state, recoveryReason: "prepared" });
+          this.returnUnknown({ ...state, recoveryReason: "prepared" });
           return;
         }
         if (receipt.stage === "prepared") {

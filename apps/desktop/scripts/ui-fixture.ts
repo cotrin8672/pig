@@ -78,7 +78,7 @@ export async function runUiFixture(
                         if (!window.__requests?.[method]) throw Error('Unmocked RPC: ' + String(method));
                         return window.__requests[method](params);
                       }}),
-                      send: new Proxy({}, {get: () => () => {}}),
+                      send: new Proxy({}, {get: (_, method) => params => window.__messages?.[method]?.(params)}),
                     };
                   }
                 }`,

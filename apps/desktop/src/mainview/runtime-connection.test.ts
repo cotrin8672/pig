@@ -64,7 +64,6 @@ if (process.env.PIRIS_CONNECTION_CHILD !== "1") {
             heartbeatUI: async () => ({ connected: true }),
             listSessions,
             getSessionSnapshot,
-            abort: async () => {},
             forkSession: forkRequest,
           },
         };
@@ -398,8 +397,8 @@ if (process.env.PIRIS_CONNECTION_CHILD !== "1") {
     const branching = forkChat(previous.sessionId, "entry");
     await Bun.sleep(0);
     expect(forkRequest).toHaveBeenCalledTimes(1);
-    hub.runtime({ type: "opening", previous, address: next, cwd: "fixture" });
-    hub.runtime({ type: "replaced", previous, snapshot: snapshot(1, next) });
+    hub.runtime({ type: "opening", address: next, cwd: "fixture" });
+    hub.runtime({ type: "ready", snapshot: snapshot(1, next) });
     forkResponse.resolve(snapshot(2, next));
     await Bun.sleep(0);
     expect(useStore.getState().snapshots[next.sessionId]).toBeUndefined();
@@ -408,8 +407,10 @@ if (process.env.PIRIS_CONNECTION_CHILD !== "1") {
     const result = await branching;
     expect(result?.address).toEqual(next);
     expect(useStore.getState().snapshots[next.sessionId].address).toEqual(next);
-    expect(useStore.getState().snapshots[previous.sessionId]).toBeUndefined();
-    expect(drafts.read(next).content.text).toBe("local draft");
-    expect(drafts.read(next).retired).not.toBe(true);
+    expect(useStore.getState().snapshots[previous.sessionId].address).toEqual(
+      previous,
+    );
+    expect(drafts.read(previous).content.text).toBe("local draft");
+    expect(drafts.read(next).content.text).toBe("");
   });
 }

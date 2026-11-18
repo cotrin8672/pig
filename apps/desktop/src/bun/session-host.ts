@@ -53,6 +53,7 @@ import type {
   OpenSessionParams,
   OpenState,
   PromptParams,
+  PromptRecoveryAck,
   RuntimeEvent,
   RuntimeRecoveryState,
   RuntimeUsage,
@@ -2200,14 +2201,19 @@ export class SessionHost {
   getPromptReceipt(key: SendKey) {
     return this.receipts.lookup(key);
   }
-  acknowledgePromptRecovery(params: SessionAddress & { key: SendKey }) {
-    const m = this.current(params, false);
-    if (
-      !(
-        addressKey(params) === addressKey(params.key) &&
-        this.receipts.queuedIntent(params.key)
-      ) &&
-      !m.projector?.diagnostics.value.recovered.some(
+  acknowledgePromptRecovery(params: PromptRecoveryAck) {
+    const history = this.histories.get(params.sessionId);
+    const m =
+      history && addressKey(history.address) === addressKey(params)
+        ? undefined
+        : this.current(params, false);
+    if (params.unconfirmed === true) {
+      if (addressKey(params) !== addressKey(params.key))
+        throw new Error("Input does not belong to this chat");
+      const { state } = this.receipts.lookup(params.key);
+      if (state === "accepted" || state === "rejected") return;
+    } else if (
+      !m?.projector?.diagnostics.value.recovered.some(
         (item) =>
           item.key &&
           addressKey(item.key) === addressKey(params.key) &&
