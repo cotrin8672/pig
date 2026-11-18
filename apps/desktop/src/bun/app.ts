@@ -127,6 +127,7 @@ import {
 import { discoverUsageTargets, receiveUsageObservation } from "./usage/host";
 import { setUsageObserver } from "./usage/observation";
 import { UsageService } from "./usage/service";
+import { hasHostKeyboardFocus } from "./window-focus";
 
 await prepareDesktopConfig(Utils.paths.userData);
 /** Every open window's UI; publications go to all of them. */
@@ -999,7 +1000,18 @@ function createWindow() {
     (rpc.send as (name: string, payload: unknown) => void)(name, payload),
   );
   window.on("focus", () => {
+    const wasFocused = target.focused;
     for (const other of windows.values()) other.focused = other === target;
+    if (process.platform !== "win32" || wasFocused) return;
+    // Wait for WM_ACTIVATE to finish. activate() also focuses the WebView2 controller.
+    setTimeout(() => {
+      if (
+        windows.get(id) === target &&
+        target.focused &&
+        hasHostKeyboardFocus(window.ptr)
+      )
+        window.activate();
+    }, 0);
   });
   window.on("blur", () => {
     target.focused = false;

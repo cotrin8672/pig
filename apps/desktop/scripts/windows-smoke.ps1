@@ -1,7 +1,7 @@
 param(
     [Parameter(Mandatory = $true)][int]$ProcessId,
     [Parameter(Mandatory = $true)][string]$Executable,
-    [ValidateSet('inspect', 'resize', 'maximize', 'restore', 'minimize', 'activate', 'close', 'drag', 'transparency', 'taskbar', 'snap')][string]$Action = 'inspect',
+    [ValidateSet('inspect', 'resize', 'maximize', 'restore', 'minimize', 'activate', 'close', 'drag', 'transparency', 'taskbar', 'snap', 'alt-tab')][string]$Action = 'inspect',
     [string]$Screenshot
 )
 $ErrorActionPreference = 'Stop'
@@ -17,6 +17,7 @@ using System.Text;
 using System.Collections.Generic;
 public static class PigWindowProbe {
     [StructLayout(LayoutKind.Sequential)] public struct Rect { public int Left, Top, Right, Bottom; }
+    [StructLayout(LayoutKind.Sequential)] struct GuiThreadInfo { public int Size, Flags; public IntPtr Active, Focus, Capture, Menu, Move, Caret; public Rect CaretRect; }
     [StructLayout(LayoutKind.Sequential)] public struct Point { public int X, Y; }
     [StructLayout(LayoutKind.Sequential)] public struct MonitorInfo { public int Size; public Rect Monitor, Work; public uint Flags; }
     [StructLayout(LayoutKind.Sequential)] public struct AppBarData { public int Size; public IntPtr Hwnd; public uint Callback, Edge; public Rect Rect; public IntPtr Param; }
@@ -43,6 +44,48 @@ public static class PigWindowProbe {
     [DllImport("user32.dll")] public static extern bool GetCursorPos(out Point point);
     [DllImport("user32.dll")] public static extern bool SetCursorPos(int x, int y);
     [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();
+    [DllImport("user32.dll")] static extern bool GetGUIThreadInfo(uint id, ref GuiThreadInfo info);
+    [DllImport("user32.dll")] static extern bool IsChild(IntPtr parent, IntPtr child);
+    [DllImport("user32.dll")] static extern IntPtr WindowFromPoint(Point point);
+    [DllImport("user32.dll")] static extern short GetAsyncKeyState(int key);
+    [DllImport("user32.dll")] static extern void keybd_event(byte key, byte scan, uint flags, UIntPtr extra);
+    public static bool WebViewHasFocus(IntPtr host) {
+        var info = new GuiThreadInfo { Size = Marshal.SizeOf(typeof(GuiThreadInfo)) };
+        if (!GetGUIThreadInfo(0, ref info) || info.Active != host || !IsChild(host, info.Focus)) return false;
+        var name = new StringBuilder(256);
+        GetClassName(info.Focus, name, 256);
+        return name.ToString().StartsWith("Chrome_");
+    }
+    public static void ClickForFocus(IntPtr host) {
+        if (GetForegroundWindow() == host && WebViewHasFocus(host)) return;
+        Point cursor;
+        if (!GetCursorPos(out cursor)) throw new Exception("Cannot save mouse position");
+        // SWP_NOACTIVATE | SWP_NOMOVE | SWP_NOSIZE: make only the test window
+        // reachable, then use a real click so Windows grants it foreground input.
+        bool topmost = (GetWindowLong(host, -20) & 8) != 0;
+        if (!topmost && !SetWindowPos(host, new IntPtr(-1), 0, 0, 0, 0, 0x13)) throw new Exception("Cannot raise pig");
+        try {
+            var point = new Point { X = 20, Y = 70 };
+            if (!ClientToScreen(host, ref point) || !IsChild(host, WindowFromPoint(point)) || !SetCursorPos(point.X, point.Y))
+                throw new Exception("Refusing to click outside the pig WebView");
+            mouse_event(2, 0, 0, 0, UIntPtr.Zero);
+            mouse_event(4, 0, 0, 0, UIntPtr.Zero);
+            System.Threading.Thread.Sleep(200);
+        } finally {
+            if (!topmost) SetWindowPos(host, new IntPtr(-2), 0, 0, 0, 0, 0x13);
+            SetCursorPos(cursor.X, cursor.Y);
+        }
+    }
+    public static void AltTabFrom(IntPtr foreground) {
+        if (foreground == IntPtr.Zero || GetForegroundWindow() != foreground) throw new Exception("Unexpected foreground window");
+        foreach (int key in new[] { 0x09, 0x10, 0x11, 0x12, 0x5b, 0x5c })
+            if ((GetAsyncKeyState(key) & 0x8000) != 0) throw new Exception("Refusing Alt+Tab while a modifier or Tab is held");
+        keybd_event(0x12, 0x38, 0, UIntPtr.Zero);
+        keybd_event(0x09, 0x0f, 0, UIntPtr.Zero);
+        keybd_event(0x09, 0x0f, 2, UIntPtr.Zero);
+        System.Threading.Thread.Sleep(120);
+        keybd_event(0x12, 0x38, 2, UIntPtr.Zero);
+    }
     [DllImport("user32.dll")] public static extern void mouse_event(uint flags, uint dx, uint dy, uint data, UIntPtr extra);
     [DllImport("user32.dll")] public static extern bool GetClientRect(IntPtr h, out Rect rect);
     [DllImport("user32.dll")] public static extern bool ClientToScreen(IntPtr h, ref Point point);
@@ -85,6 +128,21 @@ if ($Action -eq 'close') {
 }
 $taskbarChecks = 0
 switch ($Action) {
+    'alt-tab' {
+        [PigWindowProbe]::ClickForFocus($handle)
+        if (-not [PigWindowProbe]::WebViewHasFocus($handle)) { throw 'The WebView needs keyboard focus before testing Alt+Tab' }
+        foreach ($round in 1..3) {
+            [PigWindowProbe]::AltTabFrom($handle)
+            Start-Sleep -Milliseconds 350
+            $other = [PigWindowProbe]::GetForegroundWindow()
+            if ($other -eq $handle) { throw 'Alt+Tab did not switch away from pig; open another window for the test' }
+            [PigWindowProbe]::AltTabFrom($other)
+            Start-Sleep -Milliseconds 350
+            $returned = [PigWindowProbe]::GetForegroundWindow()
+            if ($returned -ne $handle) { throw "Alt+Tab did not return to pig (round $round, $handle -> $other -> $returned)" }
+            if (-not [PigWindowProbe]::WebViewHasFocus($handle)) { throw "Alt+Tab returned to pig without restoring WebView2 keyboard focus (round $round)" }
+        }
+    }
     'taskbar' {
         if (-not [PigWindowProbe]::IsZoomed($handle)) { throw 'Taskbar check requires a maximized window' }
         $monitor = New-Object PigWindowProbe+MonitorInfo
