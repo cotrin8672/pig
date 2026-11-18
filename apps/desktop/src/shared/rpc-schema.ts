@@ -15,6 +15,7 @@ import type {
   UiPreferences,
 } from "./desktop-state";
 import type { ExtensionUIEvent, UIReply } from "./extension-ui";
+import type { FileReveal } from "./file-links";
 import type { McpAppPreviewResult } from "./mcp-app";
 import type { ModelOverride } from "./model-overrides";
 import type { ProjectFlags } from "./projects";
@@ -519,8 +520,7 @@ export type RPCSchema = {
       resolveLogin: { loginId: string; value: string };
       cancelLogin: { loginId: string };
       openExternal: { url: string };
-      // Absolute local path from a transcript; Bun reveals it in the file manager.
-      revealPath: { path: string };
+      revealPath: FileReveal;
       // src is a rendered image: a base64 data URL or an http(s) Markdown image URL.
       imageMenu: { src: string };
       connectUI: { clientId: string; usage?: RuntimeUsage };
