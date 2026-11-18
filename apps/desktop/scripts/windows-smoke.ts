@@ -196,6 +196,7 @@ for (const [backdrop, expected] of [
       return native;
     }
     await probe("inspect");
+    if (process.argv.includes("--interactive")) await probe("alt-tab", false);
     if (backdrop === "none") await probe("transparency");
     await probe("resize");
     assert((await probe("maximize"))?.maximized);
@@ -236,5 +237,5 @@ for (const [backdrop, expected] of [
   }
 }
 console.log(
-  "PASS native geometry/backdrops/activation/close. Review screenshots separately; mixed-DPI monitors still need manual testing. Mouse dragging and taskbar auto-hide checks run only with --interactive.",
+  "PASS native geometry/backdrops/activation/close. Review screenshots separately; mixed-DPI monitors still need manual testing. Alt+Tab, mouse dragging and taskbar auto-hide checks run only with --interactive.",
 );

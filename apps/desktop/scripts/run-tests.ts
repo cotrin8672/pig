@@ -69,6 +69,7 @@ const ui = [
   "search-ui",
   "composer-layers-ui",
   "composer-editor-ui",
+  "message-edit-ui",
   "context-indicator-ui",
   "effort-chip-ui",
   "markdown-blocks-ui",

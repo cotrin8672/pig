@@ -42,7 +42,8 @@ New-Item -ItemType Directory $stage | Out-Null
 mise exec -- bun apps/desktop/scripts/windows-smoke.ts "$stage/pig"
 ```
 
-Add `--interactive` to also verify an 80x40-pixel native window move over the
+Add `--interactive` to also verify that Alt+Tab restores keyboard focus to
+WebView2 (leave another window open), an 80x40-pixel native window move over the
 app's actual CSS drag region, drag to the top edge to maximize, and reveal each
 auto-hide taskbar after both maximize paths. Taskbar settings are never changed;
 when no auto-hide taskbar is registered there, the reveal check is explicitly
@@ -50,9 +51,11 @@ reported as NOT TESTED. This briefly uses the foreground window and cursor;
 do not interact with the desktop during the test. The probe
 verifies process identity and foreground ownership and restores the cursor.
 
-The runner creates fresh HOME/USERPROFILE/APPDATA/LOCALAPPDATA directories,
-removes common credential environment variables, and launches only the supplied
-bundle. It never opens the normal pig profile. This is profile isolation, **not
+Close any running stable pig instance before starting; its single-instance
+pipe is shared even when profiles differ. The runner creates fresh
+HOME/USERPROFILE/APPDATA/LOCALAPPDATA directories, removes common credential
+environment variables, and launches only the supplied bundle. It never opens
+the normal pig profile. This is profile isolation, **not
 an OS security sandbox**. It closes only its own process tree, leaving test logs,
 JSON measurements and window-only screenshots under the printed temporary path.
 No subscription login, agent prompt, or self-update is performed.

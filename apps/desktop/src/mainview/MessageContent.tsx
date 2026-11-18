@@ -24,12 +24,14 @@ import remarkGfm from "remark-gfm";
 import remarkMath from "remark-math";
 import { parseAnnotations, withAnnotations } from "../shared/annotations";
 import { splitAttachmentPaths } from "../shared/attachments";
+import { composerAction } from "../shared/keymap";
 import { normalizeMath } from "../shared/math";
 import { sessionIdFromLink } from "../shared/session-links";
 import type { Message } from "../shared/transcript";
 import { editUserMessage } from "../shared/user-message";
 import { AnnotationCard } from "./AnnotationCards";
 import { ChatContent } from "./ChatContent";
+import { insertEditorNewline } from "./ComposerEditor";
 import { dataText } from "./custom-data";
 import { CodeText } from "./HighlightedCode";
 import { ImageGallery } from "./ImageGallery";
@@ -47,7 +49,7 @@ import { editKey, messageEdits } from "./message-edits";
 import { positionedKatex } from "./positioned-katex";
 import { openChatLink, regenerate, rpc } from "./rpc";
 import { SentAttachments } from "./SentAttachments";
-import { showError } from "./store";
+import { showError, useStore } from "./store";
 import { createTextSampler } from "./streaming-text";
 
 const MarkdownStreaming = createContext(false);
@@ -352,6 +354,19 @@ export const UserMessage = memo(function UserMessage({
             value={draft}
             ref={focusEditor}
             onChange={(event) => setDraft(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.nativeEvent.isComposing || event.keyCode === 229)
+                return;
+              const action = composerAction(
+                event,
+                useStore.getState().settings.keybindings,
+              );
+              if (!action) return;
+              event.preventDefault();
+              if (action === "composer.newline")
+                insertEditorNewline(event.currentTarget, setDraft);
+              else if (!event.repeat) event.currentTarget.form?.requestSubmit();
+            }}
             rows={Math.min(12, Math.max(3, draft.split("\n").length))}
           />
           <div className="user-edit-actions">
