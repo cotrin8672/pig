@@ -33,3 +33,11 @@ export const SessionPanel: Story = {
     </PreviewTheme>
   ),
 };
+export const SupportedExtensions: Story = {
+  parameters: { appPreview: false, gallery: true },
+  render: (args) => (
+    <PreviewTheme args={args}>
+      <ActivityPreview supported />
+    </PreviewTheme>
+  ),
+};

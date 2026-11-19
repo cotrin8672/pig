@@ -201,6 +201,110 @@ export function activityFixture(
   };
 }
 
+/** Views in the shape bun/supported-adapters.ts publishes for supported Extensions. */
+export function supportedExtensionsFixture(
+  generation: string,
+  now = Date.now(),
+): SessionUIState {
+  const source = (label: string) => ({
+    label,
+    scope: { kind: "session" as const, id: "preview-main" },
+    freshness: "live" as const,
+  });
+  return {
+    generation,
+    commands: [
+      {
+        adapterId: "pig:schedule-prompt",
+        id: "manage",
+        title: "Manage scheduled prompts",
+        busy: false,
+      },
+    ],
+    keymaps: [],
+    diagnostics: [],
+    views: [
+      {
+        adapterId: "pig:subagents",
+        revision: 1,
+        view: {
+          kind: "agents",
+          id: "subagents",
+          title: "Subagents",
+          source: source("@gotgenes/pi-subagents"),
+          runs: [
+            {
+              id: "agent-2",
+              title: "Find flaky tests",
+              profile: "Explore",
+              state: { phase: "running" },
+              startedAt: new Date(now - 42_000).toISOString(),
+              detail: "Scanning apps/desktop/src for retries…",
+            },
+            {
+              id: "agent-1",
+              title: "Summarize the send pipeline",
+              profile: "general-purpose",
+              state: { phase: "finished", outcome: "success" },
+              startedAt: new Date(now - 300_000).toISOString(),
+              endedAt: new Date(now - 240_000).toISOString(),
+              output: {
+                text: "send-controller.ts retries a lost send once with the same request.",
+              },
+            },
+          ],
+        },
+      },
+      {
+        adapterId: "pig:schedule-prompt",
+        revision: 1,
+        view: {
+          kind: "schedule",
+          id: "schedule-prompt",
+          title: "Scheduled prompts",
+          source: source("pi-schedule-prompt"),
+          actions: [{ id: "manage", label: "Manage", command: "manage" }],
+          schedules: [
+            {
+              id: "ci-check",
+              title: "check-ci",
+              enabled: true,
+              timing: {
+                kind: "once",
+                at: new Date(now + 600_000).toISOString(),
+              },
+              nextRunAt: new Date(now + 600_000).toISOString(),
+              lifetime: "This session",
+              runs: [],
+            },
+            {
+              id: "progress",
+              title: "progress-report",
+              enabled: true,
+              timing: { kind: "interval", milliseconds: 900_000 },
+              nextRunAt: new Date(now + 300_000).toISOString(),
+              lifetime: "Shared in this project",
+              runs: [
+                {
+                  id: "progress:last",
+                  title: "Last run",
+                  state: {
+                    phase: "finished",
+                    outcome: "success",
+                    label: "Prompt sent",
+                  },
+                  startedAt: new Date(now - 600_000).toISOString(),
+                  detail: "Report progress on the open TODO items.",
+                },
+              ],
+            },
+          ],
+        },
+      },
+    ],
+  };
+}
+
 /** Data only. All snapshots belong to a synthetic host, never a user's session. */
 export function createPreviewState(
   args: PreviewArgs,

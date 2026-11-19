@@ -145,6 +145,11 @@
   gap: 6px;
   vertical-align: middle;
 }
+.package-filter {
+  align-self: flex-start;
+  justify-self: start;
+  width: fit-content;
+}
 .package-badge {
   font-family: var(--font-mono);
   font-size: var(--text-3xs);
@@ -167,6 +172,9 @@
 }
 .package-prompt {
   color: var(--ds-warning);
+}
+.package-supported {
+  color: var(--ds-accent);
 }
 .package-links {
   display: inline-flex;
