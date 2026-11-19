@@ -33,6 +33,8 @@ jobs:
           bun-version: 1.4.2
       - name: Set up pinned TypeScript Native Preview
         uses: jdx/mise-action@v3
+        with:
+          install_args: npm:@typescript/native-preview
       - run: pnpm install --frozen-lockfile
       # Cache the shared SDK/toolchains, never the generated project devkit.
       - uses: actions/cache@v4
@@ -43,7 +45,7 @@ jobs:
             hashFiles('pnpm-lock.yaml') }}
           restore-keys: hutch-${{ runner.os }}-${{ runner.arch }}-
       - run: pnpm lint
-      - run: pnpm typecheck
+      - run: pnpm typecheck:tsgo
       - run: pnpm test
       - name: Build webview (native packaging belongs to Release)
         run: pnpm --filter @pig/desktop exec vite build

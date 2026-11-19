@@ -100,7 +100,7 @@ merge `main` back into `dev` so the branches do not diverge. See
 ## Run
 
 Requires Windows with WebView2, Node 22+, pnpm 10.14, Bun (tested with 1.4.2),
-and [mise](https://mise.jdx.dev/) for the pinned TypeScript Native Preview (`tsgo`).
+and [mise](https://mise.jdx.dev/) for the pinned type checkers.
 
 Builds use Electrobun's stock Windows native binaries; no local C++ build is
 required. `dev`, `build`, and `typecheck` first run `electrobun sync` to generate
@@ -174,9 +174,10 @@ pnpm build
 
 ### Checks and CI
 
-`pnpm typecheck` uses `tsgo`, pinned in `mise.toml` and installed with `mise install`
-locally and in CI/Release. The existing TypeScript dependency is retained;
-`pnpm typecheck:tsc` runs the previous checker for compatibility comparisons.
+`pnpm typecheck` uses `tsrs` locally. CI and Release still use `tsgo` via
+`pnpm typecheck:tsgo`. Both are pinned in `mise.toml` and installed locally
+with `mise install`. `pnpm typecheck:tsc` remains available for compatibility
+comparisons.
 The desktop tsconfig overrides the generated Electrobun `baseUrl` with `null`
 because TypeScript 7 removes that option; the generated `paths` aliases remain
 in use. Do not edit the generated devkit to change this setting.

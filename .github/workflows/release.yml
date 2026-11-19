@@ -81,6 +81,8 @@ jobs:
           bun-version: 1.4.2
       - name: Set up pinned TypeScript Native Preview
         uses: jdx/mise-action@v3
+        with:
+          install_args: npm:@typescript/native-preview
       - name: Identify release
         id: release
         run: |
@@ -107,7 +109,7 @@ jobs:
           key: hutch-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('pnpm-lock.yaml') }}
           restore-keys: hutch-${{ runner.os }}-${{ runner.arch }}-
       - run: pnpm lint
-      - run: pnpm typecheck
+      - run: pnpm typecheck:tsgo
       - run: pnpm test
       - name: Build portable app (shared stable profile)
         env:
