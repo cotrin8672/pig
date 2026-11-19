@@ -595,8 +595,9 @@ export class SendController {
       timestamp: Date.now(),
       delivery,
     };
-    this.put(address, state);
     const id = this.operationKey(state.key);
+    this.issuing.add(id);
+    this.put(address, state);
     // Enqueue synchronously so a later click cannot overtake this send.
     // Boxed: resolving with a Promise would wait for the prompt response.
     const issued = Promise.withResolvers<{
@@ -612,6 +613,7 @@ export class SendController {
     try {
       ({ response } = await issued.promise);
     } catch (error) {
+      this.issuing.delete(id);
       if (this.cancelled.has(id) || String(error).includes(cancelledError)) {
         // A lost CAS ACK may still have reserved the ID; it was never dispatched.
         if (this.reserved.has(id) && !String(error).includes(cancelledError))
@@ -639,6 +641,7 @@ export class SendController {
       await this.lookup(address, state.key);
       return;
     } finally {
+      this.issuing.delete(id);
       this.reserved.delete(id);
     }
     if (!response) return;
@@ -667,6 +670,7 @@ export class SendController {
     }
   }
   private reserved = new Set<string>();
+  private issuing = new Set<string>();
   /** Resolves with the prompt response once the RPC has been sent. */
   private async issue(
     address: SessionAddress,
@@ -901,6 +905,8 @@ export class SendController {
   ): Promise<void> {
     if (!key) return Promise.resolve();
     const id = this.operationKey(key);
+    // A receipt cannot tell us anything while this renderer is still preparing the send.
+    if (this.issuing.has(id)) return Promise.resolve();
     const state = this.operations.get(id);
     if (!isSendUnconfirmed(state) || !state || state.detached)
       return Promise.resolve();
