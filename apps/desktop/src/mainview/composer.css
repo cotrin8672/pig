@@ -212,12 +212,13 @@
   white-space: nowrap;
 }
 
-/* A tray tucked under the composer's top edge: steering, then follow-ups,
-   one low row each. The composer paints over the tray's bottom 9px. */
+/* A tray resting on the composer's top edge: steering, then follow-ups,
+   one low row each. No overlap: the composer is translucent, so a tucked
+   tray would show through it. */
 .message-queue {
   width: calc(min(100%, var(--chat-width, 768px)) - 36px);
-  margin: 0 18px -9px;
-  padding-bottom: 9px;
+  margin: 0 18px;
+  padding-bottom: 2px;
   border: 1px solid var(--ds-border);
   border-bottom: 0;
   border-radius: var(--radius-md) var(--radius-md) 0 0;
