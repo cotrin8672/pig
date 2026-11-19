@@ -19,11 +19,13 @@ import type {
   PackageOpStatus,
   PackageType,
 } from "../shared/rpc-schema";
+import { supportedExtension } from "../shared/supported-extensions";
 import { ConfirmButton } from "./ConfirmButton";
 import { ContentPage } from "./ContentPage";
 import { getT, useT } from "./i18n";
 import { rpc } from "./rpc";
 import { receivePackageOp, showError, useStore } from "./store";
+import { useTooltip } from "./Tooltip";
 import "./extensions.css";
 
 function CopyCommand({ name }: { name: string }) {
@@ -204,6 +206,8 @@ export function Extensions() {
   const [tab, setTab] = useState<"marketplace" | "installed">("marketplace");
   const [query, setQuery] = useState("");
   const [search, setSearch] = useState("");
+  const [supportedOnly, setSupportedOnly] = useState(true);
+  const tooltip = useTooltip();
   const [retry, setRetry] = useState(0);
   const [items, setItems] = useState<MarketPackage[]>([]);
   const [previews, setPreviews] = useState<Record<string, string | null>>({});
@@ -227,7 +231,13 @@ export function Extensions() {
     let cancelled = false;
     setLoading(true);
     setError(undefined);
-    void request(rpc.request.searchPackages({ query: search, page }))
+    void request(
+      rpc.request.searchPackages({
+        query: search,
+        page,
+        supported: supportedOnly,
+      }),
+    )
       .then(async (result) => {
         if (cancelled) return;
         setItems((previous) =>
@@ -273,7 +283,7 @@ export function Extensions() {
     return () => {
       cancelled = true;
     };
-  }, [search, page, retry]);
+  }, [search, page, retry, supportedOnly]);
   // biome-ignore lint/correctness/useExhaustiveDependencies: Retry explicitly refreshes the request.
   useEffect(() => {
     let cancelled = false;
@@ -387,6 +397,26 @@ export function Extensions() {
       >
         {tab === "marketplace" ? (
           <>
+            <nav
+              className="segmented-control package-filter"
+              aria-label={t["Package filter"]}
+            >
+              {([true, false] as const).map((value) => (
+                <button
+                  key={String(value)}
+                  type="button"
+                  aria-pressed={supportedOnly === value}
+                  onClick={() => {
+                    if (supportedOnly === value) return;
+                    setSupportedOnly(value);
+                    setItems([]);
+                    setPage(0);
+                  }}
+                >
+                  {value ? t["Supported by pig"] : t["All packages"]}
+                </button>
+              ))}
+            </nav>
             <div className="package-search">
               <Search size={17} aria-hidden="true" />
               <input
@@ -415,6 +445,7 @@ export function Extensions() {
                   (p) => npmName(p.source) === pkg.name,
                 );
                 const source = match?.source ?? `npm:${pkg.name}`;
+                const supported = supportedExtension(pkg.name);
                 const op = operation(source, ops);
                 const report = new URL(
                   "https://github.com/earendil-works/pi/issues/new",
@@ -451,7 +482,24 @@ export function Extensions() {
                       {pkg.description || t["No description provided."]}
                     </p>
                     <div className="package-details">
-                      <Badges types={pkg.types} />
+                      <span className="package-badges">
+                        <Badges types={pkg.types} />
+                        {supported && (
+                          <span
+                            className="package-badge package-supported"
+                            aria-description={t.verifiedVersion(
+                              supported.verified,
+                            )}
+                            {...tooltip({
+                              tier: "label",
+                              label: t.verifiedVersion(supported.verified),
+                              side: "top",
+                            })}
+                          >
+                            pig
+                          </span>
+                        )}
+                      </span>
                       <div className="package-links">
                         {pkg.npmUrl && <Link url={pkg.npmUrl}>npm</Link>}
                         {pkg.repoUrl && <Link url={pkg.repoUrl}>{t.repo}</Link>}

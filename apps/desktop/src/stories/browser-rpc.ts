@@ -11,6 +11,8 @@ import type {
   Appearance,
   ConversationHit,
   Effort,
+  InstalledPackage,
+  MarketPackage,
   ModelSelection,
 } from "../shared/rpc-schema";
 import type {
@@ -19,6 +21,7 @@ import type {
   SessionAddress,
 } from "../shared/runtime-contract";
 import { patchSettings, type SettingsPatch } from "../shared/settings";
+import { supportedExtension } from "../shared/supported-extensions";
 import { filePreview, localPreview } from "./settings/history-import-data";
 
 // The canvas runs in a browser without Electrobun or a real session.
@@ -162,6 +165,44 @@ const send = {
     link.click();
   },
 };
+const marketPackages: MarketPackage[] = [
+  [
+    "@gotgenes/pi-subagents",
+    "25.0.5",
+    "gotgenes",
+    4200,
+    "Focused in-process sub-agents with lifecycle events.",
+  ],
+  [
+    "pi-ask-user",
+    "0.17.2",
+    "edlsh",
+    3100,
+    "Ask the user with searchable choices and free-form answers.",
+  ],
+  [
+    "pi-schedule-prompt",
+    "0.5.1",
+    "tintinweb",
+    1800,
+    "Schedule one-shot and recurring prompts into the chat.",
+  ],
+  [
+    "pi-mcp-adapter",
+    "2.1.0",
+    "nicobailon",
+    9800,
+    "MCP adapter extension for pi.",
+  ],
+].map(([name, version, publisher, monthlyDownloads, description]) => ({
+  name: name as string,
+  version: version as string,
+  publisher: publisher as string,
+  monthlyDownloads: monthlyDownloads as number,
+  description: description as string,
+  date: "2026-01-01T00:00:00.000Z",
+  types: ["extension"],
+}));
 const request = {
   async statistics() {
     return (await import("./statistics/statistics-data")).statisticsFixture;
@@ -238,6 +279,18 @@ const request = {
           request.epoch !== reply.epoch,
       ),
     }));
+  },
+  async searchPackages({ supported }: { supported?: boolean }) {
+    const items = supported
+      ? marketPackages.filter((pkg) => supportedExtension(pkg.name))
+      : marketPackages;
+    return { items, total: items.length, pageSize: 50 };
+  },
+  async packagePreviews({ names }: { names: string[] }) {
+    return Object.fromEntries(names.map((name) => [name, null]));
+  },
+  async listInstalled(): Promise<InstalledPackage[]> {
+    return [];
   },
   async refreshProviderUsage() {},
   async importChatHistory(params: {

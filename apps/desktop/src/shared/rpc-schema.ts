@@ -294,7 +294,7 @@ export type RPCSchema = {
       };
       wakeSession: { params: SessionAddress; response: Snapshot };
       searchPackages: {
-        params: { query: string; page: number };
+        params: { query: string; page: number; supported?: boolean };
         response: { items: MarketPackage[]; total: number; pageSize: number };
       };
       // name -> https image URL (null when the package has no preview).

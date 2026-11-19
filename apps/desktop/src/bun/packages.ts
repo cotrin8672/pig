@@ -7,6 +7,7 @@ import {
   SettingsManager,
 } from "@earendil-works/pi-coding-agent";
 import { classify, npmName } from "../shared/packages";
+import { SUPPORTED_EXTENSIONS } from "../shared/supported-extensions";
 import "./bun-package-manager";
 import type {
   InstalledPackage,
@@ -125,9 +126,38 @@ async function search(query: string, size: number, from: number) {
 }
 let catalog: { expires: number; items: MarketPackage[] } | undefined;
 let catalogPending: Promise<MarketPackage[]> | undefined;
+/** npm data for each supported package; an unreachable one still lists from the static entry. */
+async function supportedPackages(query: string) {
+  const q = query.toLowerCase();
+  const items = await Promise.all(
+    SUPPORTED_EXTENSIONS.filter((pkg) => pkg.name.includes(q)).map(
+      async (pkg): Promise<MarketPackage> => {
+        try {
+          const found = (await search(pkg.name, 20, 0)).items.find(
+            (item) => item.name === pkg.name,
+          );
+          if (found) return found;
+        } catch {
+          /* Fall through to the static entry. */
+        }
+        return {
+          name: pkg.name,
+          version: pkg.verified,
+          description: "",
+          date: "",
+          monthlyDownloads: 0,
+          types: ["extension"],
+          npmUrl: `https://www.npmjs.com/package/${pkg.name}`,
+        };
+      },
+    ),
+  );
+  return { items, total: items.length, pageSize: 50 };
+}
 export async function searchPackages(input: unknown) {
-  const { query, page } = object(input);
+  const { query, page, supported } = object(input);
   if (
+    (supported !== undefined && typeof supported !== "boolean") ||
     typeof query !== "string" ||
     query.length > 200 ||
     typeof page !== "number" ||
@@ -138,6 +168,10 @@ export async function searchPackages(input: unknown) {
     throw new Error(
       "Invalid package search: query must be at most 200 characters and page an integer from 0 to 199",
     );
+  if (supported)
+    return page
+      ? { items: [], total: 0, pageSize: 50 }
+      : supportedPackages(query.trim());
   if (query.trim())
     return { ...(await search(query.trim(), 50, page * 50)), pageSize: 50 };
   if (!catalog || catalog.expires <= Date.now()) {

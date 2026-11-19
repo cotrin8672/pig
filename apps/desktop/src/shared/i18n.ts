@@ -537,6 +537,9 @@ export const en = {
     "Make pi your own with community packages.",
   Marketplace: "Marketplace",
   Installed: "Installed",
+  "Supported by pig": "Supported by pig",
+  "All packages": "All packages",
+  "Package filter": "Package filter",
   "Search packages": "Search packages",
   "Search packages…": "Search packages…",
   "Finding packages…": "Finding packages…",
@@ -600,6 +603,7 @@ export const en = {
   resizeEdge: (left: boolean) =>
     `Resize chat width from ${left ? "left" : "right"} edge`,
   copyCommand: (name: string) => `Copy install command for ${name}`,
+  verifiedVersion: (version: string) => `pig · tested ${version}`,
   copyInstall: (name: string) => `Copy pi install npm:${name}`,
   packageResults: (count: number, search: string) =>
     `${count.toLocaleString()} packages${search ? ` matching “${search}”` : " in the marketplace"}`,
@@ -1434,6 +1438,9 @@ export const ja: Dictionary = {
     "コミュニティのパッケージで pi をカスタマイズ。",
   Marketplace: "マーケットプレイス",
   Installed: "インストール済み",
+  "Supported by pig": "pig対応",
+  "All packages": "すべてのパッケージ",
+  "Package filter": "パッケージの絞り込み",
   "Search packages": "パッケージを検索",
   "Search packages…": "パッケージを検索…",
   "Finding packages…": "パッケージを検索中…",
@@ -1494,6 +1501,7 @@ export const ja: Dictionary = {
   modelCount: (count, results) => `${count} ${results ? "件" : "モデル"}`,
   resizeEdge: (left) => `${left ? "左" : "右"}端からチャット幅を変更`,
   copyCommand: (name) => `${name} のインストールコマンドをコピー`,
+  verifiedVersion: (version) => `pig対応 · ${version} で確認`,
   copyInstall: (name) => `pi install npm:${name} をコピー`,
   packageResults: (count, search) =>
     search

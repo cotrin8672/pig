@@ -10,6 +10,7 @@ import { AdapterRuntime } from "./adapter-runtime";
 import { createAdapterSource } from "./adapter-source";
 import { ConfigLoader } from "./config-loader";
 import { keepLastContextTokens } from "./context-usage";
+import { holdsLiveWork, withSupportedAdapters } from "./supported-adapters";
 
 function required<T>(value: T | undefined): T {
   if (value === undefined) throw new Error("Session runtime is not ready");
@@ -521,7 +522,9 @@ export class SessionHost {
         .some((request) => addressKey(request) === addressKey(m.address)) ||
       this.usage.protects(m.address) ||
       this.configLoader.config.sessionAdapters?.length ||
-      this.configLoader.config.toolViews?.length
+      this.configLoader.config.toolViews?.length ||
+      // Suspending disposes Extensions, which would kill running subagents and pending scheduled prompts.
+      (m.adapters && holdsLiveWork(m.adapters.snapshot()))
     )
       return false;
     // Extensions are stopped through the SDK's official session_shutdown.
@@ -1802,7 +1805,7 @@ export class SessionHost {
     m.adapterSnapshot = undefined;
     if (!m.adapterSource || m.phase === "closing") return;
     m.adapters = new AdapterRuntime(
-      this.configLoader.config,
+      withSupportedAdapters(this.configLoader.config),
       m.adapterSource.backend,
       () => {
         m.adapterSnapshot = undefined;
