@@ -139,7 +139,7 @@ test("Stop before a queued send reaches the host needs no host withdrawal", asyn
   expect(f.drafts.read(address).content.text).toBe("local only");
 });
 
-test("recovery cancels an unknown send whose draft ACK arrives after the history change", async () => {
+test("Stop cancels a preparing send whose draft ACK arrives after the history change", async () => {
   const ack = Promise.withResolvers<void>();
   const drafts = new DraftStore();
   let prompts = 0;
@@ -173,8 +173,8 @@ test("recovery cancels an unknown send whose draft ACK arrives after the history
   const sending = sends.send(address);
   await Bun.sleep(0);
   await sends.lookup(address);
-  expect(sends.read(address)?.state).toBe("unknown");
-  expect(drafts.read(address).content.text).toBe("late old input");
+  expect(sends.read(address)?.state).toBe("sending");
+  expect(drafts.read(address).content.text).toBe("");
   await sends.stop(address, async () => {});
   sends.retire(address);
   const next = { ...address, epoch: 2 };
@@ -186,7 +186,9 @@ test("recovery cancels an unknown send whose draft ACK arrives after the history
   expect(prompts).toBe(0);
   expect(withdrawals).toBe(1);
   expect(drafts.read(next).content.text).toBe("new branch draft");
-  expect(sends.retained()).toEqual([]);
+  expect(sends.retained().map((item) => item.content?.text)).toEqual([
+    "late old input",
+  ]);
 });
 
 test("a send made while stopping is accepted immediately and dispatched after Stop finishes", async () => {
@@ -206,7 +208,7 @@ test("a send made while stopping is accepted immediately and dispatched after St
   await sent;
 });
 
-test("returning an undispatched input cancels a delayed CAS even without Stop", async () => {
+test("checking a send during a delayed CAS leaves it to dispatch exactly once", async () => {
   const ack = Promise.withResolvers<void>();
   const drafts = new DraftStore();
   let prompts = 0;
@@ -240,13 +242,13 @@ test("returning an undispatched input cancels a delayed CAS even without Stop", 
   const sending = sends.send(address);
   await Bun.sleep(0);
   await sends.lookup(address);
-  expect(drafts.read(address).content.text).toBe("edit me");
-  drafts.edit(address, () => text("edited after return"));
+  expect(drafts.read(address).content.text).toBe("");
+  drafts.edit(address, () => text("next message"));
   ack.resolve();
   await sending;
-  expect(prompts).toBe(0);
-  expect(cancellations).toBe(1);
-  expect(drafts.read(address).content.text).toBe("edited after return");
+  expect(prompts).toBe(1);
+  expect(cancellations).toBe(0);
+  expect(drafts.read(address).content.text).toBe("next message");
 });
 
 function readerFixture() {
