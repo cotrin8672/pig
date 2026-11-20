@@ -380,6 +380,16 @@ export function showError(error: unknown) {
   showNotice({ message: String(error), level: "error" });
 }
 
+export function isStaleSessionRead(error: unknown) {
+  const message = error instanceof Error ? error.message : error;
+  return message === "STALE_SESSION_ADDRESS";
+}
+
+export function showSessionReadError(error: unknown) {
+  // Runtime publications replace passive reads of a retired session address.
+  if (!isStaleSessionRead(error)) showError(error);
+}
+
 export function receivePackageOp(op: PackageOpStatus, notify = true) {
   useStore.setState((s) => ({
     packageOps: { ...s.packageOps, [op.opId]: op },

@@ -76,6 +76,7 @@ import {
   receivePackageOp,
   showError,
   showNotice,
+  showSessionReadError,
   useStore,
 } from "./store";
 import {
@@ -247,7 +248,7 @@ export const rpc = Electroview.defineRPC<RPCSchema>({
                 (value) =>
                   handleRuntimeEvent({ type: "snapshot", snapshot: value }),
               ).catch((error) => {
-                if (liveAddress(address)) showError(error);
+                if (liveAddress(address)) showSessionReadError(error);
               });
               return;
             }
@@ -298,7 +299,7 @@ export const rpc = Electroview.defineRPC<RPCSchema>({
             void recoverSnapshots(address, event.snapshotSeq, (snapshot) =>
               handleRuntimeEvent({ type: "snapshot", snapshot }),
             ).catch((error) => {
-              if (liveAddress(address)) showError(error);
+              if (liveAddress(address)) showSessionReadError(error);
             });
           }
           if (current) sends.reconcile(current);
@@ -348,7 +349,7 @@ export const rpc = Electroview.defineRPC<RPCSchema>({
           if (!receiveExtension(event) && event.type === "draft")
             void recoverDraftImages(event.address, event.draft.revision).catch(
               (error) => {
-                if (liveAddress(event.address)) showError(error);
+                if (liveAddress(event.address)) showSessionReadError(error);
               },
             );
         }),
@@ -558,7 +559,7 @@ export async function refresh() {
     void rpc.request
       .getSessionSnapshot(activeAddress)
       .then(receiveSnapshot)
-      .catch(showError);
+      .catch(showSessionReadError);
   bootstrap.disabledModels = overlayModelVisibility(bootstrap.disabledModels);
   bootstrap.projects = overlayProjects(bootstrap.projects);
   bootstrap.modelOverrides = overlayModelOverrides(bootstrap.modelOverrides);
@@ -852,7 +853,7 @@ export function connectRuntime() {
                     useStore.getState().snapshots[session.address.sessionId]
                       ?.suspended
                   )
-                    showError(error);
+                    showSessionReadError(error);
                 }
                 return undefined;
               }),
@@ -1093,7 +1094,7 @@ export async function openChat(
         receiveSnapshot(snapshot);
         return useStore.getState().snapshots[id];
       } catch (error) {
-        showError(error);
+        showSessionReadError(error);
       }
     }
     return current;
@@ -1404,7 +1405,7 @@ async function openSnapshot(
         )
           receiveRecovery(state);
       })
-      .catch(showError);
+      .catch(showSessionReadError);
     if (ownsOpeningView(openId, revision)) {
       useStore.setState({ active: snapshot.info.id });
       if (push && optimistic)

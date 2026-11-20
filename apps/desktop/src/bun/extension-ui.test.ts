@@ -337,7 +337,7 @@ if (process.env.PIG_EXTENSION_UI_TEST_CHILD !== "1") {
     await expect(second).rejects.toMatchObject({ name: "AbortError" });
   });
 
-  test("Composer/status/string widgets/labels/notify are addressed and unsupported components diagnose and throw", () => {
+  test("Composer/status/string widgets/labels/notify are addressed and unsupported editor APIs throw", () => {
     const f = fixture();
     const one = f.create();
     const two = f.create(b);
@@ -349,10 +349,13 @@ if (process.env.PIG_EXTENSION_UI_TEST_CHILD !== "1") {
     ui.setStatus("test", "\x1b[38;2;163;190;140mactive\x1b[39m");
     ui.setWidget("above", ["\x1b[1mone\x1b[22m"]);
     ui.setWidget("below", ["two"], { placement: "belowEditor" });
-    ui.setTitle("Extension title");
-    ui.setWorkingMessage("Working");
-    ui.setWorkingIndicator({ frames: ["●"] });
-    ui.setHiddenThinkingLabel("Thinking hidden");
+    ui.setTitle("\x1b[1mExtension title\x1b[22m");
+    ui.setWorkingMessage("\x1b[38;2;97;110;136mRun\x1b[39mning…");
+    const styled = f.events.length;
+    ui.setWorkingMessage("\x1b[38;2;208;213;222mRunning…\x1b[39m");
+    expect(f.events).toHaveLength(styled);
+    ui.setWorkingIndicator({ frames: ["\x1b[32m●\x1b[39m"] });
+    ui.setHiddenThinkingLabel("\x1b[2mThinking hidden\x1b[22m");
     ui.notify("fixture notice", "warning");
     expect(one.getStatus()).toMatchObject({
       statuses: [{ key: "test", text: "active" }],
@@ -361,7 +364,7 @@ if (process.env.PIG_EXTENSION_UI_TEST_CHILD !== "1") {
         { placement: "belowEditor" },
       ],
       title: "Extension title",
-      workingMessage: "Working",
+      workingMessage: "Running…",
       workingSymbol: "●",
       hiddenThinkingLabel: "Thinking hidden",
     });
@@ -369,9 +372,6 @@ if (process.env.PIG_EXTENSION_UI_TEST_CHILD !== "1") {
     const snapshot = one.getStatus();
     snapshot.statuses.length = 0;
     expect(one.getStatus().statuses).toHaveLength(1);
-    expect(() => ui.setWidget("component", () => blank())).toThrow(
-      "unsupported",
-    );
     expect(() => ui.setEditorComponent(undefined)).toThrow("unsupported");
     expect(() => ui.addAutocompleteProvider((current) => current)).toThrow(
       "unsupported",
@@ -389,6 +389,23 @@ if (process.env.PIG_EXTENSION_UI_TEST_CHILD !== "1") {
     );
     one.rotate({ ...a, epoch: 2 });
     expect(one.getStatus()).toEqual({ statuses: [], widgets: [] });
+  });
+
+  test("TUI widget factories are ignored without interrupting the extension", () => {
+    const f = fixture();
+    const host = f.create();
+    const ui = host.uiContext;
+    ui.setWidget("text", ["keep"]);
+    const before = f.events.length;
+    ui.setWidget("agents", () => {
+      throw new Error("TUI widget factory must not run");
+    });
+    expect(f.events.length).toBe(before);
+    ui.setStatus("subagents", "1 agent");
+    expect(host.getStatus()).toEqual({
+      statuses: [{ key: "subagents", text: "1 agent" }],
+      widgets: [{ key: "text", lines: ["keep"], placement: "aboveEditor" }],
+    });
   });
 
   test("display updates from session_shutdown handlers are dropped, not thrown, while the host is stopped", () => {

@@ -9,7 +9,7 @@ import {
 import type { ChatSnapshot } from "./chat-snapshot";
 import { addressKey, prependHistory, sameAddress } from "./chat-snapshot";
 import { rpc } from "./rpc";
-import { showError, useStore } from "./store";
+import { isStaleSessionRead, showError, useStore } from "./store";
 
 function cursorKey(snapshot: ChatSnapshot) {
   const cursor = snapshot.transcript.history;
@@ -104,7 +104,7 @@ export function useHistoryPaging(
           return { snapshots: { ...state.snapshots, [current.info.id]: next } };
         });
       } catch (cause) {
-        if (!isCurrent()) return;
+        if (!isCurrent() || isStaleSessionRead(cause)) return;
         const failed = {
           key,
           message: String(cause),

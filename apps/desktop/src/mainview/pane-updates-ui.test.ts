@@ -134,7 +134,12 @@ test.skipIf(!existsSync(fixtureEdge) && !process.env.PIG_REQUIRE_UI_TESTS)(
       ${fixtureHelpers}
       const root=createFixtureRoot(createRoot),reads={a:0,b:0};
       let requestIdReads=0;
-      window.__requests={listSlashCommands:async()=>[]};
+      let staleReads=0, freshReads=0, failSlashRead=false;
+      window.__requests={listSlashCommands:async ({sessionId,epoch})=>{
+        if(sessionId==='a'&&epoch===1){staleReads++;throw new Error('STALE_SESSION_ADDRESS');}
+        if(sessionId==='a'){freshReads++;if(failSlashRead)throw new Error('Fixture command lookup failed');}
+        return [];
+      }};
       function snapshot(id,seq=1,epoch=1){
         const transcript={history:{revision:id},records:Array.from({length:100},(_,i)=>{
           const content='Question '+id+' '+i+' '+(i===99?'update '+seq:'words '.repeat(20));
@@ -162,7 +167,9 @@ test.skipIf(!existsSync(fixtureEdge) && !process.env.PIG_REQUIRE_UI_TESTS)(
       flushSync(()=>root.render(<App/>));
       const pane=id=>document.querySelector('[data-pane-id="'+id+'"]');
       await until(()=>pane(1)?.querySelector('textarea')&&pane(2)?.querySelector('textarea'),'both real chat editors must mount');
+      await until(()=>staleReads>0,'old slash command read must be attempted');
       await wait();
+      check(!useStore.getState().noticeHistory.some(n=>n.message.includes('STALE_SESSION_ADDRESS')),'retired slash reads must not show an error');
       const winbar=id=>pane(id).querySelector('.pane-winbar');
       check(winbar(1).textContent.includes('Chat a')&&winbar(2).textContent.includes('Chat b'),'each pane must show its own session title');
       for(const id of [1,2]){
@@ -232,6 +239,7 @@ test.skipIf(!existsSync(fixtureEdge) && !process.env.PIG_REQUIRE_UI_TESTS)(
       flushSync(()=>useStore.setState(s=>({paneTree:splitPane(s.paneTree,2,3,'rows'),panes:{...s.panes,3:{}}})));await wait();
       check(pane(3)&&pane(1).querySelector('textarea')===editorA&&pane(2).querySelector('textarea')===editorB&&editorB.value==='draft b'&&document.activeElement===editorB,'splitting must retain existing chat and editor DOM, drafts and focus');
       publish('a',8,2);await wait();
+      await until(()=>freshReads>0,'slash commands must be read again with the replacement address');
       check(pane(1).textContent.includes('update 8')&&pane(1).querySelector('textarea')!==editorA,'an epoch replacement must render the new owner, not stale memoized content');
       check(pane(2).querySelector('textarea')===editorB&&editorB.value==='draft b','replacing another chat must not remount the active editor');
       flushSync(()=>useStore.setState(s=>({
@@ -243,6 +251,9 @@ test.skipIf(!existsSync(fixtureEdge) && !process.env.PIG_REQUIRE_UI_TESTS)(
       reads.a=reads.b=0;
       flushSync(()=>useStore.setState({openMessage:'Loading these extensions'}));await wait();
       check(pane(2).textContent.includes('Loading these extensions')&&reads.b>0&&reads.a===0,'startup progress must update only its owning preview: '+JSON.stringify(reads));
+      failSlashRead=true;
+      publish('a',9,3);
+      await until(()=>useStore.getState().noticeHistory.some(n=>n.message.includes('Fixture command lookup failed')),'real command lookup failures must still be reported');
       root.unmount();
       Object.defineProperty(translations,'Toggle sidebar',{configurable:true,writable:true,value:toggleLabel});
       `,

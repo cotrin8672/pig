@@ -59,7 +59,7 @@ import {
   type SlashArgument,
   slashContext,
 } from "./slash-completion";
-import { showError, useStore } from "./store";
+import { showError, showSessionReadError, useStore } from "./store";
 import { transcriptRequestIds } from "./transcript-requests";
 import "./composer.css";
 
@@ -200,7 +200,7 @@ export function Composer({
         if (live) setCommandState({ key, commands });
       })
       .catch((error) => {
-        if (live) showError(error);
+        if (live) showSessionReadError(error);
       });
     return () => {
       live = false;
@@ -215,7 +215,7 @@ export function Composer({
         if (live) setCommandState({ key, commands });
       })
       .catch((error) => {
-        if (live) showError(error);
+        if (live) showSessionReadError(error);
       });
     return () => {
       live = false;
@@ -243,7 +243,7 @@ export function Composer({
         .catch((error) => {
           if (!live) return;
           setArgumentState({ owner: argumentOwner, query, items: [] });
-          showError(error);
+          showSessionReadError(error);
         });
     }
     return () => {
