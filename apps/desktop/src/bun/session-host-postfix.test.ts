@@ -74,6 +74,24 @@ test("F1/F2: target selection, metadata-only restore, transitions reject sends a
       hidden = [];
       await host.setEffort({...chat.address,effort:"high"}); await send(chat,"transition answer");
       chat = host.getSessionSnapshot(chat.address);
+      // A package change must queue behind an in-flight reload, not try to
+      // reload its retired address. The queued pass uses the replacement.
+      const priorReload = chat.address;
+      const reloadGate = Promise.withResolvers();
+      globalThis.__holdShutdown = true; globalThis.__shutdownEntered = false; globalThis.__shutdownGate = reloadGate.promise;
+      const firstReload = host.reloadSession(priorReload);
+      while(!globalThis.__shutdownEntered) await Bun.sleep(1);
+      expect(host.listSlashCommands(priorReload).some(command=>command.name==="fixture-new")).toBe(true);
+      expect(await host.reloadPackageExtensions()).toEqual([]);
+      expect(await host.reloadPackageExtensions()).toEqual([]);
+      globalThis.__holdShutdown = false; reloadGate.resolve();
+      expect(await firstReload).toEqual({state:"applied"});
+      const reloads = () => events.filter(e=>e.type==="replaced" && e.snapshot.address.sessionId===priorReload.sessionId && e.previous.epoch>=priorReload.epoch);
+      for (let i=0;reloads().length<2 && i<2000;i++) await Bun.sleep(1);
+      expect(reloads()).toHaveLength(2);
+      expect(reloads()[1].previous).toEqual(reloads()[0].snapshot.address);
+      expect(events.some(e=>e.type==="closed" && e.reason==="failed")).toBe(false);
+      chat = host.getSessionSnapshot(reloads()[1].snapshot.address);
       // Gate shutdown before any SDK invalidation: prompt/draft/model mutation
       // must fail synchronously, while read-only receipts and Stop remain usable.
       for (const kind of ["reload","fork","new","switch"]) {

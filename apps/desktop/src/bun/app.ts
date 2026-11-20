@@ -329,14 +329,9 @@ const reloadPackages = coalescePackageReload(async () => {
       (diagnostics) => failures.push(...diagnostics),
       (error) => failures.push(String(error)),
     ),
-    ...sessionHost
-      .runtimeState()
-      .sessions.filter((session) => session.phase === "ready")
-      .map((session) =>
-        sessionHost
-          .reloadSession(session.address)
-          .catch((error) => failures.push(String(error))),
-      ),
+    sessionHost
+      .reloadPackageExtensions()
+      .then((errors) => failures.push(...errors)),
   ]);
   return failures;
 });

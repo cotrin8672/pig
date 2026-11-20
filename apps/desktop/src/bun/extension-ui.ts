@@ -138,7 +138,11 @@ export function createExtensionUIHost(options: Options): ExtensionUIHost {
     if (value !== undefined) checkText(value);
     // Display-only: drop while reloading/closing; rotate() resets the status anyway.
     if (unavailable()) return;
-    status[key] = value;
+    // TUI extensions may color labels; native desktop text must not contain VT escapes.
+    const text =
+      value === undefined ? undefined : stripVTControlCharacters(value);
+    if (status[key] === text) return;
+    status[key] = text;
     publish();
   };
   const custom: ExtensionUIContext["custom"] = async (
@@ -276,8 +280,9 @@ export function createExtensionUIHost(options: Options): ExtensionUIHost {
       publish();
     },
     setWidget: (key, content, widgetOptions) => {
+      // Like Pi's RPC mode, ignore TUI-only factories without interrupting the extension.
+      if (typeof content === "function") return;
       checkText(key, 256);
-      if (typeof content === "function") unsupported("setWidget(component)");
       const placement = widgetOptions?.placement ?? "aboveEditor";
       if (placement !== "aboveEditor" && placement !== "belowEditor")
         throw new TypeError("Invalid widget placement");

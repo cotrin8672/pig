@@ -8,22 +8,33 @@ test("model errors retry within budget, then stop, preserve queued input and all
   try {
     const script = `
       import { expect } from "bun:test";
+      import { mkdir, writeFile } from "node:fs/promises";
+      import { join } from "node:path";
       import { fauxProvider, fauxAssistantMessage } from "@earendil-works/pi-ai";
       import { SessionHost } from ${JSON.stringify(new URL("./session-host.ts", import.meta.url).href)};
       import { createCompletionTracker } from ${JSON.stringify(new URL("./notifications.ts", import.meta.url).href)};
       import { modelInfo, disposeSessions } from ${JSON.stringify(new URL("./pi-service.ts", import.meta.url).href)};
       const faux = fauxProvider({ tokensPerSecond: Infinity, models: [{ id: "fixture" }] });
-      const outcomes = [];
+      const cwd = ${JSON.stringify(home)};
+      await mkdir(join(cwd, ".pi/extensions"), { recursive: true });
+      await writeFile(join(cwd, ".pi/extensions/turn-probe.ts"), 'export default pi => pi.on("turn_start", () => { if (globalThis.__failExtension) throw new Error("hook failed"); });');
+      const outcomes = [], snapshots = [], notices = [];
       const track = createCompletionTracker();
       const host = new SessionHost({ modelInfo,
         configureModels: models => models.registerNativeProvider(faux.provider),
         emit(event) {
           if (event.type !== "snapshot") return;
+          snapshots.push(event.snapshot);
           const outcome = track(event.snapshot);
           if (outcome) outcomes.push(outcome);
-        }, emitUI() {}, emitTerminal() {},
+        }, emitUI(event) {
+          if (event.type === "request" && event.request.kind === "project-trust")
+            queueMicrotask(() => host.resolveExtensionUI({ ...event.request, value: "once" }));
+          if (event.type === "notify") notices.push(event);
+        }, emitTerminal() {},
       });
-      const chat = await host.openSession({ cwd: ${JSON.stringify(home)}, openId: "error" });
+      host.connectUI({ clientId: "root" });
+      const chat = await host.openSession({ cwd, openId: "error" });
       const model = faux.getModel();
       await host.setModel({ ...chat.address, provider: model.provider, id: model.id });
       const session = host.session(chat.info.id);
@@ -101,6 +112,22 @@ test("model errors retry within budget, then stop, preserve queued input and all
       expect(events.slice(recoveredStart).filter(event => event.type === "auto_retry_start").length).toBe(1);
       expect(session.getLastAssistantText()).toBe("recovered");
       expect(outcomes).toEqual(["error", "error", "error", "error", "error", "success", "success"]);
+      globalThis.__failExtension = true;
+      const start = snapshots.length;
+      faux.setResponses([fauxAssistantMessage("response continued")]);
+      await host.prompt(input("nonfatal extension error", "extension-error"));
+      await host.receipts.settled(chat.address);
+      await session.waitForIdle();
+      const run = snapshots.slice(start);
+      expect(run.some(snapshot => snapshot.transcript.running)).toBe(true);
+      expect(run.every(snapshot => snapshot.failure === undefined)).toBe(true);
+      expect(session.getLastAssistantText()).toBe("response continued");
+      expect(outcomes.at(-1)).toBe("success");
+      expect(notices).toContainEqual(expect.objectContaining({
+        address: chat.address,
+        level: "error",
+        message: expect.stringContaining("failed in turn_start: hook failed"),
+      }));
       await host.dispose();
       await disposeSessions();
     `;

@@ -55,7 +55,9 @@ test("SDK fork/rewind/reload/shutdown, root startup UI and stale epochs", async 
       let settings = {...defaultSettings};
       let startup = 0, holdStartup = false;
       const events = [];
+      const uiNotices = [];
       const host = new SessionHost({modelInfo, settings:() => settings, configureModels: m => {m.registerNativeProvider(faux.provider);}, emit: e => events.push(e), emitTerminal(e) {if(e.type === "open") queueMicrotask(() => host.terminalCommand({...e, type:"ready", cols:80, rows:24}));}, emitUI(e) {
+        if(e.type === "notify") uiNotices.push(e);
         if(e.type !== "request") return;
         if(e.request.kind === "project-trust") queueMicrotask(() => host.resolveExtensionUI({...e.request, kind: "project-trust", value: "once"}));
         if(e.request.kind === "confirm") {startup++; if(!holdStartup) queueMicrotask(() => host.resolveExtensionUI({...e.request, kind: "confirm", value: true}));}
@@ -121,7 +123,8 @@ test("SDK fork/rewind/reload/shutdown, root startup UI and stale epochs", async 
       expect(globalThis.__starts).toBe(3); expect(globalThis.__shutdown).toEqual(["quit", "reload"]);
       const errorSend = {...chat.address, requestId:"handled-error", draftRevision:host.drafts.read(chat.address).revision, text:"/boom"};
       expect(await host.prompt(errorSend)).toEqual({disposition:"handled"}); await host.receipts.settled();
-      expect(host.getSessionSnapshot(chat.address).failure).toContain("command failure fixture");
+      expect(host.getSessionSnapshot(chat.address).failure).toBeUndefined();
+      expect(uiNotices).toContainEqual(expect.objectContaining({level:"error",message:expect.stringContaining("command failure fixture")}));
       // The SDK's real tools retain cwd, error/details and image behavior.
       const toolSend = async (text, images) => {await host.prompt({...chat.address, requestId:crypto.randomUUID(), text, images, draftRevision:host.drafts.read(chat.address).revision}); await host.receipts.settled();};
       faux.setResponses([

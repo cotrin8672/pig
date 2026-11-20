@@ -622,6 +622,7 @@ export class SessionHost {
       } finally {
         m.suspending = undefined;
         m.wakeRequested = false;
+        this.maybeReload(m);
       }
     }
     return suspended;
@@ -819,6 +820,7 @@ export class SessionHost {
       })
       .finally(() => {
         if (m.transition === controller) m.transition = undefined;
+        this.maybeReload(m);
         this.maybeReloadAdapterConfig();
       });
   }
@@ -1617,17 +1619,21 @@ export class SessionHost {
         });
       },
       onError: (error) => {
-        // Keep the SDK's attribution: without the extension and event, the error is not actionable.
-        if (m.runtime?.session === session)
-          this.failure(
-            m,
-            [
-              `Extension ${error.extensionPath} failed in ${error.event}: ${error.error}`,
-              error.stack,
-            ]
-              .filter(Boolean)
-              .join("\n"),
-          );
+        if (
+          m.runtime?.session !== session ||
+          m.quarantined ||
+          m.phase === "closing"
+        )
+          return;
+        // SDK extension errors are caught by the runner; they do not signal a stopped response.
+        const message = `Extension ${error.extensionPath} failed in ${error.event}: ${error.error}`;
+        console.error(message, error.stack ?? "");
+        this.options.emitUI({
+          type: "notify",
+          address: m.address,
+          level: "error",
+          message,
+        });
       },
       commandContextActions: {
         waitForIdle: () => session.waitForIdle(),
@@ -1787,10 +1793,8 @@ export class SessionHost {
   private maybeReload(m: Managed) {
     if (!m.reloadPending || m.phase !== "ready") return;
     queueMicrotask(() => {
-      if (m.phase === "ready")
-        void this.reloadSession(m.address).catch((error) =>
-          this.failure(m, `Reload failed: ${String(error)}`),
-        );
+      if (m.reloadPending && m.phase === "ready")
+        void this.reloadManagedExtensions(m).catch(console.error);
     });
   }
   private detachAdapters(m: Managed) {
@@ -2155,7 +2159,10 @@ export class SessionHost {
     const history = this.histories.get(address.sessionId);
     if (history && addressKey(history.address) === addressKey(address))
       return [];
-    const session = required(this.current(address).runtime).session;
+    // A replacement may publish its new address before the transition unwinds.
+    const m = this.current(address, false);
+    if (m.phase !== "ready" || !m.runtime) return [];
+    const { session } = m.runtime;
     const commands: SlashCommand[] = [];
     const seen = new Set<string>();
     const add = (
@@ -2680,9 +2687,39 @@ export class SessionHost {
   async reloadSession(
     address: SessionAddress,
   ): Promise<{ state: "pending" | "applied" }> {
-    const m = this.current(address),
-      session = required(m.runtime).session;
+    return this.reloadManagedExtensions(this.current(address));
+  }
+  async reloadPackageExtensions(): Promise<string[]> {
+    const failures: string[] = [];
+    // History-only tabs have no runner to reload; the next wake discovers packages.
+    await Promise.all(
+      [...this.sessions.values()]
+        .filter((m) => m.runtime && (m.phase === "ready" || m.transition))
+        .map((m) =>
+          this.reloadManagedExtensions(m).catch((error) => {
+            failures.push(String(error));
+          }),
+        ),
+    );
+    return failures;
+  }
+  private async reloadManagedExtensions(
+    m: Managed,
+  ): Promise<{ state: "pending" | "applied" }> {
+    const { address } = m;
     if (
+      this.sessions.get(address.sessionId) !== m ||
+      m.phase === "closing" ||
+      m.suspensionError
+    ) {
+      m.reloadPending = false;
+      return { state: "applied" };
+    }
+    const session = required(m.runtime).session;
+    if (
+      m.transition ||
+      m.stopping ||
+      m.suspending ||
       session.isStreaming ||
       m.adapters?.busy ||
       m.projector?.running ||
@@ -2692,9 +2729,10 @@ export class SessionHost {
       m.reloadPending = true;
       return { state: "pending" };
     }
+    // Claim the pending request before any queued retry or package pass can run.
+    m.reloadPending = false;
     return this.transition(m, (signal) =>
       this.serialize(m, async () => {
-        m.reloadPending = false;
         const previous = m.address;
         this.detachAdapters(m);
         m.ui.cancelAll("reload");
