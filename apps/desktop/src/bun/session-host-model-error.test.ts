@@ -2,6 +2,40 @@ import { expect, test } from "bun:test";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { getModels, streamSimple } from "@earendil-works/pi-ai/compat";
+
+test("provider transports surface a 429 without retrying it", async () => {
+  const claims = {
+    "https://api.openai.com/auth": { chatgpt_account_id: "test" },
+  };
+  for (const [provider, apiKey] of [
+    ["anthropic", "test"],
+    ["openai-codex", `e30.${btoa(JSON.stringify(claims))}.sig`],
+  ] as const) {
+    const [model] = getModels(provider);
+    if (!model) throw new Error(`No fixture model for ${provider}`);
+    let calls = 0;
+    const result = await streamSimple(
+      model,
+      { messages: [{ role: "user", content: "ping", timestamp: Date.now() }] },
+      {
+        apiKey,
+        transport: "sse",
+        maxRetries: 1,
+        fetch: async () => {
+          calls++;
+          return new Response("Try again later", {
+            status: 429,
+            headers: { "retry-after-ms": "0", "x-should-retry": "true" },
+          });
+        },
+      },
+    ).result();
+    expect(calls, provider).toBe(1);
+    expect(result.stopReason).toBe("error");
+    expect(result.errorMessage).toContain("429");
+  }
+});
 
 test("model errors retry within budget, then stop, preserve queued input and allow a later manual send", async () => {
   const home = await mkdtemp(join(tmpdir(), "pig-model-error-"));
@@ -52,13 +86,17 @@ test("model errors retry within budget, then stop, preserve queued input and all
           await Bun.sleep(1);
         }
       };
-      for (const [error, retries] of [
-        ['429 {"type":"error","error":{"type":"rate_limit_error","message":"This request would exceed your account rate limit."}}', 3],
+      const cases = [
+        ['429 {"type":"error","error":{"type":"rate_limit_error","message":"This request would exceed your account rate limit."}}', 0],
+        ["HTTP 429", 0],
+        ['{"error":{"type":"rate_limit_error","message":"Please retry your request."}}', 0],
+        ['429 {"error":{"code":"insufficient_quota"}}', 0],
         ["401 authentication_error", 0],
         ["503 service unavailable", 3],
         ["Unexpected model failure", 0],
         ["WebSocket closed 1012", 3],
-      ]) {
+      ];
+      for (const [error, retries] of cases) {
         let entered = false;
         const gate = Promise.withResolvers();
         const before = faux.state.callCount;
@@ -100,7 +138,7 @@ test("model errors retry within budget, then stop, preserve queued input and all
       // A transient failure that recovers on retry completes as a success.
       const recoveredStart = events.length;
       faux.setResponses([
-        fauxAssistantMessage([], { stopReason: "error", errorMessage: "WebSocket closed 1012" }),
+        fauxAssistantMessage([], { stopReason: "error", errorMessage: "fetch failed: ECONNRESET" }),
         fauxAssistantMessage("recovered"),
       ]);
       await host.prompt(input("recover", "recover"));
@@ -111,7 +149,7 @@ test("model errors retry within budget, then stop, preserve queued input and all
       expect(recovered.aborted).toBe(false);
       expect(events.slice(recoveredStart).filter(event => event.type === "auto_retry_start").length).toBe(1);
       expect(session.getLastAssistantText()).toBe("recovered");
-      expect(outcomes).toEqual(["error", "error", "error", "error", "error", "success", "success"]);
+      expect(outcomes).toEqual([...cases.map(() => "error"), "success", "success"]);
       globalThis.__failExtension = true;
       const start = snapshots.length;
       faux.setResponses([fauxAssistantMessage("response continued")]);
