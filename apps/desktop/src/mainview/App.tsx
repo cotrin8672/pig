@@ -50,6 +50,7 @@ import { modelDividers } from "./model-dividers";
 import { NotificationCenter } from "./NotificationCenter";
 import { OptimisticMessages } from "./OptimisticMessages";
 import "./model-dividers.css";
+import { initEditMenu } from "./edit-menu";
 import { MainViewport } from "./MainViewport";
 import { McpAppScope } from "./McpAppPreview";
 import { Notifications } from "./Notifications";
@@ -175,6 +176,7 @@ export function App() {
   // After shortcuts: a handled shortcut is defaultPrevented and never types.
   useEffect(initTypeToCompose, []);
   useEffect(initSessionLinks, []);
+  useEffect(() => initEditMenu((request) => rpc.send.editMenu(request)), []);
   useEffect(initSessionReadTracking, []);
   useEffect(() => {
     document.documentElement.lang = state.language;
@@ -212,7 +214,6 @@ export function App() {
       <div
         className={`app-shell${sidebarOpen ? "" : " sidebar-collapsed"}`}
         data-backdrop={state.backdrop}
-        onContextMenu={(event) => event.preventDefault()}
         onMouseDown={(event) => {
           // Do not start a second native move while double-clicking a drag handle.
           if (event.detail === 2 && isWindowDragTarget(event.target))

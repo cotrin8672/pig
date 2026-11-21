@@ -5,6 +5,7 @@ import { createRequire } from "node:module";
 import { join } from "node:path";
 import { initSync, PhotonImage } from "@silvia-odwyer/photon";
 import { ContextMenu, Utils } from "electrobun/bun";
+import { handleEditMenuClick } from "./edit-menu";
 import {
   dibToBmp,
   readWindowsClipboardImage,
@@ -107,6 +108,8 @@ export function initImageMenu(
     const src = menuImage;
     if (action === "image-copy") void copyImage(src, owner()).catch(report);
     else if (action === "image-save") void saveImage(src).catch(report);
+    // Electrobun has one global click event for every context menu.
+    else handleEditMenuClick(action);
   });
 }
 export function showImageMenu(

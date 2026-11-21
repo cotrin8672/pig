@@ -38,6 +38,7 @@ import { addressKey, sameAddress } from "./chat-snapshot";
 import { attachmentReads } from "./composer-attachments";
 import { createDraftImageRecovery } from "./draft-image-recovery";
 import { drafts } from "./draft-store";
+import { runEditMenuCommand } from "./edit-menu";
 import { getT } from "./i18n";
 import { navigate, navigationRevision } from "./navigation";
 import { OpenController } from "./open-controller";
@@ -364,6 +365,7 @@ export const rpc = Electroview.defineRPC<RPCSchema>({
       settings: receiveSettings,
       providerUsage: (providerUsage) => useStore.setState({ providerUsage }),
       windowState: ({ maximized }) => useStore.setState({ maximized }),
+      editMenuCommand: runEditMenuCommand,
       projects: (projects) => {
         useStore.setState((s) => ({
           bootstrap: { ...s.bootstrap, projects: overlayProjects(projects) },
