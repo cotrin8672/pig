@@ -192,7 +192,7 @@ test.skipIf(!existsSync(edge) && !process.env.PIG_REQUIRE_UI_TESTS)(
 );
 
 test.skipIf(!existsSync(edge) && !process.env.PIG_REQUIRE_UI_TESTS)(
-  "sidebar chat selection keeps the row count and following project position stable",
+  "sidebar selection keeps the layout stable and older chats expand five at a time",
   () =>
     runUiFixture(
       "sidebar-selection",
@@ -203,11 +203,11 @@ test.skipIf(!existsSync(edge) && !process.env.PIG_REQUIRE_UI_TESTS)(
     const {useStore}=await import(${fixtureImport(new URL("./store.ts", import.meta.url))});
     await import(${fixtureImport(new URL("./styles.css", import.meta.url))});
     ${fixtureHelpers}
-    const sessions=cwd=>Array.from({length:12},(_,index)=>({id:cwd+index,cwd,title:cwd+' chat '+index,modified:100-index}));
+    const sessions=cwd=>Array.from({length:18},(_,index)=>({id:cwd+index,cwd,title:cwd+' chat '+index,modified:100-index}));
     flushSync(()=>useStore.setState(s=>({
       page:'chat',active:undefined,pendingOpens:{},snapshots:{},pendingUI:[],
       sessions:{general:sessions('general'),many:sessions('many'),next:sessions('next').slice(0,1)},
-      bootstrap:{...s.bootstrap,generalCwd:'general',projects:['many','next'],desktop:{sessions:{many10:{pinned:true},many11:{pinned:true}}}},
+      bootstrap:{...s.bootstrap,generalCwd:'general',projects:['many','next'],desktop:{sessions:{many16:{pinned:true},many17:{pinned:true}}}},
       settings:{...s.settings,language:'en'},
     })));
     const root=createFixtureRoot(createRoot);
@@ -222,13 +222,21 @@ test.skipIf(!existsSync(edge) && !process.env.PIG_REQUIRE_UI_TESTS)(
     const measure=()=>({general:general.querySelectorAll('.thread-row').length,project:project.querySelectorAll('.thread-row').length,height:project.getBoundingClientRect().height,nextTop:following.getBoundingClientRect().top});
     const baseline=measure();
     check(baseline.general===5&&baseline.project===7,'initial recent slots must exclude pinned rows');
-    for(const active of ['many0','many4','many8','many9','many10','general0','general11',undefined]){
+    for(const active of ['many0','many4','many8','many16','general0','general11','many15']){
       flushSync(()=>useStore.setState({active}));await wait();
       check(JSON.stringify(measure())===JSON.stringify(baseline),'selection must not change row counts, list height or following project position: '+active);
       if(active)check(document.querySelector('.thread[aria-current="page"]'),'selected old and pinned chats must stay visible: '+active);
     }
-    const more=project.querySelector('.more-chats');more.click();await wait();
-    check(project.querySelectorAll('.thread-row').length===12,'explicit expansion must still show the entire list');
+    const more=project.querySelector('.more-chats');
+    for(const count of [10,15,16]){
+      check(more.getAttribute('aria-label')==='Show older chats','keep offering older chats until the last batch');
+      more.click();await wait();
+      const titles=[...project.querySelectorAll('.thread-title')].map(row=>row.textContent);
+      const expected=[16,17,...Array.from({length:count-1},(_,i)=>i),15].map(i=>'many chat '+i);
+      check(JSON.stringify(titles)===JSON.stringify(expected),'show older chats in order without duplicating the selected chat: '+count);
+      check(general.querySelectorAll('.thread-row').length===5,'expansion must only affect the clicked list');
+    }
+    check(more.getAttribute('aria-label')==='Show fewer chats','offer collapse when no older chats remain');
     more.click();await wait();
     check(JSON.stringify(measure())===JSON.stringify(baseline),'collapsing must restore the fixed recent slots');
   `,
