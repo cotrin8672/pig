@@ -47,10 +47,21 @@ function stateFor(...views: SessionView[]): SessionUIState {
     diagnostics: [],
   };
 }
+type PanelProps = Parameters<typeof SessionPanel>[0];
+/** Contents render only while a counter's panel is open: render each section open. */
+function renderOpen(props: PanelProps) {
+  return (["todo", "tasks", "schedule", "info"] as const)
+    .map((tab) =>
+      renderToStaticMarkup(<SessionPanel {...props} initialTab={tab} />),
+    )
+    .join("");
+}
 function render(...views: SessionView[]) {
-  return renderToStaticMarkup(
-    <SessionPanel state={stateFor(...views)} onAction={noop} onReload={noop} />,
-  );
+  return renderOpen({
+    state: stateFor(...views),
+    onAction: noop,
+    onReload: noop,
+  });
 }
 const action: Action = {
   id: "act",
@@ -69,22 +80,19 @@ test("empty dock is absent; connection failures remain available without a perma
   expect(
     renderToStaticMarkup(<SessionPanel onAction={noop} onReload={noop} />),
   ).toBe("");
-  const html = renderToStaticMarkup(
-    <SessionPanel
-      onAction={noop}
-      onReload={noop}
-      configError="Invalid config"
-    />,
-  );
+  const html = renderOpen({
+    onAction: noop,
+    onReload: noop,
+    configError: "Invalid config",
+  });
   for (const text of [
     "Session activity",
     'aria-expanded="false"',
     "aria-controls=",
     "UI connection needs attention",
     "Invalid config",
-    "Connection details",
     "Reload UI config",
-    'hidden=""',
+    'popover="auto"',
   ])
     expect(html).toContain(text);
   expect(html).not.toContain("Session 0");
@@ -118,17 +126,11 @@ test("todo preserves order, ownership and dependencies; cancelled is not complet
   ];
   expect(todoProgress(items)).toEqual({ total: 3, completed: 1, cancelled: 1 });
   const html = render({ ...base, kind: "todo", items });
-  for (const text of [
-    "1/2 done",
-    "<ul",
-    "is-cancelled",
-    "Owner",
-    "Pat",
-    "Depends on",
-    "Checking",
-    "blocked",
-  ])
+  for (const text of ["1/2 done", "<ul", "is-cancelled", "Checking"])
     expect(html).toContain(text);
+  // Only what is needed at a glance: no expandable ownership/dependency facts.
+  for (const text of ["Owner", "Depends on", "blocked", "<details"])
+    expect(html).not.toContain(text);
   expect(html.indexOf("Completed item")).toBeLessThan(
     html.indexOf("Cancelled item"),
   );
@@ -188,7 +190,9 @@ test("saved agent history stays out of the dock; live agent rows are compact and
     'aria-expanded="false"',
   ])
     expect(html).toContain(text);
-  expect(html).not.toContain("Failure log");
+  // The last reported output line stands in for an expandable log.
+  expect(html).toContain("Failure log");
+  expect(html).not.toContain("<pre");
   expect(html).not.toContain("Run ID");
   expect(html).not.toContain("worker-7");
 });
@@ -227,7 +231,8 @@ test("background history does not flash; live command rows retain view and run a
     "Stop build",
   ])
     expect(html).toContain(text);
-  expect(html).not.toContain("Build result");
+  expect(html).toContain("Build result");
+  expect(html).not.toContain("<details");
   expect(html).not.toContain("0 active");
 });
 
@@ -272,15 +277,10 @@ test("schedule timing is source text, enabled unknown and history independent of
       },
     ],
   });
-  for (const text of [
-    "Enabled state unknown",
-    "Adapter-defined timing",
-    "source-next-run",
-    "Run history (1)",
-    "Prior invocation",
-    "running",
-  ])
+  for (const text of ["Check", "Adapter-defined timing", "source-next-run"])
     expect(html).toContain(text);
+  for (const text of ["Prior invocation", "Run history", "<details"])
+    expect(html).not.toContain(text);
 });
 
 test("mode choices show authoritative current value and goal renders phase/outcome and measures", () => {
@@ -410,30 +410,20 @@ test("source, diagnostics, commands and keymaps expose adapter connections witho
   state.keymaps = [
     { adapter: "adapter-one", command: "apply", keys: "ctrl+k", when: "panel" },
   ];
-  const html = renderToStaticMarkup(
-    <SessionPanel
-      state={state}
-      onAction={async () => {
-        calls++;
-      }}
-      onReload={async () => {
-        calls++;
-      }}
-    />,
-  );
-  for (const text of [
-    "Task adapter",
-    "saved",
-    "Revision",
-    ">7<",
-    "Stale source",
-    "Connection details",
-    "adapter-one/apply",
-    'aria-busy="true"',
-    "ctrl+k",
-    "panel",
-  ])
+  const html = renderOpen({
+    state,
+    onAction: async () => {
+      calls++;
+    },
+    onReload: async () => {
+      calls++;
+    },
+  });
+  for (const text of ["Stale source", "Source warning", "Reload UI config"])
     expect(html).toContain(text);
+  // Adapter plumbing (revisions, commands, keymaps) is not user information.
+  for (const text of ["Revision", "adapter-one/apply", "ctrl+k"])
+    expect(html).not.toContain(text);
   expect(html).not.toContain("Request pending");
   expect(calls).toBe(0);
 });
@@ -482,9 +472,7 @@ test("actions resolve commands per adapter; disabled reasons, busy, missing comm
   expect(
     actionDisabledReason(state, env, { ...action, disabled: "Policy says no" }),
   ).toBe("Policy says no");
-  const html = renderToStaticMarkup(
-    <SessionPanel state={state} onAction={noop} onReload={noop} />,
-  );
+  const html = renderOpen({ state, onAction: noop, onReload: noop });
   expect(html).not.toContain("Command is busy");
   for (const text of [
     'aria-busy="true"',

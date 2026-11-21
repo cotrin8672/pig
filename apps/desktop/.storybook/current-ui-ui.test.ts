@@ -292,13 +292,10 @@ test("the actual App and its feature components render in isolated Storybook pre
           "!!document.querySelector('.session-panel')",
         );
         await browser.evaluate(
-          "const summary=document.querySelector('.session-dock-summary');if(summary.getAttribute('aria-expanded')==='false')summary.click()",
+          "const chip=document.querySelector('.session-activity [data-tab=\"tasks\"]');if(chip.getAttribute('aria-expanded')==='false')chip.click()",
         );
         await waitFor(
-          "document.querySelector('.session-dock-summary').getAttribute('aria-expanded')==='true'",
-        );
-        await browser.evaluate(
-          "document.querySelectorAll('[role=\"tab\"]')[1].click()",
+          "document.querySelector('.session-panel').matches(':popover-open')",
         );
         await waitFor("!!document.querySelector('.session-task-main')");
         await browser.evaluate(

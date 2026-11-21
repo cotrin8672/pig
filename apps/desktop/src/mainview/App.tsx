@@ -75,7 +75,6 @@ import {
   updateUiPreferences,
 } from "./rpc";
 import { SearchPalette } from "./SearchPalette";
-import { SessionPanel } from "./SessionPanel";
 import { Settings } from "./Settings";
 import { SidebarResizer } from "./SidebarResizer";
 import { SidebarSessions } from "./SidebarSessions";
@@ -930,30 +929,6 @@ export const Chat = memo(function Chat({
           <OpeningComposer preview={snapshot} />
         ) : (
           <Composer snapshot={snapshot} annotationRoot={thread} />
-        )
-      }
-      panel={
-        readOnly ? undefined : (
-          <SessionPanel
-            key={addressKey(snapshot.address)}
-            sessionId={snapshot.address.sessionId}
-            state={snapshot.sessionUI}
-            configError={snapshot.configError}
-            onAction={(request) =>
-              rpc.request.invokeSessionAction({
-                ...snapshot.address,
-                ...request,
-              })
-            }
-            onActionError={showError}
-            onReload={async () => {
-              const result = await rpc.request.reloadAdapterConfig();
-              if (result.state === "failed")
-                throw new Error(
-                  "Config reload failed; previous configuration is still active.",
-                );
-            }}
-          />
         )
       }
     >

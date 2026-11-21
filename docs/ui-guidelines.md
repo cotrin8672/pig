@@ -15,7 +15,7 @@ UIの追加・変更・レビュー時に適用する。スクリーンショッ
 - 静的検査は `apps/desktop/scripts/ui-style-rules.ts`。CSS・セレクター・JSXをASTで解析する。
   `check-ui-styles.ts` が本番の `mainview` 配下を走査し、違反箇所をファイル・行番号付きで出力する。
 - 新しい通常Cardは `*-card` / `ui-card` クラス、または `data-ui-surface="card"` を使う。
-  `session-panel` と `response-error` もCardとして検査する。任意の名前から役割を推測する検査ではない。
+  `response-error` もCardとして検査する（`session-panel` はChipから開くPopover面で、Lintの不透明禁止のみ対象）。任意の名前から役割を推測する検査ではない。
 - 背景は許可された半透明トークンを共有CSSから指定する。Cardのinline styleはレイアウト用途に限る。
   動的なstyleオブジェクトやspreadで検査を迂回しない。
 - UI変更時は、通常CIの成否とは別に `pnpm test:ui` を実行する。`Regression` のUIジョブも
@@ -512,6 +512,12 @@ UIの追加・変更・レビュー時に適用する。スクリーンショッ
   Composerの上下に帯・行を足さず、中身は開いたときだけ描画する、1つのtop layerパネルに出す。パネルはComposerの上で
   左右端をComposerに揃え、Paneのリサイズに追従する。状態の有無でPicker・送信ボタン・Composerを動かさない。
   今後のバックグラウンドタスク・サブエージェント等も同じ列へ追加する。`transcript-ui.test.ts` が配置不変とパネル位置を検査する。
+- Adapterのセッション表示（進捗TODO・サブエージェント／バックグラウンド実行・予約プロンプト・その他の情報と接続エラー）も
+  `SessionPanel` が同じ列（`.composer-session`）に種類ごとの件数Chip（進捗は `完了/全体`、実行中は小さな状態点、
+  エラーは警告色）として描き、`SessionIndicators` と同じtop layerパネルで中身を開く。Composerの上に帯（旧TaskDock）を出さない。
+  パネルに「詳細」の折り畳みやAdapterの内部情報（ID・revision・コマンド・キーマップ）を置かず、必要な情報だけを描く。
+  実行は1行（状態点・名前・状態・時間）＋最後に報告された1行、予約プロンプトは1行（名前・周期・次回）。
+  再読み込みボタンは接続エラーがあるときだけ「情報」に出す。
 - 会話の最下部へ戻る操作は、上へスクロールしている間だけComposerの上に重ねて表示する。
   重なり順はComposerの下とし、開いたモデルPickerなどComposerのPopoverが常に上に来るようにする。
   表示の有無で会話やComposerを動かさず、クリック後は新しい返信への自動追従を再開する。

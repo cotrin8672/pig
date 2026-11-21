@@ -1,4 +1,14 @@
-import { Bot, Check, ChevronDown, ChevronUp, Terminal, X } from "lucide-react";
+import {
+  Bot,
+  Check,
+  Clock,
+  Info,
+  ListChecks,
+  type LucideIcon,
+  Terminal,
+  TriangleAlert,
+  X,
+} from "lucide-react";
 import {
   type FormEvent,
   type ReactNode,
@@ -16,6 +26,7 @@ import type {
   ResourceRef,
   RunRecord,
   RunState,
+  ScheduleTiming,
   SessionActionRequest,
   SessionUIState,
   SessionView,
@@ -35,7 +46,6 @@ import {
   nextDockExpiry,
   observeDockRuns,
   type RunVisibility,
-  resolveDockTab,
   visibleDockRuns,
 } from "./session-dock-state";
 import {
@@ -45,6 +55,7 @@ import {
   timingLabel,
 } from "./session-panel-model";
 import { isInlineResultVisible } from "./session-read";
+import "./session-indicators.css";
 import "./session-panel.css";
 
 export interface SessionPanelProps {
@@ -54,6 +65,8 @@ export interface SessionPanelProps {
   onActionError?: (error: unknown) => void;
   onReload: () => Promise<void>;
   sessionId?: string;
+  /** Opens this section on mount (Storybook previews and SSR tests). */
+  initialTab?: DockTab;
 }
 
 type ActionContext = {
@@ -491,35 +504,22 @@ function ViewContent({
 }
 
 function ViewCard({ context }: { context: ActionContext }) {
-  const { view, adapterId, revision } = context.envelope;
-  const t = useT();
+  const { view } = context.envelope;
   return (
-    <details
+    <section
       className={`session-view-details session-kind-${view.kind}`}
-      open={view.kind === "status"}
+      aria-label={view.title}
     >
-      <summary>{view.title}</summary>
+      <h4 className="session-view-title">{view.title}</h4>
       <div className="session-detail-body">
         <ViewContent view={view} context={context} />
-        <Facts facts={view.facts} />
         <Actions
           key={envelopeKey(context.state, context.envelope)}
           context={context}
           actions={view.actions}
         />
-        <details className="session-provenance">
-          <summary>{t.dockConnections}</summary>
-          <dl>
-            <Fact label="Adapter" value={adapterId} />
-            <Fact label="View ID" value={view.id} />
-            <Fact label="Revision" value={revision} />
-            <Fact label="Source" value={view.source.label} />
-            <Fact label="State" value={view.source.freshness} />
-          </dl>
-          {view.origin && <Resource resource={view.origin} />}
-        </details>
       </div>
-    </details>
+    </section>
   );
 }
 
@@ -553,25 +553,13 @@ function TodoRows({ context }: { context: ActionContext }) {
               )}
             </span>
             <div className="session-todo-copy">
-              <span aria-description={item.title}>{item.title}</span>
-              {(item.description ||
-                item.owner ||
-                item.dependsOn?.length ||
-                item.availability ||
-                item.stateLabel) && (
-                <details className="session-row-details">
-                  <summary>{t.dockDetails}</summary>
-                  <p>{item.description}</p>
-                  <dl>
-                    <Fact label="Owner" value={item.owner} />
-                    <Fact
-                      label="Depends on"
-                      value={item.dependsOn?.join(", ")}
-                    />
-                    <Fact label="Availability" value={item.availability} />
-                    <Fact label="Status" value={item.stateLabel} />
-                  </dl>
-                </details>
+              <span aria-description={item.description ?? item.title}>
+                {item.title}
+              </span>
+              {item.state === "active" && item.activeLabel && (
+                <small className="session-todo-active">
+                  {item.activeLabel}
+                </small>
               )}
               <Actions
                 key={envelopeKey(context.state, context.envelope)}
@@ -582,12 +570,6 @@ function TodoRows({ context }: { context: ActionContext }) {
           </li>
         ))}
       </ul>
-      {!!view.facts?.length && (
-        <details className="session-row-details">
-          <summary>{t.dockDetails}</summary>
-          <Facts facts={view.facts} />
-        </details>
-      )}
       <Actions
         key={envelopeKey(context.state, context.envelope)}
         context={context}
@@ -616,23 +598,19 @@ function runTime(run: RunRecord, now: number): string {
       : `${Math.floor(seconds / 3600)}h${Math.floor((seconds % 3600) / 60)}m`;
 }
 
+/** One line per run plus, when reported, what it is doing (or said) last. */
 function TaskRow({
   item,
   context,
-  expanded,
   now,
-  onToggle,
   onDismiss,
 }: {
   item: DockRun;
   context: ActionContext;
-  expanded: boolean;
   now: number;
-  onToggle(): void;
   onDismiss(): void;
 }) {
   const t = useT();
-  const contentId = useId();
   const run = item.run;
   const process =
     item.kind === "background" ? (run as BackgroundRun) : undefined;
@@ -650,20 +628,20 @@ function TaskRow({
   ]
     .filter(Boolean)
     .join(" · ");
+  const line =
+    run.detail ??
+    run.output?.text
+      .split("\n")
+      .map((text) => text.trim())
+      .filter(Boolean)
+      .at(-1);
   return (
     <li
       className="session-task-row"
       data-state={active ? run.state.phase : (run.state.outcome ?? "unknown")}
-      data-expanded={expanded}
     >
       <div className="session-task-band">
-        <button
-          type="button"
-          className="session-task-main"
-          aria-expanded={expanded}
-          aria-controls={contentId}
-          onClick={onToggle}
-        >
+        <div className="session-task-main">
           <span className="session-task-dot" aria-hidden="true" />
           {agent ? (
             <Bot size={13} aria-hidden="true" />
@@ -672,12 +650,12 @@ function TaskRow({
           )}
           <span
             className={`session-task-name${process ? " is-command" : ""}`}
-            aria-description={label}
+            aria-description={agent?.task ?? label}
           >
             {label}
           </span>
           <span className="session-task-meta">{meta}</span>
-        </button>
+        </div>
         <Actions
           key={envelopeKey(context.state, context.envelope)}
           context={context}
@@ -694,68 +672,148 @@ function TaskRow({
           </button>
         )}
       </div>
-      {expanded && (
-        <div id={contentId} className="session-task-output">
-          {run.detail && <p>{run.detail}</p>}
-          {/* biome-ignore lint/a11y/noNoninteractiveTabindex: Keyboard users need to scroll this bounded output. */}
-          <pre tabIndex={0}>{run.output?.text || t.dockNoOutput}</pre>
-          {run.output?.truncated && <small>{t["Output truncated"]}</small>}
-          <details className="session-row-details">
-            <summary>{t.dockDetails}</summary>
-            <dl>
-              <Fact label="Task" value={agent?.task} />
-              <Fact label="Model" value={agent?.model} />
-              <Fact label="Profile" value={agent?.profile} />
-              <Fact label="Parent" value={agent?.parentId} />
-              <Fact label="Depends on" value={agent?.dependsOn?.join(", ")} />
-              <Fact label="Working directory" value={process?.cwd} />
-              <Fact label="Lifetime" value={process?.lifetime} />
-              <Fact label="Exit signal" value={process?.exit?.signal} />
-            </dl>
-            {agent?.session && <Resource resource={agent.session} />}
-            <Facts facts={run.facts} />
-          </details>
-        </div>
-      )}
+      {line && <p className="session-task-line">{line}</p>}
     </li>
   );
 }
 
-// Renderer-only disclosure memory; changing sessions must not reopen a closed dock.
-let dockExpanded = false;
-const chosenTabs = new Map<string, DockTab>();
+function clockTime(iso: string, now: number): string {
+  const at = new Date(iso);
+  if (Number.isNaN(at.getTime())) return iso;
+  const time = at.toLocaleTimeString([], {
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+  return at.toDateString() === new Date(now).toDateString()
+    ? time
+    : `${at.getMonth() + 1}/${at.getDate()} ${time}`;
+}
+function duration(ms: number): string {
+  const minutes = Math.round(ms / 60_000);
+  if (ms < 60_000) return `${Math.round(ms / 1000)}s`;
+  if (minutes < 60) return `${minutes}m`;
+  return minutes % 60
+    ? `${Math.floor(minutes / 60)}h${minutes % 60}m`
+    : `${minutes / 60}h`;
+}
+function shortTiming(timing: ScheduleTiming, now: number): string {
+  switch (timing.kind) {
+    case "once":
+      return `1× ${clockTime(timing.at, now)}`;
+    case "interval":
+      return `↻ ${duration(timing.milliseconds)}`;
+    case "cron":
+      return timing.expression;
+    case "opaque":
+      return timing.description;
+  }
+}
 
+/** One compact row per schedule: name, cadence and the next run at a glance. */
+function ScheduleList({
+  context,
+  now,
+}: {
+  context: ActionContext;
+  now: number;
+}) {
+  const t = useT();
+  const view = context.envelope.view;
+  if (view.kind !== "schedule") return null;
+  return (
+    <section aria-label={view.title}>
+      <ul className="session-schedule-list">
+        {view.schedules.map((schedule) => (
+          <li
+            key={schedule.id}
+            className="session-schedule-row"
+            data-enabled={schedule.enabled !== false}
+          >
+            <div className="session-schedule-band">
+              <Clock size={13} aria-hidden="true" />
+              <span className="session-schedule-name">{schedule.title}</span>
+              <code
+                className="session-schedule-timing"
+                aria-description={timingLabel(schedule.timing)}
+              >
+                {shortTiming(schedule.timing, now)}
+              </code>
+              <span className="session-schedule-next">
+                {schedule.enabled === false
+                  ? t.dockPaused
+                  : schedule.nextRunAt && schedule.timing.kind !== "once"
+                    ? t.dockNextRun(clockTime(schedule.nextRunAt, now))
+                    : ""}
+              </span>
+            </div>
+            <Actions context={context} actions={schedule.actions} />
+          </li>
+        ))}
+      </ul>
+      <div className="session-task-group-actions">
+        <Actions
+          key={envelopeKey(context.state, context.envelope)}
+          context={context}
+          actions={view.actions}
+        />
+      </div>
+    </section>
+  );
+}
+
+const tabIcons: Record<DockTab, LucideIcon> = {
+  todo: ListChecks,
+  tasks: Bot,
+  schedule: Clock,
+  info: Info,
+};
+
+/** Places the panel above the composer with matching left/right edges. */
+function place(popup: HTMLElement, trigger: HTMLElement) {
+  const composer = trigger.closest(".composer") ?? trigger;
+  const rect = composer.getBoundingClientRect();
+  popup.style.left = `${rect.left}px`;
+  popup.style.width = `${rect.width}px`;
+  popup.style.bottom = `${innerHeight - rect.top + 8}px`;
+  popup.style.maxHeight = `${Math.max(120, Math.min(420, rect.top - 16))}px`;
+}
+
+/**
+ * Session activity (todos, subagents/background runs, scheduled prompts and
+ * other adapter views) as counters in the composer toolbar. Contents open in
+ * one top-layer panel above the composer, so their presence never adds a band
+ * to the composer or moves the conversation.
+ */
 export function SessionPanel({
   state,
   configError,
   onAction,
   onActionError,
   onReload,
-  sessionId,
+  initialTab,
 }: SessionPanelProps) {
   const t = useT();
   const id = useId();
-  const key = sessionId ?? state?.generation ?? id;
-  const [expanded, setExpanded] = useState(dockExpanded);
-  const [chosenTab, setChosenTab] = useState<DockTab | null>(
-    () => chosenTabs.get(key) ?? null,
+  const panel = useRef<HTMLDivElement>(null);
+  const buttons = useRef<Partial<Record<DockTab, HTMLButtonElement | null>>>(
+    {},
   );
-  const [openedRun, setOpenedRun] = useState<string | null>(null);
+  const [open, setOpen] = useState<DockTab | null>(initialTab ?? null);
   const [reloading, setReloading] = useState(false);
   const reloadPending = useRef(false);
   const [reloadError, setReloadError] = useState<string>();
-  const summaryRef = useRef<HTMLButtonElement>(null);
   const [, tick] = useReducer((value) => value + 1, 0);
   const allRuns = useMemo(() => dockRuns(state), [state]);
   const todos = useMemo(() => dockTodos(state), [state]);
-  const others = useMemo(() => dockOtherViews(state), [state]);
+  const views = useMemo(() => dockOtherViews(state), [state]);
+  const schedules = views.filter(({ view }) => view.kind === "schedule");
+  const others = views.filter(({ view }) => view.kind !== "schedule");
   const progress = dockTodoSummary(todos);
   const now = Date.now();
   const [visibility, setVisibility] = useState<RunVisibility>(() => new Map());
   const observed = observeDockRuns(visibility, allRuns, now);
   if (observed !== visibility) setVisibility(observed);
-  const pinned = expanded && chosenTab === "tasks" ? openedRun : null;
-  const runs = visibleDockRuns(observed, allRuns, now, pinned);
+  const runs = visibleDockRuns(observed, allRuns, now);
   const taskEnvelopes = [
     ...new Map(
       runs.map((item) => [
@@ -768,22 +826,29 @@ export function SessionPanel({
   const running = activeRuns.filter(
     (item) => item.run.state.phase === "running",
   ).length;
-  const problems = !!(configError || reloadError || state?.diagnostics.length);
+  const problems = [
+    configError,
+    reloadError,
+    ...(state?.diagnostics.map(
+      (item) => `${item.adapterId}: ${item.message}`,
+    ) ?? []),
+  ].filter((message): message is string => !!message);
+  const scheduleCount = schedules.reduce(
+    (sum, { view }) =>
+      sum + (view.kind === "schedule" ? view.schedules.length : 0),
+    0,
+  );
   const tabs: DockTab[] = [
     ...(todos.length ? ["todo" as const] : []),
     ...(runs.length ? ["tasks" as const] : []),
-    ...(others.length || problems ? ["info" as const] : []),
+    ...(scheduleCount ? ["schedule" as const] : []),
+    ...(others.length || problems.length ? ["info" as const] : []),
   ];
-  const tab = resolveDockTab(
-    chosenTab,
-    tabs,
-    activeRuns.length,
-    progress.activeCount,
-  );
-  const expiry = nextDockExpiry(observed, allRuns, now, pinned);
+  const shown = open && tabs.includes(open) ? open : null;
+  const expiry = nextDockExpiry(observed, allRuns, now);
   useEffect(() => {
     const delay =
-      expanded && activeRuns.length
+      shown === "tasks" && activeRuns.length
         ? Math.min(1000, expiry ? Math.max(1, expiry - now) : 1000)
         : expiry
           ? Math.max(1, expiry - now)
@@ -791,19 +856,34 @@ export function SessionPanel({
     if (delay === null) return;
     const timer = setTimeout(tick, delay);
     return () => clearTimeout(timer);
-  }, [expanded, activeRuns.length, expiry, now]);
-  function choose(next: DockTab) {
-    setChosenTab(next);
-    chosenTabs.set(key, next);
-    if (chosenTabs.size > 64)
-      chosenTabs.delete(chosenTabs.keys().next().value as string);
-  }
-  function disclose(next: boolean) {
-    dockExpanded = next;
-    setExpanded(next);
-    if (next && tab) choose(tab);
-    if (!next) summaryRef.current?.focus();
-  }
+  }, [shown, activeRuns.length, expiry, now]);
+  useEffect(() => {
+    // The open section emptied out (e.g. the last run expired).
+    if (open && !shown && panel.current?.matches(":popover-open"))
+      panel.current.hidePopover();
+  }, [open, shown]);
+  useEffect(() => {
+    const popup = panel.current;
+    const trigger = open && buttons.current[open];
+    if (!popup || !trigger) return;
+    const composer = trigger.closest(".composer");
+    const update = () => place(popup, trigger);
+    // Pane dividers resize the composer without a window resize.
+    const observer = new ResizeObserver(update);
+    if (composer) observer.observe(composer);
+    window.addEventListener("resize", update);
+    return () => {
+      observer.disconnect();
+      window.removeEventListener("resize", update);
+    };
+  }, [open]);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: Only the initial section opens itself.
+  useEffect(() => {
+    const trigger = initialTab && buttons.current[initialTab];
+    if (!trigger || !panel.current) return;
+    place(panel.current, trigger);
+    panel.current.showPopover();
+  }, []);
   async function reload() {
     if (reloadPending.current) return;
     reloadPending.current = true;
@@ -818,24 +898,28 @@ export function SessionPanel({
       setReloading(false);
     }
   }
-  if (!tab) return null;
-  const label = todos.length
-    ? progress.cancelled === progress.total
-      ? t.Cancelled
-      : t.dockTodoProgress(
-          progress.completed,
-          progress.total - progress.cancelled,
-        )
-    : runs.length
-      ? t.dockTaskCount(runs.length)
-      : problems
-        ? t.dockProblem
-        : (others[0]?.view.title ?? t.dockInfo);
-  const tabLabels = {
+  if (!tabs.length) return null;
+  const counts: Record<DockTab, string> = {
+    todo:
+      progress.cancelled === progress.total
+        ? "0"
+        : `${progress.completed}/${progress.total - progress.cancelled}`,
+    tasks: String(runs.length),
+    schedule: String(scheduleCount),
+    info: String(others.length + problems.length),
+  };
+  const tabLabels: Record<DockTab, string> = {
     todo: t.dockProgress,
     tasks: t.dockTasks,
-    info: t.dockInfo,
+    schedule: t.dockSchedules,
+    info: problems.length ? t.dockProblem : t.dockInfo,
   };
+  const chipLabel = (tab: DockTab) =>
+    tab === "todo"
+      ? `${t.dockProgress}: ${t.dockTodoProgress(progress.completed, progress.total - progress.cancelled)}`
+      : tab === "tasks" && running
+        ? `${t.sessionIndicator(t.dockTasks, runs.length)} · ${t.dockRunningCount(running)}`
+        : t.sessionIndicator(tabLabels[tab], Number(counts[tab]));
   const context = (envelope: ViewEnvelope): ActionContext => ({
     state: state as SessionUIState,
     envelope,
@@ -843,161 +927,99 @@ export function SessionPanel({
     onActionError,
   });
   return (
-    <aside
-      className="session-panel"
-      aria-label={t.dockTitle}
-      data-expanded={expanded}
-    >
-      <header className="session-dock-header">
-        <button
-          ref={summaryRef}
-          id={`${id}-summary`}
-          type="button"
-          className="session-dock-summary"
-          aria-expanded={expanded}
-          aria-controls={`${id}-content`}
-          onClick={() => disclose(!expanded)}
-        >
-          <span
-            className={`session-dock-symbol${problems ? " is-warning" : ""}`}
-            aria-hidden="true"
-          >
-            {problems ? "!" : todos.length ? progress.symbol : "◐"}
-          </span>
-          <span className="session-dock-label">{label}</span>
-          {progress.current && (
-            <span
-              className="session-dock-current"
-              aria-description={progress.current}
-            >
-              {progress.current}
-              {progress.activeCount > 1
-                ? ` · ${t.dockMoreActive(progress.activeCount - 1)}`
-                : ""}
-            </span>
-          )}
-          {running > 0 && (
-            <span className="session-dock-live">
-              <i aria-hidden="true" />
-              <span>{t.dockRunningCount(running)}</span>
-            </span>
-          )}
-        </button>
-        {tabs.length > 1 && (
-          <div
-            className="session-dock-tabs"
-            role="tablist"
-            aria-label={t.dockTitle}
-            onKeyDown={(event) => {
-              if (
-                !["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)
-              )
+    <div className="session-activity">
+      {tabs.map((tab) => {
+        const Glyph =
+          tab === "info" && problems.length ? TriangleAlert : tabIcons[tab];
+        return (
+          <button
+            type="button"
+            key={tab}
+            ref={(element) => {
+              buttons.current[tab] = element;
+            }}
+            className="session-indicator"
+            data-tab={tab}
+            data-warning={tab === "info" && problems.length > 0}
+            data-live={
+              (tab === "tasks" && running > 0) ||
+              (tab === "todo" && progress.activeCount > 0)
+            }
+            popoverTarget={`${id}-panel`}
+            popoverTargetAction="show"
+            aria-expanded={shown === tab}
+            aria-controls={`${id}-panel`}
+            aria-label={chipLabel(tab)}
+            onClick={(event) => {
+              if (shown === tab) {
+                // Cancels the native show so the same counter closes the panel.
+                event.preventDefault();
+                panel.current?.hidePopover();
                 return;
-              event.preventDefault();
-              const index = tabs.indexOf(tab);
-              const next =
-                tabs[
-                  event.key === "Home"
-                    ? 0
-                    : event.key === "End"
-                      ? tabs.length - 1
-                      : (index +
-                          (event.key === "ArrowRight" ? 1 : -1) +
-                          tabs.length) %
-                        tabs.length
-                ];
-              disclose(true);
-              choose(next);
-              document.getElementById(`${id}-${next}-tab`)?.focus();
+              }
+              if (panel.current) place(panel.current, event.currentTarget);
+              setOpen(tab);
             }}
           >
-            {tabs.map((value) => (
-              <button
-                type="button"
-                key={value}
-                id={`${id}-${value}-tab`}
-                role="tab"
-                tabIndex={value === tab ? 0 : -1}
-                aria-selected={value === tab}
-                aria-controls={`${id}-${value}`}
-                onClick={() => {
-                  disclose(true);
-                  choose(value);
-                }}
-              >
-                {tabLabels[value]}
-              </button>
-            ))}
-          </div>
-        )}
-        <button
-          type="button"
-          className="session-dock-toggle"
-          aria-label={expanded ? t.dockCollapse : t.dockExpand}
-          aria-expanded={expanded}
-          aria-controls={`${id}-content`}
-          onClick={() => disclose(!expanded)}
-        >
-          {expanded ? <ChevronDown size={18} /> : <ChevronUp size={18} />}
-        </button>
-      </header>
-      {/* biome-ignore lint/a11y/useSemanticElements: This is a keyboard event group, not a form fieldset. */}
+            <Glyph size={13} aria-hidden="true" />
+            <span>{counts[tab]}</span>
+          </button>
+        );
+      })}
       <div
-        id={`${id}-content`}
-        className="session-dock-content"
-        role="group"
-        aria-label={t.dockTitle}
-        hidden={!expanded}
-        onKeyDown={(event) => {
-          if (event.key === "Escape") {
-            event.preventDefault();
-            event.stopPropagation();
-            disclose(false);
-          }
+        ref={panel}
+        id={`${id}-panel`}
+        popover="auto"
+        className="session-indicator-panel session-panel"
+        role="dialog"
+        aria-label={shown ? tabLabels[shown] : t.dockTitle}
+        // biome-ignore lint/a11y/noNoninteractiveTabindex: Keyboard users need to scroll long activity lists.
+        tabIndex={0}
+        onToggle={(event) => {
+          if ((event.nativeEvent as ToggleEvent).newState === "closed")
+            setOpen(null);
         }}
       >
-        {tabs.map((value) => (
-          <div
-            key={value}
-            id={`${id}-${value}`}
-            className="session-dock-viewport"
-            role="tabpanel"
-            aria-labelledby={
-              tabs.length > 1 ? `${id}-${value}-tab` : `${id}-summary`
-            }
-            hidden={tab !== value}
-            tabIndex={expanded && tab === value ? 0 : -1}
-          >
-            {value === "todo" &&
+        {shown && (
+          <section>
+            <h3>
+              {(() => {
+                const Glyph =
+                  shown === "info" && problems.length
+                    ? TriangleAlert
+                    : tabIcons[shown];
+                return <Glyph size={13} aria-hidden="true" />;
+              })()}
+              {tabLabels[shown]}
+              {shown === "todo" && progress.current && (
+                <em className="session-panel-current">{progress.current}</em>
+              )}
+              <span>{counts[shown]}</span>
+            </h3>
+            {shown === "todo" &&
               todos.map((envelope) => (
                 <TodoRows
                   key={JSON.stringify([envelope.adapterId, envelope.view.id])}
                   context={context(envelope)}
                 />
               ))}
-            {value === "tasks" && (
+            {shown === "tasks" && (
               <ul className="session-task-list">
                 {runs.map((item) => (
                   <TaskRow
                     key={item.key}
                     item={item}
                     context={context(item.envelope)}
-                    expanded={openedRun === item.key}
                     now={now}
-                    onToggle={() => {
-                      choose("tasks");
-                      setOpenedRun(openedRun === item.key ? null : item.key);
-                    }}
                     onDismiss={() => {
                       setVisibility(dismissDockRun(observed, item.key));
-                      if (openedRun === item.key) setOpenedRun(null);
-                      summaryRef.current?.focus();
+                      panel.current?.focus();
                     }}
                   />
                 ))}
               </ul>
             )}
-            {value === "tasks" &&
+            {shown === "tasks" &&
               taskEnvelopes.map((envelope) => (
                 <div
                   className="session-task-group-actions"
@@ -1008,46 +1030,21 @@ export function SessionPanel({
                     context={context(envelope)}
                     actions={envelope.view.actions}
                   />
-                  {!!envelope.view.facts?.length && (
-                    <details>
-                      <summary>
-                        {envelope.view.title} · {t.dockDetails}
-                      </summary>
-                      <Facts facts={envelope.view.facts} />
-                    </details>
-                  )}
-                  {envelope.view.kind === "agents" &&
-                    !!envelope.view.relations?.length && (
-                      <details>
-                        <summary>{t.dockDetails}</summary>
-                        <ul>
-                          {envelope.view.relations.map((relation, index) => (
-                            <li
-                              // biome-ignore lint/suspicious/noArrayIndexKey: Relations have no native IDs or local state; duplicates are allowed.
-                              key={`${relation.from}:${relation.to}:${index}`}
-                            >
-                              {relation.from} → {relation.to} · {relation.kind}
-                            </li>
-                          ))}
-                        </ul>
-                      </details>
-                    )}
                 </div>
               ))}
-            {value === "info" && (
+            {shown === "schedule" &&
+              schedules.map((envelope) => (
+                <ScheduleList
+                  key={JSON.stringify([envelope.adapterId, envelope.view.id])}
+                  context={context(envelope)}
+                  now={now}
+                />
+              ))}
+            {shown === "info" && (
               <>
-                {(configError || reloadError) && (
-                  <p className="session-error" role="alert">
-                    {configError || reloadError}
-                  </p>
-                )}
-                {state?.diagnostics.map((item) => (
-                  <p
-                    className="session-error"
-                    role="alert"
-                    key={item.adapterId}
-                  >
-                    {item.adapterId}: {item.message}
+                {problems.map((message) => (
+                  <p className="session-error" role="alert" key={message}>
+                    {message}
                   </p>
                 ))}
                 {others.map((envelope) => (
@@ -1056,50 +1053,23 @@ export function SessionPanel({
                     context={context(envelope)}
                   />
                 ))}
+                {problems.length > 0 && (
+                  <div className="session-reload">
+                    <button
+                      type="button"
+                      disabled={reloading}
+                      aria-busy={reloading}
+                      onClick={() => void reload()}
+                    >
+                      {reloading ? t.dockReloading : t.dockReload}
+                    </button>
+                  </div>
+                )}
               </>
             )}
-          </div>
-        ))}
-        <details className="session-connections">
-          <summary>{t.dockConnections}</summary>
-          <div>
-            <button
-              type="button"
-              disabled={reloading}
-              aria-busy={reloading}
-              onClick={() => void reload()}
-            >
-              {t.dockReload}
-            </button>
-            {reloadError && tab !== "info" && <p role="alert">{reloadError}</p>}
-            <ul>
-              {state?.commands.map((command) => (
-                <li
-                  key={JSON.stringify([command.adapterId, command.id])}
-                  aria-busy={command.busy}
-                >
-                  {command.title} · {command.adapterId}/{command.id}
-                </li>
-              ))}
-            </ul>
-            <ul>
-              {state?.keymaps.map((binding) => (
-                <li
-                  key={JSON.stringify([
-                    binding.adapter,
-                    binding.command,
-                    binding.keys,
-                    binding.when,
-                  ])}
-                >
-                  <kbd>{binding.keys}</kbd> · {binding.adapter}/
-                  {binding.command} · {binding.when}
-                </li>
-              ))}
-            </ul>
-          </div>
-        </details>
+          </section>
+        )}
       </div>
-    </aside>
+    </div>
   );
 }
