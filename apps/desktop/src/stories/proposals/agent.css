@@ -1,0 +1,70 @@
+/* Proposal: a native dialog for ask_user while it waits for an answer. */
+.ag-context {
+  margin: 0;
+  color: var(--ds-text-muted);
+  font-size: var(--text-sm);
+}
+.ag-note {
+  color: var(--ds-text-muted);
+  font-size: var(--text-sm);
+}
+.ag-question {
+  position: static;
+  display: grid;
+  gap: 12px;
+  width: min(100%, 520px);
+}
+.ag-question > header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--ds-highlight);
+}
+.ag-question h2 {
+  margin: 0;
+  color: var(--ds-text-primary);
+  font-size: var(--text-md);
+}
+.ag-choices {
+  display: grid;
+  gap: 4px;
+}
+.ag-choices button {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  background: var(--ds-tile);
+  color: var(--ds-text-secondary);
+  text-align: left;
+}
+.ag-choices button > span {
+  display: grid;
+  flex: 1;
+  gap: 2px;
+}
+.ag-choices button small {
+  color: var(--ds-text-faint);
+}
+.ag-choices button[aria-checked="true"] {
+  border-color: color-mix(in srgb, var(--ds-accent) 60%, transparent);
+  background: var(--ds-bg-active);
+  color: var(--ds-text-primary);
+}
+.ag-choices button[aria-checked="true"] > svg {
+  color: var(--ds-accent);
+}
+.ag-question .dialog-actions button {
+  padding: 6px 14px;
+}
+.ag-choices kbd {
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  border-radius: var(--radius-3xs);
+  background: var(--ds-bg-chip);
+  font-size: var(--text-3xs);
+}
