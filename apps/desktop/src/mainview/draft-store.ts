@@ -125,6 +125,7 @@ export class DraftStore {
   private listeners = new Set<() => void>();
   private queues = new Map<string, Promise<unknown>>();
   private flights = new Map<string, Flight>();
+  constructor(private readonly mirrorBudgetMs = 5_000) {}
   subscribe = (listener: () => void) => {
     this.listeners.add(listener);
     return () => {
@@ -427,7 +428,7 @@ export class DraftStore {
         };
         this.flights.set(key, flight);
         try {
-          const result = await sync({
+          const reply = sync({
             hostId: address.hostId,
             sessionId: address.sessionId,
             epoch: address.epoch,
@@ -435,6 +436,20 @@ export class DraftStore {
             content: flight.content,
             ...(requestId ? { requestId, delivery } : {}),
           });
+          let timer: ReturnType<typeof setTimeout> | undefined;
+          // A lost background ACK must not hold the shared queue ahead of a send.
+          const boundedReply = requestId
+            ? reply
+            : Promise.race([
+                reply,
+                new Promise<never>((_, reject) => {
+                  timer = setTimeout(
+                    () => reject(new Error("Draft sync timed out")),
+                    this.mirrorBudgetMs,
+                  );
+                }),
+              ]);
+          const result = await boundedReply.finally(() => clearTimeout(timer));
           this.receive(address, result.draft);
           const now = this.read(address);
           if (!requestId && now.retired) return now;
