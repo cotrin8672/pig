@@ -177,7 +177,7 @@ type Managed = {
   preparingImages?: boolean;
   images: ReturnType<typeof createQueuedImagePolicy>;
   admissionSignal?: AbortSignal;
-  transition?: AbortController;
+  transition?: { controller: AbortController; kind: "command" | "reload" };
   publishTimer?: ReturnType<typeof setTimeout>;
   infoCache?: {
     leaf: ReturnType<SDKSessionManager["getLeafEntry"]>;
@@ -390,7 +390,9 @@ export class SessionHost {
       () => {
         this.broker.setAvailable(false);
         for (const m of this.sessions.values()) {
-          m.transition?.abort(new Error("Root UI connection lost"));
+          // A reload belongs to the host, not to the window that requested it.
+          if (m.transition?.kind === "command")
+            m.transition.controller.abort(new Error("Root UI connection lost"));
           if (m.phase === "opening")
             m.controller.abort(
               new Error("Root UI connection lost during startup"),
@@ -788,11 +790,12 @@ export class SessionHost {
   private transition<T>(
     m: Managed,
     action: (signal: AbortSignal) => Promise<T>,
+    kind: "command" | "reload" = "command",
   ): Promise<T> {
     if (m.transition || m.stopping)
       return Promise.reject(new Error("SESSION_TRANSITION_BUSY"));
     const controller = new AbortController();
-    m.transition = controller;
+    m.transition = { controller, kind };
     return Promise.resolve()
       .then(() => action(controller.signal))
       .then((result) => {
@@ -819,7 +822,7 @@ export class SessionHost {
         throw error;
       })
       .finally(() => {
-        if (m.transition === controller) m.transition = undefined;
+        if (m.transition?.controller === controller) m.transition = undefined;
         this.maybeReload(m);
         this.maybeReloadAdapterConfig();
       });
@@ -1171,7 +1174,7 @@ export class SessionHost {
       ) => {
         controller.signal.throwIfAborted();
         const transitionSignal =
-          managed.transition?.signal ?? controller.signal;
+          managed.transition?.controller.signal ?? controller.signal;
         transitionSignal.throwIfAborted();
         const trust = await resolveProjectTrust(
           target.cwd,
@@ -1244,7 +1247,7 @@ export class SessionHost {
             target.cwd,
             managed.address,
             this.broker,
-            managed.transition?.signal ?? controller.signal,
+            managed.transition?.controller.signal ?? controller.signal,
             desktopConfigDir,
             controller.signal,
           );
@@ -1385,7 +1388,7 @@ export class SessionHost {
       });
       managed.runtime.setRebindSession(async (session) => {
         controller.signal.throwIfAborted();
-        managed.transition?.signal.throwIfAborted();
+        managed.transition?.controller.signal.throwIfAborted();
         const previous = managed.address;
         this.sessions.delete(previous.sessionId);
         managed.address = this.address(session.sessionManager.getSessionId());
@@ -1403,7 +1406,7 @@ export class SessionHost {
         });
         await this.bind(managed, session);
         controller.signal.throwIfAborted();
-        managed.transition?.signal.throwIfAborted();
+        managed.transition?.controller.signal.throwIfAborted();
         managed.phase = "ready";
         this.options.emit({
           type: "replaced",
@@ -2531,7 +2534,7 @@ export class SessionHost {
     m.phase = "closing";
     this.cancelPublish(m);
     m.controller.abort(error);
-    m.transition?.abort(error);
+    m.transition?.controller.abort(error);
     this.receipts.cancel(m.address);
     m.projector?.stopUnconfirmed(error);
     m.unsubscribe?.();
@@ -2550,7 +2553,9 @@ export class SessionHost {
     if (m.stopPromise) return m.stopPromise;
     if (m.publishTimer) this.publish(m);
     m.stopping = true;
-    m.transition?.abort(new Error("Session transition cancelled by Stop"));
+    m.transition?.controller.abort(
+      new Error("Session transition cancelled by Stop"),
+    );
     this.recoverQueue(m);
     this.receipts.cancel(address);
     this.broker.cancelSession(address);
@@ -2605,7 +2610,9 @@ export class SessionHost {
     if (m.publishTimer) this.publish(m);
     m.phase = "closing";
     m.controller.abort(new Error("Chat closed"));
-    m.transition?.abort(new Error("Session transition cancelled by Close"));
+    m.transition?.controller.abort(
+      new Error("Session transition cancelled by Close"),
+    );
     this.recoverQueue(m);
     this.receipts.cancel(address);
     this.broker.cancelSession(address);
@@ -2692,15 +2699,15 @@ export class SessionHost {
   async reloadPackageExtensions(): Promise<string[]> {
     const failures: string[] = [];
     // History-only tabs have no runner to reload; the next wake discovers packages.
-    await Promise.all(
-      [...this.sessions.values()]
-        .filter((m) => m.runtime && (m.phase === "ready" || m.transition))
-        .map((m) =>
-          this.reloadManagedExtensions(m).catch((error) => {
-            failures.push(String(error));
-          }),
-        ),
-    );
+    // SDK reloads already serialize globally. Leave other chats usable while they wait.
+    for (const m of [...this.sessions.values()]) {
+      if (!m.runtime || (m.phase !== "ready" && !m.transition)) continue;
+      try {
+        await this.reloadManagedExtensions(m);
+      } catch (error) {
+        failures.push(String(error));
+      }
+    }
     return failures;
   }
   private async reloadManagedExtensions(
@@ -2731,14 +2738,15 @@ export class SessionHost {
     }
     // Claim the pending request before any queued retry or package pass can run.
     m.reloadPending = false;
-    return this.transition(m, (signal) =>
-      this.serialize(m, async () => {
+    const reload = (signal: AbortSignal) =>
+      this.serialize(m, async (): Promise<{ state: "applied" }> => {
         const previous = m.address;
         this.detachAdapters(m);
         m.ui.cancelAll("reload");
         try {
-          await loadExclusive(() =>
-            session.reload({
+          await loadExclusive(() => {
+            signal.throwIfAborted();
+            return session.reload({
               beforeSessionStart: () => {
                 signal.throwIfAborted();
                 this.cancelPublish(m);
@@ -2771,8 +2779,8 @@ export class SessionHost {
                   cwd: m.cwd,
                 });
               },
-            }),
-          );
+            });
+          });
           this.diagnostics(m, session);
           if (session.resourceLoader.getExtensions().errors.length)
             throw new Error("One or more extensions failed to reload");
@@ -2789,8 +2797,8 @@ export class SessionHost {
           this.failure(m, `Reload failed: ${String(error)}`);
           throw error;
         }
-      }),
-    );
+      });
+    return this.transition(m, reload, "reload");
   }
   /** Prompts admitted before a selection change finish with the old selection. */
   private orderedSelection<T>(
@@ -3176,7 +3184,9 @@ export class SessionHost {
     for (const m of this.sessions.values()) {
       if (m.publishTimer) this.publish(m);
       m.phase = "closing";
-      m.controller.abort(new Error("Host is shutting down"));
+      const error = new Error("Host is shutting down");
+      m.controller.abort(error);
+      m.transition?.controller.abort(error);
       this.receipts.cancel(m.address);
       this.broker.cancelSession(m.address);
       m.ui.cancelAll("close");

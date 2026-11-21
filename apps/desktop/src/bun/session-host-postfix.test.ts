@@ -30,8 +30,9 @@ test("F1/F2: target selection, metadata-only restore, transitions reject sends a
       const faux = fauxProvider({tokensPerSecond:Infinity,models:[{id:"a",reasoning:true},{id:"b",reasoning:true}]});
       globalThis.__shutdown = [];
       let hidden = [], trust = "once", waitingTrust;
+      let clock = 0;
       const events = [];
-      const host = new SessionHost({modelInfo,disabled:()=>hidden,configureModels:m=>{m.registerNativeProvider(faux.provider);},emit:e=>events.push(e),emitTerminal(){},emitUI(e){
+      const host = new SessionHost({modelInfo,connectionNow:()=>clock,disabled:()=>hidden,configureModels:m=>{m.registerNativeProvider(faux.provider);},emit:e=>events.push(e),emitTerminal(){},emitUI(e){
         if(e.type === "request" && e.request.kind === "project-trust") {
           if(trust === "hold") {waitingTrust = e.request; return;}
           queueMicrotask(()=>host.resolveExtensionUI({...e.request,kind:"project-trust",value:trust}));
@@ -92,6 +93,31 @@ test("F1/F2: target selection, metadata-only restore, transitions reject sends a
       expect(reloads()[1].previous).toEqual(reloads()[0].snapshot.address);
       expect(events.some(e=>e.type==="closed" && e.reason==="failed")).toBe(false);
       chat = host.getSessionSnapshot(reloads()[1].snapshot.address);
+      // Only the chat being reloaded is busy. Losing the Root lease must not
+      // cancel an in-flight package reload or close either chat.
+      const other = await host.openSession({cwd,openId:"other"});
+      const packageGate = Promise.withResolvers();
+      globalThis.__holdShutdown = true; globalThis.__shutdownEntered = false; globalThis.__shutdownGate = packageGate.promise;
+      const packageReload = host.reloadPackageExtensions();
+      while(!globalThis.__shutdownEntered) await Bun.sleep(1);
+      let otherWasUsable = true;
+      try { host.getRecovery(other.address); } catch { otherWasUsable = false; }
+      clock += 30001;
+      expect(host.heartbeatUI({clientId:"root"})).toEqual({connected:false});
+      globalThis.__holdShutdown = false; packageGate.resolve();
+      expect(await packageReload).toEqual([]);
+      expect(otherWasUsable).toBe(true);
+      host.connectUI({clientId:"root"});
+      const refreshed = host.runtimeState().sessions;
+      expect(refreshed).toHaveLength(2);
+      expect(events.some(e=>e.type==="closed" && e.reason==="failed")).toBe(false);
+      const addressAfter = prior => {
+        const current = refreshed.find(s=>s.address.sessionId===prior.sessionId).address;
+        expect(current.epoch).toBeGreaterThan(prior.epoch);
+        return current;
+      };
+      chat = host.getSessionSnapshot(addressAfter(chat.address));
+      await host.closeSession(addressAfter(other.address));
       // Gate shutdown before any SDK invalidation: prompt/draft/model mutation
       // must fail synchronously, while read-only receipts and Stop remain usable.
       for (const kind of ["reload","fork","new","switch"]) {
@@ -136,7 +162,6 @@ test("F1/F2: target selection, metadata-only restore, transitions reject sends a
       // Host wiring: dead renderer cancels startup native and actual terminal
       // UI without a native hook or cooperative disconnect message.
       await writeFile(join(cwd,".pi/extensions/lease.ts"), 'export default function(pi){pi.on("session_start",async (_e,ctx)=>{if(globalThis.__leaseMode === "native") await ctx.ui.confirm("Lease","Wait"); else await ctx.ui.custom(()=>({render:()=>["Wait"]}));});}');
-      let clock = 0;
       const leaseHost = new SessionHost({modelInfo,connectionNow:()=>clock,configureModels:m=>m.registerNativeProvider(faux.provider),emit(){},emitTerminal(){},emitUI(e){if(e.type === "request" && e.request.kind === "project-trust") queueMicrotask(()=>leaseHost.resolveExtensionUI({...e.request,kind:"project-trust",value:"once"}));}});
       for (const mode of ["native","terminal"]) {
         globalThis.__leaseMode = mode; leaseHost.connectUI({clientId:mode});
