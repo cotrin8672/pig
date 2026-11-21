@@ -77,7 +77,7 @@ export const SessionList = memo(function SessionList({
   const desktop = useStore((s) => s.bootstrap.desktop);
   const activeId = useStore((s) => (s.page === "chat" ? s.active : undefined));
   const [archived, setArchived] = useState(false);
-  const [showAll, setShowAll] = useState(false);
+  const [extra, setExtra] = useState(0);
   if (!expanded) return null;
   const sessions = mergeLiveSessions(cwd, listed, live, deleting);
   const startingRows: { openId: string; title: string }[] = [];
@@ -105,20 +105,18 @@ export const SessionList = memo(function SessionList({
   const unpinned = visible.filter(
     (session) => !desktop.sessions[session.id]?.pinned,
   );
-  const recent = unpinned.slice(
-    0,
-    Math.max(0, RECENT_CHAT_LIMIT - startingRows.length),
-  );
+  const recentLimit = Math.max(0, RECENT_CHAT_LIMIT - startingRows.length);
+  const recent = unpinned.slice(0, recentLimit + extra);
   const selected = unpinned.find((session) => session.id === activeId);
   if (selected && recent.length && !recent.includes(selected))
     recent[recent.length - 1] = selected;
   const recentIds = new Set(recent.map((session) => session.id));
-  const shown = visible.filter(
+  const rows = visible.filter(
     (session) =>
       desktop.sessions[session.id]?.pinned || recentIds.has(session.id),
   );
-  const rows = showAll ? visible : shown;
-  const canToggle = shown.length < visible.length;
+  const hasMore = recent.length < unpinned.length;
+  const showingExtra = recent.length > recentLimit;
   return (
     <>
       {startingRows.map((row) => (
@@ -127,18 +125,20 @@ export const SessionList = memo(function SessionList({
       {rows.map((session) => (
         <SessionRow key={session.id} session={session} cwd={cwd} />
       ))}
-      {canToggle && (
+      {(hasMore || showingExtra) && (
         <button
           type="button"
           className="thread more-chats"
-          aria-expanded={showAll}
-          aria-label={showAll ? t["Show fewer chats"] : t["Show older chats"]}
-          onClick={() => setShowAll(!showAll)}
+          aria-expanded={showingExtra}
+          aria-label={hasMore ? t["Show older chats"] : t["Show fewer chats"]}
+          onClick={() =>
+            setExtra((count) => (hasMore ? count + RECENT_CHAT_LIMIT : 0))
+          }
         >
-          {showAll ? (
-            <ChevronUp size={14} aria-hidden="true" />
-          ) : (
+          {hasMore ? (
             <MoreHorizontal size={14} aria-hidden="true" />
+          ) : (
+            <ChevronUp size={14} aria-hidden="true" />
           )}
         </button>
       )}
@@ -147,7 +147,10 @@ export const SessionList = memo(function SessionList({
           type="button"
           className="archived-chats"
           aria-pressed={archived}
-          onClick={() => setArchived(!archived)}
+          onClick={() => {
+            setArchived(!archived);
+            setExtra(0);
+          }}
         >
           <Archive size={12} />
           {archived
