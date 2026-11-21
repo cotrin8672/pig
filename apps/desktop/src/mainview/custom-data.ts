@@ -1,4 +1,5 @@
 import type { TranscriptRecord } from "../shared/transcript";
+import { isFoldedScheduledMarker } from "./scheduled-prompt-model";
 
 /** Text only: never HTML, executable renderer source, or inferred Plan/Goal semantics. */
 export function dataText(value: unknown, omitImages = false): string {
@@ -50,7 +51,9 @@ export function customPresentation(record: TranscriptRecord) {
       content: message.content,
       details: message.details ?? record.details,
       hidden:
-        !message.display || message.customType === "Cancelled queued prompt",
+        !message.display ||
+        message.customType === "Cancelled queued prompt" ||
+        isFoldedScheduledMarker(record),
     };
   return {
     label: record.customType ?? message.role,
