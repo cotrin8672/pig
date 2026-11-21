@@ -10,6 +10,7 @@ import { reloadChatRenderers } from "./chat-renderer-client";
 import { registerBuiltinChatRenderers } from "./chat-renderer-registry";
 import { piLensRenderer } from "./PiLensRenderer";
 import { initNoticeHistory, rpc } from "./rpc";
+import { scheduledPromptRenderer } from "./ScheduledPrompt";
 import "katex/dist/katex.min.css";
 import "./styles.css";
 
@@ -28,6 +29,7 @@ registerBuiltinChatRenderers([
   askUserRenderer,
   subagentRenderer,
   schedulePromptRenderer,
+  scheduledPromptRenderer,
 ]);
 initNoticeHistory();
 const root = document.getElementById("root");

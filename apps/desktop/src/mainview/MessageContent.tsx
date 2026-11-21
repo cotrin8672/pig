@@ -47,6 +47,7 @@ import { markdownUrl } from "./markdown-url";
 import { editKey, messageEdits } from "./message-edits";
 import { positionedKatex } from "./positioned-katex";
 import { openChatLink, regenerate, rpc } from "./rpc";
+import { ScheduledHead } from "./ScheduledPrompt";
 import { SentAttachments } from "./SentAttachments";
 import { showError, useStore } from "./store";
 import { createTextSampler } from "./streaming-text";
@@ -342,11 +343,14 @@ export const UserMessage = memo(function UserMessage({
   sessionId,
   entryId,
   disabled,
+  scheduled,
 }: {
   message: Extract<Message, { role: "user" }>;
   sessionId: string;
   entryId?: string;
   disabled: boolean;
+  /** Job name when pi-schedule-prompt sent this prompt. */
+  scheduled?: string;
 }) {
   const { content } = message;
   const t = useT();
@@ -446,9 +450,15 @@ export const UserMessage = memo(function UserMessage({
           </div>
         </form>
       ) : (
-        attachments.body && (
+        attachments.body &&
+        (scheduled ? (
+          <div className="user-bubble scheduled-bubble">
+            <ScheduledHead name={scheduled} />
+            {attachments.body}
+          </div>
+        ) : (
           <div className="user-bubble">{attachments.body}</div>
-        )
+        ))
       )}
       <div className="response-actions user-actions">
         <time dateTime={new Date(message.timestamp).toISOString()}>

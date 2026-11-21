@@ -1,6 +1,9 @@
 import { expect, mock, test } from "bun:test";
 import { renderToStaticMarkup } from "react-dom/server";
 import { en } from "../shared/i18n";
+import type { TranscriptRecord } from "../shared/transcript";
+import { customPresentation } from "./custom-data";
+import { scheduledUsers } from "./scheduled-prompt-model";
 
 mock.module("./rpc", () => ({
   rpc: { send: {} },
@@ -103,4 +106,37 @@ test("schedule_prompt reads cron as words and parses the list", () => {
   );
   for (const text of [t.actions.add, "ci", "Daily 9:00"])
     expect(html).toContain(text);
+});
+
+test("a fire marker folds into the user bubble carrying its prompt", () => {
+  const base = { branchId: "main", parentId: null, order: 0 };
+  const marker = {
+    ...base,
+    id: "m",
+    kind: "message",
+    message: {
+      role: "custom",
+      customType: "scheduled_prompt",
+      content: [],
+      display: true,
+      details: { jobId: "j", jobName: "morning", prompt: "check CI" },
+      timestamp: 0,
+    },
+  } as unknown as TranscriptRecord;
+  const reply = {
+    ...base,
+    id: "r",
+    kind: "message",
+    message: { role: "assistant", content: [], timestamp: 0 },
+  } as unknown as TranscriptRecord;
+  const user = {
+    ...base,
+    id: "u",
+    kind: "message",
+    message: { role: "user", content: "check CI", timestamp: 0 },
+  } as unknown as TranscriptRecord;
+  expect(customPresentation(marker).hidden).toBe(true);
+  expect([...scheduledUsers([marker, reply, user])]).toEqual([
+    ["u", "morning"],
+  ]);
 });

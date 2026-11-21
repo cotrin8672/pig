@@ -79,6 +79,7 @@ import { Settings } from "./Settings";
 import { SidebarResizer } from "./SidebarResizer";
 import { SidebarSessions } from "./SidebarSessions";
 import { Statistics } from "./Statistics";
+import { scheduledUsers } from "./scheduled-prompt-model";
 import { revealTarget } from "./search-target";
 import { initShortcuts } from "./shortcuts";
 import { type LoginState, showError, showNotice, useStore } from "./store";
@@ -704,6 +705,10 @@ export const Chat = memo(function Chat({
     () => modelDividers(transcript.records),
     [transcript.records],
   );
+  const scheduled = useMemo(
+    () => scheduledUsers(transcript.records),
+    [transcript.records],
+  );
   const retried = useMemo(
     () => retriedAttempts(transcript.records),
     [transcript.records],
@@ -1020,6 +1025,7 @@ export const Chat = memo(function Chat({
                       sessionId={info.id}
                       entryId={record.entryId}
                       disabled={readOnly || !snapshot.model}
+                      scheduled={scheduled.get(id)}
                     />
                   ) : message.role === "assistant" ? (
                     <>
