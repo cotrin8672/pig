@@ -53,3 +53,7 @@
   margin-top: auto;
   min-width: 0;
 }
+.current-ui-activity-composer {
+  width: min(100%, 768px);
+  margin: 0 auto;
+}

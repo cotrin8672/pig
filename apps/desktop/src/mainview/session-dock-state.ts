@@ -4,7 +4,7 @@ import type {
   ViewEnvelope,
 } from "../../../../packages/config/src";
 
-export type DockTab = "todo" | "tasks" | "info";
+export type DockTab = "todo" | "tasks" | "schedule" | "info";
 export type DockRun = {
   key: string;
   envelope: ViewEnvelope;

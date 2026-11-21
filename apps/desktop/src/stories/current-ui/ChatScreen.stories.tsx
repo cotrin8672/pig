@@ -41,3 +41,21 @@ export const SupportedExtensions: Story = {
     </PreviewTheme>
   ),
 };
+/** Composer左下の「実行」Chipを開いた状態（サブエージェント）。 */
+export const SubagentsOpen: Story = {
+  parameters: { appPreview: false, gallery: true },
+  render: (args) => (
+    <PreviewTheme args={args}>
+      <ActivityPreview supported initialTab="tasks" />
+    </PreviewTheme>
+  ),
+};
+/** Composer左下の「予約」Chipを開いた状態（pi-schedule-prompt）。 */
+export const ScheduledPromptsOpen: Story = {
+  parameters: { appPreview: false, gallery: true },
+  render: (args) => (
+    <PreviewTheme args={args}>
+      <ActivityPreview supported initialTab="schedule" />
+    </PreviewTheme>
+  ),
+};

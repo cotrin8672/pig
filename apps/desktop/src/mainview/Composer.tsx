@@ -51,6 +51,7 @@ import { applyMention, mentionContext } from "./mention-completion";
 import { createModelPickerSelector } from "./model-picker-view";
 import { ensureSessionRuntime, rpc, sends } from "./rpc";
 import { SessionIndicators } from "./SessionIndicators";
+import { SessionPanel } from "./SessionPanel";
 import { interruptedSession } from "./session-status";
 import {
   applySlashCompletion,
@@ -64,6 +65,14 @@ import { transcriptRequestIds } from "./transcript-requests";
 import "./composer.css";
 
 const categoryIcons = { extension: Puzzle, skill: BookOpen, prompt: FileText };
+
+async function reloadAdapters() {
+  const result = await rpc.request.reloadAdapterConfig();
+  if (result.state === "failed")
+    throw new Error(
+      "Config reload failed; previous configuration is still active.",
+    );
+}
 
 export function Composer({
   snapshot,
@@ -891,7 +900,20 @@ export function Composer({
           }}
         />
         <div className="composer-toolbar">
-          <SessionIndicators address={address} />
+          <div className="composer-session">
+            <SessionPanel
+              key={key}
+              sessionId={address.sessionId}
+              state={snapshot.sessionUI}
+              configError={snapshot.configError}
+              onAction={(request) =>
+                rpc.request.invokeSessionAction({ ...address, ...request })
+              }
+              onActionError={showError}
+              onReload={reloadAdapters}
+            />
+            <SessionIndicators address={address} />
+          </div>
           <div className="composer-pickers">
             <ContextIndicator usage={snapshot.contextUsage} />
             <ModelPicker snapshot={pickerSnapshot} />

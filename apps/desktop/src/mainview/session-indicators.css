@@ -1,11 +1,19 @@
-/* Session-wide extension state in the composer toolbar (setStatus / setWidget). */
-.session-indicators {
+/* Left end of the composer toolbar: session activity (SessionPanel) and
+   session-wide extension state (setStatus / setWidget) as counters. */
+.composer-session {
   display: flex;
   align-items: center;
   gap: 2px;
   flex: 1;
   min-width: 0;
   margin-left: -4px;
+}
+.session-indicators {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex: none;
+  min-width: 0;
 }
 .session-indicator {
   display: inline-flex;

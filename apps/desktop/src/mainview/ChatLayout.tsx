@@ -19,7 +19,6 @@ import { isThreadAtBottom } from "./thread-scroll";
 export function ChatLayout({
   children,
   composer,
-  panel,
   threadRef,
   onScroll,
   onJumpToBottom,
@@ -28,7 +27,6 @@ export function ChatLayout({
 }: {
   children: ReactNode;
   composer: ReactNode;
-  panel?: ReactNode;
   threadRef?: Ref<HTMLElement>;
   onScroll?: UIEventHandler<HTMLElement>;
   onJumpToBottom?: () => void;
@@ -106,7 +104,6 @@ export function ChatLayout({
             <ArrowDown size={18} aria-hidden="true" />
           </button>
         )}
-        {panel}
         {composer}
       </div>
     </div>

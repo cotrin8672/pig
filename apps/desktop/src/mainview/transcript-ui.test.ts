@@ -1516,7 +1516,7 @@ test.skipIf(!existsSync(edge) && !process.env.PIG_REQUIRE_UI_TESTS)(
       }
       metrics.toolAnnotationsPreserved=true;
       metrics.stage="ui-design-contracts";
-      const cardClasses=["settings-card","market-card","installed-card","annotation-card","session-panel","response-error","provider-usage-card"];
+      const cardClasses=["settings-card","market-card","installed-card","annotation-card","session-indicator-panel","response-error","provider-usage-card"];
       await render(<div>{cardClasses.map(name=><div key={name} className={name}>Card text</div>)}</div>);
       const swatch=document.createElement("canvas");swatch.width=swatch.height=1;const paint=swatch.getContext("2d");
       for(const name of cardClasses){
@@ -1598,8 +1598,7 @@ test.skipIf(!existsSync(edge) && !process.env.PIG_REQUIRE_UI_TESTS)(
         ["notification-history",'<div class="notification-panel" style="position:static;width:100%"><div class="notification-history audit-scroller"></div></div>'],
         ["oauth",'<dialog class="oauth-dialog audit-scroller" open></dialog>'],
         ["sdk-dialog",'<dialog class="sdk-request audit-scroller" open></dialog>'],
-        ["session-dock",'<div class="session-panel" style="width:100%"><div class="session-dock-viewport audit-scroller"></div></div>'],
-        ["session-connections",'<div class="session-panel" style="width:100%"><details class="session-connections" open><div class="audit-scroller"></div></details></div>'],
+        ["session-activity",'<div class="session-indicator-panel session-panel audit-scroller" style="position:static;width:100%"></div>'],
         ["session-task",'<div class="session-task-output"><pre class="audit-scroller"></pre></div>'],
         ["session-document",'<div class="session-document audit-scroller"></div>'],
         ["composer-editor",'<form class="composer"><textarea class="audit-scroller" data-axis="y"></textarea></form>'],
