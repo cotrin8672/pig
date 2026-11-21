@@ -1,4 +1,3 @@
-import { withDraftFiles } from "../shared/attachments";
 import { unfoldPastes } from "../shared/paste";
 import type {
   DraftContent,
@@ -495,11 +494,4 @@ export class DraftStore {
   }
 }
 export const drafts = new DraftStore();
-
-export function expandedDraft(content: DraftContent): string {
-  return withDraftFiles(
-    unfoldPastes(content.text, content.pastes).trim(),
-    content.files,
-    content.annotations,
-  );
-}
+export { expandedDraft } from "../shared/attachments";

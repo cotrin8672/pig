@@ -26,14 +26,13 @@ import type {
   ModelRuntime,
   SessionManager as SDKSessionManager,
 } from "@earendil-works/pi-coding-agent";
-import { withDraftFiles } from "../shared/attachments";
+import { expandedDraft } from "../shared/attachments";
 import { IMPORTED_HISTORY_PROVIDER } from "../shared/chat-history-import";
 import { displayedEffort } from "../shared/effort";
 import type { ExtensionUIEvent, UIReply } from "../shared/extension-ui";
 import type { McpAppPreviewResult } from "../shared/mcp-app";
 import { createModelCatalogCache } from "../shared/model-catalog-cache";
 import { isModelEnabled } from "../shared/models";
-import { unfoldPastes } from "../shared/paste";
 import {
   type SessionAccounts,
   validateAccountId,
@@ -2410,7 +2409,7 @@ export class SessionHost {
           requestId: params.requestId,
           delivery: params.delivery,
           draftRevision: result.draft.revision,
-          text: this.drafts.expandedText(params).trim(),
+          text: expandedDraft(result.draft),
           images: result.draft.images.length
             ? result.draft.images.map((item) => item.image)
             : undefined,
@@ -2465,11 +2464,7 @@ export class SessionHost {
                 content: [
                   {
                     type: "text" as const,
-                    text: withDraftFiles(
-                      unfoldPastes(content.text, content.pastes).trim(),
-                      content.files,
-                      content.annotations,
-                    ),
+                    text: expandedDraft(content),
                   },
                   ...content.images.map(({ image }) => image),
                 ],
@@ -2494,14 +2489,7 @@ export class SessionHost {
                 content: [
                   {
                     type: "text" as const,
-                    text: withDraftFiles(
-                      unfoldPastes(
-                        intent.content.text,
-                        intent.content.pastes,
-                      ).trim(),
-                      intent.content.files,
-                      intent.content.annotations,
-                    ),
+                    text: expandedDraft(intent.content),
                   },
                   ...intent.content.images.map(({ image }) => image),
                 ],

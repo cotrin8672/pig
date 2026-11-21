@@ -804,7 +804,7 @@ test("Send fixes the text, paste and image order before an ACK; continuous edits
   expect(drafts.read(address).content.images).toHaveLength(2);
 });
 
-test("a lost preflight CAS ACK is checked independently and never dispatches prompt", async () => {
+test("an unverified CAS reservation never dispatches prompt", async () => {
   const drafts = new DraftStore();
   drafts.edit(address, () => ({ ...emptyContent(), text: "not dispatched" }));
   let reserved: SendKey | undefined,
@@ -830,12 +830,72 @@ test("a lost preflight CAS ACK is checked independently and never dispatches pro
     () => {},
   );
   await sends.send(address);
-  expect({ prompts, lookups }).toEqual({ prompts: 0, lookups: 1 });
+  expect({ prompts, lookups }).toEqual({ prompts: 0, lookups: 2 });
   expect(sends.read(address)?.state).toBe("unknown");
   expect(drafts.read(address).content.text).toBe("not dispatched");
   expect(sends.optimistic(address)).toEqual([]);
   expect(sends.retained()).toEqual([]);
 });
+
+for (const initial of ["saved", "missing", "late"]) {
+  test(`an unanswered CAS with a ${initial} reservation resumes under one ID`, async () => {
+    const drafts = new DraftStore();
+    drafts.edit(address, () => ({ ...emptyContent(), text: "send once" }));
+    const cas: DraftSyncParams[] = [];
+    const prompts: PromptParams[] = [];
+    const notices: string[] = [];
+    let saved: DraftSyncParams | undefined;
+    const sends = new SendController(
+      drafts,
+      {
+        syncDraft: async (input) => {
+          cas.push(input);
+          if (cas.length === 1) {
+            if (initial === "saved") saved = input;
+            return new Promise(() => {});
+          }
+          saved = initial === "late" ? cas[0] : input;
+          const applied = await syncDraft(input);
+          return { ...applied, applied: initial !== "late" };
+        },
+        getPromptReceipt: async (key) =>
+          saved
+            ? {
+                ...key,
+                state: "pending",
+                stage: "prepared",
+                draftRevision: saved.expectedRevision + 1,
+              }
+            : { ...key, state: "unknown", reason: "not-found" },
+        prompt: async (input) => {
+          prompts.push(input);
+          return accepted;
+        },
+      },
+      () => {},
+      10,
+      undefined,
+      undefined,
+      (kind) => notices.push(kind),
+    );
+    await sends.send(address);
+    expect(cas).toEqual(initial === "saved" ? [cas[0]] : [cas[0], cas[0]]);
+    expect(prompts).toHaveLength(1);
+    expect(prompts).toMatchObject([
+      {
+        ...address,
+        requestId: cas[0].requestId,
+        draftRevision: cas[0].expectedRevision + 1,
+        delivery: "steer",
+        text: "send once",
+        images: undefined,
+      },
+    ]);
+    expect(sends.read(address)?.state).toBe("accepted");
+    expect(notices).toEqual([]);
+    expect(drafts.read(address).content).toEqual(emptyContent());
+  });
+}
 
 test("checking an old unknown ID after a new send does not query or overwrite the current operation", async () => {
   const ids: string[] = [],
