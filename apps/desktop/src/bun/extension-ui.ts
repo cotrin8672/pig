@@ -282,6 +282,14 @@ export function createExtensionUIHost(options: Options): ExtensionUIHost {
     setWidget: (key, content, widgetOptions) => {
       // Like Pi's RPC mode, ignore TUI-only factories without interrupting the extension.
       if (typeof content === "function") return;
+      // pi-subagents publishes a machine-readable RPC widget; the Agents panel uses its status API instead.
+      if (
+        key === "subagent-async" &&
+        content?.length === 1 &&
+        typeof content[0] === "string" &&
+        content[0].startsWith("PI_SUBAGENT_ASYNC_JSON:")
+      )
+        return;
       checkText(key, 256);
       const placement = widgetOptions?.placement ?? "aboveEditor";
       if (placement !== "aboveEditor" && placement !== "belowEditor")

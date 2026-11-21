@@ -20,7 +20,7 @@ export default function ActivityPreview({
         </h1>
         <p>
           {supported
-            ? "@gotgenes/pi-subagents と pi-schedule-prompt を組込みAdapterが表示した状態です。"
+            ? "pi-subagents と pi-schedule-prompt を組込みAdapterが表示した状態です。"
             : "本番のSessionPanelです。進捗・タスク・ログの開閉を確認できます。"}
         </p>
         <code>mainview/SessionPanel.tsx</code>

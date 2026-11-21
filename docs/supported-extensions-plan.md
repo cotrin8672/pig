@@ -4,7 +4,7 @@
 
 - Marketplace: 初期表示「pig対応」（`shared/supported-extensions.ts` の静的リスト＋npm情報、取得失敗時は静的項目）、「すべてのパッケージ」で従来検索。対応パッケージに確認版バッジ。インストールは従来どおりlatest。
 - 表示: 新しいUI APIは不要だった。既存のSession dock/Panelが `agents` / `schedule` ビューを描画するため、`bun/supported-adapters.ts` の組込みAdapterがユーザーAdapterより前に接続される。提供元はコマンドの `sourceInfo.path` 内の `node_modules/<pkg>/` で確認。
-  - Subagent: セッション単位のEventBus上の `subagents:*` から実行中/終了を表示。接続前から動いている子は表示しない。
+  - Subagent: nicobailon版のセッション単位の公開EventBus RPCでバックグラウンド実行を取得し、フォアグラウンド実行は `subagent` ツールの構造化された進捗・結果を表示する。接続前のフォアグラウンド結果はツール履歴に残る。
   - Schedule: `cron:change` ごとに当該Extensionの保存ファイルを読み取り専用で読み、このセッション＋共有ジョブを表示。「Manage」は `/schedule-prompt` を起動。
   - Ask: 追加実装なし（`ctx.ui.custom()` は既存のTerminalUIHostで描画）。npmの `pi-ask-user@0.17.2` をSDKのローダーで読み込み、pigのExtension UIホストと本番テーマで、選択・自由記入・キャンセル・abortが正しくツール結果に返ることを確認。WebView側の描画とキーボード操作は未確認。
 - Storybook: `Settings/Marketplace`、`Design System/Domain/ChatScreen` の SupportedExtensions。
@@ -14,7 +14,7 @@
 
 ## 製品上の境界
 
-対象は `@gotgenes/pi-subagents`、`pi-ask-user`、`pi-schedule-prompt`。Background taskは対象外。pigが配布するのは対応情報と表示コードであり、Extension本体ではない。起動・プロジェクトオープン時にインストールしない。他のExtensionを隠したり無効化したりしない。設定の正本、ツール実行、予定の発火は今までどおりExtensionに置く。
+対象は nicobailon版の `pi-subagents`、`pi-ask-user`、`pi-schedule-prompt`。サブエージェント以外のBackground taskは対象外。pigが配布するのは対応情報と表示コードであり、Extension本体ではない。起動・プロジェクトオープン時にインストールしない。他のExtensionを隠したり無効化したりしない。設定の正本、ツール実行、予定の発火は今までどおりExtensionに置く。旧 `@gotgenes/pi-subagents` は既存のインストールを変更しないが、pig専用の活動表示からは外れる。
 
 ## 1. Marketplaceを対応版への入口にする
 
@@ -34,10 +34,10 @@
 | 対象候補（検証開始版） | 初版の完了条件 | 根拠・制約 |
 | --- | --- | --- |
 | `pi-ask-user@0.17.2` | 既存UIで単択・複数選択・自由記入・取消・abortが正しいtool callに一度だけ返る | pigの `bun/extension-ui.ts` は `custom()` をTerminalUIHostで実装している。RPC fallbackに入る前提を置かず、他Extensionのcustomを無効化しない。専用フォームは初版外。 |
-| `@gotgenes/pi-subagents@25.0.5` | ツールカードから委譲と結果が分かる。セッションに帰属できるライブイベントのみChipに表示。後から開いた画面にはHost側の当世代の状態を渡す | 上流には `pi.events` と `listAgents()` があるが、service getterはglobalThis上のスロットを参照する。2セッション・2ウィンドウで分離を確認するまでグローバル一覧・操作は使わない。所属/復元を保証できない場合、ライブ一覧は出さず履歴カードだけにする。 |
+| `pi-subagents@0.89.1` | 既存のSubagents表示で進捗・終了が分かる | セッションごとの公開RPC `status` と `asyncSnapshot` を使い、イベントは再取得のきっかけにする。pigは実行や停止を代行しない。 |
 | `pi-schedule-prompt@0.5.1` | 「10分後」「一定間隔」を現在のチャットに登録し、発火先を確認。カードに登録内容を表示。現在一覧・取消は当該Extensionの `/schedule-prompt` のJobsへ | toolのlist結果は取得時のスナップショットでありライブ購読ではない。pigから `tool.execute` を呼ばず、永続化ファイルを編集せず、タイマーを再実装しない。公式な更新経路を確認できなければ次回発火のライブChipは出さない。 |
 
-上流確認先：[Subagentサービス](https://github.com/gotgenes/pi-packages/blob/main/packages/pi-subagents/src/service/service.ts)、[Ask](https://github.com/edlsh/pi-ask-user)、[Schedule](https://github.com/tintinweb/pi-schedule-prompt)。mainと配布版の差があり得るため、実装時は該当npm版をテスト用の隔離profileに導入する。
+上流確認先：[Subagent Extension API](https://github.com/nicobailon/pi-subagents/blob/main/docs/extension-api.md)、[Ask](https://github.com/edlsh/pi-ask-user)、[Schedule](https://github.com/tintinweb/pi-schedule-prompt)。mainと配布版の差があり得るため、実装時は該当npm版をテスト用の隔離profileに導入する。
 
 ## リリース順
 

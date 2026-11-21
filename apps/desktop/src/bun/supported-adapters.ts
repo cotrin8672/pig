@@ -1,7 +1,7 @@
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { readFileSync, realpathSync } from "node:fs";
 import { join, resolve } from "node:path";
-import { getAgentDir } from "@earendil-works/pi-coding-agent";
+import { type EventBus, getAgentDir } from "@earendil-works/pi-coding-agent";
 import type {
   AdapterContext,
   AgentRun,
@@ -40,46 +40,88 @@ function loadedFrom(ctx: AdapterContext, pkg: string, command: string) {
     )?.source;
 }
 
-const SUBAGENT_PKG = "@gotgenes/pi-subagents";
-const MAX_FINISHED_AGENTS = 50;
+const SUBAGENT_PKG = "pi-subagents";
+const SUBAGENT_RPC = "subagents:rpc:v1";
+const SUBAGENT_CHANGES = [
+  `${SUBAGENT_RPC}:ready`,
+  "subagent:jobs-changed",
+  "subagent:async-started",
+  "subagent:child-status",
+  "subagent:async-complete",
+  "subagent:process-terminal",
+];
 
 function subagentState(status: unknown): RunState {
   switch (status) {
+    case "pending":
     case "queued":
       return { phase: "queued" };
     case "running":
       return { phase: "running" };
+    case "paused":
+      return { phase: "paused" };
+    case "complete":
     case "completed":
       return { phase: "finished", outcome: "success" };
-    case "error":
+    case "failed":
+    case "rejected":
       return { phase: "finished", outcome: "error" };
     case "stopped":
       return { phase: "finished", outcome: "cancelled" };
-    case "aborted":
-      return { phase: "finished", outcome: "interrupted" };
+    case "partial":
+      return { phase: "finished", outcome: "unknown", label: "Partial" };
+    case "detached":
+      return { phase: "unknown", label: "Detached" };
     default:
-      return { phase: "finished", outcome: "unknown" };
+      return { phase: "unknown" };
   }
 }
 
-/** Live runs from the session's `subagents:*` lifecycle events (per-session event bus). */
-export function connectGotgenesSubagents(): SessionAdapter {
+function subagentTime(value: unknown) {
+  return typeof value === "number" && value >= 0 && value <= 8.64e15
+    ? new Date(value).toISOString()
+    : undefined;
+}
+
+function asyncRuns(snapshot: Value): AgentRun[] | undefined {
+  if (
+    snapshot.kind !== "pi-subagents.async-status-snapshot" ||
+    snapshot.version !== 1 ||
+    !Array.isArray(snapshot.runs)
+  )
+    return undefined;
+  const runs = new Map<string, AgentRun>();
+  for (const value of snapshot.runs.slice(0, 20)) {
+    const run = record(value);
+    const id = text(run.id, 240);
+    if (!id) continue;
+    runs.set(id, {
+      id: `async:${id}`,
+      title: text(run.label, 256) ?? "Subagent",
+      state: subagentState(run.state),
+      startedAt: subagentTime(run.startedAt),
+      endedAt: subagentTime(run.endedAt),
+      detail: text(run.progressText, 2_000),
+    });
+  }
+  return [...runs.values()];
+}
+
+/** Read-only RPC for background runs, and structured tool updates for foreground runs. */
+export function connectNicoSubagents(
+  bus: Pick<EventBus, "emit">,
+): SessionAdapter {
   return {
     id: "pig:subagents",
     connect(ctx) {
-      // shortcut: runs started before this connection (e.g. before a config reload) are not shown; upgrade by reading the Extension's persisted records.
-      const runs = new Map<string, AgentRun>();
+      const isLoaded = () => loadedFrom(ctx, SUBAGENT_PKG, "subagents-fleet");
+      if (!isLoaded()) return;
+      const foreground = new Map<string, AgentRun>();
+      const activeCalls = new Map<string, Set<string>>();
+      let background: AgentRun[] = [];
       const render = () => {
-        const finished = [...runs.values()].filter(
-          (run) => run.state.phase === "finished",
-        );
-        for (const old of finished.slice(
-          0,
-          Math.max(0, finished.length - MAX_FINISHED_AGENTS),
-        ))
-          runs.delete(old.id);
-        if (!runs.size || !loadedFrom(ctx, SUBAGENT_PKG, "subagents:settings"))
-          return ctx.views.remove("subagents");
+        const runs = [...foreground.values()].reverse().concat(background);
+        if (!runs.length) return ctx.views.remove("subagents");
         ctx.views.set({
           kind: "agents",
           id: "subagents",
@@ -89,59 +131,142 @@ export function connectGotgenesSubagents(): SessionAdapter {
             scope: { kind: "session", id: ctx.session.id },
             freshness: "live",
           },
-          runs: [...runs.values()].reverse(),
+          runs,
         });
       };
-      const update = (data: unknown, state: (data: Value) => RunState) => {
-        const event = record(data);
-        const id = text(event.id, 256);
-        if (!id) return;
-        const now = new Date().toISOString();
-        const previous = runs.get(id);
-        const next = state(event);
-        const run: AgentRun = {
-          ...previous,
-          id,
-          title: text(event.description, 256) ?? previous?.title ?? "Subagent",
-          profile: text(event.type, 256) ?? previous?.profile,
-          state: next,
-          startedAt:
-            previous?.startedAt && previous.state.phase !== "finished"
-              ? previous.startedAt
-              : now,
-        };
-        if (next.phase === "finished") {
-          run.endedAt = now;
-          const output = text(event.error) ?? text(event.result);
-          if (output) run.output = { text: output };
-        } else {
-          // A resumed run must not show the previous run's result as its own.
-          delete run.endedAt;
-          delete run.output;
-        }
-        runs.delete(id);
-        runs.set(id, run);
-        render();
+      let dirty = false;
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      let finishRequest: (() => void) | undefined;
+      const refresh = () => {
+        dirty = true;
+        if (timer || finishRequest) return;
+        timer = setTimeout(() => {
+          timer = undefined;
+          dirty = false;
+          if (!isLoaded()) return;
+          const requestId = randomUUID();
+          const stop = () => {
+            off();
+            clearTimeout(timeout);
+            finishRequest = undefined;
+            if (dirty) refresh();
+          };
+          const off = ctx.sources.onBus(
+            `${SUBAGENT_RPC}:reply:${requestId}`,
+            (data) => {
+              const reply = record(data);
+              if (reply.version !== 1 || reply.requestId !== requestId) return;
+              stop();
+              if (reply.success !== true) return;
+              const runs = asyncRuns(record(record(reply.data).asyncSnapshot));
+              if (!runs) return;
+              background = runs;
+              render();
+            },
+          );
+          const timeout = setTimeout(stop, 3_000);
+          finishRequest = stop;
+          // Status is read-only and must work while the host is binding the session.
+          bus.emit(`${SUBAGENT_RPC}:request`, {
+            version: 1,
+            requestId,
+            method: "status",
+          });
+        }, 150);
       };
-      const on = (channel: string, state: (data: Value) => RunState) =>
-        ctx.sources.onBus(channel, (data) => update(data, state));
-      const offs = [
-        on("subagents:created", () => ({ phase: "queued" })),
-        on("subagents:started", () => ({ phase: "running" })),
-        on("subagents:resuming", () => ({ phase: "running" })),
-        on("subagents:completed", (e) => subagentState(e.status)),
-        on("subagents:failed", (e) => subagentState(e.status)),
-        on("subagents:resumed", (e) => subagentState(e.status)),
-        ctx.sources.onBus("subagents:update", (data) => {
-          const event = record(data);
-          const run = runs.get(text(event.id, 256) ?? "");
-          const message = text(event.message, 2_000);
-          if (!run || !message) return;
-          run.detail = message;
+      const offs = SUBAGENT_CHANGES.map((event) =>
+        ctx.sources.onBus(event, refresh),
+      );
+      // shortcut: foreground activity before this connection stays in tool history.
+      offs.push(
+        ctx.sources.onEvent((event) => {
+          if (
+            event.toolName !== "subagent" ||
+            (event.type !== "tool_execution_update" &&
+              event.type !== "tool_execution_end")
+          )
+            return;
+          const callId = text(event.toolCallId);
+          if (!callId) return;
+          const finished = event.type === "tool_execution_end";
+          const details = record(
+            record(finished ? event.result : event.partialResult).details,
+          );
+          const runId = text(details.runId, 220);
+          const rows = finished ? details.results : details.progress;
+          const children =
+            runId &&
+            !details.asyncId &&
+            !details.background &&
+            details.mode !== "management" &&
+            Array.isArray(rows)
+              ? rows.slice(0, 100)
+              : [];
+          const active = activeCalls.get(callId) ?? new Set<string>();
+          if (!active.size && !children.length) return;
+          for (const value of children) {
+            const row = record(value);
+            const profile = text(row.agent, 256);
+            if (!profile || !Number.isSafeInteger(row.index)) continue;
+            const id = `foreground:${runId}:${row.index}`;
+            if (finished) active.delete(id);
+            else active.add(id);
+            const state: RunState = finished
+              ? {
+                  phase: "finished",
+                  outcome: row.stopped
+                    ? "cancelled"
+                    : row.interrupted || row.detached
+                      ? "interrupted"
+                      : row.timedOut || row.error
+                        ? "error"
+                        : row.exitCode === 0
+                          ? "success"
+                          : typeof row.exitCode === "number"
+                            ? "error"
+                            : "unknown",
+                }
+              : subagentState(row.status);
+            const output =
+              finished &&
+              (text(row.error, 2_000) ?? text(row.finalOutput, 2_000));
+            foreground.set(id, {
+              id,
+              profile,
+              title: text(row.task, 256) ?? profile,
+              state,
+              detail: text(row.progressText, 2_000),
+              ...(output ? { output: { text: output } } : {}),
+            });
+          }
+          if (finished) {
+            // Aborted tools may emit an end event without any per-child results.
+            for (const id of active) {
+              const run = foreground.get(id);
+              if (run && run.state.phase !== "finished")
+                foreground.set(id, {
+                  ...run,
+                  state: { phase: "finished", outcome: "unknown" },
+                });
+            }
+            activeCalls.delete(callId);
+          } else if (active.size) activeCalls.set(callId, active);
+          const completed = [...foreground.values()].filter(
+            (run) => run.state.phase === "finished",
+          );
+          for (const run of completed.slice(
+            0,
+            Math.max(0, completed.length - 50),
+          ))
+            foreground.delete(run.id);
           render();
         }),
-      ];
+      );
+      refresh();
       return () => {
+        dirty = false;
+        clearTimeout(timer);
+        finishRequest?.();
         for (const off of offs) off();
       };
     },
@@ -272,10 +397,14 @@ export function connectSchedulePrompt(
 
 /** True while a live view reports work that only exists inside the loaded Extension. */
 export function holdsLiveWork(state: SessionUIState): boolean {
-  return state.views.some(({ view }) => {
+  return state.views.some(({ adapterId, view }) => {
     if (view.source.freshness !== "live") return false;
     if (view.kind === "agents")
-      return view.runs.some((run) => run.state.phase !== "finished");
+      return view.runs.some(({ state }) =>
+        adapterId === "pig:subagents"
+          ? state.phase === "queued" || state.phase === "running"
+          : state.phase !== "finished",
+      );
     if (view.kind === "schedule")
       return view.schedules.some((schedule) => schedule.enabled !== false);
     return false;
@@ -283,11 +412,14 @@ export function holdsLiveWork(state: SessionUIState): boolean {
 }
 
 /** Supported-Extension adapters run before user adapters and never replace them. */
-export function withSupportedAdapters(config: PigConfig): PigConfig {
+export function withSupportedAdapters(
+  config: PigConfig,
+  bus: Pick<EventBus, "emit">,
+): PigConfig {
   return {
     ...config,
     sessionAdapters: [
-      connectGotgenesSubagents(),
+      connectNicoSubagents(bus),
       connectSchedulePrompt(),
       ...(config.sessionAdapters ?? []),
     ],
