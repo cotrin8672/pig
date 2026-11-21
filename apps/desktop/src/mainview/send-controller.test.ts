@@ -645,6 +645,73 @@ test("the independent 1500ms check settles acceptance while prompt is still unre
   expect(f.sends.read(address)?.state).toBe("accepted");
 });
 
+test("a reconnect's accepted receipt cannot be undone by an already running receipt timeout", async () => {
+  const drafts = new DraftStore();
+  drafts.edit(address, () => ({ ...emptyContent(), text: "sent once" }));
+  const started = Promise.withResolvers<PromptParams>();
+  const issued = Promise.withResolvers<void>();
+  const response = Promise.withResolvers<PromptAccepted>();
+  const looking = Promise.withResolvers<void>();
+  const hang = Promise.withResolvers<PromptReceipt>();
+  const polls: (() => void)[] = [];
+  const notices: string[] = [];
+  let prompts = 0;
+  const sends = new SendController(
+    drafts,
+    {
+      syncDraft,
+      prompt: (params) => {
+        prompts++;
+        started.resolve(params);
+        return response.promise;
+      },
+      getPromptReceipt: () => {
+        looking.resolve();
+        return hang.promise;
+      },
+    },
+    (poll) => {
+      polls.push(poll);
+      issued.resolve();
+    },
+    20,
+    undefined,
+    undefined,
+    (kind) => notices.push(kind),
+  );
+  const send = sends.send(address);
+  const params = await started.promise;
+  await issued.promise;
+  const check = sends.lookup(address, params);
+  await looking.promise;
+  sends.restore([
+    {
+      receipt: {
+        ...address,
+        requestId: params.requestId,
+        state: "accepted",
+        accepted,
+        acceptedAt: 1,
+      },
+      draftRevision: params.draftRevision,
+      delivery: "steer",
+      hash: "saved",
+      owner: { cwd: "/project", sessionFile: null, branchId: null },
+    },
+  ]);
+  await check;
+  for (let i = 0; i < 3; i++) polls.shift()?.();
+  await Bun.sleep(0);
+  expect(notices).toEqual([]);
+  expect(sends.read(address)?.state).toBe("accepted");
+  expect(prompts).toBe(1);
+  expect(drafts.read(address).content).toEqual(emptyContent());
+  hang.reject(new Error("late receipt failure"));
+  response.reject(new Error("late prompt failure"));
+  await send;
+  expect(sends.read(address)?.state).toBe("accepted");
+});
+
 test("a hung lookup has a finite UI budget and only one underlying request; late acceptance is monotone", async () => {
   const drafts = new DraftStore();
   drafts.edit(address, () => ({ ...emptyContent(), text: "one" }));

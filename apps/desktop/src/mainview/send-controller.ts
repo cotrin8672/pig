@@ -500,6 +500,15 @@ export class SendController {
         continue;
       }
       if (existing?.state === "rejected") continue;
+      if (existing && receipt.state === "accepted") {
+        this.settle(receipt, existing, {
+          state: "accepted",
+          disposition: receipt.accepted.disposition,
+        });
+        if (!recoveredQueue) continue;
+      }
+      // A recovery read can contain the reservation from before the prompt RPC.
+      if (this.issuing.has(id)) continue;
       const state: SendState = {
         key: receipt,
         version:
@@ -818,6 +827,14 @@ export class SendController {
   }
   private retryOrReturn(address: SessionAddress, state: SendState) {
     const id = this.operationKey(state.key);
+    const latest = this.operations.get(id);
+    if (
+      !latest ||
+      !isSendUnconfirmed(latest) ||
+      latest.detached ||
+      latest.returned
+    )
+      return;
     const retry = this.retries.get(id);
     if (
       !state.detached &&
