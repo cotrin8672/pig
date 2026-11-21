@@ -725,6 +725,14 @@ export const en = {
   patchFiles: (count: number) => `${count} ${count === 1 ? "file" : "files"}`,
   Explored: "Explored",
   "No output": "(no output)",
+  editMenu: {
+    cut: "Cut",
+    copy: "Copy",
+    paste: "Paste",
+    selectAll: "Select all",
+    openLink: "Open in browser",
+    copyLink: "Copy link",
+  },
   agentTools: {
     question: "Question",
     answered: "Answered",
@@ -1655,6 +1663,14 @@ export const ja: Dictionary = {
   patchFiles: (count) => `${count} ファイル`,
   Explored: "探索",
   "No output": "（出力なし）",
+  editMenu: {
+    cut: "切り取り",
+    copy: "コピー",
+    paste: "貼り付け",
+    selectAll: "すべて選択",
+    openLink: "ブラウザーで開く",
+    copyLink: "リンクをコピー",
+  },
   agentTools: {
     question: "質問",
     answered: "回答済み",

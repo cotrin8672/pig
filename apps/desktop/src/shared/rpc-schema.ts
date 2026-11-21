@@ -14,6 +14,7 @@ import type {
   SessionFlags,
   UiPreferences,
 } from "./desktop-state";
+import type { EditMenuCommand, EditMenuRequest } from "./edit-menu";
 import type { ExtensionUIEvent, UIReply } from "./extension-ui";
 import type { FileReveal } from "./file-links";
 import type { McpAppPreviewResult } from "./mcp-app";
@@ -533,6 +534,7 @@ export type RPCSchema = {
       revealPath: FileReveal;
       // src is a rendered image: a base64 data URL or an http(s) Markdown image URL.
       imageMenu: { src: string };
+      editMenu: EditMenuRequest;
       connectUI: { clientId: string; usage?: RuntimeUsage };
       disconnectUI: { clientId: string };
       runtimeUsage: { clientId: string; usage: RuntimeUsage };
@@ -563,6 +565,7 @@ export type RPCSchema = {
       actionKeymaps: ActionKeymap[];
       providerUsage: ProviderUsage[];
       windowState: { maximized: boolean };
+      editMenuCommand: EditMenuCommand;
       agentEvent: {
         sessionId: string;
         event: WireEvent;

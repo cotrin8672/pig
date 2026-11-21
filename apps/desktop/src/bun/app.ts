@@ -50,6 +50,7 @@ import {
 } from "./desktop-config";
 import { DesktopStateStore } from "./desktop-state";
 import { flushDraftsBeforeClose } from "./draft-close";
+import { showEditMenu } from "./edit-menu";
 import { listFontFamilies } from "./fonts";
 import {
   copyImage,
@@ -785,6 +786,7 @@ const hostMessages = {
   | "usageActive"
   | "windowControl"
   | "imageMenu"
+  | "editMenu"
   | "connectUI"
   | "disconnectUI"
   | "runtimeUsage"
@@ -989,6 +991,16 @@ function createWindow() {
                 })
                 .catch(report);
               break;
+          }
+        },
+        editMenu: (request) => {
+          const t = dictionary(settings.language);
+          try {
+            showEditMenu(request, t.editMenu, (command) =>
+              hub.to(id, "editMenuCommand", command),
+            );
+          } catch (error) {
+            report(error);
           }
         },
         imageMenu: ({ src }) => {
