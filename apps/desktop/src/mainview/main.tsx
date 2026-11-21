@@ -1,4 +1,9 @@
 import { createRoot } from "react-dom/client";
+import {
+  askUserRenderer,
+  schedulePromptRenderer,
+  subagentRenderer,
+} from "./AgentToolRenderers";
 import { App } from "./App";
 import { applyPatchRenderer } from "./ApplyPatchRenderer";
 import { reloadChatRenderers } from "./chat-renderer-client";
@@ -17,7 +22,13 @@ for (const type of ["dragover", "drop"] as const)
     event.dataTransfer.dropEffect = "none";
   });
 
-registerBuiltinChatRenderers([piLensRenderer, applyPatchRenderer]);
+registerBuiltinChatRenderers([
+  piLensRenderer,
+  applyPatchRenderer,
+  askUserRenderer,
+  subagentRenderer,
+  schedulePromptRenderer,
+]);
 initNoticeHistory();
 const root = document.getElementById("root");
 if (root) createRoot(root).render(<App />);
