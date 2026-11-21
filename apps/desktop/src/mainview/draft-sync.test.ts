@@ -6,14 +6,49 @@ import { SendController } from "./send-controller";
 
 const address = { hostId: "host", sessionId: "session", epoch: 1 };
 const content = (text: string) => ({ ...emptyContent(), text });
-function fixture(events = true) {
-  const store = new DraftStore();
+function fixture(events = true, mirrorBudgetMs?: number) {
+  const store = new DraftStore(mirrorBudgetMs);
   const host = new ComposerBridge((event) => {
     if (events && event.type === "draft")
       store.receive(event.address, event.draft, event.imageRefs);
   });
   return { store, host };
 }
+
+test("a lost background draft ACK cannot block the next send", async () => {
+  const { store, host } = fixture(true, 20);
+  store.edit(address, () => content("send despite lost ACK"));
+  const started = Promise.withResolvers<void>();
+  const background = store.flush(address, async (params) => {
+    host.sync(params);
+    started.resolve();
+    return new Promise(() => {});
+  });
+  const timedOut = expect(background).rejects.toThrow("Draft sync timed out");
+  await started.promise;
+  const prompts: PromptParams[] = [];
+  const sends = new SendController(
+    store,
+    {
+      syncDraft: async (params) => host.sync(params),
+      prompt: async (params) => {
+        prompts.push(params);
+        host.consume(address, params.draftRevision, () => {});
+        return { disposition: "started" };
+      },
+      getPromptReceipt: async (key) => ({
+        ...key,
+        state: "unknown",
+        reason: "not-found",
+      }),
+    },
+    () => {},
+  );
+  await sends.send(address);
+  await timedOut;
+  expect(prompts.map(({ text }) => text)).toEqual(["send despite lost ACK"]);
+  expect(sends.read(address)?.state).toBe("accepted");
+}, 1_000);
 
 test.each([
   { text: "", events: true },
