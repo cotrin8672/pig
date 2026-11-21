@@ -408,6 +408,15 @@ if (process.env.PIG_EXTENSION_UI_TEST_CHILD !== "1") {
     });
   });
 
+  test("the pi-subagents RPC widget is not displayed as raw JSON", () => {
+    const host = fixture().create();
+    const ui = host.uiContext;
+    ui.setWidget("subagent-async", ["PI_SUBAGENT_ASYNC_JSON:{}"]);
+    expect(host.getStatus().widgets).toEqual([]);
+    ui.setWidget("subagent-async", ["Human-readable widget"]);
+    expect(host.getStatus().widgets).toHaveLength(1);
+  });
+
   test("display updates from session_shutdown handlers are dropped, not thrown, while the host is stopped", () => {
     const f = fixture();
     const host = f.create();

@@ -7,10 +7,11 @@ import type {
   AdapterContext,
   ExtensionCommand,
   SessionView,
+  SourceEvent,
 } from "../../../../packages/config/src";
 import { validateView } from "../../../../packages/config/src/validate";
 import {
-  connectGotgenesSubagents,
+  connectNicoSubagents,
   connectSchedulePrompt,
   holdsLiveWork,
 } from "./supported-adapters";
@@ -18,11 +19,16 @@ import {
 function fakeContext(cwd: string, commands: ExtensionCommand[]) {
   const views = new Map<string, SessionView>();
   const bus = new Map<string, Set<(data: unknown) => void>>();
+  const events = new Set<(event: SourceEvent) => void>();
   const invoked: unknown[] = [];
   const registered = new Map<string, () => unknown>();
   const ctx = {
     session: { id: "s1", cwd },
     sources: {
+      onEvent(listener: (event: SourceEvent) => void) {
+        events.add(listener);
+        return () => events.delete(listener);
+      },
       onBus(channel: string, listener: (data: unknown) => void) {
         const set = bus.get(channel) ?? new Set();
         bus.set(channel, set);
@@ -46,12 +52,22 @@ function fakeContext(cwd: string, commands: ExtensionCommand[]) {
   const emit = (channel: string, data: unknown) => {
     for (const listener of bus.get(channel) ?? []) listener(data);
   };
-  return { ctx, views, emit, invoked, registered };
+  return {
+    ctx,
+    views,
+    emit,
+    bus,
+    event: (event: SourceEvent) => {
+      for (const listener of events) listener(event);
+    },
+    invoked,
+    registered,
+  };
 }
 const state = (views: Map<string, SessionView>) => ({
   generation: "g",
   views: [...views.values()].map((view) => ({
-    adapterId: "a",
+    adapterId: view.kind === "agents" ? "pig:subagents" : "a",
     revision: 1,
     view,
   })),
@@ -61,52 +77,121 @@ const state = (views: Map<string, SessionView>) => ({
 });
 
 const subagentCommand = {
-  name: "subagents:settings",
-  invocationName: "subagents:settings",
-  source: "C:\\Users\\me\\node_modules\\@gotgenes\\pi-subagents\\src\\index.ts",
+  name: "subagents-fleet",
+  invocationName: "subagents-fleet",
+  source: "C:\\Users\\me\\node_modules\\pi-subagents\\src\\extension\\index.js",
 };
+const requestChannel = "subagents:rpc:v1:request";
 
-test("subagent lifecycle events become live runs and keep the session awake", () => {
+test("subagent status is refreshed from correlated, session-local RPC replies", async () => {
   const f = fakeContext("C:\\p", [subagentCommand]);
-  connectGotgenesSubagents().connect(f.ctx);
-  f.emit("subagents:created", {
-    id: "a1",
-    type: "Explore",
-    description: "Find tests",
+  const other = fakeContext("C:\\p", [subagentCommand]);
+  let next = Promise.withResolvers<string>();
+  const dispose = connectNicoSubagents({
+    emit: (channel, data) => {
+      expect(channel).toBe(requestChannel);
+      expect(data).toMatchObject({ version: 1, method: "status" });
+      next.resolve((data as { requestId: string }).requestId);
+    },
+  }).connect(f.ctx);
+  const reply = (requestId: string, status: string) => ({
+    version: 1,
+    requestId,
+    success: true,
+    data: {
+      asyncSnapshot: {
+        kind: "pi-subagents.async-status-snapshot",
+        version: 1,
+        runs: [{ id: "a1", label: "Find tests", state: status }],
+      },
+    },
   });
-  f.emit("subagents:started", {
-    id: "a1",
-    type: "Explore",
-    description: "Find tests",
-  });
-  let view = f.views.get("subagents");
-  expect(view?.kind === "agents" && view.runs[0]?.state.phase).toBe("running");
+  const first = await next.promise;
+  const channel = (id: string) => `subagents:rpc:v1:reply:${id}`;
+  other.emit(channel(first), reply(first, "running"));
+  f.emit(channel(first), reply("wrong", "running"));
+  expect(f.views.size).toBe(0);
+  next = Promise.withResolvers<string>();
+  f.emit("subagent:jobs-changed", {});
+  f.emit("subagent:child-status", {});
+  f.emit(channel(first), reply(first, "running"));
   expect(holdsLiveWork(state(f.views))).toBe(true);
 
-  f.emit("subagents:failed", {
-    id: "a1",
-    status: "stopped",
-    error: "Stopped by user",
-  });
-  view = f.views.get("subagents");
+  const second = await next.promise;
+  expect(second).not.toBe(first);
+  f.emit(channel(second), reply(second, "stopped"));
+  const view = f.views.get("subagents");
   if (view?.kind !== "agents") throw new Error("expected agents view");
-  expect(view.runs[0]?.state).toEqual({
-    phase: "finished",
-    outcome: "cancelled",
+  expect(view.runs[0]).toMatchObject({
+    id: "async:a1",
+    state: { phase: "finished", outcome: "cancelled" },
   });
-  expect(view.runs[0]?.output?.text).toBe("Stopped by user");
   expect(holdsLiveWork(state(f.views))).toBe(false);
+  next = Promise.withResolvers<string>();
+  f.emit("subagent:jobs-changed", {});
+  const pending = await next.promise;
+  if (typeof dispose !== "function") throw new Error("expected cleanup");
+  dispose();
+  f.emit(channel(pending), reply(pending, "running"));
+  expect(holdsLiveWork(state(f.views))).toBe(false);
+  expect([...f.bus.values()].every((listeners) => !listeners.size)).toBe(true);
 });
 
-test("subagent events from an unrelated package are not shown", () => {
+test("the supported adapter projects per-child foreground progress and outcomes", () => {
+  const f = fakeContext("C:\\p", [subagentCommand]);
+  const dispose = connectNicoSubagents({ emit() {} }).connect(f.ctx);
+  const child = { agent: "reviewer", index: 0, task: "Find tests" };
+  f.event({
+    type: "tool_execution_update",
+    toolName: "subagent",
+    toolCallId: "call",
+    partialResult: {
+      details: {
+        runId: "fg-1",
+        progress: [
+          { ...child, status: "running" },
+          { ...child, index: 2, status: "pending" },
+        ],
+      },
+    },
+  });
+  expect(holdsLiveWork(state(f.views))).toBe(true);
+  f.event({
+    type: "tool_execution_end",
+    toolName: "subagent",
+    toolCallId: "call",
+    result: {
+      details: {
+        runId: "fg-1",
+        results: [
+          { ...child, exitCode: 2, error: "Model failed" },
+          { ...child, index: 1, exitCode: 0, finalOutput: "Result" },
+        ],
+      },
+    },
+  });
+  const view = f.views.get("subagents");
+  if (view?.kind !== "agents") throw new Error("expected agents view");
+  expect(view.runs.map((run) => [run.state.outcome, run.output?.text])).toEqual(
+    [
+      ["success", "Result"],
+      ["unknown", undefined],
+      ["error", "Model failed"],
+    ],
+  );
+  expect(holdsLiveWork(state(f.views))).toBe(false);
+  if (typeof dispose === "function") dispose();
+});
+
+test("unrelated packages do not activate the subagents adapter", () => {
   const f = fakeContext("C:\\p", [
     {
       ...subagentCommand,
       source: "C:\\x\\node_modules\\other-subagents\\index.ts",
     },
   ]);
-  connectGotgenesSubagents().connect(f.ctx);
-  f.emit("subagents:started", { id: "a1" });
+  expect(connectNicoSubagents({ emit() {} }).connect(f.ctx)).toBeUndefined();
+  expect(f.bus.size).toBe(0);
   expect(f.views.size).toBe(0);
 });
 

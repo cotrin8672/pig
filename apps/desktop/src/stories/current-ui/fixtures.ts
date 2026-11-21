@@ -231,7 +231,7 @@ export function supportedExtensionsFixture(
           kind: "agents",
           id: "subagents",
           title: "Subagents",
-          source: source("@gotgenes/pi-subagents"),
+          source: source("pi-subagents"),
           runs: [
             {
               id: "agent-2",

@@ -167,11 +167,11 @@ const send = {
 };
 const marketPackages: MarketPackage[] = [
   [
-    "@gotgenes/pi-subagents",
-    "25.0.5",
-    "gotgenes",
+    "pi-subagents",
+    "0.89.1",
+    "nicobailon",
     4200,
-    "Focused in-process sub-agents with lifecycle events.",
+    "Foreground and background subagents with an API for other extensions.",
   ],
   [
     "pi-ask-user",

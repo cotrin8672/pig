@@ -1807,7 +1807,7 @@ export class SessionHost {
     m.adapterSnapshot = undefined;
     if (!m.adapterSource || m.phase === "closing") return;
     m.adapters = new AdapterRuntime(
-      withSupportedAdapters(this.configLoader.config),
+      withSupportedAdapters(this.configLoader.config, m.eventBus),
       m.adapterSource.backend,
       () => {
         m.adapterSnapshot = undefined;
