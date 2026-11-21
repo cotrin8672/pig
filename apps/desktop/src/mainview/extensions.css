@@ -145,10 +145,13 @@
   gap: 6px;
   vertical-align: middle;
 }
-.package-filter {
+/* Doubled class: .segmented-control's `margin: 0` would otherwise win and
+   glue the filter to the search box (same fix as .provider-categories). */
+.segmented-control.package-filter {
   align-self: flex-start;
   justify-self: start;
   width: fit-content;
+  margin-bottom: 12px;
 }
 .package-badge {
   font-family: var(--font-mono);
