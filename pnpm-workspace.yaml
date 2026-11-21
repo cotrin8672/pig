@@ -7,4 +7,5 @@ onlyBuiltDependencies:
   - esbuild
 
 patchedDependencies:
+  '@earendil-works/pi-ai@1.5.2': patches/@earendil-works__pi-ai@1.5.2.patch
   '@earendil-works/pi-coding-agent@1.5.2': patches/@earendil-works__pi-coding-agent@1.5.2.patch

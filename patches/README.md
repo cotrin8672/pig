@@ -22,3 +22,10 @@ On an SDK upgrade, check for an upstream equivalent before rebasing or removing
 the patch. Run `mcp-apps-sdk.test.ts`, `mcp-apps.test.ts`, the session lifecycle
 tests and `sdk-runtime-assets.test.ts`. Never edit the installed package directly.
 For edits, use `pnpm patch` / `pnpm patch-commit` through `mise exec --`.
+
+## Pi SDK model retry policy
+
+`@earendil-works__pi-ai@1.5.2.patch` makes both the provider HTTP and assistant
+retry paths stop on rate limits (including HTTP 429) and exhausted quotas.
+Transient network and server failures remain retryable. On upgrade, run
+`session-host-model-error.test.ts`.
