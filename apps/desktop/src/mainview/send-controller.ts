@@ -623,9 +623,13 @@ export class SendController {
       ({ response } = await issued.promise);
     } catch (error) {
       this.issuing.delete(id);
-      if (this.cancelled.has(id) || String(error).includes(cancelledError)) {
+      if (
+        this.cancelled.has(id) ||
+        this.withdrawn.has(id) ||
+        String(error).includes(cancelledError)
+      ) {
         // A lost CAS ACK may still have reserved the ID; it was never dispatched.
-        if (this.reserved.has(id) && !String(error).includes(cancelledError))
+        if (this.reserved.has(id))
           await this.transport.cancelPrompt?.(state.key)?.catch(() => {});
         this.settle(address, state, { state: "rejected", cancelled: true });
         return;
@@ -680,6 +684,67 @@ export class SendController {
   }
   private reserved = new Set<string>();
   private issuing = new Set<string>();
+  private async withReplyBudget<T>(reply: Promise<T>): Promise<T> {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      return await Promise.race([
+        reply,
+        new Promise<never>((_, reject) => {
+          timer = setTimeout(
+            () => reject(new Error("Send acknowledgement timed out")),
+            this.lookupBudgetMs,
+          );
+        }),
+      ]);
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+  private async reserveDraft(
+    params: DraftSyncParams & SendKey,
+    check: () => void,
+  ): Promise<DraftSyncResult> {
+    const { hostId, sessionId, epoch, requestId } = params;
+    const key = { hostId, sessionId, epoch, requestId };
+    const read = async () => {
+      check();
+      const receipt = await this.withReplyBudget(
+        this.transport.getPromptReceipt(key),
+      );
+      check();
+      if (!sameAddress(receipt, key) || receipt.requestId !== requestId)
+        throw new Error("Receipt address mismatch");
+      return receipt;
+    };
+    const prepared = (receipt: PromptReceipt): DraftSyncResult | undefined =>
+      receipt.state === "pending" &&
+      receipt.stage === "prepared" &&
+      receipt.draftRevision === params.expectedRevision + 1
+        ? {
+            applied: true,
+            draft: { ...params.content, revision: receipt.draftRevision },
+          }
+        : undefined;
+    const sync = () => {
+      check();
+      return this.withReplyBudget(this.transport.syncDraft(params));
+    };
+    try {
+      return await sync();
+    } catch (error) {
+      const receipt = await read();
+      const saved = prepared(receipt);
+      if (saved) return saved;
+      if (receipt.state !== "unknown" || receipt.reason !== "not-found")
+        throw error;
+      // Same CAS revision and ID: at most one write can win, even if the first arrives late.
+      const retried = await sync().catch(() => undefined);
+      if (retried?.applied) return retried;
+      const recovered = prepared(await read()) ?? retried;
+      if (recovered) return recovered;
+      throw error;
+    }
+  }
   /** Resolves with the prompt response once the RPC has been sent. */
   private async issue(
     address: SessionAddress,
@@ -720,11 +785,16 @@ export class SendController {
     {
       const draft = await this.drafts.flush(
         address,
-        this.transport.syncDraft,
+        (params) =>
+          this.reserveDraft(
+            { ...params, requestId: state.key.requestId },
+            check,
+          ),
         captured,
         state.key.requestId,
         state.delivery,
       );
+      check();
       const text = expandedDraft(draft.content);
       const images = draft.content.images.map((item) => item.image);
       if (!text && !images.length) throw new Error("Message is empty");
@@ -738,11 +808,7 @@ export class SendController {
       };
     }
     await this.barriers.get(addressKey(address));
-    if (this.cancelled.has(id) || this.withdrawn.has(id)) {
-      // The host reserved this ID during CAS; never let it look pending.
-      await this.transport.cancelPrompt?.(state.key);
-      throw new Error(cancelledError);
-    }
+    check();
     this.dispatched.add(id);
     this.retries.set(id, { payload, attempts: 1 });
     const response = this.transport.prompt(payload);

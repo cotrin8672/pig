@@ -68,7 +68,11 @@ export type PromptDelivery = "steer" | "followUp";
 export type PromptAccepted = { disposition: "started" | "queued" | "handled" };
 export type PromptReceipt = SendKey &
   (
-    | { state: "pending"; stage?: "prepared" | "queued" | "dispatched" }
+    | {
+        state: "pending";
+        stage?: "prepared" | "queued" | "dispatched";
+        draftRevision?: number;
+      }
     | { state: "accepted"; accepted: PromptAccepted; acceptedAt: number }
     | { state: "rejected"; code: string; message: string }
     | { state: "unknown"; reason: "host-restarted" | "not-found" }

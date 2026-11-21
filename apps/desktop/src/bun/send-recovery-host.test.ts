@@ -3,7 +3,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-test("real SessionHost separates lost CAS ACK from dispatch and accepts the frozen revision while preserving a newer draft", async () => {
+test("real SessionHost recovers both lost ACKs and sends the frozen draft with attachments exactly once", async () => {
   const home = await mkdtemp(join(tmpdir(), "pig-send-recovery-"));
   try {
     const script = `
@@ -29,37 +29,29 @@ test("real SessionHost separates lost CAS ACK from dispatch and accepts the froz
       let invocations = 0;
       sdk.prompt = (...args) => { invocations++; return prompt(...args); };
       renderer.receive(chat.address,host.drafts.read(chat.address));
-      renderer.edit(chat.address,()=>({text:"CAS ACK lost",pastes:[],images:[]}));
-      let loseAck = true, waitAck = false;
       const entered = Promise.withResolvers(), ack = Promise.withResolvers();
+      const notices = [];
       const sends = new SendController(renderer,{
         syncDraft:async input=>{
           const result=host.syncDraft(input);
-          if(loseAck){loseAck=false;throw new Error("saved CAS ACK dropped");}
-          if(waitAck){entered.resolve(result);await ack.promise;}
+          if(input.requestId){
+            entered.resolve(result);
+            await ack.promise;
+            throw new Error("saved CAS ACK dropped");
+          }
           return result;
         },
         prompt:async input=>{await host.prompt(input);throw new Error("prompt accepted; reply dropped");},
         getPromptReceipt:async key=>host.getPromptReceipt(key),
         acknowledgeRecovery:async params=>host.acknowledgePromptRecovery(params)
-      },()=>{});
-      await sends.send(chat.address);
-      const prepared = sends.read(chat.address);
-      expect(invocations).toBe(0);
-      expect(prepared.state).toBe("unknown");
-      expect(prepared.returned).toBe(true);
-      expect(renderer.read(chat.address).content.text).toBe("CAS ACK lost");
-      await Bun.sleep(0);
-      expect(host.runtimeState().sendIntents.find(intent=>intent.receipt.requestId===prepared.key.requestId).recovered).toBe(true);
-      expect(host.getPromptReceipt(prepared.key)).toMatchObject({state:"pending",stage:"prepared"});
+      },()=>{},undefined,undefined,undefined,kind=>notices.push(kind));
       const missing = {...chat.address,requestId:"never-reserved"};
       host.acknowledgePromptRecovery({...chat.address,key:missing,unconfirmed:true});
       expect(host.getPromptReceipt(missing)).toMatchObject({state:"unknown",reason:"not-found"});
       expect(()=>host.acknowledgePromptRecovery({...chat.address,key:{...missing,epoch:0},unconfirmed:true})).toThrow("Input does not belong to this chat");
-      await host.abort(chat.address);
-      const original = {text:"[paste #1 6 chars]",pastes:[{id:"p",marker:"[paste #1 6 chars]",text:"frozen"}],images:[]};
+      const file = join(cwd,"notes.txt");
+      const original = {text:"  [paste #1 6 chars] \\n ",pastes:[{id:"p",marker:"[paste #1 6 chars]",text:"frozen"}],images:[],files:[{id:"f",name:"notes.txt",path:file}]};
       renderer.edit(chat.address,()=>original);
-      waitAck = true;
       faux.setResponses([fauxAssistantMessage("answer")]);
       const sending=sends.send(chat.address);
       const sent = await entered.promise;
@@ -69,6 +61,7 @@ test("real SessionHost separates lost CAS ACK from dispatch and accepts the froz
       await sending;
       await host.receipts.settled();
       expect(invocations).toBe(1);
+      expect(notices).toEqual([]);
       expect(sends.read(chat.address).state).toBe("accepted");
       const acceptedKey = sends.read(chat.address).key;
       host.acknowledgePromptRecovery({...chat.address,key:acceptedKey,unconfirmed:true});
@@ -78,6 +71,7 @@ test("real SessionHost separates lost CAS ACK from dispatch and accepts the froz
       const users=host.getSessionSnapshot(chat.address).transcript.records.filter(r=>r.kind === "message" && r.message.role === "user");
       expect(users).toHaveLength(1);
       expect(JSON.stringify(users[0].message.content)).toContain("frozen");
+      expect(JSON.stringify(users[0].message.content)).toContain("notes.txt");
       expect(JSON.stringify(users[0].message.content)).not.toContain("newer draft");
       sdk.settingsManager.setProjectTrusted(false);
       expect(host.runtimeState().sendIntents).toHaveLength(0);
@@ -91,7 +85,6 @@ test("real SessionHost separates lost CAS ACK from dispatch and accepts the froz
       expect(host.runtimeState().sendIntents).toHaveLength(0);
       expect(events.some(e=>e.type === "closed" && e.discardDraft)).toBe(true);
       await host.dispose(); await disposeSessions();
-      console.log(JSON.stringify({preparedSdkInvocations:0,dispatchedSdkInvocations:invocations,lostReplies:2,newDraftRetained:true}));
     `;
     const child = Bun.spawn([process.execPath, "--eval", script], {
       cwd: join(import.meta.dir, "../.."),

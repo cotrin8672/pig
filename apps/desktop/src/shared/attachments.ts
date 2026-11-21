@@ -1,4 +1,6 @@
 import { type DraftAnnotation, withAnnotations } from "./annotations";
+import { unfoldPastes } from "./paste";
+import type { DraftContent } from "./runtime-contract";
 
 /** A non-image file already stored by the host; the agent receives only its path. */
 export type DraftFile = { id: string; path: string; name: string };
@@ -29,4 +31,12 @@ export const withDraftFiles = (
   withAttachmentPaths(
     withAnnotations(text, annotations),
     files.map((file) => file.path),
+  );
+
+/** The reserved and dispatched payloads must hash to the same text. */
+export const expandedDraft = (content: DraftContent) =>
+  withDraftFiles(
+    unfoldPastes(content.text, content.pastes).trim(),
+    content.files,
+    content.annotations,
   );

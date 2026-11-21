@@ -323,6 +323,7 @@ export class SendReceipts {
         requestId: params.requestId,
         state: "pending",
         stage: "prepared",
+        draftRevision: params.draftRevision,
       },
       ...deferred,
       cancel: new AbortController(),
