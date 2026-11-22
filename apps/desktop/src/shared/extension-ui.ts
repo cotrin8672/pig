@@ -1,3 +1,4 @@
+import type { AskAnswer, AskQuestion } from "./ask-user";
 import type {
   DraftImagesRef,
   DraftState,
@@ -24,6 +25,8 @@ export type UIRequest = UIAddress & {
         }[];
       }
     | { kind: "terminal" }
+    /** pi-ask-user's prompt, answered from the Composer panel instead of a terminal. */
+    | { kind: "ask"; questions: AskQuestion[]; allowComment: boolean }
   );
 export type UIReply = UIAddress &
   (
@@ -31,6 +34,8 @@ export type UIReply = UIAddress &
     | { kind: "confirm"; value: boolean }
     | { kind: "select" | "input" | "editor"; value: string }
     | { kind: "project-trust"; value: "once" | "persist" | "safe" }
+    /** One answer per question, in order. */
+    | { kind: "ask"; value: AskAnswer[] }
   );
 export type ExtensionStatus = {
   statuses: { key: string; text: string }[];

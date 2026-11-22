@@ -226,6 +226,79 @@ if (process.env.PIG_EXTENSION_UI_TEST_CHILD !== "1") {
     });
   });
 
+  test("a running ask_user prompt becomes a native ask request with pi-ask-user's result shape", async () => {
+    const f = fixture();
+    const host = f.create();
+    const start = (toolCallId: string, args: unknown) =>
+      host.toolEvent({
+        type: "tool_execution_start",
+        toolCallId,
+        toolName: "ask_user",
+        args,
+      });
+    start("single", {
+      question: "Where?",
+      options: ["Chips", { title: "Rail", description: "side" }],
+    });
+    const single = host.uiContext.custom(() => blank());
+    expect(f.request()).toMatchObject({
+      kind: "ask",
+      title: "Where?",
+      questions: [
+        {
+          options: [{ title: "Chips" }, { title: "Rail", description: "side" }],
+          allowMultiple: false,
+          allowFreeform: true,
+        },
+      ],
+    });
+    expect(() =>
+      f.broker.resolve({
+        ...f.request(),
+        kind: "ask",
+        value: [{ kind: "selection", selections: ["Bus"] }],
+      }),
+    ).toThrow("Invalid answer");
+    const answer = { kind: "selection" as const, selections: ["Rail"] };
+    f.broker.resolve({ ...f.request(), kind: "ask", value: [answer] });
+    expect(await single).toEqual(answer);
+
+    host.toolEvent({ type: "tool_execution_end", toolCallId: "single" });
+    start("batch", {
+      questions: [{ question: "A?" }, { question: "B?", options: ["x"] }],
+    });
+    const batch = host.uiContext.custom(() => blank());
+    f.broker.resolve({
+      ...f.request(),
+      kind: "ask",
+      value: [
+        { kind: "freeform", text: "a" },
+        { kind: "selection", selections: ["x"] },
+      ],
+    });
+    expect(await batch).toEqual([
+      { status: "answered", response: { kind: "freeform", text: "a" } },
+      {
+        status: "answered",
+        response: { kind: "selection", selections: ["x"] },
+      },
+    ]);
+
+    start("plain", { question: "Name?" });
+    const input = host.uiContext.input("Name?", "Type your answer...");
+    f.broker.resolve({
+      ...f.request(),
+      kind: "ask",
+      value: [{ kind: "freeform", text: "pig" }],
+    });
+    expect(await input).toBe("pig");
+
+    start("stopped", { question: "Stop?", options: ["y"] });
+    const stopped = host.uiContext.custom(() => blank());
+    host.cancelAll("stop");
+    expect(await stopped).toBeNull();
+  });
+
   test("actual terminal custom uses unified broker, host boundary, arbitrary Bun result, resolve once", async () => {
     const f = fixture();
     const host = f.create();

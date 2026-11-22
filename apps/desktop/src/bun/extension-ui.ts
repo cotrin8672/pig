@@ -3,6 +3,7 @@ import type {
   ExtensionUIContext,
   Theme,
 } from "@earendil-works/pi-coding-agent";
+import { type AskAnswer, askQuestions } from "../shared/ask-user";
 import type {
   ExtensionStatus,
   ExtensionUIEvent,
@@ -47,6 +48,13 @@ export interface ExtensionUIHost {
   dispose(): void;
   /** Runtime calls for shortcut registrations, with extension identity when known. */
   reportUnsupported(api: string, extensionName?: string): void;
+  /** Session tool events: a running `ask_user` is answered natively, not in a terminal. */
+  toolEvent(event: {
+    type: string;
+    toolCallId?: string;
+    toolName?: string;
+    args?: unknown;
+  }): void;
 }
 type Options = {
   address: SessionAddress;
@@ -60,7 +68,8 @@ type NativeBody =
   | { kind: "confirm"; title: string; message: string }
   | { kind: "select"; title: string; options: string[] }
   | { kind: "input"; title: string; placeholder?: string }
-  | { kind: "editor"; title: string; initialValue?: string };
+  | { kind: "editor"; title: string; initialValue?: string }
+  | Extract<UIRequest, { kind: "ask" }>;
 type Surface = { terminal: TerminalUIHost; address?: UIAddress };
 
 export function createExtensionUIHost(options: Options): ExtensionUIHost {
@@ -77,6 +86,29 @@ export function createExtensionUIHost(options: Options): ExtensionUIHost {
     Map<Surface, () => void>
   >();
   const diagnostics = new Set<string>();
+  // Running ask_user calls whose prompt has not opened yet, by tool call id.
+  const asks = new Map<string, unknown>();
+  /** pi-ask-user opens one prompt per call; claim it only when the caller is unambiguous. */
+  const claimAsk = () => {
+    if (asks.size !== 1) return undefined;
+    const [[id, args]] = asks;
+    asks.delete(id);
+    return askQuestions(args);
+  };
+  const ask = async (
+    claim: NonNullable<ReturnType<typeof claimAsk>>,
+  ): Promise<AskAnswer[] | null> => {
+    const reply = await native(
+      {
+        kind: "ask",
+        title: claim.heading ?? claim.questions[0].question,
+        questions: claim.questions,
+        allowComment: claim.allowComment,
+      } as NativeBody,
+      claim.timeout ? { timeout: claim.timeout } : undefined,
+    );
+    return reply.kind === "ask" ? reply.value : null;
+  };
   const diagnostic = (api: string, detail = ""): string => {
     const message = `${api} is unsupported in the desktop Composer${detail ? ` (${detail})` : ""}. Use ui.custom() for terminal components.`;
     if (!diagnostics.has(`${api}:${detail}`)) {
@@ -152,6 +184,15 @@ export function createExtensionUIHost(options: Options): ExtensionUIHost {
     live();
     if (!broker.isAvailable(address))
       throw new DOMException("No UI connected", "AbortError");
+    const claim = claimAsk();
+    if (claim) {
+      const answers = await ask(claim);
+      // Resolve with what pi-ask-user's own TUI component would.
+      return (answers &&
+        (claim.batch
+          ? answers.map((response) => ({ status: "answered", response }))
+          : answers[0])) as never;
+    }
     const parent = broker.currentParent(address);
     if (
       [...surfaces].some((surface) => surface.terminal.pendingCount > 0) &&
@@ -241,6 +282,12 @@ export function createExtensionUIHost(options: Options): ExtensionUIHost {
       return reply.kind === "select" ? reply.value : undefined;
     },
     input: async (title, placeholder, opts) => {
+      // pi-ask-user asks option-less questions with input().
+      const claim = claimAsk();
+      if (claim && !claim.batch && !claim.questions[0].options.length) {
+        const answer = (await ask(claim))?.[0];
+        return answer?.kind === "freeform" ? answer.text : undefined;
+      }
       const reply = await native({ kind: "input", title, placeholder }, opts);
       return reply.kind === "input" ? reply.value : undefined;
     },
@@ -356,8 +403,10 @@ export function createExtensionUIHost(options: Options): ExtensionUIHost {
       success: false,
       error: diagnostic("setTheme", "theme is Host-wide"),
     }),
-    getToolsExpanded: () => unsupported("getToolsExpanded"),
-    setToolsExpanded: () => unsupported("setToolsExpanded"),
+    // Display-only in the TUI. pi-subagents calls setToolsExpanded unguarded on
+    // every call, so throwing here breaks the whole subagent tool.
+    getToolsExpanded: () => false,
+    setToolsExpanded: () => {},
   };
   const cancelAll: ExtensionUIHost["cancelAll"] = (reason) => {
     if (cancelling) return;
@@ -403,6 +452,16 @@ export function createExtensionUIHost(options: Options): ExtensionUIHost {
     reportUnsupported: (api, extensionName) => {
       diagnostic(api, extensionName);
     },
+    toolEvent(event) {
+      if (!event.toolCallId) return;
+      if (
+        event.type === "tool_execution_start" &&
+        event.toolName === "ask_user"
+      )
+        asks.set(event.toolCallId, event.args);
+      else if (event.type === "tool_execution_end")
+        asks.delete(event.toolCallId);
+    },
     rotate(next) {
       liveForRotation();
       validateSession(next);
@@ -412,6 +471,7 @@ export function createExtensionUIHost(options: Options): ExtensionUIHost {
       for (const surface of surfaces) surface.terminal.dispose();
       surfaces.clear();
       address = { ...next };
+      asks.clear();
       status = { statuses: [], widgets: [] };
       diagnostics.clear();
       suspended = false;

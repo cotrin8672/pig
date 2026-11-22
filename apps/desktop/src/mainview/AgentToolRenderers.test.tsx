@@ -49,8 +49,11 @@ test("ask_user keeps every option and marks the chosen one with the reply", () =
       }}
     />,
   );
-  for (const text of ["Where?", "Chips", "Rail", "as before", t.answered])
+  for (const text of ["Where?", "Chips", "Rail", "as before", t.question])
     expect(html).toContain(text);
+  // A regular tool row like subagent and schedule_prompt, the answer in its summary.
+  expect(html).toContain('class="tool-row done"');
+  expect(html).toContain('<span class="tool-meta">Chips');
   expect(html.match(/data-picked="true"/g)?.length).toBe(1);
 });
 

@@ -31,6 +31,7 @@ import {
 } from "../shared/runtime-contract";
 import { AnnotationDrafts } from "./AnnotationCards";
 import { AnnotationPopover } from "./AnnotationPopover";
+import { AskUserPanel } from "./AskUserPanel";
 import { rememberAnnotationRange } from "./annotation-highlights";
 import { imageTypes, maxImageBase64 } from "./attachment-reads";
 import { ComposerEditor, insertEditorNewline } from "./ComposerEditor";
@@ -430,6 +431,7 @@ export function Composer({
   }
   return (
     <ComposerFrame onFiles={attach}>
+      <AskUserPanel address={address} />
       {annotationRoot && (
         <AnnotationPopover
           selectionRoot={annotationRoot}

@@ -28,7 +28,12 @@ import "./sdk-ui.css";
 export const UIRequestBroker = memo(function UIRequestBroker() {
   const state = useStore(useShallow(selectBrokerView));
   const previews = useStore(useShallow(selectRequestPreviews));
-  const { pendingUI: requests, terminals } = state;
+  const { terminals } = state;
+  // ask_user prompts live in their chat's Composer (AskUserPanel).
+  const requests = state.pendingUI.filter(
+    (request): request is Exclude<UIRequest, { kind: "ask" }> =>
+      request.kind !== "ask",
+  );
   const [selected, setSelected] = useState<{ key: string; revision: number }>();
   const [started, setStarted] = useState<Set<string>>(() => new Set());
   const [dismissed, setDismissed] = useState<Set<string>>(() => new Set());
@@ -127,7 +132,7 @@ function NativeRequest({
   onDismiss,
   onRestore,
 }: {
-  request: Exclude<UIRequest, { kind: "terminal" }>;
+  request: Exclude<UIRequest, { kind: "terminal" | "ask" }>;
   active: boolean;
   modal: boolean;
   onDismiss: () => void;

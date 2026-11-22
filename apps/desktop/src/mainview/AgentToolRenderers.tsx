@@ -150,45 +150,40 @@ function QuestionBlock({ item, t }: { item: Question; t: Dict }) {
   );
 }
 
-/** The question stays readable afterwards: every option, and which one won. */
+const summary = (item: Question) =>
+  item.response?.kind === "freeform"
+    ? item.response.text
+    : (item.response?.selections.join(", ") ?? "");
+
+/** A regular tool row: the question and answer in the summary; every option, and which one won, inside. */
 export function AskUserRenderer({ data }: ChatRendererProps<"tool">) {
   const t = useT().agentTools;
   const tone = status(data);
   const questions = questionsOf(data);
   const cancelled = details(data).cancelled === true;
-  const waiting = tone === "running";
+  const single = questions.length === 1 ? questions[0] : undefined;
   return (
-    <article
-      className="agent-card agent-ask"
-      data-ui-surface="card"
-      data-waiting={waiting}
-      aria-label={t.question}
+    <ToolRow
+      defaultOpen={tone === "done" && !cancelled}
+      icon={<MessageCircleQuestion size={14} />}
+      verb={t.question}
+      target={single ? single.question : t.questions(questions.length)}
+      meta={
+        cancelled
+          ? t.cancelled
+          : single
+            ? summary(single) || t.answered
+            : t.answered
+      }
+      state={data.state}
+      status={tone}
     >
-      <header className="agent-card-head">
-        <span className="agent-card-icon">
-          <MessageCircleQuestion size={14} aria-hidden="true" />
-        </span>
-        <strong>{t.question}</strong>
-        <span
-          className="agent-badge"
-          data-tone={
-            waiting ? "waiting" : tone === "error" || cancelled ? "muted" : "ok"
-          }
-        >
-          {waiting
-            ? t.waiting
-            : tone === "error" || cancelled
-              ? t.cancelled
-              : t.answered}
-        </span>
-      </header>
-      {questions.map((item, i) => (
-        <QuestionBlock key={i} item={item} t={t} />
-      ))}
-      {tone === "error" && !cancelled && (
-        <p className="agent-error">{outputText(data)}</p>
+      {tone === "error" ? (
+        <ToolResultContent result={data.state?.result} />
+      ) : (
+        questions.map((item, i) => <QuestionBlock key={i} item={item} t={t} />)
       )}
-    </article>
+    </ToolRow>
   );
 }
 
