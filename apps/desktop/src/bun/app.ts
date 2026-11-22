@@ -70,6 +70,7 @@ import {
   resolveLogin,
   startLogin,
 } from "./login";
+import { addMiseNodeToPath } from "./mise-node-path";
 import { ModelPreferences } from "./model-preferences";
 import {
   readModelOverrides,
@@ -138,7 +139,10 @@ import { setUsageObserver } from "./usage/observation";
 import { UsageService } from "./usage/service";
 import { hasHostKeyboardFocus } from "./window-focus";
 
-await prepareDesktopConfig(Utils.paths.userData);
+await Promise.all([
+  prepareDesktopConfig(Utils.paths.userData),
+  addMiseNodeToPath(),
+]);
 /** Every open window's UI; publications go to all of them. */
 const hub = new ClientHub(sessionHost.hostId);
 sessionHost.onConfigApplied = () => {
