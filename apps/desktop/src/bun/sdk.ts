@@ -10,6 +10,7 @@ export const { AuthStorage } = (await import(
 )) as { AuthStorage: { create(path?: string): CredentialStore } };
 
 export const {
+  CURRENT_SESSION_VERSION,
   ModelRuntime,
   SessionManager,
   SettingsManager,

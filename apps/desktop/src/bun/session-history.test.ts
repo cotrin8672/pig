@@ -39,7 +39,7 @@ test("persisted history is available before model initialization, pages are read
       expect(done).toBe(false);
       expect(JSON.stringify(preview.transcript)).toContain("Question 79");
       expect(host.runtimeState().sessions[0].snapshot.ready).toBe(false);
-      expect(() => host.listSlashCommands(preview.address)).toThrow("STALE");
+      expect(host.listSlashCommands(preview.address)).toEqual([]);
       expect(() => host.prompt({...preview.address,requestId:"premature",draftRevision:0,text:"must not send"})).toThrow("STALE");
       const cursor = preview.transcript.history;
       const page = await host.getSessionHistory({...preview.address,...cursor});

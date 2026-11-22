@@ -113,6 +113,7 @@ import { SessionDiagnosticStore } from "./session-diagnostics";
 import {
   listSessionFiles,
   readSessionFile,
+  readSessionFileForPaging,
   removeSessionFile,
   resolveSessionFile,
   sameSessionPath,
@@ -725,7 +726,9 @@ export class SessionHost {
       const fresh = prepared?.fresh === history;
       if (!fresh) {
         const digest = sessionHistoryDigest(manager);
-        const prefixChanged = !unchangedHistoryPrefix(manager, history, digest);
+        const prefixChanged = !unchangedHistoryPrefix(manager, history, {
+          full: digest,
+        });
         if (prefixChanged) {
           if (
             this.drafts.hasContent(history.address) ||
@@ -2154,9 +2157,14 @@ export class SessionHost {
       ]);
       let flight = this.historyPages.get(key);
       if (!flight) {
-        // Share only in-flight work. A later read must still detect rewrites.
+        // Share only in-flight work. Every later request revalidates the file.
         flight = (async () => {
-          const manager = await readSessionFile(owner.cwd, input.sessionId);
+          const prefixCount = owner.entryCount;
+          const { manager, prefixDigest } = await readSessionFileForPaging(
+            owner.cwd,
+            input.sessionId,
+            prefixCount,
+          );
           if (
             this.shuttingDown ||
             (this.histories.get(input.sessionId) ??
@@ -2167,7 +2175,10 @@ export class SessionHost {
             throw new Error("STALE_SESSION_ADDRESS");
           if (
             owner.revision !== input.revision ||
-            !unchangedHistoryPrefix(manager, owner)
+            !unchangedHistoryPrefix(manager, owner, {
+              sourcePrefix:
+                prefixCount === owner.entryCount ? prefixDigest : undefined,
+            })
           )
             throw new Error("STALE_HISTORY_CURSOR");
           const result = new SDKProjector(

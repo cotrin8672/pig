@@ -12,7 +12,7 @@ test("session discovery reads headers only, normalizes header paths and rejects 
       import {existsSync} from "node:fs";
       import {join} from "node:path";
       import {SessionManager} from ${JSON.stringify(new URL("./sdk.ts", import.meta.url).href)};
-      import {listSessionFiles,resolveSessionFile,removeSessionFile,sameSessionPath,readSessionFile} from ${JSON.stringify(new URL("./session-files.ts", import.meta.url).href)};
+      import {listSessionFiles,resolveSessionFile,removeSessionFile,sameSessionPath,readSessionFile,readSessionFileForPaging,sessionHistoryDigest,unchangedHistoryPrefix} from ${JSON.stringify(new URL("./session-files.ts", import.meta.url).href)};
       const cwd = join(${JSON.stringify(home)}, "project");
       await mkdir(cwd);
       expect(sameSessionPath("",process.cwd())).toBe(false);
@@ -44,6 +44,23 @@ test("session discovery reads headers only, normalizes header paths and rejects 
         expect(await listSessionFiles(cwd)).toEqual(await oracle());
         expect(await readFile(file,"utf8")).toBe(original+suffix);
       }
+      await writeFile(file,original);
+      const saved = await readSessionFile(cwd,id);
+      const basis = {digest:sessionHistoryDigest(saved),entryCount:saved.getEntryCount(),leaf:saved.getLeafId()};
+      const pageSource = () => readSessionFileForPaging(cwd,id,basis.entryCount);
+      expect((await pageSource()).prefixDigest).toBe(basis.digest);
+      const rows = original.trimEnd().split("\\n");
+      await writeFile(file, rows.join("\\r\\n"));
+      expect((await pageSource()).prefixDigest).toBe(basis.digest);
+      await writeFile(file, rows.map(line=>" "+line).join("\\n"));
+      let source = await pageSource();
+      expect(source.prefixDigest).not.toBe(basis.digest);
+      expect(unchangedHistoryPrefix(source.manager,basis,{sourcePrefix:source.prefixDigest})).toBe(true);
+      await writeFile(file,original.replace("Persisted","Rewritten"));
+      source = await pageSource();
+      expect(unchangedHistoryPrefix(source.manager,basis,{sourcePrefix:source.prefixDigest})).toBe(false);
+      await writeFile(file,[JSON.stringify({...header,version:2}),...rows.slice(1)].join("\\n"));
+      expect((await pageSource()).prefixDigest).toBeUndefined();
       await writeFile(file,original);
       const list = SessionManager.list;
       SessionManager.list = async () => {throw new Error("Must not read transcript bodies to find a session");};
