@@ -10,7 +10,10 @@ import { openChat, rpc } from "./rpc";
 import { SessionList } from "./SessionList";
 import { type SessionStatus, sessionStatusLabels } from "./session-status";
 import { useStore } from "./store";
-import { createProjectActivitySelector } from "./ui-selectors";
+import {
+  createProjectActivitySelector,
+  selectProjectModified,
+} from "./ui-selectors";
 
 const basename = (path: string) =>
   path.split(/[\\/]/).filter(Boolean).pop() || path;
@@ -19,6 +22,7 @@ export const SidebarSessions = memo(function SidebarSessions() {
   const t = useT();
   const projects = useStore((s) => s.bootstrap.projects);
   const projectFlags = useStore((s) => s.bootstrap.desktop.projects);
+  const projectModified = useStore(useShallow(selectProjectModified));
   const [archived, setArchived] = useState(false);
   const archivedCount = projects.filter(
     (cwd) => projectFlags?.[cwd]?.archived,
@@ -53,9 +57,11 @@ export const SidebarSessions = memo(function SidebarSessions() {
             <FolderPlusCorner size={14} aria-hidden="true" />
           </button>
         </div>
-        {visibleProjects(projects, projectFlags, archived).map((cwd) => (
-          <ProjectSessions key={cwd} cwd={cwd} />
-        ))}
+        {visibleProjects(projects, projectFlags, archived, projectModified).map(
+          (cwd) => (
+            <ProjectSessions key={cwd} cwd={cwd} />
+          ),
+        )}
         {(archivedCount > 0 || archived) && (
           <button
             type="button"

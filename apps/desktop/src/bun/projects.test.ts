@@ -45,6 +45,13 @@ test("project rename/reset, pin and archive persist without changing legacy proj
       projects[0],
       projects[2],
     ]);
+    // Pinned stays first; the rest follow their latest chat.
+    expect(
+      visibleProjects(projects, reloaded.value.projects, false, {
+        [projects[0]]: 1,
+        [projects[2]]: 2,
+      }),
+    ).toEqual([projects[1], projects[2], projects[0]]);
     expect(JSON.parse(await readFile(legacy, "utf8"))).toEqual(projects);
   } finally {
     await rm(directory, { recursive: true, force: true });
