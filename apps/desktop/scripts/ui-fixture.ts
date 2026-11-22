@@ -40,6 +40,7 @@ export async function runUiFixture(
   options: {
     realRpc?: boolean;
     viewport?: { width: number; height: number };
+    sampleHeap?: boolean;
   } = {},
 ) {
   const dir = await realpath(await mkdtemp(join(tmpdir(), `pig-${name}-ui-`)));
@@ -140,6 +141,10 @@ export async function runUiFixture(
       options.viewport,
     );
     try {
+      const heaps: Record<
+        string,
+        { usedSize: number; backingStorageSize?: number }
+      > = {};
       let result: string | undefined;
       // A deadline, not a tick count: slow CI runners take ~30s for the
       // animation fixtures before the page reports.
@@ -148,6 +153,7 @@ export async function runUiFixture(
         const state = await browser.evaluate<{
           result?: string;
           capture: boolean;
+          heap?: string;
           input?: {
             method:
               | "Input.dispatchMouseEvent"
@@ -156,9 +162,14 @@ export async function runUiFixture(
             params: Record<string, unknown>;
           };
         }>(
-          "({result:window.__fixture,capture:window.__capture===true,input:window.__fixtureInput})",
+          "({result:window.__fixture,capture:window.__capture===true,input:window.__fixtureInput,heap:window.__fixtureHeap})",
         );
         result = state.result;
+        if (options.sampleHeap && state.heap) {
+          await browser.command("HeapProfiler.collectGarbage");
+          heaps[state.heap] = await browser.command("Runtime.getHeapUsage");
+          await browser.evaluate("delete window.__fixtureHeap");
+        }
         if (state.input) {
           await browser.command(state.input.method, state.input.params);
           await browser.evaluate("delete window.__fixtureInput");
@@ -175,6 +186,8 @@ export async function runUiFixture(
         throw new Error(result ?? "fixture did not finish");
       const metrics = await browser.evaluate("window.__fixtureMetrics ?? null");
       if (metrics) console.info(`${name} metrics:`, JSON.stringify(metrics));
+      if (options.sampleHeap)
+        console.info("%s heap (bytes): %s", name, JSON.stringify(heaps));
       passed = true;
     } finally {
       await browser.close();
