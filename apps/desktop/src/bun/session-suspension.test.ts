@@ -12,6 +12,7 @@ test("isolated SDK: idle suspension, cold drafts/history, single-flight wake and
       import {join} from "node:path";
       import {fauxProvider, fauxAssistantMessage} from "@earendil-works/pi-ai";
       import {SessionHost} from ${JSON.stringify(new URL("./session-host.ts", import.meta.url).href)};
+      import {SessionManager} from ${JSON.stringify(new URL("./sdk.ts", import.meta.url).href)};
       import {modelInfo, disposeSessions} from ${JSON.stringify(new URL("./pi-service.ts", import.meta.url).href)};
       import {RUNTIME_IDLE_MS} from ${JSON.stringify(new URL("../shared/runtime-contract.ts", import.meta.url).href)};
       const cwd = ${JSON.stringify(home)};
@@ -108,17 +109,40 @@ test("isolated SDK: idle suspension, cold drafts/history, single-flight wake and
       // Browsing starts no SDK and changes no history file.
       const before=await readFile(file,"utf8");
       const priorStarts=starts;
+      const findById=SessionManager.findById;
+      let lookups=0;
+      SessionManager.findById=(...args)=>{lookups++;return findById.apply(SessionManager,args);};
       cold=await host.openSession({cwd,id,openId:"history",historyOnly:true});
+      expect(lookups).toBe(1);
       expect(cold.suspended).toBe(true);expect(cold.ready).toBeUndefined();
       expect(starts).toBe(priorStarts);expect(await readFile(file,"utf8")).toBe(before);
       expect((await host.readOpenState({openId:"history"})).state).toBe("ready");
       expect((await host.openSession({cwd,id,openId:"history",historyOnly:true})).address).toEqual(cold.address);
       const stamp=await stat(file),previousRevision=cold.transcript.history.revision;
       const cursor={...cold.address,revision:previousRevision,before:cold.transcript.records.at(-1).entryId};
-      expect(JSON.stringify(await host.getSessionHistory(cursor))).toContain("first question");
+      lookups=0;
+      const [page,samePage]=await Promise.all([
+        host.getSessionHistory(cursor),host.getSessionHistory({...cursor}),
+      ]);
+      expect(JSON.stringify(page)).toContain("first question");
+      expect(samePage).toEqual(page);
+      expect(lookups).toBe(1);
       await writeFile(file,before.replace("saved answer","other answer"));
       await utimes(file,stamp.atime,stamp.mtime);
-      await expect(host.getSessionHistory(cursor)).rejects.toThrow("STALE_HISTORY_CURSOR");
+      const rejected=await Promise.allSettled([
+        host.getSessionHistory(cursor),host.getSessionHistory(cursor),
+      ]);
+      expect(rejected.map(r=>r.status==="rejected"&&r.reason.message)).toEqual([
+        "STALE_HISTORY_CURSOR","STALE_HISTORY_CURSOR",
+      ]);
+      expect(lookups).toBe(2);
+      await writeFile(file,before);
+      await utimes(file,stamp.atime,stamp.mtime);
+      expect(await host.getSessionHistory(cursor)).toEqual(page);
+      expect(lookups).toBe(3);
+      SessionManager.findById=findById;
+      await writeFile(file,before.replace("saved answer","other answer"));
+      await utimes(file,stamp.atime,stamp.mtime);
       await expect(host.wakeSession(cold.address)).rejects.toThrow("History changed externally");
       expect(starts).toBe(priorStarts);
       cold=await host.readSessionSnapshot(cold.address);

@@ -325,6 +325,10 @@ export class SessionHost {
   private epoch = 0;
   private sessions = new Map<string, Managed>();
   private histories = new Map<string, HistoryHandle>();
+  private historyPages = new Map<
+    string,
+    Promise<ReturnType<SDKProjector["historyPage"]>>
+  >();
   private readonly usage: RuntimeUsageTracker;
   private idleTimer?: ReturnType<typeof setInterval>;
   private readonly shareModelCatalog = createModelCatalogCache();
@@ -701,12 +705,12 @@ export class SessionHost {
   }
   private historySnapshot(
     history: HistoryHandle,
-    prepared?: SDKSessionManager,
+    prepared?: { manager: SDKSessionManager; fresh?: HistoryHandle },
   ): Promise<Snapshot> {
     if (history.reading) return history.reading;
     const task = (async () => {
       const manager =
-        prepared ??
+        prepared?.manager ??
         (await readSessionFile(history.cwd, history.address.sessionId));
       if (this.shuttingDown) throw new Error("STALE_SESSION_ADDRESS");
       if (this.histories.get(history.address.sessionId) !== history) {
@@ -718,38 +722,43 @@ export class SessionHost {
           return this.snapshot(live);
         throw new Error("STALE_SESSION_ADDRESS");
       }
-      const prefixChanged = !unchangedHistoryPrefix(manager, history);
-      if (prefixChanged) {
-        if (
-          this.drafts.hasContent(history.address) ||
-          this.receipts.pending(history.address)
-        )
-          throw new Error(
-            "History changed externally; your draft is retained.",
+      const fresh = prepared?.fresh === history;
+      if (!fresh) {
+        const digest = sessionHistoryDigest(manager);
+        const prefixChanged = !unchangedHistoryPrefix(manager, history, digest);
+        if (prefixChanged) {
+          if (
+            this.drafts.hasContent(history.address) ||
+            this.receipts.pending(history.address)
+          )
+            throw new Error(
+              "History changed externally; your draft is retained.",
+            );
+          history.revision = crypto.randomUUID();
+        }
+        const leaf = manager.getLeafId();
+        if (leaf !== history.leaf || prefixChanged) {
+          history.failure = undefined;
+          history.aborted = undefined;
+        }
+        history.leaf = leaf;
+        history.digest = digest;
+        history.entryCount = manager.getEntryCount();
+        history.accountHistory ||= manager
+          .getEntries()
+          .some(
+            (entry) =>
+              entry.type === "message" &&
+              (entry.message.role === "user" ||
+                entry.message.role === "assistant"),
           );
-        history.revision = crypto.randomUUID();
-      }
-      if (manager.getLeafId() !== history.leaf || prefixChanged) {
-        history.failure = undefined;
-        history.aborted = undefined;
-      }
-      history.leaf = manager.getLeafId();
-      history.digest = sessionHistoryDigest(manager);
-      history.entryCount = manager.getEntryCount();
-      history.accountHistory ||= manager
-        .getEntries()
-        .some(
-          (entry) =>
-            entry.type === "message" &&
-            (entry.message.role === "user" ||
-              entry.message.role === "assistant"),
+        history.selection = this.historySelection(
+          manager,
+          history.accounts,
+          history.selection,
         );
-      history.selection = this.historySelection(
-        manager,
-        history.accounts,
-        history.selection,
-      );
-      history.info = sessionInfo(manager, history.cwd);
+        history.info = sessionInfo(manager, history.cwd);
+      }
       const projector = new SDKProjector(
         manager,
         history.address.epoch,
@@ -1005,12 +1014,13 @@ export class SessionHost {
       if (known && known.cwd !== input.cwd)
         throw new Error("Session does not belong to this project");
       if (input.historyOnly && input.id && file) {
-        let prepared: SDKSessionManager | undefined;
+        let prepared:
+          | { manager: SDKSessionManager; fresh?: HistoryHandle }
+          | undefined;
         let history = known || undefined;
         if (!history) {
-          const reader = await readSessionFile(input.cwd, input.id);
-          controller.signal.throwIfAborted();
-          prepared = reader;
+          const reader = await readSessionFile(input.cwd, input.id, file);
+          prepared = { manager: reader };
           controller.signal.throwIfAborted();
           const acquired = this.sessions.get(input.id);
           if (acquired) {
@@ -1046,6 +1056,7 @@ export class SessionHost {
               selection: this.historySelection(reader, accounts),
             };
             this.histories.set(input.id, history);
+            prepared.fresh = history;
           }
         }
         const snapshot = await this.historySnapshot(history, prepared);
@@ -2136,26 +2147,40 @@ export class SessionHost {
         throw new Error("STALE_SESSION_ADDRESS");
       if (owner.revision !== input.revision)
         throw new Error("STALE_HISTORY_CURSOR");
-      // The same header/path checks used by open; no extensions, Trust grant or model startup.
-      const manager = await readSessionFile(owner.cwd, input.sessionId);
-      if (
-        (this.histories.get(input.sessionId) ??
-          this.failedHistory.get(input.sessionId)) !== owner ||
-        (this.sessions.has(input.sessionId) &&
-          !this.histories.has(input.sessionId))
-      )
-        throw new Error("STALE_SESSION_ADDRESS");
-      if (
-        owner.revision !== input.revision ||
-        !unchangedHistoryPrefix(manager, owner)
-      )
-        throw new Error("STALE_HISTORY_CURSOR");
-      page = new SDKProjector(
-        manager,
-        input.epoch,
-        this.runDiagnostics,
-      ).historyPage(input.before);
-      if (page.history) page.history.revision = owner.revision;
+      const key = JSON.stringify([
+        addressKey(input),
+        input.revision,
+        input.before,
+      ]);
+      let flight = this.historyPages.get(key);
+      if (!flight) {
+        // Share only in-flight work. A later read must still detect rewrites.
+        flight = (async () => {
+          const manager = await readSessionFile(owner.cwd, input.sessionId);
+          if (
+            this.shuttingDown ||
+            (this.histories.get(input.sessionId) ??
+              this.failedHistory.get(input.sessionId)) !== owner ||
+            (this.sessions.has(input.sessionId) &&
+              !this.histories.has(input.sessionId))
+          )
+            throw new Error("STALE_SESSION_ADDRESS");
+          if (
+            owner.revision !== input.revision ||
+            !unchangedHistoryPrefix(manager, owner)
+          )
+            throw new Error("STALE_HISTORY_CURSOR");
+          const result = new SDKProjector(
+            manager,
+            input.epoch,
+            this.runDiagnostics,
+          ).historyPage(input.before);
+          if (result.history) result.history.revision = owner.revision;
+          return result;
+        })().finally(() => this.historyPages.delete(key));
+        this.historyPages.set(key, flight);
+      }
+      page = await flight;
     }
     return this.settings.blockImages ? scrubImages(page) : page;
   }
