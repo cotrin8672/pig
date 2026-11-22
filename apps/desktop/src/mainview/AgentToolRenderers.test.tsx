@@ -1,7 +1,11 @@
 import { expect, mock, test } from "bun:test";
 import { renderToStaticMarkup } from "react-dom/server";
 import { en } from "../shared/i18n";
-import type { TranscriptRecord } from "../shared/transcript";
+import {
+  hydrate,
+  type Message,
+  type TranscriptRecord,
+} from "../shared/transcript";
 import { customPresentation } from "./custom-data";
 import { scheduledUsers } from "./scheduled-prompt-model";
 
@@ -142,4 +146,40 @@ test("a fire marker folds into the user bubble carrying its prompt", () => {
   expect([...scheduledUsers([marker, reply, user])]).toEqual([
     ["u", "morning"],
   ]);
+});
+
+test("fire markers claim only later prompts, once each and in marker order", () => {
+  const marker = (jobName: string, prompt: string, mode?: string): Message => ({
+    role: "custom",
+    customType: "scheduled_prompt",
+    content: [],
+    display: true,
+    details: { jobName, prompt, mode },
+    timestamp: 0,
+  });
+  const user = (
+    content: Extract<Message, { role: "user" }>["content"],
+  ): Message => ({
+    role: "user",
+    content,
+    timestamp: 0,
+  });
+  const { records } = hydrate([
+    user("repeat"),
+    marker("first", " repeat "),
+    marker("second", "other"),
+    marker("separate session", "repeat", "subagent_start"),
+    marker("third", "repeat"),
+    user("other"),
+    user([{ type: "text", text: "repeat\n" }]),
+    user("repeat"),
+    marker("too late", "other"),
+    user("repeat"),
+  ]);
+  expect([...scheduledUsers(records)]).toEqual([
+    [records[6].id, "first"],
+    [records[5].id, "second"],
+    [records[7].id, "third"],
+  ]);
+  expect(scheduledUsers([records[0]])).toEqual(new Map());
 });
