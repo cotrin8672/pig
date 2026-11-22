@@ -56,13 +56,17 @@ export function sessionHistoryDigest(
     hash.update(JSON.stringify(entries[index])).update("\n");
   return hash.digest("hex");
 }
+type HistoryBasis = { digest: string; entryCount: number; leaf: string | null };
 export function unchangedHistoryPrefix(
   manager: ReturnType<typeof SessionManager.inMemory>,
-  basis: { digest: string; entryCount: number; leaf: string | null },
+  basis: HistoryBasis,
+  fullDigest?: string,
 ) {
+  const count = manager.getEntryCount();
   return (
-    manager.getEntryCount() >= basis.entryCount &&
-    sessionHistoryDigest(manager, basis.entryCount) === basis.digest &&
+    count >= basis.entryCount &&
+    ((count === basis.entryCount ? fullDigest : undefined) ??
+      sessionHistoryDigest(manager, basis.entryCount)) === basis.digest &&
     (!basis.leaf ||
       manager.getBranch().some((entry) => entry.id === basis.leaf))
   );
@@ -106,8 +110,12 @@ export async function removeSessionFile(cwd: string, id: string) {
 }
 
 /** SDK open repairs files and skips malformed lines; browsing must do neither. */
-export async function readSessionFile(cwd: string, id: string) {
-  const file = await resolveSessionFile(cwd, id);
+export async function readSessionFile(
+  cwd: string,
+  id: string,
+  resolvedFile?: string,
+) {
+  const file = resolvedFile ?? (await resolveSessionFile(cwd, id));
   const stream = createReadStream(file, { encoding: "utf8" });
   const lines = createInterface({ input: stream, crlfDelay: Infinity });
   const entries: FileEntry[] = [];

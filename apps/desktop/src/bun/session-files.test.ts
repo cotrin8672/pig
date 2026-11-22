@@ -12,7 +12,7 @@ test("session discovery reads headers only, normalizes header paths and rejects 
       import {existsSync} from "node:fs";
       import {join} from "node:path";
       import {SessionManager} from ${JSON.stringify(new URL("./sdk.ts", import.meta.url).href)};
-      import {listSessionFiles,resolveSessionFile,removeSessionFile,sameSessionPath} from ${JSON.stringify(new URL("./session-files.ts", import.meta.url).href)};
+      import {listSessionFiles,resolveSessionFile,removeSessionFile,sameSessionPath,readSessionFile} from ${JSON.stringify(new URL("./session-files.ts", import.meta.url).href)};
       const cwd = join(${JSON.stringify(home)}, "project");
       await mkdir(cwd);
       expect(sameSessionPath("",process.cwd())).toBe(false);
@@ -54,6 +54,7 @@ test("session discovery reads headers only, normalizes header paths and rejects 
       lines[0] = JSON.stringify(header);
       await writeFile(file, lines.join("\\n"));
       await expect(resolveSessionFile(cwd,id)).rejects.toThrow("does not belong");
+      await expect(readSessionFile(cwd,id,file)).rejects.toThrow("does not belong");
       await expect(removeSessionFile(cwd,id)).rejects.toThrow("does not belong");
       expect(existsSync(file)).toBe(true);
       SessionManager.list = list;
