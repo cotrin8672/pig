@@ -11,7 +11,7 @@ import {
   phaseControls,
 } from "../../../proposals/kit";
 
-/** pi-ask-user の ask_user ツール。質問カード（本番）。 */
+/** pi-ask-user の ask_user ツール。通常のツール行（本番）。回答は Composer 上の AskUserPanel。 */
 const none = () => null;
 export default {
   title: "Chat/Tools/Extensions/pi-ask-user/ask_user",
@@ -24,7 +24,7 @@ export const Default = {
   ),
 };
 
-/** 回答待ちの間の入力UI（現在はターミナル内のTUI）。デザイン案。 */
+/** 回答待ちの間の入力UIのデザイン案（本番は AskUserPanel）。 */
 const pending = contentStories(askPendingProposals, AskPendingDefault);
 export const PendingCompare = {
   ...pending.Compare,

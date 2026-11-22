@@ -1717,6 +1717,8 @@ export class SessionHost {
     const unsubscribe = session.subscribe((event) => {
       if (!current()) return;
       m.idleSince = undefined;
+      // Before the tool runs: ask_user's prompt must find its arguments.
+      m.ui.toolEvent(event);
       observe(() => {
         statistics?.event(
           event,

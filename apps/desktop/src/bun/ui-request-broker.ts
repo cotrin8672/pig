@@ -1,4 +1,5 @@
 import { AsyncLocalStorage } from "node:async_hooks";
+import { validAskAnswer } from "../shared/ask-user";
 import type {
   ExtensionUIEvent,
   UIReply,
@@ -186,6 +187,17 @@ export class UIRequestBroker {
           if (!["once", "persist", "safe"].includes(reply.value))
             throw new TypeError("Invalid trust decision");
           break;
+        case "ask":
+          if (
+            request.kind !== "ask" ||
+            !Array.isArray(reply.value) ||
+            reply.value.length !== request.questions.length ||
+            !request.questions.every((entry, i) =>
+              validAskAnswer(entry, reply.value[i], request.allowComment),
+            )
+          )
+            throw new TypeError("Invalid answer");
+          break;
         default:
           throw new TypeError("Invalid UI reply kind");
       }
@@ -263,6 +275,21 @@ export class UIRequestBroker {
         }
         break;
       case "terminal":
+        break;
+      case "ask":
+        if (
+          !Array.isArray(request.questions) ||
+          request.questions.length < 1 ||
+          request.questions.length > 4
+        )
+          throw new RangeError("Invalid ask questions");
+        for (const entry of request.questions) {
+          checkText(entry.question);
+          if (entry.context !== undefined) checkText(entry.context);
+          if (entry.options.length > 10_000)
+            throw new RangeError("Too many UI options");
+          for (const option of entry.options) checkText(option.title);
+        }
         break;
       default:
         throw new TypeError("Unknown UI request kind");

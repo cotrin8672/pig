@@ -1,3 +1,4 @@
+import { validAskAnswer } from "../shared/ask-user";
 import type { UIReply, UIRequest } from "../shared/extension-ui";
 import type { SessionAddress, UIAddress } from "../shared/runtime-contract";
 import { sameAddress } from "./chat-snapshot";
@@ -63,6 +64,14 @@ export function validReply(request: UIRequest, reply: UIReply): boolean {
   if (reply.kind === "confirm") return typeof reply.value === "boolean";
   if (reply.kind === "project-trust")
     return ["once", "persist", "safe"].includes(reply.value);
+  if (reply.kind === "ask")
+    return (
+      request.kind === "ask" &&
+      reply.value.length === request.questions.length &&
+      request.questions.every((entry, i) =>
+        validAskAnswer(entry, reply.value[i], request.allowComment),
+      )
+    );
   if (
     typeof reply.value !== "string" ||
     new TextEncoder().encode(reply.value).length > 1024 * 1024
