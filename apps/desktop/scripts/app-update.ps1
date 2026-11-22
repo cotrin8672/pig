@@ -9,10 +9,20 @@ $work = Split-Path -Parent $Config
 $log = Join-Path $work 'update.log'
 $ps = Join-Path $env:SystemRoot 'System32/WindowsPowerShell/v1.0/powershell.exe'
 if ($c.method -eq 'scoop') { $env:SCOOP = Split-Path -Parent (Split-Path -Parent (Split-Path -Parent $c.root)) }
+$nightly = $c.channel -eq 'nightly'
+$app = if ($c.app) { $c.app } else { 'pig' }
 
 function Assert-Bundle([string]$Path) {
     $build = Get-Content -LiteralPath (Join-Path $Path 'Resources/app-build.json') -Raw | ConvertFrom-Json
     $version = Get-Content -LiteralPath (Join-Path $Path 'Resources/version.json') -Raw | ConvertFrom-Json
+    if ($nightly) {
+        # Nightly is rebuilt in place; any newer commit than the running one is valid.
+        if ($build.channel -ne 'nightly' -or $build.commit -eq $c.installed -or
+            $version.identifier -ne 'dev.pig.desktop' -or !(Test-Path -LiteralPath (Join-Path $Path 'bin/launcher.exe'))) {
+            throw 'Invalid Nightly app bundle'
+        }
+        return
+    }
     if ($build.channel -ne 'stable' -or $build.version -ne $c.version -or
         $version.identifier -ne 'dev.pig.desktop' -or $version.channel -ne 'stable' -or
         $version.version -ne $c.version -or !(Test-Path -LiteralPath (Join-Path $Path 'bin/launcher.exe'))) {
@@ -23,6 +33,10 @@ function Assert-Bundle([string]$Path) {
 function Assert-ScoopManifest {
     $manifest = Get-Content -LiteralPath $c.manifest -Raw | ConvertFrom-Json
     $arch = $manifest.architecture.'64bit'
+    if ($nightly) {
+        if ($manifest.version -ne 'nightly' -or $arch.url -cne $c.url) { throw 'The Scoop bucket does not provide the Nightly build.' }
+        return
+    }
     if ($manifest.version -ne $c.version -or $arch.url -cne $c.url -or $arch.hash -ne $c.hash) {
         throw 'The Scoop bucket does not contain this Stable release yet. Retry later or update using the CLI.'
     }
@@ -130,7 +144,9 @@ try {
     Wait-NoRunningApp
     if ($c.method -eq 'scoop') {
         Assert-ScoopManifest
-        if ((Invoke-Scoop @('update', 'pig')) -ne 0) { throw "Scoop update failed. See $log" }
+        # Nightly keeps one version per day; force a fresh download of the rebuilt ZIP.
+        $arguments = if ($nightly) { @('update', $app, '--force', '--no-cache') } else { @('update', $app) }
+        if ((Invoke-Scoop $arguments) -ne 0) { throw "Scoop update failed. See $log" }
         $launchRoot = Join-Path (Split-Path -Parent $c.root) 'current'
         Assert-Bundle $launchRoot
     } else {

@@ -15,6 +15,7 @@ import {
   newerVersion,
   parseBuild,
   parseChecksum,
+  parseNightly,
   parseRelease,
   releaseBase,
   stableVersion,
@@ -36,7 +37,14 @@ async function exists(path: string) {
 }
 
 // Marker presence must never fall through to direct file replacement, even if corrupt.
-export async function detectInstall(root: string) {
+export async function detectInstall(
+  root: string,
+  channel: "stable" | "nightly" = "stable",
+) {
+  const disabled = (nightly: boolean) => ({
+    method: "disabled" as const,
+    reason: nightly ? ("nightly" as const) : undefined,
+  });
   const markers = [
     "scoop-install.json",
     "install.json",
@@ -46,20 +54,20 @@ export async function detectInstall(root: string) {
   const marked = (
     await Promise.all(markers.map((name) => exists(join(root, name))))
   ).some(Boolean);
+  // Nightly builds are only published through Scoop; portable replacement is Stable-only.
   if (!marked) {
     // A Scoop-shaped path without metadata is ambiguous, not a portable installation.
-    return basename(dirname(dirname(root))).toLowerCase() === "apps"
-      ? { method: "disabled" as const }
+    return channel === "nightly" ||
+      basename(dirname(dirname(root))).toLowerCase() === "apps"
+      ? disabled(channel === "nightly")
       : { method: "portable" as const };
   }
   const app = basename(dirname(root)).toLowerCase();
-  if (app === "pig-nightly")
-    return { method: "disabled" as const, reason: "nightly" as const };
   if (
-    app !== "pig" ||
+    app !== (channel === "nightly" ? "pig-nightly" : "pig") ||
     basename(dirname(dirname(root))).toLowerCase() !== "apps"
   )
-    return { method: "disabled" as const };
+    return disabled(channel === "nightly" || app === "pig-nightly");
   const scoopRoot = dirname(dirname(dirname(root)));
   const install = (await json(
     join(
@@ -73,15 +81,15 @@ export async function detectInstall(root: string) {
     typeof install.bucket !== "string" ||
     !/^[a-z\d_-]+$/i.test(install.bucket)
   )
-    return { method: "disabled" as const };
+    return disabled(false);
   const scoop = join(scoopRoot, "apps/scoop/current/bin/scoop.ps1");
   const bucket = join(scoopRoot, "buckets", install.bucket);
-  const manifest = (await exists(join(bucket, "bucket/pig.json")))
-    ? join(bucket, "bucket/pig.json")
-    : join(bucket, "pig.json");
+  const manifest = (await exists(join(bucket, `bucket/${app}.json`)))
+    ? join(bucket, `bucket/${app}.json`)
+    : join(bucket, `${app}.json`);
   if (!(await exists(scoop)) || !(await exists(manifest)))
-    return { method: "disabled" as const };
-  return { method: "scoop" as const, scoop, manifest };
+    return disabled(false);
+  return { method: "scoop" as const, scoop, manifest, app, channel };
 }
 
 const powershell = join(
@@ -131,7 +139,14 @@ export class AppUpdater {
   };
   private initialized?: Promise<void>;
   private busy = false;
-  private release?: ReturnType<typeof parseRelease> & { hash: string };
+  private release?: {
+    version: string;
+    url: string;
+    hash: string;
+    commit?: string;
+  };
+  private channel: "stable" | "nightly" = "stable";
+  private commit = "";
   private install?: Awaited<ReturnType<typeof detectInstall>>;
   private root = "";
   private originalRoot = "";
@@ -163,16 +178,17 @@ export class AppUpdater {
       );
       if (!build) return;
       this.state.version = build.version;
-      if (build.channel !== "stable") {
-        this.state.reason =
-          build.channel === "nightly" ? "nightly" : "development";
+      if (build.channel === "dev") {
+        this.state.reason = "development";
         return;
       }
+      this.channel = build.channel;
+      this.commit = build.commit;
       if (process.platform !== "win32" || process.arch !== "x64") {
         this.state.reason = "unsupported";
         return;
       }
-      this.install = await detectInstall(this.root);
+      this.install = await detectInstall(this.root, this.channel);
       this.state.method = this.install.method;
       this.state.reason =
         this.install.method === "disabled"
@@ -199,14 +215,26 @@ export class AppUpdater {
     this.release = undefined;
     this.publish({ status: "checking", error: undefined, latest: undefined });
     try {
+      const nightly = this.channel === "nightly";
       const response = await fetch(
-        "https://api.github.com/repos/cotrin8672/pig/releases/latest",
+        `https://api.github.com/repos/cotrin8672/pig/releases/${nightly ? "tags/nightly" : "latest"}`,
         {
           headers: { Accept: "application/vnd.github+json" },
           signal: AbortSignal.timeout(30_000),
         },
       );
       if (!response.ok) throw new Error(`GitHub: HTTP ${response.status}`);
+      if (nightly) {
+        const release = parseNightly(await response.json());
+        if (release.commit === this.commit) {
+          this.publish({ status: "current" });
+          return;
+        }
+        // Scoop downloads the nightly without a hash; the helper verifies the new commit.
+        this.release = { ...release, hash: "" };
+        this.publish({ status: "available", latest: release.version });
+        return;
+      }
       const release = parseRelease(await response.json());
       if (!newerVersion(release.version, this.state.version)) {
         this.publish({ status: "current" });
@@ -295,6 +323,7 @@ export class AppUpdater {
         JSON.stringify({
           ...this.install,
           ...release,
+          installed: this.commit,
           root: this.root,
           originalRoot: this.originalRoot,
           zip,
