@@ -101,6 +101,20 @@ export function selectLiveSessions(s: State, cwd: string) {
   return rows;
 }
 
+/** Latest chat time per project, listed or live, for ordering projects. */
+export function selectProjectModified(s: State) {
+  const latest: Record<string, number> = {};
+  const bump = (cwd: string, at: number) => {
+    if (at > (latest[cwd] ?? 0)) latest[cwd] = at;
+  };
+  for (const [cwd, sessions] of Object.entries(s.sessions))
+    for (const session of sessions ?? []) bump(cwd, session.modified);
+  for (const snapshot of Object.values(s.snapshots))
+    if (snapshot.ready !== false)
+      bump(snapshot.info.cwd, snapshot.info.modified);
+  return latest;
+}
+
 /**
  * The persisted list lags behind the host: an open chat's title and entry time
  * come from its live snapshot, and a new chat appears once the host owns it.

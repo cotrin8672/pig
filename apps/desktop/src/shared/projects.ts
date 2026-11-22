@@ -50,10 +50,15 @@ export function visibleProjects(
   projects: string[],
   flags: Record<string, ProjectFlags> = {},
   archived = false,
+  modified: Record<string, number> = {},
 ) {
   return projects
     .filter((cwd) => !!flags[cwd]?.archived === archived)
-    .sort((a, b) => Number(!!flags[b]?.pinned) - Number(!!flags[a]?.pinned));
+    .sort(
+      (a, b) =>
+        Number(!!flags[b]?.pinned) - Number(!!flags[a]?.pinned) ||
+        (modified[b] ?? 0) - (modified[a] ?? 0),
+    );
 }
 
 export function withoutProject(projects: string[], cwd: unknown) {
