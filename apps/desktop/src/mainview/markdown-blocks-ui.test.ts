@@ -1,4 +1,5 @@
 import { test } from "bun:test";
+import { syntaxFixture } from "../../scripts/syntax-fixture";
 import {
   fixtureHelpers,
   fixtureImport,
@@ -93,6 +94,46 @@ test(
   flushSync(()=>root.render(null));
   `,
       { viewport: { width: 900, height: 900 } },
+    ),
+  60_000,
+);
+
+test(
+  "Markdown highlights Julia, Kotlin, Java and Rust fences in the syntax worker",
+  () =>
+    runUiFixture(
+      "markdown-syntax-languages",
+      `
+  const {createRoot}=await import(${fixtureImport(import.meta.resolve("react-dom/client"))});
+  const {Markdown}=await import(${fixtureImport(new URL("./MessageContent.tsx", import.meta.url))});
+  const {syntaxWorker}=await import(${fixtureImport(new URL("./syntax-worker-client.ts", import.meta.url))});
+  await import(${fixtureImport(new URL("./styles.css", import.meta.url))});
+  ${fixtureHelpers}
+  ${syntaxFixture}
+  const root=createFixtureRoot(createRoot);
+  const samples=Object.entries({
+    julia:'const answer = 42',
+    kotlin:'val answer = 42',
+    java:'int answer = 42;',
+    rust:'let answer = 42;',
+  });
+  const text=samples.map(([lang, body])=>['~~~'+lang,body,'~~~'].join('\\n')).join('\\n\\n');
+  root.render(<div className="prose"><Markdown text={text}/></div>);
+  const colorAt=(element,offset)=>{
+    const leaves=document.createTreeWalker(element,NodeFilter.SHOW_TEXT);
+    for(let leaf=leaves.nextNode();leaf;leaf=leaves.nextNode()){
+      if(offset<leaf.length)return syntaxStyle(leaf,offset).color;
+      offset-=leaf.length;
+    }
+  };
+  for(const [lang,body] of samples) await until(()=>{
+    const code=document.querySelector('pre > code.language-'+lang);
+    return code?.textContent===body+'\\n' &&
+      colorAt(code,0)!==colorAt(code,body.indexOf('42'));
+  },lang+' must preserve the source and paint keywords and numbers in distinct colors');
+  check(syntaxWorker.stats().completed===samples.length&&!syntaxWorker.stats().failed,'all fences must be tokenized by the worker');
+  root.unmount();
+  `,
     ),
   60_000,
 );

@@ -293,6 +293,8 @@ UIの追加・変更・レビュー時に適用する。スクリーンショッ
 
 - コードフェンスは共通の `MarkdownPre`（`MarkdownBlocks.tsx`）で、言語ラベルとコピーボタンの見出し行を
   `pre` の上に置く。背景は外枠1枚だけにし、`pre` に背景を重ねない。`pre > code` の構造は変えない。
+- コードフェンスの言語名・別名は共通の構文ハイライトで扱う（例: `julia` / `jl`、`kotlin` / `kt` / `kts`）。
+  未対応の言語でも本文はそのまま表示する。Julia・Kotlin・Java・Rustの描画は `markdown-blocks-ui.test.ts` で検査する。
 - Mermaidは閉じたフェンスだけを描画し、配信中に書きかけの図を組まない。対応6種はWorker（beautiful-mermaid）、
   それ以外は公式Mermaidを表示範囲付近に来たときだけUIスレッドで1件ずつ描く。SVGはshadow rootに入れて
   `<style>`・idを隔離し、script・イベント属性・外部リンク・`@import` を除く。描画できない場合はコードのまま残す。

@@ -56,37 +56,42 @@ async function full(text: string, language?: string) {
 }
 
 for (const language of languageNames)
-  test(`syntax checkpoints match full ${language} tokens through appends, edits and shortening`, async () => {
-    const tokenize = createCodeTokenizer();
-    const sources = [
-      "",
-      "\n",
-      "\n\n",
-      "#! /bin/sh\n",
-      '/* open\ncontinued\n*/\nconst 日本語 = "😀";',
-      // biome-ignore lint/suspicious/noTemplateCurlyInString: Highlighted source, not an evaluated template.
-      "<script>\nconst value = `hello\n${1 + 2}`;\n</script>\n<div>tail</div>",
-      'value = """open\ncontinued\n"""\nnext = 1',
-      "cat <<EOF\nhello\nEOF\n",
-      "# Title\n\n**bold** _italic_ ~~strike~~\n",
-    ];
-    for (const source of sources) {
-      for (const text of [
-        source,
-        `${source} tail`,
-        `${source} tail\n`,
-        `${source} tail\nmore`,
-        `${source} tail\nmore\n\n`,
-        `${source} tail\nm`,
-        `changed\n${source} tail\nmore`,
-        source.replaceAll("\n", "\r\n"),
-        `${source.replaceAll("\n", "\r\n")} tail\r\nmore\r\n`,
-      ])
-        expect(await tokenize(text, language)).toEqual(
-          await full(text, language),
-        );
-    }
-  });
+  test(
+    `syntax checkpoints match full ${language} tokens through appends, edits and shortening`,
+    async () => {
+      const tokenize = createCodeTokenizer();
+      const sources = [
+        "",
+        "\n",
+        "\n\n",
+        "#! /bin/sh\n",
+        '/* open\ncontinued\n*/\nconst 日本語 = "😀";',
+        // biome-ignore lint/suspicious/noTemplateCurlyInString: Highlighted source, not an evaluated template.
+        "<script>\nconst value = `hello\n${1 + 2}`;\n</script>\n<div>tail</div>",
+        'value = """open\ncontinued\n"""\nnext = 1',
+        "cat <<EOF\nhello\nEOF\n",
+        "# Title\n\n**bold** _italic_ ~~strike~~\n",
+      ];
+      for (const source of sources) {
+        for (const text of [
+          source,
+          `${source} tail`,
+          `${source} tail\n`,
+          `${source} tail\nmore`,
+          `${source} tail\nmore\n\n`,
+          `${source} tail\nm`,
+          `changed\n${source} tail\nmore`,
+          source.replaceAll("\n", "\r\n"),
+          `${source.replaceAll("\n", "\r\n")} tail\r\nmore\r\n`,
+        ])
+          expect(await tokenize(text, language)).toEqual(
+            await full(text, language),
+          );
+      }
+    },
+    // Julia's first grammar compilation runs in both tokenizers under parallel load.
+    language === "julia" ? 15_000 : undefined,
+  );
 
 test("syntax reuses complete rows, reparses the unfinished line, and never mutates published tokens", async () => {
   const tokenize = createCodeTokenizer();

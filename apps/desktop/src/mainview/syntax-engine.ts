@@ -18,6 +18,8 @@ import javascript from "shiki/langs/javascript.mjs";
 import json from "shiki/langs/json.mjs";
 import jsonc from "shiki/langs/jsonc.mjs";
 import jsx from "shiki/langs/jsx.mjs";
+import julia from "shiki/langs/julia.mjs";
+import kotlin from "shiki/langs/kotlin.mjs";
 import markdown from "shiki/langs/markdown.mjs";
 import powershell from "shiki/langs/powershell.mjs";
 import python from "shiki/langs/python.mjs";
@@ -55,10 +57,12 @@ const languages = {
   shellscript,
   powershell,
   python,
+  julia,
   ruby,
   rust,
   go,
   java,
+  kotlin,
   c,
   cpp,
   csharp,
