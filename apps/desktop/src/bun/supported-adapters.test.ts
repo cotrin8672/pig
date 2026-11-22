@@ -149,13 +149,25 @@ test("the supported adapter projects per-child foreground progress and outcomes"
       details: {
         runId: "fg-1",
         progress: [
-          { ...child, status: "running" },
+          {
+            ...child,
+            status: "running",
+            recentTools: [{ tool: "read", args: "a.ts", endMs: 1 }],
+            recentOutput: ["Looking at tests"],
+            currentTool: "bash",
+            currentToolArgs: "bun test",
+          },
           { ...child, index: 2, status: "pending" },
         ],
       },
     },
   });
   expect(holdsLiveWork(state(f.views))).toBe(true);
+  const live = f.views.get("subagents");
+  if (live?.kind !== "agents") throw new Error("expected agents view");
+  expect(live.runs.at(-1)?.output?.text).toBe(
+    "✓ read a.ts\nLooking at tests\n→ bash bun test",
+  );
   f.event({
     type: "tool_execution_end",
     toolName: "subagent",
