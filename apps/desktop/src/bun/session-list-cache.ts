@@ -180,15 +180,21 @@ export class SessionListCache {
       .sort((a, b) => b.localeCompare(a))
       .map((name) => join(dir, name));
     const present = new Set(files);
-    for (const file of this.entries.keys())
-      if (dirname(file) === dir && !present.has(file)) this.forget(file);
+    // Eviction during this scan must not invalidate its later cache lookups.
+    const cached = new Map<string, Cached>();
+    for (const [file, entry] of this.entries) {
+      if (dirname(file) !== dir) continue;
+      if (present.has(file)) cached.set(file, entry);
+      else this.forget(file);
+    }
     const results: (SessionInfo | undefined)[] = new Array(files.length);
     let next = 0;
     // Match the SDK's bounded I/O concurrency and deterministic tie order.
     const worker = async () => {
       while (next < files.length) {
         const index = next++;
-        results[index] = await this.load(files[index]);
+        const file = files[index];
+        results[index] = await this.load(file, cached.get(file));
       }
     };
     await Promise.all(
@@ -199,8 +205,10 @@ export class SessionListCache {
       .sort((a, b) => b.modified - a.modified);
   }
 
-  private async load(file: string): Promise<SessionInfo | undefined> {
-    const previous = this.entries.get(file);
+  private async load(
+    file: string,
+    previous: Cached | undefined,
+  ): Promise<SessionInfo | undefined> {
     let before: BigIntStats;
     try {
       before = await stat(file, { bigint: true });
@@ -213,8 +221,10 @@ export class SessionListCache {
       return;
     }
     if (previous && sameStamp(previous.stamp, before)) {
-      this.entries.delete(file);
-      this.entries.set(file, previous);
+      if (this.entries.get(file) === previous) {
+        this.entries.delete(file);
+        this.entries.set(file, previous);
+      }
       return previous.info;
     }
     let result: ReadResult | undefined;
