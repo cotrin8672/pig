@@ -37,8 +37,10 @@ import { useT } from "./i18n";
 import { MarkdownBlockquote, MarkdownPre } from "./MarkdownBlocks";
 import { markdownExtensions } from "./markdown-extensions";
 import {
+  appendOpenCodeFence,
   browserMarkdown,
   cachedMarkdown,
+  openCodeFence,
   plainMarkdown,
   prepareMarkdown,
   retainedMarkdown,
@@ -256,8 +258,28 @@ export function BuiltinMarkdown({
   });
   const [error, setError] = useState<unknown>();
   const committed = useRef<{ text: string; tree: Root } | undefined>(undefined);
+  const fence = useRef<ReturnType<typeof openCodeFence>>(undefined);
+  const exact =
+    plain ??
+    cachedMarkdown(source, streaming)?.tree ??
+    (result?.text === source && result.streaming === streaming
+      ? result.tree
+      : undefined);
+  const appended = useMemo(
+    () =>
+      browserMarkdown() && streaming && !exact
+        ? appendOpenCodeFence(source, fence.current)
+        : undefined,
+    [source, streaming, exact],
+  );
+  useLayoutEffect(() => {
+    // Only full parses carry reliable source offsets for the fallback view.
+    if (exact) committed.current = { text: source, tree: exact };
+    fence.current =
+      streaming && exact ? openCodeFence(source, exact) : appended;
+  }, [source, streaming, exact, appended]);
   useEffect(() => {
-    if (!browserMarkdown() || plain) return;
+    if (!browserMarkdown() || plain || appended) return;
     const controller = new AbortController();
     void prepareMarkdown(source, controller.signal, streaming).then(
       (parsed) => {
@@ -271,21 +293,13 @@ export function BuiltinMarkdown({
       },
     );
     return () => controller.abort();
-  }, [source, plain, streaming]);
-  const exact =
-    plain ??
-    cachedMarkdown(source, streaming)?.tree ??
-    (result?.text === source && result.streaming === streaming
-      ? result.tree
-      : undefined);
-  useLayoutEffect(() => {
-    if (exact) committed.current = { text: source, tree: exact };
-  }, [source, exact]);
+  }, [source, plain, streaming, appended]);
   if (error) throw error;
-  if (exact)
+  const tree = exact ?? appended?.tree;
+  if (tree)
     return (
       <Fragment key="markdown-body">
-        <MarkdownTree tree={exact} />
+        <MarkdownTree tree={tree} />
       </Fragment>
     );
   if (browserMarkdown()) {

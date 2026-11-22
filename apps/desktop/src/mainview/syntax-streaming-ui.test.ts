@@ -17,7 +17,7 @@ test(
   const {CodeText}=await import(${fixtureImport(new URL("./HighlightedCode.tsx", import.meta.url))});
   const {Markdown}=await import(${fixtureImport(new URL("./MessageContent.tsx", import.meta.url))});
   const {highlightCode}=await import(${fixtureImport(new URL("./syntax-highlighting.ts", import.meta.url))});
-  const {prepareMarkdown}=await import(${fixtureImport(new URL("./markdown-processing.ts", import.meta.url))});
+  const {cachedMarkdown,prepareMarkdown}=await import(${fixtureImport(new URL("./markdown-processing.ts", import.meta.url))});
   const {syntaxWorker}=await import(${fixtureImport(new URL("./syntax-worker-client.ts", import.meta.url))});
   const {markdownWorker}=await import(${fixtureImport(new URL("./markdown-worker-client.ts", import.meta.url))});
   await import(${fixtureImport(new URL("./styles.css", import.meta.url))});
@@ -36,12 +36,15 @@ test(
   };
   for(const kind of ['direct','markdown']){
     let body='const stable = 1;\\nconst growing = "a';
-    const source=()=>kind==='markdown'?'~~~ts\\n'+body:body;
+    let closed=false;
+    const link='https://example.test/stream-fence';
+    const source=()=>'[Guide][reference]\\n\\n~~~ts\\n'+body+
+      (closed?'\\n~~~\\n\\n[reference]: '+link+'\\n\\nFinished.':'');
     const codeText=()=>body+(kind==='markdown'?'\\n':'');
     await highlightCode(codeText(),'ts');
-    if(kind==='markdown')await prepareMarkdown(source());
+    if(kind==='markdown')await prepareMarkdown(source(),undefined,true);
     const render=(final=false)=>flushSync(()=>root.render(kind==='markdown'
-      ?<Markdown text={source()+(final?'\\n~~~\\n\\nFinished.':'')} streaming={!final}/>
+      ?<Markdown text={source()} streaming={!final}/>
       :<pre><CodeText text={body} language="ts"/></pre>));
     render();await until(()=>document.querySelector('pre .syntax-text')&&syntaxReady(),'initial source must be colored');
     await wait();
@@ -84,12 +87,23 @@ test(
         await sleep(index%2?130:32);
       }
       await until(()=>syntax.waiting.length>0,'syntax computation must genuinely remain delayed');
-      if(kind==='markdown')await until(()=>markdown.waiting.length>0,'Markdown computation must genuinely remain delayed');
+      await until(()=>code.textContent.includes('const tail = true;'),'pending syntax must still expose all sampled source lines');
       stable();
-      check(code.textContent.includes('const tail = true;'),'pending parsers must still expose all sampled source lines');
-      check(await raster()===originalRaster,'existing unselected glyph pixels must stay colored while both parsers are blocked');
-      markdown.release();await sleep(160);stable();
-      render(true);stable();await sleep(160);stable();
+      check(await raster()===originalRaster,'existing unselected glyph pixels must stay colored while syntax is blocked');
+      if(kind==='markdown'){
+        check(markdown.waiting.length===0&&!cachedMarkdown(source(),true),'safe appends must not request a parse or populate the shared cache');
+        closed=true;render();
+        await until(()=>markdown.waiting.some(job=>job.input.text===source()&&job.input.streaming),'closing the fence while streaming must request a full parse');
+        check(!document.querySelector('a'),'the reference after the fence is not resolved until the full parse');
+        stable();
+        check(await raster()===originalRaster,'existing glyphs must stay colored while the closing fence is awaiting both workers');
+        markdown.release();
+        await until(()=>document.querySelector('a')?.href===link,'the full parse resolves an earlier reference');
+        stable();
+        render(true);
+        await until(()=>cachedMarkdown(source(),false),'completion must parse independently of the streaming result');
+        await wait();stable();
+      }
       check(await raster()===originalRaster,'closing the streaming fence must not flash existing syntax back to plain text');
       syntax.release();
       await until(()=>{
