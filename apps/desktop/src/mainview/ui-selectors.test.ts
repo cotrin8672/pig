@@ -15,9 +15,48 @@ import {
   selectConversationView,
   selectPaneHeading,
   selectProjectActivity,
+  selectProjectModified,
   selectRequestPreviews,
   selectSessionStatus,
 } from "./ui-selectors";
+
+test("project ordering skips unchanged lists but reflects live and persisted activity", () => {
+  const state: ReturnType<typeof useStore.getState> = fixture();
+  let reads = 0;
+  const listed = {
+    ...state.snapshots.a.info,
+    get modified() {
+      reads++;
+      return 10;
+    },
+  };
+  const other = { ...snapshot("c", "other").info, modified: 6 };
+  state.sessions = {
+    project: [listed, { ...state.snapshots.b.info, modified: 5 }],
+    other: [other],
+  };
+  expect(selectProjectModified(state)).toEqual({ project: 10, other: 6 });
+  for (let i = 0; i < 20; i++) {
+    state.snapshots = {
+      ...state.snapshots,
+      b: { ...state.snapshots.b, snapshotSeq: i + 2 },
+    };
+    expect(selectProjectModified(state)).toEqual({ project: 10, other: 6 });
+  }
+  state.sessions = { ...state.sessions, other: [{ ...other, modified: 11 }] };
+  expect(selectProjectModified(state)).toEqual({ project: 10, other: 11 });
+  expect(reads).toBe(1);
+
+  state.sessions = { project: [state.sessions.project[1]] };
+  expect(selectProjectModified(state)).toEqual({ project: 5 });
+  const b = state.snapshots.b;
+  state.snapshots = { b: { ...b, info: { ...b.info, modified: 20 } } };
+  expect(selectProjectModified(state)).toEqual({ project: 20 });
+  state.snapshots = { b: { ...state.snapshots.b, ready: false } };
+  expect(selectProjectModified(state)).toEqual({ project: 5 });
+  state.sessions = { project: [] };
+  expect(selectProjectModified(state)).toEqual({});
+});
 
 test("project activity reuses metadata without rescanning persisted rows on token updates", () => {
   const state: ReturnType<typeof useStore.getState> = fixture();
