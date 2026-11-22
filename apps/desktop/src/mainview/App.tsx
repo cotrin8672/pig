@@ -1,4 +1,4 @@
-import type { ToolCall } from "@earendil-works/pi-ai";
+import type { AssistantMessage, ToolCall } from "@earendil-works/pi-ai";
 import {
   ChartColumn,
   Check,
@@ -688,6 +688,75 @@ function OAuthLoginDialog({ login }: { login: LoginState }) {
   );
 }
 
+const noTools: ChatSnapshot["transcript"]["tools"] = {};
+
+const AssistantBlocks = memo(function AssistantBlocks({
+  content,
+  folded,
+  live,
+  streaming,
+  thinkingLabel,
+  tools,
+  toolsRunning,
+  cards,
+}: {
+  content: AssistantMessage["content"];
+  folded: boolean;
+  live: boolean;
+  streaming: boolean;
+  thinkingLabel: string;
+  tools: ChatSnapshot["transcript"]["tools"];
+  toolsRunning: boolean;
+  cards: NonNullable<ChatSnapshot["sessionUI"]>["toolCards"];
+}) {
+  return groupBlocks(
+    folded ? content.filter((block) => block.type === "text") : content,
+  ).map(({ start, blocks }) => {
+    const block = blocks[0];
+    return (
+      <DisclosureScope key={`${block.type}-${start}`} id={`block:${start}`}>
+        <div
+          data-content-index={start}
+          data-tool-call-id={
+            blocks.length === 1 && block.type === "toolCall"
+              ? block.id
+              : undefined
+          }
+          tabIndex={-1}
+        >
+          {blocks.length > 1 ? (
+            <ToolGroup
+              calls={blocks.filter(
+                (block): block is ToolCall => block.type === "toolCall",
+              )}
+              tools={tools}
+              live={toolsRunning}
+              cards={cards}
+            />
+          ) : block.type === "text" ? (
+            <div className="prose">
+              <Markdown text={block.text} streaming={streaming} />
+            </div>
+          ) : block.type === "thinking" ? (
+            <ThinkingBlock
+              text={block.thinking}
+              label={thinkingLabel}
+              active={live && start === content.length - 1}
+            />
+          ) : block.type === "toolCall" ? (
+            <ToolBlock
+              call={block}
+              state={tools[block.id]}
+              live={toolsRunning}
+              card={cards?.[block.id]}
+            />
+          ) : null}
+        </div>
+      </DisclosureScope>
+    );
+  });
+});
+
 export const Chat = memo(function Chat({
   snapshot,
 }: {
@@ -989,6 +1058,11 @@ export const Chat = memo(function Chat({
         const { id, message } = record;
         const live =
           transcript.running && index === transcript.records.length - 1;
+        // Don't invalidate text-only or folded blocks with unrelated tool updates.
+        const hasTools =
+          !folded &&
+          message.role === "assistant" &&
+          message.content.some((block) => block.type === "toolCall");
         return (
           <div
             key={key}
@@ -1030,74 +1104,24 @@ export const Chat = memo(function Chat({
                     />
                   ) : message.role === "assistant" ? (
                     <>
-                      {groupBlocks(
-                        folded
-                          ? message.content.filter(
-                              (block) => block.type === "text",
-                            )
-                          : message.content,
-                      ).map(({ start, blocks }) => {
-                        const content = blocks[0];
-                        return (
-                          <DisclosureScope
-                            key={`${content.type}-${start}`}
-                            id={`block:${start}`}
-                          >
-                            <div
-                              data-content-index={start}
-                              data-tool-call-id={
-                                blocks.length === 1 &&
-                                content.type === "toolCall"
-                                  ? content.id
-                                  : undefined
-                              }
-                              tabIndex={-1}
-                            >
-                              {blocks.length > 1 ? (
-                                <ToolGroup
-                                  calls={blocks.filter(
-                                    (block): block is ToolCall =>
-                                      block.type === "toolCall",
-                                  )}
-                                  tools={transcript.tools}
-                                  live={transcript.running}
-                                  cards={snapshot.sessionUI?.toolCards}
-                                />
-                              ) : content.type === "text" ? (
-                                <div className="prose">
-                                  <Markdown
-                                    text={content.text}
-                                    streaming={
-                                      live &&
-                                      transcript.current === id &&
-                                      !message.errorMessage
-                                    }
-                                  />
-                                </div>
-                              ) : content.type === "thinking" ? (
-                                <ThinkingBlock
-                                  text={content.thinking}
-                                  label={
-                                    status?.hiddenThinkingLabel ?? t.Thinking
-                                  }
-                                  active={
-                                    live && start === message.content.length - 1
-                                  }
-                                />
-                              ) : content.type === "toolCall" ? (
-                                <ToolBlock
-                                  call={content}
-                                  state={transcript.tools[content.id]}
-                                  live={transcript.running}
-                                  card={
-                                    snapshot.sessionUI?.toolCards?.[content.id]
-                                  }
-                                />
-                              ) : null}
-                            </div>
-                          </DisclosureScope>
-                        );
-                      })}
+                      <AssistantBlocks
+                        content={message.content}
+                        folded={folded}
+                        live={live}
+                        streaming={
+                          live &&
+                          transcript.current === id &&
+                          !message.errorMessage
+                        }
+                        thinkingLabel={
+                          status?.hiddenThinkingLabel ?? t.Thinking
+                        }
+                        tools={hasTools ? transcript.tools : noTools}
+                        toolsRunning={hasTools && transcript.running}
+                        cards={
+                          hasTools ? snapshot.sessionUI?.toolCards : undefined
+                        }
+                      />
                       {retried.has(id) ? (
                         <RetryNotice
                           attempt={retried.get(id) ?? 1}
