@@ -6,7 +6,7 @@ import {
   resolveBindings,
 } from "../shared/keymap";
 import { adapterBinding } from "./adapter-keymap";
-import { navigate } from "./navigation";
+import { goPane, navigate } from "./navigation";
 import { closePane, createPane, movePaneFocus } from "./pane-state";
 import { rpc, updateAppearance } from "./rpc";
 import { showError, useStore } from "./store";
@@ -97,10 +97,10 @@ export function runAction(action: ActionId) {
       updateAppearance(toggleBackdrop);
       break;
     case "navigation.back":
-      history.back();
+      goPane("back");
       break;
     case "navigation.forward":
-      history.forward();
+      goPane("forward");
       break;
     case "settings.open":
       navigate("settings");
