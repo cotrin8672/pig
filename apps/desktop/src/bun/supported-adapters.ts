@@ -83,6 +83,41 @@ function subagentTime(value: unknown) {
     : undefined;
 }
 
+const strings = (value: unknown, max: number) =>
+  (Array.isArray(value) ? value : [])
+    .slice(-max)
+    .flatMap((line) => text(line, 300)?.trim() || []);
+const toolLine = (mark: string, tool: unknown, args: unknown) =>
+  text(tool, 80)
+    ? `${mark} ${text(tool, 80)} ${text(args, 200) ?? ""}`.trimEnd()
+    : undefined;
+
+/** A short activity log for a running child: recent tools and output, current tool last. */
+function foregroundLog(row: Value): string | undefined {
+  const lines = [
+    ...(Array.isArray(row.recentTools) ? row.recentTools.slice(-8) : []).map(
+      (tool) => toolLine("✓", record(tool).tool, record(tool).args),
+    ),
+    ...strings(row.recentOutput, 8),
+    toolLine("→", row.currentTool, row.currentToolArgs),
+  ].filter((line): line is string => !!line);
+  return lines.length ? lines.join("\n") : undefined;
+}
+
+function asyncLog(run: Value): string | undefined {
+  const lines = [
+    ...(Array.isArray(run.children) ? run.children.slice(0, 20) : []).map(
+      (value) => {
+        const child = record(value);
+        const label = text(child.label, 200);
+        return label && `${label} · ${String(child.state)}`;
+      },
+    ),
+    toolLine("→", record(run.activity).currentTool, undefined),
+  ].filter((line): line is string => !!line);
+  return lines.length ? lines.join("\n") : undefined;
+}
+
 function asyncRuns(snapshot: Value): AgentRun[] | undefined {
   if (
     snapshot.kind !== "pi-subagents.async-status-snapshot" ||
@@ -95,6 +130,7 @@ function asyncRuns(snapshot: Value): AgentRun[] | undefined {
     const run = record(value);
     const id = text(run.id, 240);
     if (!id) continue;
+    const log = asyncLog(run);
     runs.set(id, {
       id: `async:${id}`,
       title: text(run.label, 256) ?? "Subagent",
@@ -102,6 +138,7 @@ function asyncRuns(snapshot: Value): AgentRun[] | undefined {
       startedAt: subagentTime(run.startedAt),
       endedAt: subagentTime(run.endedAt),
       detail: text(run.progressText, 2_000),
+      ...(log ? { output: { text: log } } : {}),
     });
   }
   return [...runs.values()];
@@ -227,9 +264,9 @@ export function connectNicoSubagents(
                             : "unknown",
                 }
               : subagentState(row.status);
-            const output =
-              finished &&
-              (text(row.error, 2_000) ?? text(row.finalOutput, 2_000));
+            const output = finished
+              ? (text(row.error, 2_000) ?? text(row.finalOutput, 2_000))
+              : foregroundLog(row);
             foreground.set(id, {
               id,
               profile,

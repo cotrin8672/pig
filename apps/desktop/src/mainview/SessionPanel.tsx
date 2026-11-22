@@ -1,6 +1,7 @@
 import {
   Bot,
   Check,
+  ChevronRight,
   Clock,
   Info,
   ListChecks,
@@ -628,20 +629,32 @@ function TaskRow({
   ]
     .filter(Boolean)
     .join(" · ");
+  const [open, setOpen] = useState(false);
+  const log = run.output?.text.trim();
   const line =
     run.detail ??
-    run.output?.text
-      .split("\n")
-      .map((text) => text.trim())
-      .filter(Boolean)
-      .at(-1);
+    (open
+      ? undefined
+      : log
+          ?.split("\n")
+          .map((text) => text.trim())
+          .filter(Boolean)
+          .at(-1));
+  const Main = log ? "button" : "div";
   return (
     <li
       className="session-task-row"
       data-state={active ? run.state.phase : (run.state.outcome ?? "unknown")}
     >
       <div className="session-task-band">
-        <div className="session-task-main">
+        <Main
+          className="session-task-main"
+          {...(log && {
+            type: "button" as const,
+            "aria-expanded": open,
+            onClick: () => setOpen((value) => !value),
+          })}
+        >
           <span className="session-task-dot" aria-hidden="true" />
           {agent ? (
             <Bot size={13} aria-hidden="true" />
@@ -655,7 +668,14 @@ function TaskRow({
             {label}
           </span>
           <span className="session-task-meta">{meta}</span>
-        </div>
+          {log && (
+            <ChevronRight
+              className="session-task-chevron"
+              size={13}
+              aria-hidden="true"
+            />
+          )}
+        </Main>
         <Actions
           key={envelopeKey(context.state, context.envelope)}
           context={context}
@@ -673,6 +693,7 @@ function TaskRow({
         )}
       </div>
       {line && <p className="session-task-line">{line}</p>}
+      {open && log && <pre className="session-task-log">{log}</pre>}
     </li>
   );
 }

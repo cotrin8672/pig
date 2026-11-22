@@ -243,6 +243,36 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+button.session-task-main {
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+button.session-task-main:hover {
+  background: color-mix(in srgb, var(--ds-text-primary) 6%, transparent);
+}
+.session-task-chevron {
+  flex: none;
+  color: var(--ds-text-faint);
+}
+.session-task-main[aria-expanded="true"] .session-task-chevron {
+  transform: rotate(90deg);
+}
+/* Same 8-line preview as tool output; the rest scrolls inside the frame. */
+.session-task-log {
+  --scrollbar-inset: var(--radius-xs);
+  max-height: calc(8lh + 12px + var(--scrollbar-size));
+  margin: 0 12px 8px 40px;
+  padding: 6px 8px;
+  overflow: auto;
+  border-radius: var(--radius-xs);
+  background: var(--ds-bg-inset);
+  color: var(--ds-text-secondary);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
 .session-actions {
   display: flex;
   gap: 6px;
