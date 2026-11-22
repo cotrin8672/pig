@@ -1,5 +1,5 @@
 import { Database } from "bun:sqlite";
-import { afterEach, beforeEach, expect, test } from "bun:test";
+import { afterEach, beforeEach, expect, spyOn, test } from "bun:test";
 import {
   appendFile,
   mkdtemp,
@@ -76,6 +76,54 @@ test("all terms must match; two-character and Japanese terms work", async () => 
   expect(index.search("設定 検索").map((h) => h.entryId)).toEqual(["u1"]);
   expect(index.search("x")).toEqual([]);
   expect(index.search("100%")).toEqual([]);
+});
+
+test("search reuses unchanged results across refresh polls and invalidates after index changes", async () => {
+  const file = join(dir, "sessions", "a.jsonl");
+  await writeFile(file, header("a") + message("u1", "user", "設定"));
+  await index.refresh(roots);
+  const sql = spyOn(Database.prototype, "query");
+  const scans = () =>
+    sql.mock.calls.filter(([statement]) =>
+      statement.includes("FROM messages WHERE text LIKE"),
+    ).length;
+  const ids = (query = "設定", limit?: number) =>
+    index.search(query, limit).map((hit) => hit.entryId);
+  try {
+    const first = index.search("設定");
+    expect(first.map((hit) => hit.entryId)).toEqual(["u1"]);
+    first[0].entryId = "mutated by caller";
+    const gate = Promise.withResolvers<ReturnType<typeof roots>>();
+    const refreshing = index.refresh(() => gate.promise);
+    try {
+      expect(index.indexing).toBe(true);
+      expect(ids()).toEqual(["u1"]);
+      expect(scans()).toBe(1);
+    } finally {
+      gate.resolve(roots());
+      await refreshing;
+    }
+    expect(index.indexing).toBe(false);
+    expect(ids()).toEqual(["u1"]);
+    expect(scans()).toBe(1);
+    expect(ids("設定", 0)).toEqual([]);
+    expect(ids("other")).toEqual([]);
+    expect(scans()).toBe(3);
+
+    expect(ids()).toEqual(["u1"]);
+    await appendFile(file, message("u2", "user", "設定", 2));
+    await index.refresh(roots);
+    expect(ids()).toEqual(["u2", "u1"]);
+
+    await index.refresh(() => [{ dir: roots()[0].dir, cwds: [] }]);
+    expect(ids()).toEqual([]);
+    await index.refresh(roots);
+    expect(ids()).toEqual(["u2", "u1"]);
+    index.forget("a");
+    expect(ids()).toEqual([]);
+  } finally {
+    sql.mockRestore();
+  }
 });
 
 test("appends are read incrementally; rewrites and deletions are reindexed", async () => {
