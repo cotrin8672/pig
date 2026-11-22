@@ -8,6 +8,8 @@
       "!!**/dist",
       "!!**/build",
       "!!**/artifacts",
+      "!!apps/desktop/src-tauri/gen",
+      "!!apps/desktop/src-tauri/target",
       "!!pnpm-lock.yaml",
       "!!**/tokens.css"
     ]

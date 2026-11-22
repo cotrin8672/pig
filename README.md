@@ -99,6 +99,9 @@ merge `main` back into `dev` so the branches do not diverge. See
 
 ## Run
 
+An opt-in Windows [Tauri migration preview](docs/tauri-preview.md) runs
+separately from the Electrobun app and does not use its profile.
+
 Requires Windows with WebView2, Node 22+, pnpm 10.14, Bun (tested with 1.4.2),
 and [mise](https://mise.jdx.dev/) for the pinned type checkers.
 
