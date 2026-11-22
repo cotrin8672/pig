@@ -1,3 +1,4 @@
+use crate::input_queue::{InputKind, InputQueue};
 use serde_json::{json, Value};
 use std::{
     collections::HashMap,
@@ -6,8 +7,7 @@ use std::{
     process::{Child, Command, Stdio},
     sync::{
         atomic::{AtomicBool, AtomicU32, Ordering},
-        mpsc::{sync_channel, SyncSender},
-        Mutex,
+        Arc, Mutex,
     },
 };
 use tauri::{ipc::Channel, AppHandle, Manager, WebviewWindow};
@@ -17,7 +17,7 @@ const HOST_PREFIX: u8 = 0x1e;
 type Page = (u32, Channel<Value>);
 
 pub struct Bridge {
-    input: SyncSender<Vec<u8>>,
+    input: Arc<InputQueue>,
     child: Mutex<Child>,
     pages: Mutex<HashMap<String, Page>>,
     next_page: AtomicU32,
@@ -76,9 +76,9 @@ impl Bridge {
         let mut child = command.spawn()?;
         let stdin = child.stdin.take().ok_or("Missing Bun stdin")?;
         let stdout = child.stdout.take().ok_or("Missing Bun stdout")?;
-        let (input, rx) = sync_channel::<Vec<u8>>(128);
+        let input = Arc::new(InputQueue::default());
         app.manage(Self {
-            input,
+            input: input.clone(),
             child: Mutex::new(child),
             pages: Mutex::new(HashMap::new()),
             next_page: AtomicU32::new(0),
@@ -86,9 +86,10 @@ impl Bridge {
         });
         std::thread::spawn(move || {
             let mut writer = BufWriter::new(stdin);
-            for frame in rx {
+            while let Some(frame) = input.next() {
                 if let Err(error) = writer.write_all(&frame).and_then(|_| writer.flush()) {
                     eprintln!("Bun input: {error}");
+                    input.stop();
                     break;
                 }
             }
@@ -122,15 +123,19 @@ impl Bridge {
         Ok(())
     }
 
-    pub fn write(&self, frame: Value) -> Result<(), String> {
+    pub fn enqueue(&self, kind: InputKind, frame: Value) -> Result<(), String> {
         let mut frame = serde_json::to_vec(&frame).map_err(|error| error.to_string())?;
         if frame.len() as u64 >= MAX_FRAME {
             return Err("Oversize IPC frame".into());
         }
         frame.push(b'\n');
-        self.input
-            .try_send(frame)
-            .map_err(|error| error.to_string())
+        self.input.push(kind, frame).map_err(str::to_owned)
+    }
+
+    pub fn control(&self, kind: InputKind, frame: Value) {
+        if let Err(error) = self.enqueue(kind, frame) {
+            eprintln!("Bun control: {error}");
+        }
     }
 
     pub fn reset(&self, label: &str) {
@@ -138,6 +143,7 @@ impl Bridge {
     }
 
     pub fn stop(&self) {
+        self.input.stop();
         if let Ok(mut child) = self.child.lock() {
             // On the normal path Bun has flushed sessions before allowing exit.
             let _ = child.kill();
@@ -166,11 +172,11 @@ pub fn pig_connect(window: WebviewWindow, channel: Channel<Value>) -> Result<u32
     let label = window.label();
     let state = crate::flags(&window);
     let mut pages = bridge.pages.lock().unwrap();
+    bridge.enqueue(
+        InputKind::Packet,
+        json!(["attach", label, generation, state]),
+    )?;
     pages.insert(label.to_owned(), (generation, channel));
-    if let Err(error) = bridge.write(json!(["attach", label, generation, state])) {
-        pages.remove(label);
-        return Err(error);
-    }
     Ok(generation)
 }
 
@@ -182,7 +188,10 @@ pub fn pig_packet(window: WebviewWindow, generation: u32, packet: Value) -> Resu
     if pages.get(label).map(|page| page.0) != Some(generation) {
         return Err("Stale pig page".into());
     }
-    bridge.write(json!(["packet", label, generation, packet]))
+    bridge.enqueue(
+        InputKind::Packet,
+        json!(["packet", label, generation, packet]),
+    )
 }
 
 fn host_frame(app: &AppHandle, frame: &[Value]) {
@@ -230,7 +239,7 @@ fn host_frame(app: &AppHandle, frame: &[Value]) {
                     Ok(value) => json!(["nativeResult", id, true, value]),
                     Err(error) => json!(["nativeResult", id, false, error]),
                 };
-                let _ = app.state::<Bridge>().write(frame);
+                app.state::<Bridge>().control(InputKind::Control, frame);
             });
         }
         [kind] if kind == "quit" => {

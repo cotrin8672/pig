@@ -1,9 +1,11 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod bridge;
+mod input_queue;
 mod native;
 
 use bridge::Bridge;
+use input_queue::InputKind;
 use serde_json::{json, Value};
 use std::sync::atomic::{AtomicBool, Ordering};
 use tauri::{
@@ -49,7 +51,7 @@ pub fn create_window(app: &AppHandle, label: &str, offset: f64) -> tauri::Result
             }
             WindowEvent::Destroyed => {
                 bridge.reset(&label);
-                let _ = bridge.write(json!(["windowEvent", label, "close"]));
+                bridge.control(InputKind::Control, json!(["windowEvent", label, "close"]));
                 return;
             }
             WindowEvent::Focused(true) => "focus",
@@ -57,7 +59,12 @@ pub fn create_window(app: &AppHandle, label: &str, offset: f64) -> tauri::Result
             WindowEvent::Resized(_) | WindowEvent::ScaleFactorChanged { .. } => "resize",
             _ => return,
         };
-        let _ = bridge.write(json!(["windowEvent", label, event, flags(&observed)]));
+        let kind = match event {
+            "resize" => InputKind::Resize(label.clone()),
+            "closeRequested" => InputKind::Close(label.clone()),
+            _ => InputKind::Control,
+        };
+        bridge.control(kind, json!(["windowEvent", label, event, flags(&observed)]));
     });
     Ok(())
 }
@@ -104,7 +111,7 @@ fn main() {
     } else {
         builder.plugin(tauri_plugin_single_instance::init(|app, _, _| {
             if let Some(bridge) = app.try_state::<Bridge>() {
-                let _ = bridge.write(json!(["open-more"]));
+                bridge.control(InputKind::Control, json!(["open-more"]));
             }
         }))
     };
@@ -125,7 +132,10 @@ fn main() {
             RunEvent::ExitRequested { api, .. } => {
                 if let Some(bridge) = app.try_state::<Bridge>() {
                     if !bridge.exiting.load(Ordering::Acquire) {
-                        if bridge.write(json!(["beforeQuit"])).is_ok() {
+                        if bridge
+                            .enqueue(InputKind::Quit, json!(["beforeQuit"]))
+                            .is_ok()
+                        {
                             api.prevent_exit();
                         }
                     }

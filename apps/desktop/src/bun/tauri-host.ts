@@ -14,10 +14,19 @@ import {
 
 // stdout belongs to the parent protocol. SDK and extension logging goes to stderr.
 Object.assign(globalThis, { console: new Console(process.stderr) });
+class OversizeFrame extends Error {}
+const maxFrameBody = 64 * 1024 * 1024 - 2; // Record separator and newline.
 function write(frame: unknown[]) {
-  const bytes = Buffer.from(`\x1e${JSON.stringify(frame)}\n`);
-  if (bytes.length > 64 * 1024 * 1024)
-    throw new Error("Oversize Bun IPC frame.");
+  const json = JSON.stringify(frame);
+  // UTF-8 is at most 3 bytes per UTF-16 unit; skip the byte scan for small frames.
+  if (
+    json.length > maxFrameBody ||
+    (json.length * 3 > maxFrameBody && Buffer.byteLength(json) > maxFrameBody)
+  )
+    throw new OversizeFrame(
+      "The desktop response exceeds the 64 MiB IPC limit.",
+    );
+  const bytes = Buffer.from(`\x1e${json}\n`);
   for (let offset = 0; offset < bytes.length; ) {
     offset += writeSync(1, bytes, offset, bytes.length - offset);
   }
@@ -100,7 +109,19 @@ installDesktopPlatform({
       return desktopRpc<"bun", "webview">(handlers, (packet) => {
         if (!epoch || epoch !== generation)
           throw new Error("Window disconnected.");
-        write(["packet", id, epoch, packet]);
+        try {
+          write(["packet", id, epoch, packet]);
+        } catch (error) {
+          // No bytes were written on overflow. Keep the same request ID.
+          if (!(error instanceof OversizeFrame) || packet[0] !== "reply")
+            throw error;
+          write([
+            "packet",
+            id,
+            epoch,
+            ["reply", packet[1], false, error.message],
+          ]);
+        }
       });
     };
     let rpc = createRpc();
