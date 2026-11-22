@@ -41,6 +41,7 @@ const integration = [
   "session-suspension",
   "steering-queue",
   "statistics-host",
+  "tauri-host",
 ].map((name) => `src/bun/${name}.test.ts`);
 const ui = [
   "mcp-apps-ui",

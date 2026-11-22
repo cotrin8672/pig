@@ -1,9 +1,10 @@
 fn main() {
     tauri_build::try_build(tauri_build::Attributes::new().app_manifest(
         tauri_build::AppManifest::new().commands(&[
-            "preview_host",
+            "pig_connect",
+            "pig_packet",
             "preview_ipc_ping",
-            "preview_report",
+            "pig_smoke_done",
         ]),
     ))
     .expect("build Tauri preview assets and permissions");

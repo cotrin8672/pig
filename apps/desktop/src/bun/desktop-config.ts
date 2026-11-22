@@ -1,9 +1,13 @@
 import { constants } from "node:fs";
 import { copyFile, mkdir, readFile, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { isAbsolute, join } from "node:path";
 
-export const desktopConfigDir = join(homedir(), ".config", "pig");
+const configOverride = process.env.PIG_DESKTOP_CONFIG_DIR;
+export const desktopConfigDir =
+  configOverride && isAbsolute(configOverride)
+    ? configOverride
+    : join(homedir(), ".config", "pig");
 export const generalCwd = join(desktopConfigDir, "general");
 
 /** Stable per-installation UUID; OpenAI's ChatGPT sign-in identifies the app host by it. */
@@ -19,11 +23,12 @@ export async function deviceId(file = join(desktopConfigDir, "device-id")) {
 }
 
 export async function prepareDesktopConfig(
-  legacyDir: string,
+  legacyDir: string | undefined,
   destination = desktopConfigDir,
 ) {
   await mkdir(destination, { recursive: true });
   await mkdir(join(destination, "general"), { recursive: true });
+  if (!legacyDir) return;
   for (const name of [
     "projects.json",
     "appearance.json",

@@ -1,117 +1,142 @@
-use std::{
-    path::Path,
-    process::Command,
-    sync::atomic::{AtomicBool, Ordering},
-    thread::sleep,
-    time::Duration,
+#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+
+mod bridge;
+mod native;
+
+use bridge::Bridge;
+use serde_json::{json, Value};
+use std::sync::atomic::{AtomicBool, Ordering};
+use tauri::{
+    webview::NewWindowResponse, AppHandle, Manager, RunEvent, WebviewUrl, WebviewWindow,
+    WebviewWindowBuilder, WindowEvent,
 };
 
-use tauri::{AppHandle, Manager, State, WebviewWindow};
-
-#[derive(Default)]
-struct IpcProbe(AtomicBool);
-
-#[tauri::command]
-fn preview_ipc_ping(probe: State<'_, IpcProbe>, frame: bool) {
-    if frame {
-        probe.0.store(true, Ordering::Relaxed);
-    }
-}
-
-#[tauri::command]
-async fn preview_host(app: AppHandle) -> Result<serde_json::Value, String> {
-    let profile = app
-        .path()
-        .app_local_data_dir()
-        .map_err(|error| error.to_string())?;
-    tauri::async_runtime::spawn_blocking(move || {
-        let bun = std::env::var_os("PIG_TAURI_BUN").ok_or("Launch with pnpm tauri:preview")?;
-        let desktop = Path::new(env!("CARGO_MANIFEST_DIR")).join("..");
-        let mut child = Command::new(bun);
-        child
-            .current_dir(&desktop)
-            .args(["--no-env-file", "src/bun/tauri-preview.ts"])
-            .env("PI_CODING_AGENT_DIR", profile.join("pi-agent"))
-            .env("PI_CODING_AGENT_SESSION_DIR", profile.join("sessions"))
-            .env("PI_OFFLINE", "1");
-        #[cfg(windows)]
-        {
-            use std::os::windows::process::CommandExt;
-            child.creation_flags(0x08000000); // CREATE_NO_WINDOW
-        }
-        let output = child.output().map_err(|error| error.to_string())?;
-        if !output.status.success() {
-            eprintln!("{}", String::from_utf8_lossy(&output.stderr));
-            return Err(format!("Bun preview host failed ({})", output.status));
-        }
-        serde_json::from_slice(&output.stdout).map_err(|error| error.to_string())
+pub fn flags(window: &WebviewWindow) -> Value {
+    json!({
+        "handle": window.hwnd().map(|hwnd| hwnd.0 as usize).unwrap_or_default(),
+        "maximized": window.is_maximized().unwrap_or(false),
+        "minimized": window.is_minimized().unwrap_or(false),
+        "focused": window.is_focused().unwrap_or(false),
     })
-    .await
-    .map_err(|error| error.to_string())?
 }
 
-#[tauri::command]
-async fn preview_report(
-    window: WebviewWindow,
-    probe: State<'_, IpcProbe>,
-    failure: Option<String>,
-) -> Result<(), String> {
-    if std::env::var("PIG_TAURI_SMOKE").as_deref() == Ok("1") {
-        if let Some(failure) = &failure {
-            eprintln!("Tauri preview smoke: {failure}");
-        }
-        let app = window.app_handle().clone();
-        let passed = failure.is_none()
-            && tauri::async_runtime::spawn_blocking(move || match check_window_states(&window) {
-                Ok(()) => true,
-                Err(error) => {
-                    eprintln!("Tauri window state smoke: {error}");
-                    false
-                }
-            })
-            .await
-            .unwrap_or(false);
-        // A missing JS reply does not prove denial: verify the handler did not run.
-        let reached = probe.0.load(Ordering::Relaxed);
-        if reached {
-            eprintln!("Tauri preview smoke: iframe invoked a native command");
-        }
-        let passed = passed && !reached;
-        println!("pig-tauri-smoke: {}", if passed { "pass" } else { "FAIL" });
-        app.exit(if passed { 0 } else { 1 });
-    }
+pub fn create_window(app: &AppHandle, label: &str, offset: f64) -> tauri::Result<()> {
+    let window = WebviewWindowBuilder::new(app, label, WebviewUrl::App("index.html".into()))
+        .title("pig")
+        .inner_size(1280.0, 840.0)
+        .min_inner_size(560.0, 420.0)
+        .position(100.0 + offset, 80.0 + offset)
+        .decorations(false)
+        .transparent(true)
+        // Let the existing DOM File input receive file drags.
+        .disable_drag_drop_handler()
+        .on_navigation(|url| {
+            matches!(url.scheme(), "http" | "https")
+                && url.host_str() == Some("tauri.localhost")
+                && url.port().is_none()
+        })
+        .on_new_window(|_, _| NewWindowResponse::Deny)
+        .build()?;
+    let label = label.to_owned();
+    let app = app.clone();
+    let observed = window.clone();
+    window.on_window_event(move |event| {
+        let bridge = app.state::<Bridge>();
+        let event = match event {
+            WindowEvent::CloseRequested { api, .. } => {
+                api.prevent_close();
+                "closeRequested"
+            }
+            WindowEvent::Destroyed => {
+                bridge.reset(&label);
+                let _ = bridge.write(json!(["windowEvent", label, "close"]));
+                return;
+            }
+            WindowEvent::Focused(true) => "focus",
+            WindowEvent::Focused(false) => "blur",
+            WindowEvent::Resized(_) | WindowEvent::ScaleFactorChanged { .. } => "resize",
+            _ => return,
+        };
+        let _ = bridge.write(json!(["windowEvent", label, event, flags(&observed)]));
+    });
     Ok(())
 }
 
-fn check_window_states(window: &WebviewWindow) -> Result<(), String> {
-    fn wait_for(state: impl Fn() -> tauri::Result<bool>, expected: bool) -> Result<(), String> {
-        for _ in 0..50 {
-            if state().map_err(|error| error.to_string())? == expected {
-                return Ok(());
-            }
-            sleep(Duration::from_millis(20));
-        }
-        Err(format!("window state did not become {expected}"))
+#[tauri::command]
+fn preview_ipc_ping(probe: tauri::State<'_, Probe>, frame: bool) {
+    if frame {
+        probe.0.store(true, Ordering::Release);
     }
-    let run = |result: tauri::Result<()>| result.map_err(|error| error.to_string());
-    run(window.maximize())?;
-    wait_for(|| window.is_maximized(), true)?;
-    run(window.unmaximize())?;
-    wait_for(|| window.is_maximized(), false)?;
-    run(window.minimize())?;
-    wait_for(|| window.is_minimized(), true)?;
-    run(window.unminimize())?;
-    wait_for(|| window.is_minimized(), false)
+}
+#[derive(Default)]
+struct Probe(AtomicBool);
+
+fn smoke() -> bool {
+    cfg!(debug_assertions) && std::env::var("PIG_TAURI_SMOKE").as_deref() == Ok("1")
+}
+
+#[tauri::command]
+fn pig_smoke_done(window: WebviewWindow, failure: Option<String>) {
+    if smoke() {
+        let app = window.app_handle();
+        let failure = failure.or_else(|| {
+            app.state::<Probe>()
+                .0
+                .load(Ordering::Acquire)
+                .then(|| "Sandbox command reached Rust".to_string())
+        });
+        if let Some(error) = &failure {
+            eprintln!("pig-tauri-smoke: {error}");
+            app.state::<Bridge>().exiting.store(true, Ordering::Release);
+            app.exit(1);
+        } else {
+            println!("pig-tauri-smoke: pass");
+            // Pass through the same draft-flush and shutdown path as Alt+F4.
+            let _ = window.close();
+        }
+    }
 }
 
 fn main() {
-    tauri::Builder::default()
-        .manage(IpcProbe::default())
+    let builder = tauri::Builder::default();
+    let builder = if smoke() {
+        builder
+    } else {
+        builder.plugin(tauri_plugin_single_instance::init(|app, _, _| {
+            if let Some(bridge) = app.try_state::<Bridge>() {
+                let _ = bridge.write(json!(["open-more"]));
+            }
+        }))
+    };
+    builder
+        .manage(Probe::default())
+        .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_notification::init())
+        .setup(|app| Bridge::start(app.handle()))
         .invoke_handler(tauri::generate_handler![
-            preview_host,
+            bridge::pig_connect,
+            bridge::pig_packet,
             preview_ipc_ping,
-            preview_report
+            pig_smoke_done,
         ])
-        .run(tauri::generate_context!())
-        .expect("run pig Tauri preview");
+        .build(tauri::generate_context!())
+        .expect("initialize pig Tauri app")
+        .run(|app, event| match event {
+            RunEvent::ExitRequested { api, .. } => {
+                if let Some(bridge) = app.try_state::<Bridge>() {
+                    if !bridge.exiting.load(Ordering::Acquire) {
+                        if bridge.write(json!(["beforeQuit"])).is_ok() {
+                            api.prevent_exit();
+                        }
+                    }
+                }
+            }
+            RunEvent::Exit => {
+                if let Some(bridge) = app.try_state::<Bridge>() {
+                    bridge.exiting.store(true, Ordering::Release);
+                    bridge.stop();
+                }
+            }
+            _ => {}
+        });
 }

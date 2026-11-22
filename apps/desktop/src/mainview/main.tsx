@@ -36,3 +36,6 @@ const root = document.getElementById("root");
 if (root) createRoot(root).render(<App />);
 
 void reloadChatRenderers(() => rpc.request.getChatRendererBundle());
+
+if (import.meta.env.MODE === "tauri-smoke")
+  void import("./tauri-smoke").then(({ runTauriSmoke }) => runTauriSmoke());

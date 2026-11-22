@@ -1,4 +1,3 @@
-import { Electroview } from "electrobun/view";
 import type { ActionKeymap } from "../../../../packages/config/src";
 import { accountSourceKey } from "../shared/account-models";
 import {
@@ -13,7 +12,6 @@ import {
 import type {
   Appearance,
   ModelSelection,
-  RPCSchema,
   Snapshot,
 } from "../shared/rpc-schema";
 import {
@@ -51,6 +49,7 @@ import {
   takeOpeningOps,
 } from "./opening-sends";
 import { selectPaneSession } from "./pane-selection";
+import { createRendererRpc } from "./rpc-transport";
 import {
   liveAddress,
   prepareRuntimeHost,
@@ -191,88 +190,43 @@ function flushUiPreferences() {
       flushUiPreferences();
     });
 }
-export const rpc = Electroview.defineRPC<RPCSchema>({
-  maxRequestTime: 600_000,
-  handlers: {
-    requests: {
-      flushDrafts: async () => {
-        await drafts.flushAll((params) => rpc.request.syncDraft(params));
-      },
+export const rpc = createRendererRpc({
+  requests: {
+    flushDrafts: async () => {
+      await drafts.flushAll((params) => rpc.request.syncDraft(params));
     },
-    messages: {
-      chatHistoryFile: (event) => {
-        if (useStore.getState().chatHistoryFile?.requestId !== event.requestId)
-          return;
-        useStore.setState({
-          chatHistoryFile: event.preview || event.error ? event : undefined,
-        });
-        if (event.error) showError(event.error);
-      },
-      chatsImported: ({ cwd }) => {
-        void refreshSessions(cwd).catch(showError);
-      },
-      appUpdate: (appUpdate) => useStore.setState({ appUpdate }),
-      packageOp: (op) => receivePackageOp(op, false),
-      installed: (installed) =>
-        useStore.setState({ installed, installedLoaded: true }),
-      runtimeEvent: (publication) => {
-        function handleRuntimeEvent(
-          event: RuntimeWireEvent,
-          phase: PublicationPhase = "live",
-        ) {
-          if (phase === "covered") {
-            if (event.type !== "snapshotDelta") receiveCoveredRuntime(event);
-            if (event.type === "closed" && event.discardDraft) {
-              drafts.discard(event.address, true);
-              sends.discard(event.address);
-            }
-            return;
-          }
-          if (event.type === "snapshotDelta") {
-            const address = event.snapshot.address;
-            if (
-              useStore.getState().hostId &&
-              useStore.getState().hostId !== address.hostId
-            ) {
-              void reconnectRuntime().catch(showError);
-              return;
-            }
-            if (!liveAddress(address)) return;
-            const current = useStore.getState().snapshots[address.sessionId];
-            if (
-              current &&
-              sameAddress(current.address, address) &&
-              current.snapshotSeq >= event.snapshot.snapshotSeq
-            )
-              return;
-            const snapshot = expandSnapshotDelta(event, current);
-            if (!snapshot) {
-              // The full read supplies this base; do not launch a redundant recovery.
-              if (phase === "before-state") return;
-              void recoverSnapshots(
-                address,
-                event.snapshot.snapshotSeq,
-                (value) =>
-                  handleRuntimeEvent({ type: "snapshot", snapshot: value }),
-              ).catch((error) => {
-                if (liveAddress(address)) showSessionReadError(error);
-              });
-              return;
-            }
-            event = { type: "snapshot", snapshot };
-          }
+  },
+  messages: {
+    chatHistoryFile: (event) => {
+      if (useStore.getState().chatHistoryFile?.requestId !== event.requestId)
+        return;
+      useStore.setState({
+        chatHistoryFile: event.preview || event.error ? event : undefined,
+      });
+      if (event.error) showError(event.error);
+    },
+    chatsImported: ({ cwd }) => {
+      void refreshSessions(cwd).catch(showError);
+    },
+    appUpdate: (appUpdate) => useStore.setState({ appUpdate }),
+    packageOp: (op) => receivePackageOp(op, false),
+    installed: (installed) =>
+      useStore.setState({ installed, installedLoaded: true }),
+    runtimeEvent: (publication) => {
+      function handleRuntimeEvent(
+        event: RuntimeWireEvent,
+        phase: PublicationPhase = "live",
+      ) {
+        if (phase === "covered") {
+          if (event.type !== "snapshotDelta") receiveCoveredRuntime(event);
           if (event.type === "closed" && event.discardDraft) {
-            receiveRuntime(event, false);
             drafts.discard(event.address, true);
             sends.discard(event.address);
-            return;
           }
-          const address =
-            event.type === "ready" ||
-            event.type === "snapshot" ||
-            event.type === "replaced"
-              ? event.snapshot.address
-              : event.address;
+          return;
+        }
+        if (event.type === "snapshotDelta") {
+          const address = event.snapshot.address;
           if (
             useStore.getState().hostId &&
             useStore.getState().hostId !== address.hostId
@@ -280,189 +234,229 @@ export const rpc = Electroview.defineRPC<RPCSchema>({
             void reconnectRuntime().catch(showError);
             return;
           }
-          const before = useStore.getState();
-          const previousAddress =
-            event.type === "replaced" || event.type === "suspended"
-              ? event.previous
-              : address;
-          const previousCwd =
-            before.snapshots[previousAddress.sessionId]?.info.cwd ??
-            (event.type === "closed"
-              ? Object.keys(before.sessions).find((cwd) =>
-                  before.sessions[cwd].some(
-                    (session) => session.id === address.sessionId,
-                  ),
-                )
-              : undefined);
-          receiveRuntime(event, false);
+          if (!liveAddress(address)) return;
           const current = useStore.getState().snapshots[address.sessionId];
           if (
-            event.type === "suspended" &&
-            current?.transcript.history?.revision !== event.historyRevision &&
-            Object.values(useStore.getState().panes).some(
-              (pane) => pane.sessionId === address.sessionId,
-            )
-          ) {
-            void recoverSnapshots(address, event.snapshotSeq, (snapshot) =>
-              handleRuntimeEvent({ type: "snapshot", snapshot }),
+            current &&
+            sameAddress(current.address, address) &&
+            current.snapshotSeq >= event.snapshot.snapshotSeq
+          )
+            return;
+          const snapshot = expandSnapshotDelta(event, current);
+          if (!snapshot) {
+            // The full read supplies this base; do not launch a redundant recovery.
+            if (phase === "before-state") return;
+            void recoverSnapshots(
+              address,
+              event.snapshot.snapshotSeq,
+              (value) =>
+                handleRuntimeEvent({ type: "snapshot", snapshot: value }),
             ).catch((error) => {
               if (liveAddress(address)) showSessionReadError(error);
             });
+            return;
           }
-          if (current) sends.reconcile(current);
-          resumeSelectionChanges();
-          if (
-            event.type === "ready" ||
-            event.type === "replaced" ||
-            event.type === "closed" ||
-            (event.type === "snapshot" &&
-              current &&
-              current !== before.snapshots[address.sessionId] &&
-              (!before.snapshots[address.sessionId] ||
-                (before.snapshots[address.sessionId].transcript.running &&
-                  !current.transcript.running) ||
-                before.snapshots[address.sessionId].info.cwd !==
-                  current.info.cwd ||
-                before.snapshots[address.sessionId].info.title !==
-                  current.info.title ||
-                before.snapshots[address.sessionId].info.modified !==
-                  current.info.modified))
-          ) {
-            const cwd =
-              event.type === "closed" ? previousCwd : event.snapshot.info.cwd;
-            void refreshSessions(cwd).catch(showError);
-            if (event.type === "replaced" && previousCwd && previousCwd !== cwd)
-              void refreshSessions(previousCwd).catch(showError);
-          }
+          event = { type: "snapshot", snapshot };
         }
-        receivePublication(publication, handleRuntimeEvent);
-      },
-      extensionUIEvent: (publication) =>
-        receivePublication(publication, (event, phase) => {
-          if (
-            phase === "covered" &&
-            event.type !== "notify" &&
-            event.type !== "capability"
-          )
-            return;
-          if (
-            phase === "covered" &&
-            !useStore.getState().addresses[
-              (event.type === "request" ? event.request : event.address)
-                .sessionId
-            ]
-          )
-            return;
-          if (!receiveExtension(event) && event.type === "draft")
-            void recoverDraftImages(event.address, event.draft.revision).catch(
-              (error) => {
-                if (liveAddress(event.address)) showSessionReadError(error);
-              },
-            );
-        }),
-      terminalEvent: (publication) =>
-        receivePublication(publication, receiveTerminal),
-      sessionEvent: (event) => {
-        receiveWire(event);
-        const snapshot = useStore.getState().snapshots[event.address.sessionId];
-        if (snapshot) sends.reconcile(snapshot);
-      },
-      appearance: receiveAppearance,
-      settings: receiveSettings,
-      actionKeymaps: receiveActionKeymaps,
-      providerUsage: (providerUsage) => useStore.setState({ providerUsage }),
-      windowState: ({ maximized }) => useStore.setState({ maximized }),
-      editMenuCommand: runEditMenuCommand,
-      projects: (projects) => {
-        useStore.setState((s) => ({
-          bootstrap: { ...s.bootstrap, projects: overlayProjects(projects) },
-        }));
-        // Only the project list changed; its chats are all that needs loading.
-        void refreshSessions().catch(showError);
-      },
-      notification: receiveNoticeToast,
-      noticeHistory: receiveNoticeHistory,
-      desktopState: (desktop) => {
-        useStore.setState((s) => ({
-          bootstrap: {
-            ...s.bootstrap,
-            desktop: overlayDesktop({
-              ...s.bootstrap.desktop,
-              sessions: desktop.sessions,
-            }),
-          },
-        }));
-      },
-      agentEvent: ({ event, contextUsage }) => {
-        receiveWire(event);
-        if (contextUsage !== undefined)
-          useStore.setState((s) => {
-            const snapshot = s.snapshots[event.address.sessionId];
-            if (
-              !snapshot ||
-              !sameAddress(snapshot.address, event.address) ||
-              snapshot.snapshotSeq !== event.snapshotSeq
-            )
-              return {};
-            return {
-              snapshots: {
-                ...s.snapshots,
-                [event.address.sessionId]: { ...snapshot, contextUsage },
-              },
-            };
-          });
-      },
-      loginFrame: (frame) => {
-        const login = useStore.getState().login;
-        if (!login || login.loginId !== frame.loginId) {
-          // Closing a dialog after the credential commit cannot undo that commit.
-          if (frame.kind === "success") void refresh().catch(showError);
+        if (event.type === "closed" && event.discardDraft) {
+          receiveRuntime(event, false);
+          drafts.discard(event.address, true);
+          sends.discard(event.address);
           return;
         }
-        if (frame.kind === "event")
+        const address =
+          event.type === "ready" ||
+          event.type === "snapshot" ||
+          event.type === "replaced"
+            ? event.snapshot.address
+            : event.address;
+        if (
+          useStore.getState().hostId &&
+          useStore.getState().hostId !== address.hostId
+        ) {
+          void reconnectRuntime().catch(showError);
+          return;
+        }
+        const before = useStore.getState();
+        const previousAddress =
+          event.type === "replaced" || event.type === "suspended"
+            ? event.previous
+            : address;
+        const previousCwd =
+          before.snapshots[previousAddress.sessionId]?.info.cwd ??
+          (event.type === "closed"
+            ? Object.keys(before.sessions).find((cwd) =>
+                before.sessions[cwd].some(
+                  (session) => session.id === address.sessionId,
+                ),
+              )
+            : undefined);
+        receiveRuntime(event, false);
+        const current = useStore.getState().snapshots[address.sessionId];
+        if (
+          event.type === "suspended" &&
+          current?.transcript.history?.revision !== event.historyRevision &&
+          Object.values(useStore.getState().panes).some(
+            (pane) => pane.sessionId === address.sessionId,
+          )
+        ) {
+          void recoverSnapshots(address, event.snapshotSeq, (snapshot) =>
+            handleRuntimeEvent({ type: "snapshot", snapshot }),
+          ).catch((error) => {
+            if (liveAddress(address)) showSessionReadError(error);
+          });
+        }
+        if (current) sends.reconcile(current);
+        resumeSelectionChanges();
+        if (
+          event.type === "ready" ||
+          event.type === "replaced" ||
+          event.type === "closed" ||
+          (event.type === "snapshot" &&
+            current &&
+            current !== before.snapshots[address.sessionId] &&
+            (!before.snapshots[address.sessionId] ||
+              (before.snapshots[address.sessionId].transcript.running &&
+                !current.transcript.running) ||
+              before.snapshots[address.sessionId].info.cwd !==
+                current.info.cwd ||
+              before.snapshots[address.sessionId].info.title !==
+                current.info.title ||
+              before.snapshots[address.sessionId].info.modified !==
+                current.info.modified))
+        ) {
+          const cwd =
+            event.type === "closed" ? previousCwd : event.snapshot.info.cwd;
+          void refreshSessions(cwd).catch(showError);
+          if (event.type === "replaced" && previousCwd && previousCwd !== cwd)
+            void refreshSessions(previousCwd).catch(showError);
+        }
+      }
+      receivePublication(publication, handleRuntimeEvent);
+    },
+    extensionUIEvent: (publication) =>
+      receivePublication(publication, (event, phase) => {
+        if (
+          phase === "covered" &&
+          event.type !== "notify" &&
+          event.type !== "capability"
+        )
+          return;
+        if (
+          phase === "covered" &&
+          !useStore.getState().addresses[
+            (event.type === "request" ? event.request : event.address).sessionId
+          ]
+        )
+          return;
+        if (!receiveExtension(event) && event.type === "draft")
+          void recoverDraftImages(event.address, event.draft.revision).catch(
+            (error) => {
+              if (liveAddress(event.address)) showSessionReadError(error);
+            },
+          );
+      }),
+    terminalEvent: (publication) =>
+      receivePublication(publication, receiveTerminal),
+    sessionEvent: (event) => {
+      receiveWire(event);
+      const snapshot = useStore.getState().snapshots[event.address.sessionId];
+      if (snapshot) sends.reconcile(snapshot);
+    },
+    appearance: receiveAppearance,
+    settings: receiveSettings,
+    actionKeymaps: receiveActionKeymaps,
+    providerUsage: (providerUsage) => useStore.setState({ providerUsage }),
+    windowState: ({ maximized }) => useStore.setState({ maximized }),
+    editMenuCommand: runEditMenuCommand,
+    projects: (projects) => {
+      useStore.setState((s) => ({
+        bootstrap: { ...s.bootstrap, projects: overlayProjects(projects) },
+      }));
+      // Only the project list changed; its chats are all that needs loading.
+      void refreshSessions().catch(showError);
+    },
+    notification: receiveNoticeToast,
+    noticeHistory: receiveNoticeHistory,
+    desktopState: (desktop) => {
+      useStore.setState((s) => ({
+        bootstrap: {
+          ...s.bootstrap,
+          desktop: overlayDesktop({
+            ...s.bootstrap.desktop,
+            sessions: desktop.sessions,
+          }),
+        },
+      }));
+    },
+    agentEvent: ({ event, contextUsage }) => {
+      receiveWire(event);
+      if (contextUsage !== undefined)
+        useStore.setState((s) => {
+          const snapshot = s.snapshots[event.address.sessionId];
+          if (
+            !snapshot ||
+            !sameAddress(snapshot.address, event.address) ||
+            snapshot.snapshotSeq !== event.snapshotSeq
+          )
+            return {};
+          return {
+            snapshots: {
+              ...s.snapshots,
+              [event.address.sessionId]: { ...snapshot, contextUsage },
+            },
+          };
+        });
+    },
+    loginFrame: (frame) => {
+      const login = useStore.getState().login;
+      if (!login || login.loginId !== frame.loginId) {
+        // Closing a dialog after the credential commit cannot undo that commit.
+        if (frame.kind === "success") void refresh().catch(showError);
+        return;
+      }
+      if (frame.kind === "event")
+        useStore.setState({
+          login: {
+            ...login,
+            event: frame.event,
+            ...(frame.event.type === "auth_url"
+              ? { authUrl: frame.event }
+              : {}),
+            ...(frame.event.type === "device_code"
+              ? { deviceCode: frame.event }
+              : {}),
+          },
+        });
+      if (frame.kind === "prompt")
+        useStore.setState({ login: { ...login, prompt: frame.prompt } });
+      if (frame.kind === "browser")
+        useStore.setState({
+          login: { ...login, browserOpened: frame.opened },
+        });
+      if (frame.kind === "promptEnd")
+        useStore.setState({ login: { ...login, prompt: undefined } });
+      if (frame.kind === "error")
+        useStore.setState({
+          login: { ...login, error: frame.message, prompt: undefined },
+        });
+      if (frame.kind === "success" || frame.kind === "cancelled") {
+        // Connected now; models arrive with the refresh below.
+        if (frame.kind === "success" && !frame.accountId)
+          publishProvider(frame.provider, { configured: true, stored: true });
+        if (frame.kind === "success" && login.addAccount && frame.accountId)
           useStore.setState({
-            login: {
-              ...login,
-              event: frame.event,
-              ...(frame.event.type === "auth_url"
-                ? { authUrl: frame.event }
-                : {}),
-              ...(frame.event.type === "device_code"
-                ? { deviceCode: frame.event }
-                : {}),
+            providerSelection: {
+              provider: frame.provider,
+              accountId: frame.accountId,
             },
           });
-        if (frame.kind === "prompt")
-          useStore.setState({ login: { ...login, prompt: frame.prompt } });
-        if (frame.kind === "browser")
-          useStore.setState({
-            login: { ...login, browserOpened: frame.opened },
-          });
-        if (frame.kind === "promptEnd")
-          useStore.setState({ login: { ...login, prompt: undefined } });
-        if (frame.kind === "error")
-          useStore.setState({
-            login: { ...login, error: frame.message, prompt: undefined },
-          });
-        if (frame.kind === "success" || frame.kind === "cancelled") {
-          // Connected now; models arrive with the refresh below.
-          if (frame.kind === "success" && !frame.accountId)
-            publishProvider(frame.provider, { configured: true, stored: true });
-          if (frame.kind === "success" && login.addAccount && frame.accountId)
-            useStore.setState({
-              providerSelection: {
-                provider: frame.provider,
-                accountId: frame.accountId,
-              },
-            });
-          useStore.setState({ login: undefined });
-          void refresh().catch(showError);
-        }
-      },
+        useStore.setState({ login: undefined });
+        void refresh().catch(showError);
+      }
     },
   },
 });
-new Electroview({ rpc });
 export function initNoticeHistory() {
   let legacy: ReturnType<typeof parseNoticeHistory> | undefined;
   try {

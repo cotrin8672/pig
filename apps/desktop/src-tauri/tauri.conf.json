@@ -1,25 +1,13 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "pig Tauri preview",
-  "identifier": "dev.pig.tauri-preview",
-  "build": { "frontendDist": "../build/tauri-preview" },
+  "productName": "pig",
+  "identifier": "dev.pig.tauri",
+  "build": { "frontendDist": "../build/tauri-webview" },
   "app": {
-    "windows": [
-      {
-        "label": "main",
-        "title": "pig — Tauri preview",
-        "width": 1280,
-        "height": 840,
-        "minWidth": 560,
-        "minHeight": 420,
-        "decorations": false,
-        "transparent": true,
-        "dragDropEnabled": false
-      }
-    ],
+    "windows": [],
     "security": {
-      "capabilities": ["preview"],
-      "csp": "default-src 'self'; script-src 'self' 'sha256-EdM0HEq6bw2k6XoHo496gygpzb8aSQgLkB4jcnfFgfw='; style-src 'self' 'unsafe-inline'; connect-src 'self' ipc: http://ipc.localhost; frame-src 'self' about:; base-uri 'none'; object-src 'none'; form-action 'none'"
+      "capabilities": ["desktop"],
+      "csp": "default-src 'self'; script-src 'self' blob: 'sha256-EdM0HEq6bw2k6XoHo496gygpzb8aSQgLkB4jcnfFgfw='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; font-src 'self' data:; worker-src 'self' blob:; connect-src 'self' ipc: http://ipc.localhost; frame-src 'self' about:; base-uri 'none'; object-src 'none'; form-action 'none'"
     }
   },
   "bundle": { "active": false, "icon": ["../assets/icon.ico"] }

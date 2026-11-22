@@ -1,37 +1,49 @@
-# Tauri / WebView2 移行プレビュー
+# Windows Tauri 版
 
-Electrobun の `pnpm dev`・配布・更新はまだ変更しない。まず Tauri 2 の実ウィンドウで既存の
-`WindowTitlebar` と透過スタイルを使い、Bun の別プロセスと sandbox iframe が機能するかを検証する。
+Tauri 2 / WebView2 で既存の React 画面を開き、別プロセスの Bun で既存の Pi SDK を動かす。
+会話、下書き、モデル、認証、拡張は従来の Bun ホストを使う。ウィンドウ、メニュー、
+ダイアログ等は Tauri 側が担当する。ホバー式タイトルバーと背景設定は共通 UI のまま。
 
-## 起動・検証
+## 起動・ポータブルビルド
 
-Windows の WebView2、Rust（MSVC ターゲット）、Visual Studio C++ Build Tools と Windows
-SDK、開発用の Bun・Node・pnpm が必要。Rust と Node は PATH に通す（mise を使う場合は下記）。
+開発やビルドには Windows WebView2、Rust の MSVC ツールチェーン、Visual Studio C++ Build
+Tools、Windows SDK と、開発用の Bun・Node・pnpm が必要。
 
 ```powershell
 mise exec -- pnpm install --frozen-lockfile
-mise exec -- pnpm --filter @pig/desktop tauri:preview
-mise exec -- pnpm --filter @pig/desktop tauri:preview --smoke
+mise run dev
+mise exec -- pnpm --filter @pig/desktop tauri:package
 ```
 
-`--smoke` は実際の WebView2 を起動して以下を確認し、終了コードを返す。
-ウィンドウを最大化・最小化して戻すので、実行中は試験ウィンドウに触れない。
+ポータブル版は `apps/desktop/build/tauri-portable/pig.exe`。`host/` に Bun と Pi SDK が
+同梱されるため、フォルダーごと配置すれば WebView2 のある端末で起動できる。外部の `node` を
+直接呼ぶ拡張では、従来どおりその拡張用の Node が必要（mise で見つかる場合は補う）。
+新しい Tauri プロファイルの既定シェルは Windows 標準の PowerShell。
 
-- Tauri から別プロセスの Bun に届き、既存の Pi SDK を読み込んで応答する。
-- `sandbox="allow-scripts"` の固定 iframe でボタンの JavaScript が動く一方、
-  親 DOM は参照できず、iframe の試験用コマンドが Rust 側のハンドラーに届かない。
-  WebView2 上では iframe 内にも Tauri の API オブジェクトが見えるため、オブジェクトの有無だけでは判定しない。
-  固定スクリプトだけを CSP のハッシュで許可する。
-- 実ウィンドウが最大化／復元と最小化／復元の各状態へ遷移する。
+デスクトップ設定は `%APPDATA%\dev.pig.tauri\pig` に分離する。通常起動では Pi CLI と同じ
+認証・設定・セッション保存先を使う。同じ会話を Electrobun 版と Tauri 版で同時に操作しない。
+旧版のデスクトップ設定を無断で移行しない。移行ブランチの `pnpm dev` は Tauri だが、
+製品版のインストーラー・更新・Scoop はこの段階では Electrobun のまま。
 
-通常起動では、既存のホバー式タイトルバーと背景設定（透過・Acrylic・Mica・不透明度）を
-Electrobun 版と手動比較できる。タイトルバーとサイドバー見出しでのドラッグ、
-Snap（特に最大化ボタン上の Snap Layouts）、自動非表示タスクバー、異なる DPI の画面間移動、
-フォーカス／IME、最大化中の白フラッシュや透過画素はこのスモークの対象外。
+## 検証
 
-## 移行の次段階
+```powershell
+mise exec -- pnpm --filter @pig/desktop tauri:smoke
+mise exec -- pnpm --filter @pig/desktop tauri:smoke:package
+```
 
-この版の Bun プロセスは互換性確認だけを行う。ウィンドウのプロファイルは別で、既存の
-Pi セッション・認証・拡張を読み込まない。WebView に shell 権限や待ち受けポートも渡さない。
-次は既存の型付き RPC を、Rust が所有する Bun 常駐プロセスへの IPC に接続し、実セッションを
-扱えるようにする。動的 MCP Apps は隔離だけでは動かないので、初期化・通知・権限境界は別途実装する。
+実際の WebView2 と React 画面を起動し、隔離したテストプロファイルとローカルの模擬モデルで、
+Pi への送信、返答のストリーム、保存・再表示、最大化／復元、正常終了を検査する。
+ポータブル版の検査では一式を作業ツリー外に移し、Node や Bun の開発 PATH を外す。
+正規のプロバイダーへのログイン、Snap Layouts・混在 DPI・タスクバー自動非表示・IME、
+透過の画素は別途実機で確認する。
+
+## IPC と iframe
+
+Rust が Bun を起動し、親子プロセス間のパイプで通信する。WebView2 に Bun の待ち受けポート、
+または Tauri の shell・filesystem 権限は公開しない。WebView2 の接続はウィンドウと
+ページ世代に紐づき、再読込前のフレームの応答は新しいページに届かない。
+
+検査用 iframe から親 DOM と試験用ネイティブコマンドに届かないことをスモークで確認する。
+一般の HTML ウィジェットと MCP Apps は引き続き静的表示。任意のスクリプトを有効にする前に、
+実アプリの CSP と MCP Apps の初期化・通知・権限処理を別途実装する。

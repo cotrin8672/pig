@@ -99,18 +99,20 @@ merge `main` back into `dev` so the branches do not diverge. See
 
 ## Run
 
-An opt-in Windows [Tauri migration preview](docs/tauri-preview.md) runs
-separately from the Electrobun app and does not use its profile.
+On this migration branch, `mise run dev` starts the Windows
+[Tauri app](docs/tauri-preview.md) with the existing chat UI and Pi host.
+Desktop settings are separate from Electrobun. The current Scoop distribution
+and self-update are still Electrobun.
 
 Requires Windows with WebView2, Node 22+, pnpm 10.14, Bun (tested with 1.4.2),
 and [mise](https://mise.jdx.dev/) for the pinned type checkers.
 
-Builds use Electrobun's stock Windows native binaries; no local C++ build is
-required. `dev`, `build`, and `typecheck` first run `electrobun sync` to generate
-`apps/desktop/.hutch/devkit`. Hutch downloads its pinned SDK/toolchains into
-`~/.hutch`; application code continues to run on Bun (bundled 1.4.4).
-See [Windows migration checks](apps/desktop/scripts/windows-smoke.md) for the
-native regression test and remaining manual release gates.
+Tauri development additionally requires the Rust MSVC toolchain and Visual
+Studio C++ Build Tools with a Windows SDK. To compare the Electrobun version,
+stop the running development app, then run
+`mise exec -- pnpm --filter @pig/desktop dev:electrobun`.
+The Electrobun `build` and `typecheck` scripts still generate
+`apps/desktop/.hutch/devkit` with `electrobun sync`.
 
 ```sh
 mise install

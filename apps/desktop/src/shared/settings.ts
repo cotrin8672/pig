@@ -48,7 +48,10 @@ function validateModelSelection(value: unknown): UtilityModelSelection | null {
     throw new Error("Invalid utility model selection.");
   return { provider, id };
 }
-export function validateSettings(value: unknown): Settings {
+export function validateSettings(
+  value: unknown,
+  defaultShell: Settings["shell"] = defaultSettings.shell,
+): Settings {
   if (!value || typeof value !== "object" || Array.isArray(value))
     throw new Error("Invalid settings.");
   const input = value as Partial<Settings>;
@@ -57,7 +60,7 @@ export function validateSettings(value: unknown): Settings {
     input.contextDisplay === undefined ? "remaining" : input.contextDisplay;
   const usageDisplay =
     input.usageDisplay === undefined ? "remaining" : input.usageDisplay;
-  const shell = input.shell ?? "git-bash";
+  const shell = input.shell ?? defaultShell;
   const blockImages = input.blockImages ?? false;
   const fastMode = input.fastMode ?? false;
   if (
