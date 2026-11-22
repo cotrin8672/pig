@@ -22,13 +22,16 @@ test("provider transports surface a 429 without retrying it", async () => {
         apiKey,
         transport: "sse",
         maxRetries: 1,
-        fetch: async () => {
-          calls++;
-          return new Response("Try again later", {
-            status: 429,
-            headers: { "retry-after-ms": "0", "x-should-retry": "true" },
-          });
-        },
+        fetch: Object.assign(
+          async () => {
+            calls++;
+            return new Response("Try again later", {
+              status: 429,
+              headers: { "retry-after-ms": "0", "x-should-retry": "true" },
+            });
+          },
+          { preconnect: fetch.preconnect },
+        ),
       },
     ).result();
     expect(calls, provider).toBe(1);
