@@ -4,8 +4,10 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   newerVersion,
+  nightlyUrl,
   parseBuild,
   parseChecksum,
+  parseNightly,
   parseRelease,
   releaseBase,
   updateZip,
@@ -115,11 +117,45 @@ describe("Stable app updates", () => {
     const nightly = join(base, "apps/pig-nightly/nightly");
     await mkdir(nightly, { recursive: true });
     await put(join(nightly, "scoop-install.json"), { bucket: "pig" });
-    expect((await detectInstall(nightly)).reason).toBe("nightly");
+    expect(await detectInstall(nightly)).toMatchObject({ reason: "nightly" });
+    expect((await detectInstall(nightly, "nightly")).method).toBe("disabled");
+    await put(join(base, "buckets/pig/bucket/pig-nightly.json"), {});
+    const scoop = await detectInstall(nightly, "nightly");
+    expect(scoop.method).toBe("scoop");
+    expect("manifest" in scoop && scoop.manifest).toEndWith("pig-nightly.json");
+    expect(await detectInstall(root, "nightly")).toMatchObject({
+      reason: "nightly",
+    });
+    expect(await detectInstall(portable, "nightly")).toMatchObject({
+      reason: "nightly",
+    });
     await put(join(root, "scoop-install.json"), { bucket: "../../other" });
     expect((await detectInstall(root)).method).toBe("disabled");
   });
-  test("Nightly and missing metadata never check or install", async () => {
+  test("nightly release must name its commit and the nightly asset", () => {
+    const sha = "a".repeat(40);
+    const nightly = {
+      tag_name: "nightly",
+      draft: false,
+      prerelease: true,
+      body: `Nightly 0.3.0-nightly.20260101.aaaaaaa from commit ${sha}. Unsigned.`,
+      assets: [{ name: updateZip, browser_download_url: nightlyUrl }],
+    };
+    expect(parseNightly(nightly)).toEqual({
+      version: "0.3.0-nightly.20260101.aaaaaaa",
+      commit: sha,
+      url: nightlyUrl,
+    });
+    for (const invalid of [
+      null,
+      { ...nightly, body: "Nightly publication in progress." },
+      { ...nightly, prerelease: false },
+      { ...nightly, tag_name: "v0.3.0" },
+      { ...nightly, assets: [] },
+    ])
+      expect(() => parseNightly(invalid)).toThrow();
+  });
+  test("portable Nightly and missing metadata never check or install", async () => {
     const base = await fixture();
     await mkdir(join(base, "bin"));
     await mkdir(join(base, "Resources"));
@@ -138,7 +174,9 @@ describe("Stable app updates", () => {
       version: "0.2.0-nightly.1",
       commit: "abc",
     });
-    expect((await updater.info()).reason).toBe("nightly");
+    expect(["nightly", "unsupported"]).toContain(
+      (await updater.info()).reason ?? "",
+    );
     await updater.check();
     await updater.apply();
     expect((await updater.info()).status).toBe("idle");

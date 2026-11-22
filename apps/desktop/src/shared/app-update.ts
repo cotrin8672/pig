@@ -87,6 +87,35 @@ export function parseRelease(value: unknown) {
   return { version, url };
 }
 
+export const nightlyUrl = `${releaseBase}/nightly/${updateZip}`;
+
+/** The nightly release body records the published build: "Nightly <version> from commit <sha>." */
+export function parseNightly(value: unknown) {
+  const release = (value ?? {}) as {
+    tag_name?: unknown;
+    draft?: unknown;
+    prerelease?: unknown;
+    body?: unknown;
+    assets?: unknown;
+  };
+  const match = /^Nightly (\S+) from commit ([\da-f]{40})\./.exec(
+    typeof release.body === "string" ? release.body : "",
+  );
+  if (
+    release.tag_name !== "nightly" ||
+    release.draft !== false ||
+    release.prerelease !== true ||
+    !match ||
+    !Array.isArray(release.assets) ||
+    !release.assets.some(
+      (asset: { name?: string; browser_download_url?: string }) =>
+        asset?.name === updateZip && asset.browser_download_url === nightlyUrl,
+    )
+  )
+    throw new Error("Nightly is not published yet");
+  return { version: match[1], commit: match[2], url: nightlyUrl };
+}
+
 export function parseChecksum(text: string) {
   const match = /^([a-f\d]{64})(?:\s+\*?pig-windows-x64\.zip)?\s*$/i.exec(
     text.trim(),
