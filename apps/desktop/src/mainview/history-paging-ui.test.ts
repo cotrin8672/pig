@@ -49,16 +49,16 @@ test.skipIf(!existsSync(fixtureEdge) && !process.env.PIG_REQUIRE_UI_TESTS)(
     flushSync(()=>root.render(<div style={{height:600}}><StoredChat/></div>));
     await until(()=>document.querySelector('textarea'),'editor must mount');await wait();
     let thread=document.querySelector('.thread-scroll');
-    check(thread.scrollTop>thread.clientHeight*2&&calls.length===0,'opening the recent tail must not eagerly load the entire conversation');
+    check(thread.scrollTop>thread.clientHeight*3&&calls.length===0,'opening the recent tail must not eagerly load the entire conversation');
     check(![...document.querySelectorAll('button')].some(button=>button.textContent.includes('Load earlier')),'there must be no manual history-load button');
     const input=async(method,params)=>{window.__fixtureInput={method,params};await until(()=>!window.__fixtureInput,'trusted input must be delivered');};
     let wheel;
     thread.addEventListener('wheel',event=>{wheel=event;},{passive:true});
     const rect=thread.getBoundingClientRect();
     await input('Input.dispatchMouseEvent',{type:'mouseWheel',x:rect.left+12,y:rect.top+Math.min(rect.height,innerHeight-rect.top)/2,
-      deltaX:0,deltaY:Math.round(thread.clientHeight/2-thread.scrollTop)});
+      deltaX:0,deltaY:Math.round(2.5*thread.clientHeight-thread.scrollTop)});
     await until(()=>calls.length===1,'approaching the top must prefetch without reaching the edge');await wait();
-    check(wheel?.isTrusted&&!wheel.defaultPrevented&&thread.scrollTop>0,'prefetch must use native scrolling and start before reaching the hard top');
+    check(wheel?.isTrusted&&!wheel.defaultPrevented&&thread.scrollTop>2*thread.clientHeight,'prefetch must start with at least two screens of content still above the reader');
     const requestTop=thread.scrollTop;
     await input('Input.dispatchMouseEvent',{type:'mouseWheel',x:rect.left+12,y:rect.top+120,deltaX:0,deltaY:70});await wait();
     check(thread.scrollTop>requestTop+10&&calls.length===1,'a pending page must neither block native scrolling nor duplicate the request');
@@ -74,10 +74,38 @@ test.skipIf(!existsSync(fixtureEdge) && !process.env.PIG_REQUIRE_UI_TESTS)(
     const selected=selection.toString();
     let frame=0,last=performance.now(),maxFrameGap=0,frames=0;
     const tick=now=>{maxFrameGap=Math.max(maxFrameGap,now-last);last=now;frames++;frame=requestAnimationFrame(tick);};frame=requestAnimationFrame(tick);
-    const applyStart=performance.now();first.resolve(page(50,'branch','r50'));
+    const rich=page(50,'branch','r50');
+    let longestFrame;
+    const loaf=new PerformanceObserver(list=>{for(const e of list.getEntries())if(!longestFrame||longestFrame.duration<e.duration)
+      longestFrame={duration:e.duration,render:e.startTime+e.duration-e.renderStart,scripts:e.scripts.map(s=>[s.invoker,s.sourceFunctionName,s.duration,s.forcedStyleAndLayoutDuration])};});
+    loaf.observe({type:'long-animation-frame'});
+    for(let i=1;i<rich.records.length;i+=2)rich.records[i]=assistant('r'+(50+i),50+i,'Answer '+i+'\\n\\n~~~js\\n'+'const example = 123;\\n'.repeat(40)+'~~~');
+    let moved=false,partialFrames=0,maxAdded=0,lastCount=100,gestureFrames=0,gestureStartCount;
+    let previousSample,prependFrameGapMs=0;
+    const sample=now=>{const count=thread.querySelectorAll('[data-record-id]').length;
+      if(previousSample!==undefined)prependFrameGapMs=Math.max(prependFrameGapMs,now-previousSample);
+      previousSample=now;
+      maxAdded=Math.max(maxAdded,count-lastCount);lastCount=count;
+      if(count>100&&count<150){
+        partialFrames++;
+        if(gestureFrames<3){
+          // Deliver intent before movement, as native wheel/touch do. Move in
+          // this frame rather than race the external input driver's polling.
+          thread.dispatchEvent(new WheelEvent('wheel',{deltaY:-100}));
+          gestureStartCount??=count;
+          check(count===gestureStartCount,'while scrolling with runway the next batch must wait');
+          if(!moved){thread.scrollBy(0,-100);moved=true;}
+          gestureFrames++;
+        }
+      }
+      if(count<150)requestAnimationFrame(sample);
+    };
+    requestAnimationFrame(sample);
+    const applyStart=performance.now();first.resolve(rich);
     await until(()=>thread.querySelectorAll('[data-record-id]').length===150,'the prefetched page must appear automatically');await wait();
     const pageApplyMs=performance.now()-applyStart;
-    check(reader.isConnected&&Math.abs(reader.getBoundingClientRect().top-readerTop)<=2,'prepend must preserve the current reader, not the position when the request started');
+    check(gestureFrames===3&&partialFrames>3&&maxAdded<=8,'a page of formatted responses must mount in small batches');
+    check(moved&&reader.isConnected&&Math.abs(reader.getBoundingClientRect().top-readerTop-100)<=2,'later batches must preserve scrolling during prepend, not restore the initial reader position');
     check(selection.toString()===selected&&document.querySelector('textarea')===editor&&editor.value==='Draft while loading 日本語','prepend must retain selection, editor DOM and draft');
     await pause(100);check(calls.length===1,'one prefetched page must not drain all remaining history while the reader stays away from the top');selection.removeAllRanges();
     thread.focus();let keyEvent;thread.addEventListener('keydown',event=>{keyEvent=event;},{once:true});
@@ -119,7 +147,8 @@ test.skipIf(!existsSync(fixtureEdge) && !process.env.PIG_REQUIRE_UI_TESTS)(
     await pause(550);
     await input('Input.dispatchMouseEvent',{type:'mouseWheel',x:rect.left+12,y:rect.top+120,deltaX:0,deltaY:-100});
     await until(()=>calls.length===7&&thread.querySelectorAll('[data-record-id]').length===150,'scrolling upward again at the hard top must retry without a button or leaving the prefetch area');
-    window.__fixtureMetrics={initialRows:100,finalLoadedRows:200,requests:calls.length,inputWhilePendingMs:inputMs,pageApplyMs,maxFrameGapMs:maxFrameGap,frames,
+    loaf.disconnect();
+    window.__fixtureMetrics={initialRows:100,finalLoadedRows:200,requests:calls.length,inputWhilePendingMs:inputMs,pageApplyMs,maxAdded,partialFrames,prependFrameGapMs,maxFrameGapMs:maxFrameGap,frames,longestFrame,
       note:'Synthetic Edge fixture; input includes runner polling, not physical key latency; frame gaps are observations, not a real-session guarantee'};
     root.unmount();
   `,

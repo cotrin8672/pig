@@ -56,7 +56,7 @@ import { McpAppScope } from "./McpAppPreview";
 import { Notifications } from "./Notifications";
 import { initNavigation, navigate } from "./navigation";
 import { PaneWorkspace } from "./PaneWorkspace";
-import { ProviderIcon } from "./ProviderIcon";
+import { ProviderIcon } from "./primitives/ProviderIcon";
 import { Providers } from "./Providers";
 import { ProviderUsage } from "./ProviderUsage";
 import { createPane } from "./pane-state";
@@ -857,11 +857,8 @@ export const Chat = memo(function Chat({
     if (!isThreadAtBottom(thread.current)) view.follow = false;
     prependScroll.current = captureThreadAnchor(thread.current);
   }, [view]);
-  const { edge, loadingHistory, historyError, loadEarlier } = useHistoryPaging(
-    snapshot,
-    thread,
-    preparePrepend,
-  );
+  const { edge, hiddenRecords, loadingHistory, historyError, loadEarlier } =
+    useHistoryPaging(snapshot, thread, preparePrepend);
   const status = useStore(
     (s) => s.extensionStatuses[addressKey(snapshot.address)],
   );
@@ -936,7 +933,7 @@ export const Chat = memo(function Chat({
   );
   // biome-ignore lint/correctness/useExhaustiveDependencies: Re-run as history pages, work folds and the transcript change.
   useEffect(() => {
-    if (!jump || readOnly) return;
+    if (!jump || readOnly || hiddenRecords) return;
     const finish = () =>
       useStore.setState((s) =>
         s.jump?.nonce === jump.nonce ? { jump: undefined } : {},
@@ -968,7 +965,15 @@ export const Chat = memo(function Chat({
         null,
       finish,
     );
-  }, [jump, readOnly, transcript, loadingHistory, historyError, openWork]);
+  }, [
+    jump,
+    readOnly,
+    transcript,
+    loadingHistory,
+    historyError,
+    openWork,
+    hiddenRecords,
+  ]);
   useLayoutEffect(() => {
     if (thread.current && !view.follow) thread.current.scrollTop = view.top;
   }, [view]);
@@ -985,7 +990,7 @@ export const Chat = memo(function Chat({
     } else if (view.follow) {
       element.scrollTop = element.scrollHeight;
     }
-  }, [transcript, notices, view]);
+  }, [transcript, notices, view, hiddenRecords]);
   const layout = (
     <ChatLayout
       threadRef={thread}
@@ -1025,6 +1030,7 @@ export const Chat = memo(function Chat({
             <ExtensionNoticeLine key={item.notice.id} notice={item.notice} />
           );
         const { record, index } = item;
+        if (index < hiddenRecords) return null;
         const key = liveIds.get(record.id) ?? record.id;
         const divider = dividers.get(record.id);
         if (!isVisibleRecord(record)) return null;
