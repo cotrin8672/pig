@@ -1,3 +1,8 @@
+[workspace]
+members = ["pairing", "remote"]
+default-members = ["."]
+resolver = "2"
+
 [package]
 name = "pig-tauri-preview"
 version = "0.1.0"
