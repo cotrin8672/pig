@@ -22,6 +22,7 @@ import {
   getSupportedThinkingLevels,
   type Model,
 } from "@earendil-works/pi-ai";
+import { isContextOverflow } from "@earendil-works/pi-ai/compat";
 import type {
   AgentSession,
   AgentSessionRuntime,
@@ -1734,6 +1735,7 @@ export class SessionHost {
       }
     });
     let retrying = false;
+    let recoveringOverflow = false;
     const unsubscribe = session.subscribe((event) => {
       if (!current()) return;
       m.idleSince = undefined;
@@ -1760,23 +1762,27 @@ export class SessionHost {
           : undefined,
       );
       if (event.type === "auto_retry_start") retrying = true;
-      // The SDK retries transient errors up to its budget. A model error it
-      // will not retry stops the run synchronously, before queued input is
-      // delivered: agent_end for an unretried error, auto_retry_end once the
-      // budget is exhausted.
       const lastAssistant =
         event.type === "agent_end"
           ? [...event.messages]
               .reverse()
               .find((message) => message.role === "assistant")
           : undefined;
+      // SDK willRetry covers transport retries; overflow compaction happens after these events.
+      if (event.type === "agent_end")
+        recoveringOverflow =
+          lastAssistant?.role === "assistant" &&
+          lastAssistant.stopReason === "error" &&
+          session.settingsManager.getCompactionEnabled() &&
+          isContextOverflow(lastAssistant);
       const unrecovered =
-        (event.type === "agent_end" &&
+        !recoveringOverflow &&
+        ((event.type === "agent_end" &&
           lastAssistant?.role === "assistant" &&
           lastAssistant.stopReason === "error" &&
           !event.willRetry &&
           !retrying) ||
-        (event.type === "auto_retry_end" && !event.success);
+          (event.type === "auto_retry_end" && !event.success));
       if (event.type === "auto_retry_end" || event.type === "agent_settled")
         retrying = false;
       if (unrecovered && m.phase !== "closing" && !m.stopping)
@@ -1784,6 +1790,7 @@ export class SessionHost {
           console.error("Stop after model error failed", error),
         );
       if (event.type === "agent_settled") {
+        recoveringOverflow = false;
         for (const key of m.startedSends.splice(0)) {
           try {
             this.receipts.releasePayload(key);

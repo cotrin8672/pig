@@ -101,6 +101,7 @@ test.skipIf(!existsSync(edge) && !process.env.PIG_REQUIRE_UI_TESTS)(
         await render({running,compaction:{reason:running?'threshold':'manual'}});
         const card=document.querySelector('.compaction-card[data-active]');
         check(card?.textContent.includes('コンテキストを圧縮中…'),'manual and automatic compaction must be visible');
+        check(document.querySelector('.message.user .user-bubble')?.textContent.includes('続きをお願いします'),'the sent message must remain visible during compaction');
         check(!document.querySelector('.running'),'normal working text must not duplicate compaction');
         const css=getComputedStyle(card),alpha=Number(css.backgroundColor.match(/[\\d.]+(?=\\)$)/)?.[0]);
         check(css.opacity==='1'&&alpha>0&&alpha<1,'card must use a translucent background without whole-card opacity');
@@ -118,6 +119,7 @@ test.skipIf(!existsSync(edge) && !process.env.PIG_REQUIRE_UI_TESTS)(
     await render({running:false,records:[user,saved]});
     const card=document.querySelector('.compaction-card');
     check(card?.textContent.includes('コンテキストを圧縮しました')&&card.textContent.includes('42,000'),'saved compaction must show completion and tokens before compaction');
+    check(document.querySelectorAll('.message.user').length===1,'compaction must not remove or duplicate the sent message');
     check(!card.querySelector('.prose')&&!card.querySelector('details').open,'summary must be lazy and collapsed');
     card.querySelector('summary').click();
     await until(()=>card.querySelector('.prose')?.textContent.includes('次にテストを実行する。'),'summary must expand');
