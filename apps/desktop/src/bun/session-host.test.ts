@@ -92,6 +92,12 @@ test("SDK fork/rewind/reload/shutdown, root startup UI and stale epochs", async 
       };
       await host.setModel({...chat.address, provider:faux.getModel().provider, id:faux.getModel().id});
       await send("first", "first answer"); await send("second", "old answer");
+      const localDraft = host.syncDraft({...chat.address,expectedRevision:host.drafts.read(chat.address).revision,content:{text:"unsent local edit",images:[],pastes:[]}});
+      expect(localDraft.applied).toBe(true);
+      faux.setResponses([fauxAssistantMessage("remote answer")]);
+      await host.prompt({...chat.address,requestId:"remote:peer:one",draftRevision:0,text:"remote text"}, undefined, true);
+      await host.receipts.settled();
+      expect(host.drafts.read(chat.address)).toEqual(localDraft.draft);
       const second = chat.transcript.records.filter(r => r.kind === "message" && r.message.role === "user")[1];
       const last = chat.transcript.records.filter(r => r.kind === "message" && r.message.role === "assistant").at(-1);
       const originalDraft = host.drafts.read(initial);

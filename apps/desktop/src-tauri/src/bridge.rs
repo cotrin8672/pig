@@ -49,6 +49,12 @@ impl Bridge {
             path.push(bin.to_owned());
         }
         let mut command = Command::new(bun);
+        if std::env::var("PIG_REMOTE_ENABLED").as_deref() == Ok("1") {
+            command.env(
+                "PIG_REMOTE_BIN",
+                std::env::current_exe()?.with_file_name("pig-remote.exe"),
+            );
+        }
         command
             .current_dir(root)
             .args(["--no-env-file", "--no-install", entry])

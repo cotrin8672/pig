@@ -2255,6 +2255,7 @@ export class SessionHost {
     const m = this.sessions.get(key.sessionId);
     if (
       intent &&
+      !key.requestId.startsWith("remote:") &&
       receipt.state === "rejected" &&
       receipt.code === "CANCELLED" &&
       m?.phase === "ready" &&
@@ -2330,6 +2331,7 @@ export class SessionHost {
   prompt(
     params: PromptParams,
     onAdmitted?: (admission: PromptAdmission) => void,
+    independentDraft = false,
   ) {
     // Ledger lookup remains usable across closed/old epochs; mutation never does.
     const m = this.current(params),
@@ -2339,6 +2341,7 @@ export class SessionHost {
     const reserved = this.receipts.has(params);
     if (
       !reserved &&
+      !independentDraft &&
       params.delivery === "followUp" &&
       this.drafts.read(params).revision !== params.draftRevision
     )
@@ -2391,6 +2394,7 @@ export class SessionHost {
           if (m.stopping) throw new Error("Session is stopping");
           if (
             !reserved &&
+            !independentDraft &&
             params.delivery !== "followUp" &&
             this.drafts.read(params).revision !== params.draftRevision
           )
@@ -2439,14 +2443,16 @@ export class SessionHost {
           }
         },
         (intent) =>
-          this.drafts.consume(params, params.draftRevision, (consumed) =>
-            this.recovery.intent(
-              intent,
-              consumed
-                ? { ...consumed, owner: this.draftOwner(consumed.address) }
-                : undefined,
-            ),
-          ),
+          independentDraft
+            ? this.recovery.intent(intent)
+            : this.drafts.consume(params, params.draftRevision, (consumed) =>
+                this.recovery.intent(
+                  intent,
+                  consumed
+                    ? { ...consumed, owner: this.draftOwner(consumed.address) }
+                    : undefined,
+                ),
+              ),
         onAdmitted,
       )
       .finally(() => {

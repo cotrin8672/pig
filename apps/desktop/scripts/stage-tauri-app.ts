@@ -1,6 +1,6 @@
 import { lstatSync } from "node:fs";
 import { copyFile, mkdir, rename, rm } from "node:fs/promises";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { buildChatHistoryWorker, buildStatisticsWorker } from "./pre-build";
 import {
   copySdkRuntime,
@@ -89,6 +89,10 @@ export async function stageTauriApp(
   await Promise.all([
     copyFile(process.execPath, join(bin, "bun.exe")),
     copyFile(executable, join(output, "pig.exe")),
+    copyFile(
+      join(dirname(executable), "pig-remote.exe"),
+      join(output, "pig-remote.exe"),
+    ),
     copyFile(
       join(sdk, "sdk-runtime-manifest.json"),
       join(app, "sdk-runtime-manifest.json"),

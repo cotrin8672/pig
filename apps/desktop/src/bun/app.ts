@@ -115,6 +115,7 @@ import {
 import { searchProjectPaths } from "./project-files";
 import { ProjectStore } from "./project-store";
 import { providerAccounts } from "./provider-accounts";
+import { remoteChat } from "./remote-chat";
 import { revealPath } from "./reveal-path";
 import { agentDir, agentDirSource } from "./runtime-profile";
 import { defaultSessionDir, SearchIndex } from "./search-index";
@@ -180,6 +181,10 @@ await Promise.all([
   projectStore.load(),
 ]);
 const validateScope = (cwd: string) => projectStore.validateScope(cwd);
+export const remoteRequest = remoteChat(sessionHost, () => [
+  generalCwd,
+  ...projectStore.value,
+]);
 const samePath = (a: string, b: string) =>
   process.platform === "win32"
     ? resolve(a).toLowerCase() === resolve(b).toLowerCase()

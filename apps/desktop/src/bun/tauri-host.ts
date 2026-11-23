@@ -224,7 +224,19 @@ installDesktopPlatform({
   },
 });
 
-const { openWindow } = await import("./app");
+const { openWindow, remoteRequest } = await import("./app");
+if (
+  process.env.PIG_REMOTE_ENABLED === "1" &&
+  process.env.PIG_REMOTE_BIN &&
+  process.env.PIG_DESKTOP_CONFIG_DIR
+) {
+  const { startRemotePipe } = await import("./remote-pipe");
+  startRemotePipe(
+    process.env.PIG_REMOTE_BIN,
+    join(process.env.PIG_DESKTOP_CONFIG_DIR, "pairing"),
+    remoteRequest,
+  );
+}
 const input = createInterface({ input: process.stdin, crlfDelay: Infinity });
 input.on("line", (line) => {
   try {
