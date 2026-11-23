@@ -43,7 +43,7 @@ import { attachmentReads } from "./composer-attachments";
 import { composerHistory } from "./composer-input-history";
 import { createDraftMirror } from "./draft-mirror";
 import { drafts, emptyContent, expandedDraft } from "./draft-store";
-import { fileIcon } from "./file-icon";
+import { FileIcon } from "./primitives/FileIcon";
 import { ImagePreview } from "./ImageGallery";
 import { useT } from "./i18n";
 import { MessageQueue } from "./MessageQueue";
@@ -53,6 +53,7 @@ import { createModelPickerSelector } from "./model-picker-view";
 import { ensureSessionRuntime, rpc, sends } from "./rpc";
 import { SessionIndicators } from "./SessionIndicators";
 import { SessionPanel } from "./SessionPanel";
+import { isSendAdmitted } from "./send-controller";
 import { interruptedSession } from "./session-status";
 import {
   applySlashCompletion,
@@ -134,15 +135,17 @@ export function Composer({
   const nextPaste = useRef(1);
   const expanded = useMemo(() => expandedDraft(draft.content), [draft.content]);
   useSyncExternalStore(sends.subscribe, sends.getTick);
+  const admitted = isSendAdmitted(sendState);
   // Queued steering is already accepted; do not wait for it to enter history.
   const waiting =
-    sendState?.state === "sending" ||
-    sendState?.state === "checking" ||
+    (!admitted &&
+      (sendState?.state === "sending" || sendState?.state === "checking")) ||
     sends
       .optimistic(address)
       .some(
         (send) =>
           send.state !== "unknown" &&
+          !isSendAdmitted(send) &&
           send.disposition !== "queued" &&
           !transcriptRequestIds(transcript.records).has(send.key.requestId),
       );
@@ -613,14 +616,13 @@ export function Composer({
               </div>
             ))}
             {files.map(({ id, name, path }) => {
-              const Icon = fileIcon(name);
               return (
                 <div
                   className="composer-attachment file"
                   key={id}
                   aria-description={path}
                 >
-                  <Icon size={28} aria-hidden />
+                  <FileIcon name={name} size={28} />
                   <span>{name}</span>
                   <button
                     type="button"
@@ -686,19 +688,14 @@ export function Composer({
               >
                 {option.category &&
                   (() => {
-                    const Icon =
-                      option.category === "file"
-                        ? fileIcon(option.value)
-                        : option.category === "folder"
-                          ? Folder
-                          : categoryIcons[option.category];
+                    const Icon = option.category === "folder" ? Folder : option.category === "file" ? null : categoryIcons[option.category];
                     return (
                       <span
                         role="img"
                         className="slash-category"
                         aria-label={t[option.category]}
                       >
-                        <Icon size={14} aria-hidden="true" />
+                        {Icon ? <Icon size={14} aria-hidden="true" /> : <FileIcon name={option.value} size={14} />}
                       </span>
                     );
                   })()}
@@ -877,7 +874,7 @@ export function Composer({
               !event.ctrlKey &&
               !event.metaKey &&
               !event.altKey &&
-              (transcript.running || waiting)
+              (transcript.running || waiting || admitted)
             ) {
               event.preventDefault();
               stop();
@@ -922,16 +919,14 @@ export function Composer({
           </div>
           <div className="send-controls">
             <ComposerSubmit
-              busy={transcript.running}
+              busy={transcript.running || admitted}
               waiting={waiting}
               stopping={stopping === key}
               resumable={resumable}
               hasContent={hasContent}
               onStop={stop}
               disabled={
-                (!hasContent && !resumable) ||
-                (!canSend && !extensionSend) ||
-                !!draft.conflict
+                (!hasContent && !resumable) || (!canSend && !extensionSend)
               }
             />
           </div>

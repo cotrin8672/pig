@@ -58,6 +58,7 @@ export type RuntimeEvent =
     }
   | { type: "snapshot"; snapshot: Snapshot };
 export type SendKey = SessionAddress & { requestId: string };
+export type PromptAdmission = SendKey & { stage: "queued" | "dispatched" };
 export type PromptRecoveryAck = SessionAddress & {
   key: SendKey;
   /** Returned after an inconclusive receipt check, not a cancelled queue entry. */

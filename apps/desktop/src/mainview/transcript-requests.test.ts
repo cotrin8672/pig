@@ -167,6 +167,7 @@ test.each([
     if (status === "unknown") {
       await sends.lookup(address);
       await sends.lookup(address);
+      await sends.lookup(address);
     }
   }
   expect(sends.read(address)?.state).toBe(status);

@@ -3,7 +3,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-test("real SessionHost recovers both lost ACKs and sends the frozen draft with attachments exactly once", async () => {
+test("real SessionHost admits before SDK preflight and recovers both lost ACKs without duplicate sends", async () => {
   const home = await mkdtemp(join(tmpdir(), "pig-send-recovery-"));
   try {
     const script = `
@@ -26,8 +26,9 @@ test("real SessionHost recovers both lost ACKs and sends the frozen draft with a
       const chat = await host.openSession({cwd,openId:"initial"});
       await host.setModel({...chat.address,provider:faux.getModel().provider,id:faux.getModel().id});
       const sdk = host.session(chat.info.id), prompt = sdk.prompt.bind(sdk);
+      const preflight = Promise.withResolvers(), admitted = Promise.withResolvers();
       let invocations = 0;
-      sdk.prompt = (...args) => { invocations++; return prompt(...args); };
+      sdk.prompt = async (...args) => { invocations++; await preflight.promise; return prompt(...args); };
       renderer.receive(chat.address,host.drafts.read(chat.address));
       const entered = Promise.withResolvers(), ack = Promise.withResolvers();
       const notices = [];
@@ -41,7 +42,13 @@ test("real SessionHost recovers both lost ACKs and sends the frozen draft with a
           }
           return result;
         },
-        prompt:async input=>{await host.prompt(input);throw new Error("prompt accepted; reply dropped");},
+        prompt:async input=>{
+          await host.prompt(input, receipt=>{
+            sends.receiveAdmission(receipt);
+            admitted.resolve(receipt);
+          });
+          throw new Error("prompt accepted; reply dropped");
+        },
         getPromptReceipt:async key=>host.getPromptReceipt(key),
         acknowledgeRecovery:async params=>host.acknowledgePromptRecovery(params)
       },()=>{},undefined,undefined,undefined,kind=>notices.push(kind));
@@ -58,6 +65,11 @@ test("real SessionHost recovers both lost ACKs and sends the frozen draft with a
       renderer.edit(chat.address,()=>({text:"newer draft",pastes:[],images:[]}));
       host.syncDraft({...chat.address,expectedRevision:sent.draft.revision,content:renderer.read(chat.address).content});
       ack.resolve();
+      const admission = await admitted.promise;
+      expect(host.getPromptReceipt(admission)).toMatchObject({state:"pending",stage:"dispatched"});
+      expect(sends.read(chat.address)).toMatchObject({state:"checking",stage:"dispatched"});
+      expect(notices).toEqual([]);
+      preflight.resolve();
       await sending;
       await host.receipts.settled();
       expect(invocations).toBe(1);
@@ -88,7 +100,13 @@ test("real SessionHost recovers both lost ACKs and sends the frozen draft with a
     `;
     const child = Bun.spawn([process.execPath, "--eval", script], {
       cwd: join(import.meta.dir, "../.."),
-      env: { ...process.env, HOME: home, USERPROFILE: home, PI_OFFLINE: "1" },
+      env: {
+        ...process.env,
+        HOME: home,
+        USERPROFILE: home,
+        PIG_DESKTOP_CONFIG_DIR: join(home, "config"),
+        PI_OFFLINE: "1",
+      },
       stdout: "pipe",
       stderr: "pipe",
     });

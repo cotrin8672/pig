@@ -57,7 +57,7 @@ for (const action of ["fork", "rewind"]) {
     </>);});await wait();};
     await render();
     drafts.edit(address,content=>({...content,text:'failed steering'}));await sends.send(address);
-    await sends.lookup(address);await sends.lookup(address);
+    await sends.lookup(address);await sends.lookup(address);await sends.lookup(address);
     check(sends.read(address).state==='unknown','fixture must begin with an unconfirmed failed send');
     if(isFork){
       document.querySelector('button[aria-label="Branch into new chat"]').click();
@@ -199,7 +199,7 @@ test.skipIf(!existsSync(fixtureEdge) && !process.env.PIG_REQUIRE_UI_TESTS)(
     await until(()=>requests.length===1&&document.querySelector('.message-queue-steer'),'pending input must initially appear as steering');
     gate.reject(new Error('Prompt response disconnected'));await sending;
     drafts.edit(address,content=>({...content,text:'newer typing'}));
-    await sends.lookup(address);await sends.lookup(address);
+    await sends.lookup(address);await sends.lookup(address);await sends.lookup(address);
     snapshot={...snapshot,failure:'Request failed',transcript:{...snapshot.transcript,running:false}};
     await render();
     check(sends.read(address).state==='unknown','repeated receipt failures must leave an honest unknown state');
@@ -296,6 +296,9 @@ test.skipIf(!existsSync(fixtureEdge) && !process.env.PIG_REQUIRE_UI_TESTS)(
     check(!document.querySelector('.message.user'),'pending Resume must not render a user turn');
     check(button().getAttribute('aria-busy')==='true'&&button().disabled,'pending Resume must use a disabled spinner');
     button().click();await wait();check(requests.length===1,'disabled spinner must not dispatch another send');
+    window.__rpcHandlers.messages.promptAdmitted({...address,requestId:requests[0].requestId,stage:'dispatched'});
+    await until(()=>button().getAttribute('aria-label')==='Stop'&&!button().disabled,'host admission must allow Stop before SDK preflight');
+    check(!drafts.read(address).content.text&&requests.length===1,'host admission must neither restore nor replay the prompt');
     pending[0].resolve({disposition:'started'});
     snapshot={...snapshot,transcript:{...snapshot.transcript,running:true,records:[...snapshot.transcript.records,{id:'resumed-user',requestId:requests[0].requestId,display:false,parentId:null,branchId:'root',order:2,kind:'message',message:{role:'user',content:requests[0].text,timestamp:1}}]}};
     await render();

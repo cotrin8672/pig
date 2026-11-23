@@ -358,6 +358,7 @@ export const rpc = createRendererRpc({
       }),
     terminalEvent: (publication) =>
       receivePublication(publication, receiveTerminal),
+    promptAdmitted: (admission) => sends.receiveAdmission(admission),
     sessionEvent: (event) => {
       receiveWire(event);
       const snapshot = useStore.getState().snapshots[event.address.sessionId];

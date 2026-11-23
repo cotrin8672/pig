@@ -33,6 +33,7 @@ import type {
   OpenSessionParams,
   OpenState,
   PromptAccepted,
+  PromptAdmission,
   PromptParams,
   PromptReceipt,
   PromptRecoveryAck,
@@ -561,6 +562,7 @@ export type RPCSchema = {
       terminalEvent: RuntimePublication<TerminalHostEvent>;
       packageOp: PackageOpStatus;
       installed: InstalledPackage[];
+      promptAdmitted: PromptAdmission;
       sessionEvent: WireEvent;
       projects: string[];
       desktopState: DesktopState;

@@ -18,7 +18,6 @@ import {
 import type { Effort, ProviderInfo, SessionInfo } from "../shared/rpc-schema";
 import type {
   OpenSessionParams,
-  PromptParams,
   RuntimeEvent,
   SessionAddress,
 } from "../shared/runtime-contract";
@@ -299,7 +298,6 @@ export const openSession = (input: OpenSessionParams) =>
 export const listSessions = (cwd: string) => sessionHost.listSessions(cwd);
 export const findSession = (cwd: string, id: string) =>
   sessionHost.findSession(cwd, id);
-export const promptSession = (input: PromptParams) => sessionHost.prompt(input);
 export const abortSession = (address: SessionAddress) =>
   sessionHost.abort(address);
 export const closeSession = (address: SessionAddress) =>

@@ -100,7 +100,6 @@ import {
   modelErrors,
   modelInfo,
   openSession,
-  promptSession,
   refreshModels,
   refreshProviderModels,
   refreshUserCatalog,
@@ -392,7 +391,6 @@ const hostRequests = {
   searchPackages: (input) => searchPackages(input),
   packagePreviews: (input) => packagePreviews(input),
   listInstalled: () => listInstalled(publishInstalledUpdate),
-  prompt: (input) => withRuntime(input, promptSession),
   getOpenState: async (input) => {
     const state = await sessionHost.readOpenState(input);
     return state.state === "ready"
@@ -678,7 +676,11 @@ const hostRequests = {
   setEffort: (input) => withRuntime(input, setSessionEffort),
 } satisfies Omit<
   RequestHandlers,
-  "copyImage" | "terminalCommand" | "importChatHistory" | "noticeHistory"
+  | "copyImage"
+  | "terminalCommand"
+  | "importChatHistory"
+  | "noticeHistory"
+  | "prompt"
 >;
 /** Window-independent messages. */
 const hostMessages = {
@@ -838,6 +840,12 @@ function createWindow() {
   const handlers: RpcHandlers<"bun"> = {
     requests: {
       ...hostRequests,
+      prompt: (input) =>
+        withRuntime(input, (params) =>
+          sessionHost.prompt(params, (admission) =>
+            hub.to(id, "promptAdmitted", admission),
+          ),
+        ),
       noticeHistory: (input) =>
         notificationHistory.request(input, (record) =>
           hub.to(id, "notification", record),

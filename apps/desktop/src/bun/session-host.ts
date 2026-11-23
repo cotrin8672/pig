@@ -55,6 +55,7 @@ import type {
   DraftSyncParams,
   OpenSessionParams,
   OpenState,
+  PromptAdmission,
   PromptParams,
   PromptRecoveryAck,
   RuntimeEvent,
@@ -2088,9 +2089,10 @@ export class SessionHost {
   getSessionSnapshot(address: SessionAddress) {
     return this.snapshot(this.current(address, false));
   }
-  /** Sanitized static HTML for a live call, or null. Never wakes a suspended runtime. */
+  /** Only Tauri's isolated widget document may render the raw resource. */
   async getMcpAppPreview(
     input: SessionAddress & { appId: string; toolCallId: string },
+    interactive = false,
   ): Promise<McpAppPreviewResult> {
     try {
       if (
@@ -2101,11 +2103,12 @@ export class SessionHost {
       const m = this.current(input, false);
       const apps = m.mcpApps;
       if (!apps) return null;
-      const html = await apps.readStatic(
-        input.appId,
-        input.toolCallId,
-        AbortSignal.timeout(10_000),
-      );
+      const signal = AbortSignal.timeout(10_000);
+      if (interactive) {
+        const { html } = await this.readMcpAppResource(input, signal);
+        return { html, interactive: true };
+      }
+      const html = await apps.readStatic(input.appId, input.toolCallId, signal);
       return this.current(input, false) === m && m.mcpApps === apps
         ? { html }
         : null;
@@ -2114,7 +2117,7 @@ export class SessionHost {
       return null;
     }
   }
-  /** Internal raw resource boundary; never expose this HTML through RPC or render it unsanitized. */
+  /** Raw resource bound to the original tool call and live session epoch. */
   async readMcpAppResource(
     input: SessionAddress & { appId: string; toolCallId: string },
     signal: AbortSignal,
@@ -2317,7 +2320,10 @@ export class SessionHost {
       branchId: m.manager.getLeafId(),
     };
   }
-  prompt(params: PromptParams) {
+  prompt(
+    params: PromptParams,
+    onAdmitted?: (admission: PromptAdmission) => void,
+  ) {
     // Ledger lookup remains usable across closed/old epochs; mutation never does.
     const m = this.current(params),
       session = required(m.runtime).session;
@@ -2434,6 +2440,7 @@ export class SessionHost {
                 : undefined,
             ),
           ),
+        onAdmitted,
       )
       .finally(() => {
         if (m.admissionRequestId === params.requestId)
