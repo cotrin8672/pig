@@ -9,6 +9,7 @@ export default {
 } satisfies Meta<typeof IndicatorDot>;
 
 export const States = {
+  name: "IndicatorDot",
   render: () => (
     <PrimitiveSpecimen
       title="IndicatorDot"

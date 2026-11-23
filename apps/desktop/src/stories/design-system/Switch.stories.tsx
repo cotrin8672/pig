@@ -8,6 +8,7 @@ export default {
   parameters: { gallery: true },
 } satisfies Meta<typeof Switch>;
 export const States = {
+  name: "Switch",
   render: () => (
     <PrimitiveSpecimen
       title="Switch"

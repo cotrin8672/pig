@@ -8,6 +8,7 @@ export default {
   parameters: { gallery: true },
 } satisfies Meta<typeof Checkbox>;
 export const States = {
+  name: "Checkbox",
   render: () => (
     <PrimitiveSpecimen
       title="Checkbox"

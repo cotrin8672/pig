@@ -15,6 +15,7 @@ const choices = (
   </>
 );
 export const States = {
+  name: "Select",
   render: () => (
     <PrimitiveSpecimen
       title="Select"

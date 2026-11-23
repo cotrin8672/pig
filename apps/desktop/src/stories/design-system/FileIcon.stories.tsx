@@ -9,6 +9,7 @@ export default {
 } satisfies Meta<typeof FileIcon>;
 
 export const FileTypes = {
+  name: "FileIcon",
   render: () => (
     <PrimitiveSpecimen
       title="FileIcon"

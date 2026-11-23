@@ -10,6 +10,7 @@ export default {
 } satisfies Meta<typeof CountBadge>;
 
 export const States = {
+  name: "CountBadge",
   render: () => (
     <PrimitiveSpecimen
       title="CountBadge"

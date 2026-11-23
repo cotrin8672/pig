@@ -8,6 +8,7 @@ export default {
   parameters: { gallery: true },
 } satisfies Meta<typeof Spinner>;
 export const States = {
+  name: "Spinner",
   render: () => (
     <PrimitiveSpecimen
       title="Spinner"

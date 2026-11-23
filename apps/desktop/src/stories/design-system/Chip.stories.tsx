@@ -9,6 +9,7 @@ export default {
 } satisfies Meta<typeof Chip>;
 
 export const States = {
+  name: "Chip",
   render: () => (
     <PrimitiveSpecimen
       title="Chip"

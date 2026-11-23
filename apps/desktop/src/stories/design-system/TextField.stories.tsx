@@ -8,6 +8,7 @@ export default {
   parameters: { gallery: true },
 } satisfies Meta<typeof TextField>;
 export const States = {
+  name: "TextField",
   render: () => (
     <PrimitiveSpecimen
       title="TextField"

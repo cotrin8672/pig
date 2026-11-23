@@ -9,6 +9,7 @@ export default {
 } satisfies Meta<typeof Keycap>;
 
 export const States = {
+  name: "Keycap",
   render: () => (
     <PrimitiveSpecimen
       title="Keycap"

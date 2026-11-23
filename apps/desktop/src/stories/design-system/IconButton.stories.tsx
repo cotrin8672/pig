@@ -9,6 +9,7 @@ export default {
   parameters: { gallery: true },
 } satisfies Meta<typeof IconButton>;
 export const States = {
+  name: "IconButton",
   render: () => (
     <PrimitiveSpecimen
       title="IconButton"

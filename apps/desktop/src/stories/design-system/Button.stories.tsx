@@ -10,6 +10,7 @@ export default {
 } satisfies Meta<typeof Button>;
 
 export const States = {
+  name: "Button",
   render: function Example() {
     const [saved, setSaved] = useState(0);
     return (

@@ -12,6 +12,7 @@ export default {
 } satisfies Meta<typeof ProviderIcon>;
 
 export const Providers = {
+  name: "ProviderIcon",
   render: () => (
     <PrimitiveSpecimen
       title="ProviderIcon"
