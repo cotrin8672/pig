@@ -12,6 +12,7 @@ import {
   useRef,
   useState,
 } from "react";
+import { Keycap } from "./primitives/Keycap";
 
 /**
  * App-wide Tooltip on the shared `ui-tooltip` surface (tooltip.css,
@@ -61,7 +62,7 @@ function Keys({ keys }: { keys?: string[] }) {
   return (
     <span className="tooltip-keys">
       {keys.map((key) => (
-        <kbd key={key}>{key}</kbd>
+        <Keycap key={key}>{key}</Keycap>
       ))}
     </span>
   );

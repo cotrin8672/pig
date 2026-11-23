@@ -1,0 +1,625 @@
+/* Rich takes on TUI spinners. Infinite keyframes touch only opacity/transform. */
+.pp-sp {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  height: 1em;
+  color: var(--ds-text-secondary);
+}
+.pp-sp i,
+.pp-sp b {
+  display: block;
+  font-style: normal;
+}
+
+/* Shared motion. */
+@keyframes pp-sp-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* ── Braille comet ───────────────────────────── */
+.pp-sp-braille {
+  display: grid;
+  grid-template: repeat(4, 1fr) / repeat(2, 1fr);
+  width: 0.55em;
+  height: 1em;
+}
+.pp-sp-braille > i {
+  width: 0.17em;
+  height: 0.17em;
+  place-self: center;
+  border-radius: 50%;
+  background: currentColor;
+  animation: pp-sp-trail 0.8s ease-out infinite;
+  animation-delay: calc(var(--i) * 0.1s - 0.8s);
+}
+@keyframes pp-sp-trail {
+  0% {
+    opacity: 1;
+    transform: scale(1.25);
+  }
+  55%,
+  100% {
+    opacity: 0.16;
+    transform: scale(0.8);
+  }
+}
+
+/* ── Braille wave ────────────────────────────── */
+.pp-sp-wave {
+  display: grid;
+  grid-template: repeat(4, 1fr) / repeat(6, 1fr);
+  width: 1.5em;
+  height: 1em;
+}
+.pp-sp-wave > i {
+  width: 0.15em;
+  height: 0.15em;
+  place-self: center;
+  border-radius: 50%;
+  background: currentColor;
+  animation: pp-sp-wave 1.2s ease-in-out infinite;
+  animation-delay: calc(var(--x) * 0.09s + var(--y) * 0.07s - 1.2s);
+}
+@keyframes pp-sp-wave {
+  0%,
+  60%,
+  100% {
+    opacity: 0.15;
+    transform: scale(0.7);
+  }
+  28% {
+    opacity: 1;
+    transform: scale(1.2);
+  }
+}
+
+/* ── Stardust ────────────────────────────────── */
+.pp-sp-dust {
+  display: grid;
+  grid-template: repeat(4, 1fr) / repeat(4, 1fr);
+  width: 0.9em;
+  height: 1em;
+}
+.pp-sp-dust > i {
+  width: 0.14em;
+  height: 0.14em;
+  place-self: center;
+  border-radius: 50%;
+  background: currentColor;
+  animation: pp-sp-twinkle 1s ease-in-out infinite;
+}
+@keyframes pp-sp-twinkle {
+  0%,
+  100% {
+    opacity: 0.1;
+    transform: scale(0.6);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.2);
+  }
+}
+
+/* ── Line with motion blur ───────────────────── */
+.pp-sp-line {
+  position: relative;
+  width: 1em;
+  height: 1em;
+}
+.pp-sp-line > i {
+  position: absolute;
+  top: 0.08em;
+  left: calc(50% - 0.06em);
+  width: 0.12em;
+  height: 0.84em;
+  border-radius: 0.06em;
+  background: currentColor;
+  animation: pp-sp-half-turn 0.6s linear infinite;
+  animation-delay: calc(var(--i) * 0.035s - 0.6s);
+}
+@keyframes pp-sp-half-turn {
+  to {
+    transform: rotate(180deg);
+  }
+}
+
+/* ── Bouncing ball ───────────────────────────── */
+.pp-sp-bounce {
+  display: inline-flex;
+  align-items: center;
+  font-family: var(--font-mono);
+  line-height: 1;
+}
+.pp-sp-bounce-track {
+  position: relative;
+  width: 1.6em;
+  height: 1em;
+}
+.pp-sp-bounce-ball {
+  position: absolute;
+  top: calc(50% - 0.19em);
+  left: 0.06em;
+  animation: pp-sp-bounce-x 0.9s linear infinite alternate;
+}
+.pp-sp-bounce-ball > i {
+  width: 0.38em;
+  height: 0.38em;
+  border-radius: 50%;
+  background: currentColor;
+  animation: pp-sp-squash 0.9s linear infinite;
+}
+@keyframes pp-sp-bounce-x {
+  to {
+    transform: translateX(1.1em);
+  }
+}
+@keyframes pp-sp-squash {
+  0%,
+  100% {
+    transform: scale(0.65, 1.25);
+  }
+  12%,
+  88% {
+    transform: scale(1);
+  }
+}
+
+/* ── Pong ────────────────────────────────────── */
+.pp-sp-pong {
+  position: relative;
+  display: flex;
+  justify-content: space-between;
+  width: 2.4em;
+  height: 1em;
+  background:
+    linear-gradient(
+      color-mix(in srgb, currentColor 22%, transparent),
+      color-mix(in srgb, currentColor 22%, transparent)
+    )
+    center / 0.05em 100% no-repeat;
+}
+.pp-sp-pong-paddle {
+  width: 0.14em;
+  height: 0.4em;
+  border-radius: 0.04em;
+  background: currentColor;
+  animation: pp-sp-pong-paddle 0.8s linear infinite alternate;
+}
+.pp-sp-pong-paddle:last-child {
+  animation-delay: -0.3s;
+}
+.pp-sp-pong-ball {
+  position: absolute;
+  top: 0;
+  left: 0.2em;
+  animation: pp-sp-pong-x 1.1s linear infinite alternate;
+}
+.pp-sp-pong-ball > i {
+  width: 0.2em;
+  height: 0.2em;
+  border-radius: 50%;
+  background: currentColor;
+  animation: pp-sp-pong-y 0.8s linear infinite alternate;
+}
+@keyframes pp-sp-pong-x {
+  to {
+    transform: translateX(1.8em);
+  }
+}
+@keyframes pp-sp-pong-y {
+  to {
+    transform: translateY(0.8em);
+  }
+}
+@keyframes pp-sp-pong-paddle {
+  to {
+    transform: translateY(0.6em);
+  }
+}
+
+/* ── Moon ────────────────────────────────────── */
+.pp-sp-moon {
+  width: 0.8em;
+  height: 0.8em;
+  overflow: hidden;
+  border-radius: 50%;
+  background: color-mix(in srgb, currentColor 16%, transparent);
+}
+.pp-sp-moon > i {
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  background: currentColor;
+  animation: pp-sp-moon 2.4s cubic-bezier(0.45, 0, 0.55, 1) infinite;
+}
+@keyframes pp-sp-moon {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(100%);
+  }
+}
+
+/* ── Clock ───────────────────────────────────── */
+.pp-sp-clock {
+  position: relative;
+  box-sizing: border-box;
+  width: 0.86em;
+  height: 0.86em;
+  border: 0.08em solid currentColor;
+  border-radius: 50%;
+}
+.pp-sp-clock > i {
+  position: absolute;
+  bottom: 50%;
+  left: calc(50% - 0.04em);
+  width: 0.08em;
+  border-radius: 0.04em;
+  background: currentColor;
+  transform-origin: 50% 100%;
+}
+.pp-sp-clock-minute {
+  height: 0.3em;
+  animation: pp-sp-spin 1.2s linear infinite;
+}
+.pp-sp-clock-hour {
+  height: 0.2em;
+  animation: pp-sp-spin 14.4s linear infinite;
+}
+
+/* ── Hourglass ───────────────────────────────── */
+.pp-sp-glass {
+  position: relative;
+  width: 0.6em;
+  height: 1em;
+  border-block: 0.07em solid currentColor;
+  box-sizing: border-box;
+  animation: pp-sp-flip 2.6s cubic-bezier(0.6, 0, 0.3, 1.3) infinite;
+}
+.pp-sp-glass-top,
+.pp-sp-glass-bottom {
+  position: absolute;
+  left: 0.04em;
+  right: 0.04em;
+  height: calc(50% - 0.02em);
+  overflow: hidden;
+  background: color-mix(in srgb, currentColor 18%, transparent);
+}
+.pp-sp-glass-top {
+  top: 0;
+  clip-path: polygon(0 0, 100% 0, 50% 100%);
+}
+.pp-sp-glass-bottom {
+  bottom: 0;
+  clip-path: polygon(50% 0, 100% 100%, 0 100%);
+}
+.pp-sp-glass-top > i,
+.pp-sp-glass-bottom > i {
+  width: 100%;
+  height: 100%;
+  background: currentColor;
+}
+.pp-sp-glass-top > i {
+  animation: pp-sp-drain 2.6s linear infinite;
+}
+.pp-sp-glass-bottom > i {
+  animation: pp-sp-fill 2.6s linear infinite;
+}
+.pp-sp-glass-stream {
+  position: absolute;
+  top: 45%;
+  left: calc(50% - 0.025em);
+  width: 0.05em;
+  height: 50%;
+  background: currentColor;
+  animation: pp-sp-stream 2.6s linear infinite;
+}
+@keyframes pp-sp-flip {
+  0%,
+  80% {
+    transform: rotate(0);
+  }
+  100% {
+    transform: rotate(180deg);
+  }
+}
+@keyframes pp-sp-drain {
+  0% {
+    transform: translateY(0);
+  }
+  78%,
+  100% {
+    transform: translateY(100%);
+  }
+}
+@keyframes pp-sp-fill {
+  0% {
+    transform: translateY(100%);
+  }
+  78%,
+  100% {
+    transform: translateY(0);
+  }
+}
+@keyframes pp-sp-stream {
+  0%,
+  74% {
+    opacity: 1;
+  }
+  78%,
+  100% {
+    opacity: 0;
+  }
+}
+
+/* ── Cube ────────────────────────────────────── */
+.pp-sp-cube {
+  display: grid;
+  place-items: center;
+  width: 1em;
+  height: 1em;
+  perspective: 3em;
+}
+.pp-sp-cube > span {
+  position: relative;
+  width: 0.5em;
+  height: 0.5em;
+  transform-style: preserve-3d;
+  animation: pp-sp-tumble 2.4s cubic-bezier(0.65, 0, 0.35, 1) infinite;
+}
+.pp-sp-cube > span > i {
+  position: absolute;
+  inset: 0;
+  box-sizing: border-box;
+  border: 0.05em solid currentColor;
+  background: color-mix(in srgb, currentColor 14%, transparent);
+}
+.pp-sp-cube > span > i:nth-child(1) {
+  transform: translateZ(0.25em);
+}
+.pp-sp-cube > span > i:nth-child(2) {
+  transform: rotateY(180deg) translateZ(0.25em);
+}
+.pp-sp-cube > span > i:nth-child(3) {
+  transform: rotateY(90deg) translateZ(0.25em);
+}
+.pp-sp-cube > span > i:nth-child(4) {
+  transform: rotateY(-90deg) translateZ(0.25em);
+}
+.pp-sp-cube > span > i:nth-child(5) {
+  transform: rotateX(90deg) translateZ(0.25em);
+}
+.pp-sp-cube > span > i:nth-child(6) {
+  transform: rotateX(-90deg) translateZ(0.25em);
+}
+@keyframes pp-sp-tumble {
+  0% {
+    transform: rotateX(-30deg) rotateY(45deg);
+  }
+  50% {
+    transform: rotateX(150deg) rotateY(135deg);
+  }
+  100% {
+    transform: rotateX(330deg) rotateY(225deg);
+  }
+}
+
+/* ── Atom ────────────────────────────────────── */
+.pp-sp-atom {
+  position: relative;
+  width: 1em;
+  height: 1em;
+}
+.pp-sp-atom-core {
+  position: absolute;
+  inset: calc(50% - 0.1em);
+  border-radius: 50%;
+  background: currentColor;
+}
+.pp-sp-atom-orbit {
+  position: absolute;
+  inset: 0;
+  border: 0.04em solid color-mix(in srgb, currentColor 28%, transparent);
+  border-radius: 50%;
+}
+.pp-sp-atom-orbit > span {
+  position: absolute;
+  inset: 0;
+  animation: pp-sp-spin 1s linear infinite;
+}
+.pp-sp-atom-orbit > span > i {
+  position: absolute;
+  top: -0.09em;
+  left: calc(50% - 0.09em);
+  width: 0.18em;
+  height: 0.18em;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+/* ── Star (cross-faded frames) ───────────────── */
+.pp-sp-star {
+  display: grid;
+  width: 1em;
+  height: 1em;
+  color: var(--ds-accent);
+  line-height: 1em;
+  text-align: center;
+}
+.pp-sp-star > i {
+  grid-area: 1 / 1;
+  opacity: 0;
+  animation: pp-sp-xfade 1.2s linear infinite;
+  animation-delay: calc(var(--i) * 0.12s - 1.2s);
+}
+@keyframes pp-sp-xfade {
+  0% {
+    opacity: 0;
+    transform: scale(0.7) rotate(-40deg);
+  }
+  10% {
+    opacity: 1;
+    transform: none;
+  }
+  20%,
+  100% {
+    opacity: 0;
+    transform: scale(1.15) rotate(40deg);
+  }
+}
+
+/* The verb's glimmer: a bright band moves letter by letter. */
+.pp-sp-shimmer > span {
+  display: inline-block;
+  animation: pp-sp-glimmer 2s ease-in-out infinite;
+  animation-delay: calc(var(--i) * 0.07s - 2s);
+}
+@keyframes pp-sp-glimmer {
+  0%,
+  30%,
+  100% {
+    opacity: 0.5;
+    transform: none;
+  }
+  14% {
+    opacity: 1;
+    transform: translateY(-0.08em);
+  }
+}
+
+/* ── Scanner ─────────────────────────────────── */
+.pp-sp-scan {
+  position: relative;
+  display: flex;
+  gap: 0.08em;
+  height: 0.5em;
+}
+.pp-sp-scan > i {
+  width: 0.24em;
+  border-radius: 0.07em;
+  background: color-mix(in srgb, currentColor 18%, transparent);
+}
+.pp-sp-scan > b {
+  position: absolute;
+  inset-block: 0;
+  left: 0;
+  width: 0.24em;
+  border-radius: 0.07em;
+  background: currentColor;
+  animation: pp-sp-scan 1s cubic-bezier(0.45, 0, 0.55, 1) infinite alternate;
+  animation-delay: calc(var(--i) * 0.08s - 2s);
+}
+@keyframes pp-sp-scan {
+  to {
+    transform: translateX(1.6em);
+  }
+}
+
+/* ── Pac-Man ─────────────────────────────────── */
+.pp-sp-pac {
+  position: relative;
+  width: 2.2em;
+  height: 1em;
+}
+.pp-sp-pac-dots {
+  position: absolute;
+  top: calc(50% - 0.08em);
+  left: 0.42em;
+  right: 0;
+  height: 0.16em;
+  overflow: hidden;
+}
+.pp-sp-pac-dots > span {
+  display: flex;
+  gap: 0.34em;
+  padding-left: 0.34em;
+  animation: pp-sp-conveyor 0.5s linear infinite;
+}
+.pp-sp-pac-dots i {
+  flex: none;
+  width: 0.16em;
+  height: 0.16em;
+  border-radius: 50%;
+  background: currentColor;
+}
+.pp-sp-pac-top,
+.pp-sp-pac-bottom {
+  position: absolute;
+  left: 0;
+  width: 0.84em;
+  height: 0.42em;
+  background: var(--ds-warning);
+}
+.pp-sp-pac-top {
+  top: 0.08em;
+  border-radius: 0.42em 0.42em 0 0;
+  transform-origin: 50% 100%;
+  animation: pp-sp-jaw-top 0.25s ease-in-out infinite alternate;
+}
+.pp-sp-pac-bottom {
+  top: 0.5em;
+  border-radius: 0 0 0.42em 0.42em;
+  transform-origin: 50% 0;
+  animation: pp-sp-jaw-bottom 0.25s ease-in-out infinite alternate;
+}
+@keyframes pp-sp-conveyor {
+  to {
+    transform: translateX(-0.5em);
+  }
+}
+@keyframes pp-sp-jaw-top {
+  from {
+    transform: rotate(-35deg);
+  }
+  to {
+    transform: rotate(0);
+  }
+}
+@keyframes pp-sp-jaw-bottom {
+  from {
+    transform: rotate(35deg);
+  }
+  to {
+    transform: rotate(0);
+  }
+}
+
+/* ── Gallery: glyphs enlarged ────────────────── */
+.pp-sp-gallery {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 28px 16px;
+  padding: 16px;
+}
+.pp-sp-gallery figure {
+  display: grid;
+  justify-items: center;
+  gap: 10px;
+  margin: 0;
+}
+.pp-sp-big {
+  height: 64px;
+  font-size: 56px;
+}
+.pp-sp-gallery figcaption {
+  display: grid;
+  justify-items: center;
+  gap: 2px;
+  color: var(--ds-text-muted);
+  font-size: var(--text-sm);
+}
+.pp-sp-gallery strong {
+  color: var(--ds-text-secondary);
+  font-weight: 600;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pp-sp *,
+  .pp-sp-shimmer > span {
+    animation: none;
+  }
+}

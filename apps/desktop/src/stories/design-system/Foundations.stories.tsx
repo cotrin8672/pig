@@ -4,7 +4,7 @@ import { CatalogPage, CatalogSection, Example } from "./ReviewPage";
 
 export default {
   id: "design-system-01-foundations",
-  title: "Design System/Foundations",
+  title: "Design System/Foundations/Tokens",
   parameters: { gallery: true },
 } satisfies Meta;
 

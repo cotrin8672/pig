@@ -1,0 +1,88 @@
+.ds-specimen {
+  width: min(100%, 960px);
+  margin: auto;
+  padding-block: 12px 32px;
+  display: grid;
+  gap: 24px;
+  color: var(--ds-text-primary);
+}
+.ds-specimen :is(h1, h2, p, figure) {
+  margin: 0;
+}
+.ds-specimen :where(header) small,
+.ds-specimen figcaption {
+  font-size: var(--text-sm);
+  color: var(--ds-text-secondary);
+}
+.ds-specimen h1 {
+  margin-block: 6px;
+  font-size: clamp(2rem, 5vw, 3rem);
+  line-height: 1.1;
+  letter-spacing: -0.04em;
+  overflow-wrap: anywhere;
+}
+.ds-specimen p {
+  color: var(--ds-text-secondary);
+}
+.ds-specimen .ds-specimen-stage {
+  display: grid;
+  place-items: center;
+  grid-template-rows: auto 1fr;
+  gap: 12px;
+  padding: clamp(16px, 3vw, 30px);
+  min-height: 180px;
+  border-radius: var(--radius-lg);
+  background-color: color-mix(in srgb, var(--ds-accent) 10%, var(--ds-tile));
+  background-image: radial-gradient(
+    var(--ds-border-strong) 1px,
+    transparent 1px
+  );
+  background-size: 16px 16px;
+}
+.ds-specimen-stage > figcaption {
+  justify-self: start;
+}
+.ds-specimen-example {
+  width: min(100%, 320px);
+  padding: 16px 20px;
+  border-radius: var(--radius-md);
+  background: var(--ds-bg-popover);
+  box-shadow: var(--ds-elevation-stroke);
+}
+.ds-specimen-line {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+.ds-specimen-line + .ds-specimen-line {
+  margin-top: 12px;
+  border-top: 1px solid var(--ds-border);
+  padding-top: 12px;
+}
+.ds-specimen-line > small {
+  margin-inline-start: auto;
+  color: var(--ds-text-muted);
+}
+.ds-specimen h2 {
+  margin-bottom: 12px;
+  font-size: var(--text-lg);
+}
+.ds-specimen-variants {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 110px), 1fr));
+  gap: 6px;
+}
+.ds-specimen-variants figure {
+  display: grid;
+  grid-template-rows: 64px auto;
+  justify-items: center;
+  padding: 4px 8px 14px;
+  border-radius: var(--radius-sm);
+  background: var(--ds-tile);
+  text-align: center;
+}
+.ds-specimen-sample {
+  display: grid;
+  place-items: center;
+}

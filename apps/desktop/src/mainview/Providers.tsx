@@ -1,4 +1,4 @@
-import { LoaderCircle, LogIn, LogOut, Search, X } from "lucide-react";
+import { LogIn, LogOut, Search, X } from "lucide-react";
 import { type ReactNode, useId, useState } from "react";
 import {
   type AccountSource,
@@ -9,8 +9,9 @@ import { ConfirmButton } from "./ConfirmButton";
 import { ContentPage } from "./ContentPage";
 import { useT } from "./i18n";
 import { ProviderAccounts } from "./ProviderAccounts";
-import { ProviderIcon } from "./ProviderIcon";
+import { ProviderIcon } from "./primitives/ProviderIcon";
 import { ProviderModels } from "./ProviderModels";
+import { Spinner } from "./primitives/Spinner";
 import { startProviderLogin } from "./provider-login";
 import { refresh, rpc } from "./rpc";
 import { showError, useStore } from "./store";
@@ -263,7 +264,7 @@ export function ProviderDetail({
           role="status"
           aria-description={via && t.connectedVia(via)}
         >
-          {busy && <LoaderCircle size={11} className="spinner" />}
+          {busy && <Spinner size={11} />}
           <span>{status}</span>
         </span>
         <div className="inline-actions">

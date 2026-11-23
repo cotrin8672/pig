@@ -22,6 +22,7 @@ import { searchTerms } from "../shared/fuzzy";
 import type { ConversationHit } from "../shared/rpc-schema";
 import { useT } from "./i18n";
 import { navigate } from "./navigation";
+import { Keycap } from "./primitives/Keycap";
 import { openChat, rpc } from "./rpc";
 import { SolidBlurFilter } from "./SolidBlurFilter";
 import {
@@ -301,7 +302,7 @@ function SearchDialog({ initialQuery }: { initialQuery: string }) {
                 <span className="search-detail">{item.detail}</span>
               )}
               {item.shortcut && (
-                <kbd className="search-shortcut">{item.shortcut}</kbd>
+                <Keycap>{item.shortcut}</Keycap>
               )}
             </div>
           );
@@ -310,8 +311,8 @@ function SearchDialog({ initialQuery }: { initialQuery: string }) {
       </div>
       <div className="search-palette-footer">
         <span>
-          <kbd>↑↓</kbd> {t.searchHintMove} <kbd>Enter</kbd> {t.searchHintOpen}{" "}
-          <kbd>Esc</kbd> {t.searchHintClose}
+          <Keycap>↑↓</Keycap> {t.searchHintMove} <Keycap>Enter</Keycap>{" "}
+          {t.searchHintOpen} <Keycap>Esc</Keycap> {t.searchHintClose}
         </span>
         <span role="status">{content.indexing ? t.searchIndexing : ""}</span>
       </div>

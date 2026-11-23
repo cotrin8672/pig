@@ -1,0 +1,9 @@
+select {
+  background: var(--ds-bg-elevated-opaque);
+  color: var(--ds-text-secondary);
+  border: 0;
+  border-radius: var(--radius-xs);
+  padding: 5px;
+  font-size: var(--text-md);
+  max-width: 75%;
+}

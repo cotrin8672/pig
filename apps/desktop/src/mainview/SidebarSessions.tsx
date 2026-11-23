@@ -6,6 +6,7 @@ import { InlineRename } from "./InlineRename";
 import { useT } from "./i18n";
 import { FolderPlusCorner } from "./icons";
 import { ProjectMenu, renameProject } from "./ProjectMenu";
+import { IndicatorDot } from "./primitives/IndicatorDot";
 import { openChat, rpc } from "./rpc";
 import { SessionList } from "./SessionList";
 import { type SessionStatus, sessionStatusLabels } from "./session-status";
@@ -153,7 +154,7 @@ function ProjectSessions({ cwd }: { cwd: string }) {
             role="img"
             aria-label={`${t[sessionStatusLabels[leading]]}: ${counts[leading]}`}
           >
-            <span className={`session-dot ${leading}`} />
+            <IndicatorDot state={leading} />
             {counts[leading]}
           </span>
         )}

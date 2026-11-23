@@ -1,0 +1,71 @@
+import { test } from "bun:test";
+import {
+  fixtureHelpers,
+  fixtureImport,
+  runUiFixture,
+} from "../../scripts/ui-fixture";
+
+const local = (path: string) => fixtureImport(new URL(path, import.meta.url));
+
+test(
+  "primitives render with design tokens alone, without any screen stylesheet",
+  () =>
+    runUiFixture(
+      "primitives-isolated",
+      `
+    const {createRoot}=await import(${fixtureImport(import.meta.resolve("react-dom/client"))});
+    const {flushSync}=await import(${fixtureImport(import.meta.resolve("react-dom"))});
+    await import(${local("../../scripts/fixtures/primitive-theme.css")});
+    const {Chip}=await import(${local("./primitives/Chip.tsx")});
+    const {CountBadge}=await import(${local("./primitives/CountBadge.tsx")});
+    const {IndicatorDot}=await import(${local("./primitives/IndicatorDot.tsx")});
+    const {Keycap}=await import(${local("./primitives/Keycap.tsx")});
+    const {Button}=await import(${local("./primitives/Button.tsx")});
+    const {IconButton}=await import(${local("./primitives/IconButton.tsx")});
+    const {Spinner}=await import(${local("./primitives/Spinner.tsx")});
+    const {FileIcon}=await import(${local("./primitives/FileIcon.tsx")});
+    const {ProviderIcon}=await import(${local("./primitives/ProviderIcon.tsx")});
+    ${fixtureHelpers}
+    const root=createFixtureRoot(createRoot);
+    flushSync(()=>root.render(<>
+      <div id="badges">{[0,1,99,100].map(n=><CountBadge key={n} count={n}/>)}</div>
+      <div id="chips">{['metadata','tag','accent-tag'].map(v=><Chip key={v} variant={v}>Tag</Chip>)}</div>
+      <div id="dots">{['running','waiting','completed','failed','unread'].map(s=><IndicatorDot key={s} state={s}/>)}</div>
+      <Keycap>Enter</Keycap>
+      <Button variant="primary">保存</Button><Button disabled>取消</Button>
+      <IconButton aria-label="閉じる">×</IconButton><Spinner size={17}/>
+      <div id="providers">{['google-vertex','google-vertex-regional','google','unknown'].map(id=><ProviderIcon key={id} provider={id} size={16}/>)}</div>
+      <div id="files">{['main.TSX','notes.md','LICENSE'].map(name=><FileIcon key={name} name={name} size={28}/>)}</div>
+    </>));
+    await wait();
+    const faces=id=>Array.from(document.getElementById(id).children);
+    const filled=s=>s.backgroundColor!=='rgba(0, 0, 0, 0)';
+    const badges=faces('badges');
+    check(badges.map(b=>b.textContent).join(',')==='1,99,99+','zero hidden and counts capped');
+    for(const b of badges){
+      const s=getComputedStyle(b);
+      check(filled(s)&&s.color!==s.backgroundColor&&parseFloat(s.borderRadius)>=b.offsetHeight/2,'badge has contrasting text on a pill');
+      check(b.offsetWidth>=14&&b.offsetHeight===13,'badge retains its face around the number');
+    }
+    const chips=faces('chips').map(el=>getComputedStyle(el));
+    check(chips.every(s=>filled(s)&&parseFloat(s.borderRadius)>0&&parseFloat(s.paddingLeft)>0),'all chip variants have a padded surface');
+    check(chips[1].color!==chips[2].color,'accent tag is distinct');
+    const dots=faces('dots').map(el=>getComputedStyle(el));
+    check(dots.every(s=>s.width==='6px'&&s.height==='6px'&&filled(s)),'every dot has a visible face');
+    check(new Set(dots.map(s=>s.backgroundColor)).size===dots.length,'distinct state colors including unread');
+    const key=getComputedStyle(document.querySelector('kbd'));
+    check(filled(key)&&parseFloat(key.borderBottomWidth)>=2,'keycap has a face and lower edge');
+    const [primary,secondary,icon]=document.querySelectorAll('button');
+    check(primary.type==='button' && filled(getComputedStyle(primary)) && getComputedStyle(primary).backgroundColor!==getComputedStyle(secondary).backgroundColor && secondary.disabled,'button emphasis and disabled state');
+    check(icon.offsetWidth===32 && icon.offsetHeight===32,'square icon target');
+    const spinner=document.querySelector('svg.spinner');
+    check(spinner.getBoundingClientRect().width===17 && spinner.getAttribute('aria-hidden')==='true','inline spinner size and semantics');
+    const [vertex,regional,google,fallback]=faces('providers');
+    check(vertex.innerHTML===regional.innerHTML && vertex.innerHTML!==google.innerHTML,'prefer the longest matching provider prefix');
+    check(fallback.matches('svg.provider-fallback-icon') && getComputedStyle(fallback).flexShrink==='0','unknown provider has a standalone fallback');
+    const files=faces('files');
+    check(files.every(el=>el.matches('svg[aria-hidden="true"]')&&el.getBoundingClientRect().width===28) && new Set(files.map(el=>el.innerHTML)).size===3,'code, text and unknown attachments remain distinct');
+    `,
+    ),
+  60_000,
+);

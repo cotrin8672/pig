@@ -171,12 +171,12 @@ export function paneFixtures(attention: boolean): SessionInfo[] {
 export const isLive = (state: RunState) => state === "running";
 export const needsUser = (state: RunState) =>
   state === "failed" || state === "waiting";
-export const dotClass: Record<RunState, string> = {
+export const dotClass = {
   running: "running",
   waiting: "waiting",
   done: "completed",
   failed: "failed",
-};
+} as const satisfies Record<RunState, string>;
 
 export function isEmpty(info: SessionInfo) {
   return (

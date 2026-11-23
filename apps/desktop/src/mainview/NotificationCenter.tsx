@@ -3,6 +3,8 @@ import { useId, useState } from "react";
 import { sessionLink } from "../shared/session-links";
 import { useT } from "./i18n";
 import { usePicker } from "./Picker";
+import { CountBadge } from "./primitives/CountBadge";
+import { IndicatorDot } from "./primitives/IndicatorDot";
 import { openChatLink } from "./rpc";
 import {
   clearNotices,
@@ -38,11 +40,7 @@ export function NotificationCenter() {
         {...tooltip({ tier: "label", side: "top", label: t.Notifications })}
       >
         <Bell size={16} aria-hidden="true" />
-        {unread > 0 && (
-          <span className="notification-badge" aria-hidden="true">
-            {unread > 99 ? "99+" : unread}
-          </span>
-        )}
+        <CountBadge count={unread} decorative />
       </summary>
       <section className="notification-panel" aria-labelledby={titleId}>
         <div className="notification-heading">
@@ -132,11 +130,7 @@ export function NotificationCenter() {
                   </time>
                 </span>
                 {!notice.read && (
-                  <span
-                    className="notification-unread-dot"
-                    role="img"
-                    aria-label={t.Unread}
-                  />
+                  <IndicatorDot state="unread" label={t.Unread} />
                 )}
               </button>
             ))

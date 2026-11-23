@@ -9,7 +9,7 @@ import {
   Settings as SettingsIcon,
 } from "lucide-react";
 import { type CSSProperties, useState } from "react";
-import { ProviderIcon } from "../../mainview/ProviderIcon";
+import { ProviderIcon } from "../../mainview/primitives/ProviderIcon";
 import {
   byUrgency,
   fetchable,

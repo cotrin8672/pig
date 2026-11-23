@@ -75,7 +75,6 @@ export default {
             "Patterns",
             "Primitives",
             "Foundations",
-            "Guide",
           ],
           "*",
         ],

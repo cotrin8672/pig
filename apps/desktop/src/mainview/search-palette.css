@@ -102,16 +102,6 @@
   color: var(--ds-highlight);
   font-weight: var(--font-weight-semibold);
 }
-.search-shortcut,
-.search-palette-footer kbd {
-  flex: none;
-  padding: 1px 5px;
-  border-radius: var(--radius-3xs);
-  background: var(--ds-bg-chip);
-  color: var(--ds-text-secondary);
-  font-family: var(--font-mono);
-  font-size: var(--text-xs);
-}
 .search-empty {
   display: grid;
   place-items: center;

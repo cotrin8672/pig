@@ -17,7 +17,8 @@ import { ActionsMenu } from "./ActionsMenu";
 import { ConfirmButton } from "./ConfirmButton";
 import { InlineRename } from "./InlineRename";
 import { useT } from "./i18n";
-import { ProviderIcon } from "./ProviderIcon";
+import { ProviderIcon } from "./primitives/ProviderIcon";
+import { Chip } from "./primitives/Chip";
 import { startProviderLogin } from "./provider-login";
 import { refresh, rpc } from "./rpc";
 import { showError, useStore } from "./store";
@@ -181,12 +182,10 @@ export function ProviderAccounts({
             {!child && <ProviderIcon provider={p.id} size={16} />}
             <span className="provider-row-name">{account.label}</span>
             {child && !account.accountId && (
-              <small className="provider-tag">{t.standardAccount}</small>
+              <Chip variant="tag">{t.standardAccount}</Chip>
             )}
             {!child && p.extension && (
-              <small className="provider-tag" data-kind="extension">
-                {t.Extension}
-              </small>
+              <Chip variant="accent-tag">{t.Extension}</Chip>
             )}
           </button>
         )}

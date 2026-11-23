@@ -56,18 +56,10 @@
   background: var(--ds-bg-active);
   color: var(--ds-text-primary);
 }
-.notification-badge {
+.notification-bell .notification-badge {
   position: absolute;
   top: 1px;
   right: 0;
-  min-width: 14px;
-  padding: 0 3px;
-  border-radius: 7px;
-  background: var(--ds-highlight);
-  color: var(--ds-on-highlight);
-  font-size: 9px;
-  line-height: 13px;
-  text-align: center;
 }
 .notification-panel {
   position: absolute;
@@ -196,11 +188,6 @@
   color: var(--ds-text-muted);
   font-size: 11px;
 }
-.notification-unread-dot {
-  width: 6px;
-  height: 6px;
+.notification-entry .notification-unread-dot {
   margin-top: 6px;
-  flex-shrink: 0;
-  border-radius: 50%;
-  background: var(--ds-highlight);
 }

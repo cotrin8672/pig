@@ -19,7 +19,7 @@ import { ContextIndicator } from "./ContextIndicator";
 import { addressKey } from "./chat-snapshot";
 import { composerHistory } from "./composer-input-history";
 import { drafts, emptyContent, expandedDraft } from "./draft-store";
-import { fileIcon } from "./file-icon";
+import { FileIcon } from "./primitives/FileIcon";
 import { ImagePreview } from "./ImageGallery";
 import { useT } from "./i18n";
 import { UserMessage } from "./MessageContent";
@@ -269,14 +269,13 @@ export function OpeningComposer({ preview }: { preview?: Snapshot }) {
               </div>
             ))}
             {files.map(({ id, name, path }) => {
-              const Icon = fileIcon(name);
               return (
                 <div
                   className="composer-attachment file"
                   key={id}
                   aria-description={path}
                 >
-                  <Icon size={28} aria-hidden />
+                  <FileIcon name={name} size={28} />
                   <span>{name}</span>
                   <button
                     type="button"

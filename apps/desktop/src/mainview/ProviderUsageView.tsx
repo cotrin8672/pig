@@ -32,7 +32,7 @@ import {
   usagePercent,
 } from "../shared/provider-usage";
 import { useT } from "./i18n";
-import { ProviderIcon } from "./ProviderIcon";
+import { ProviderIcon } from "./primitives/ProviderIcon";
 import { useTooltip } from "./Tooltip";
 import "./provider-usage.css";
 

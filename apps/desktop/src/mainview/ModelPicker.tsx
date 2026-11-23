@@ -41,7 +41,7 @@ import { EffortSlider } from "./EffortSlider";
 import { useT } from "./i18n";
 import type { ModelPickerSnapshot } from "./model-picker-view";
 import { changeSelection, usePicker } from "./Picker";
-import { ProviderIcon } from "./ProviderIcon";
+import { ProviderIcon } from "./primitives/ProviderIcon";
 import { startProviderLogin } from "./provider-login";
 import {
   ensureSessionRuntime,

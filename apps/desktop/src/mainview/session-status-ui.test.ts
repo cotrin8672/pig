@@ -16,10 +16,11 @@ test.skipIf(!existsSync(fixtureEdge) && !process.env.PIG_REQUIRE_UI_TESTS)(
       const {createRoot}=await import(${fixtureImport(import.meta.resolve("react-dom/client"))});
       const {flushSync}=await import(${fixtureImport(import.meta.resolve("react-dom"))});
       await import(${fixtureImport(new URL("./styles.css", import.meta.url))});
+      const {IndicatorDot}=await import(${fixtureImport(new URL("./primitives/IndicatorDot.tsx", import.meta.url))});
       ${fixtureHelpers}
       const states=['running','completed','waiting','failed'];
       const root=createFixtureRoot(createRoot);
-      flushSync(()=>root.render(<aside className="sidebar" style={{width:260,padding:32,gap:24}}>{['session-status-slot','project-activity'].flatMap(slot=>states.map(state=><div key={slot+state} style={{display:'flex',alignItems:'center',gap:16,height:32}}><span className={slot}><span className={'session-dot '+state}/></span><span>{slot}: {state}</span></div>))}</aside>));
+      flushSync(()=>root.render(<aside className="sidebar" style={{width:260,padding:32,gap:24}}>{['session-status-slot','project-activity'].flatMap(slot=>states.map(state=><div key={slot+state} style={{display:'flex',alignItems:'center',gap:16,height:32}}><span className={slot}><IndicatorDot state={state}/></span><span>{slot}: {state}</span></div>))}</aside>));
       await wait();
       const dots=[...document.querySelectorAll('.session-dot')];
       for(const dot of dots){

@@ -61,10 +61,10 @@ export const inventory: {
   },
   {
     layer: "Primitives",
-    name: "Button / IconButton",
-    evidence: "既存CSS",
-    source: "styles.css",
-    plan: "まず既存スタイルを展示する。共通React APIは未確定。",
+    name: "Button / IconButton / Spinner",
+    evidence: "既存部品",
+    source: "mainview/primitives",
+    plan: "強調度・無効・処理中を部品ごとに比較する。",
   },
   {
     layer: "Primitives",
@@ -75,10 +75,24 @@ export const inventory: {
   },
   {
     layer: "Primitives",
-    name: "Badge / StatusDot / Separator",
+    name: "ProviderIcon / FileIcon",
+    evidence: "既存部品",
+    source: "mainview/primitives",
+    plan: "名称に添えるロゴ・ファイル種別と、未登録時の汎用アイコンを比較する。",
+  },
+  {
+    layer: "Primitives",
+    name: "Chip / IndicatorDot / CountBadge / Keycap",
+    evidence: "既存部品",
+    source: "mainview/primitives",
+    plan: "属性・状態点・件数・キー表記を区別し、各部品のStoryで状態を比較する。",
+  },
+  {
+    layer: "Primitives",
+    name: "Separator",
     evidence: "構成案",
     source: "各画面に分散",
-    plan: "属性・未読・実行状態を混同しない。全てをBadgeへ統合しない。",
+    plan: "見た目だけの区切りと、意味を持つ区切りを区別する。",
   },
   {
     layer: "Patterns",

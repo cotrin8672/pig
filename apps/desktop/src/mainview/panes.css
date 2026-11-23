@@ -241,13 +241,6 @@
   font-size: var(--text-xs);
   white-space: nowrap;
 }
-.pane-drag-ghost kbd {
-  padding: 0 4px;
-  border-radius: var(--radius-3xs);
-  background: var(--ds-bg-chip);
-  color: var(--ds-text-muted);
-  font: inherit;
-}
 @media (prefers-reduced-motion: reduce) {
   .pane-drop-slot,
   .pane-drop-slot::before {

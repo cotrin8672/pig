@@ -35,7 +35,7 @@ function shuffle(list: string[]) {
  * Walks a shuffled copy of the pool, so a run never shows a word twice before
  * every other word has had a turn.
  */
-function useVerb(intervalMs: number) {
+export function useVerb(intervalMs: number) {
   const [verb, setVerb] = useState(VERBS[0]);
   useEffect(() => {
     let queue = shuffle(VERBS);

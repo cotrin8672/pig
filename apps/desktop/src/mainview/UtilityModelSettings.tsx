@@ -2,7 +2,7 @@ import { ChevronDown, Search } from "lucide-react";
 import { useId, useState } from "react";
 import type { UtilityModelInfo } from "../shared/rpc-schema";
 import { useT } from "./i18n";
-import { ProviderIcon } from "./ProviderIcon";
+import { ProviderIcon } from "./primitives/ProviderIcon";
 import { ProviderDetail } from "./Providers";
 import { updateSettings } from "./rpc";
 import { useStore } from "./store";

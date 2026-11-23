@@ -20,6 +20,7 @@ import { ConfirmButton } from "./ConfirmButton";
 import { InlineRename } from "./InlineRename";
 import { useT } from "./i18n";
 import { navigate } from "./navigation";
+import { IndicatorDot } from "./primitives/IndicatorDot";
 import { openChat, refreshSessions, rpc, showPendingOpen } from "./rpc";
 import { sessionStatusLabels } from "./session-status";
 import { showError, useStore } from "./store";
@@ -306,10 +307,9 @@ function SessionRow({ session, cwd }: { session: SessionInfo; cwd: string }) {
         >
           <span className="session-status-slot">
             {status && (
-              <span
-                className={`session-dot ${status}`}
-                role="img"
-                aria-label={t[sessionStatusLabels[status]]}
+              <IndicatorDot
+                state={status}
+                label={t[sessionStatusLabels[status]]}
               />
             )}
           </span>

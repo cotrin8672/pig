@@ -9,6 +9,7 @@ import {
   paneDropAt,
   paneGeometry,
 } from "./pane-layout";
+import { Keycap } from "./primitives/Keycap";
 
 export type PaneDrag = {
   id: number;
@@ -145,7 +146,7 @@ export function PaneDropOverlay({
       <div className="pane-drag-ghost" style={{ left: drag.x, top: drag.y }}>
         <GripVertical size={12} aria-hidden="true" />
         {label(drag.id).title}
-        <kbd>Esc</kbd>
+        <Keycap>Esc</Keycap>
       </div>
     </div>
   );

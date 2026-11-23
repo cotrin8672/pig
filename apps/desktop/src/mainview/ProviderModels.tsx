@@ -7,7 +7,6 @@ import {
 } from "../shared/models";
 import { useT } from "./i18n";
 import { formatTokens, ModelSettings } from "./ModelSettings";
-import { useProviderName } from "./ProviderIcon";
 import { refresh, rpc } from "./rpc";
 import { showError, useStore } from "./store";
 import { modelVisibility } from "./ui-mutations";
@@ -20,8 +19,8 @@ export function ProviderModels({
   connected: boolean;
 }) {
   const t = useT();
-  const { models, disabledModels } = useStore((s) => s.bootstrap);
-  const name = useProviderName(provider);
+  const { models, disabledModels, providers } = useStore((s) => s.bootstrap);
+  const name = providers.find((p) => p.id === provider)?.name ?? provider;
   const [query, setQuery] = useState("");
   const [open, setOpen] = useState<string>();
   const [refreshing, setRefreshing] = useState(false);

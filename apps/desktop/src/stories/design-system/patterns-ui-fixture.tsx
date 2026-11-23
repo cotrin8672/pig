@@ -1,15 +1,8 @@
-import type { Meta } from "@storybook/react-vite";
 import { useId, useRef, useState } from "react";
 import { ActionsMenu } from "../../mainview/ActionsMenu";
 import { ConfirmButton } from "../../mainview/ConfirmButton";
 import { InlineRename } from "../../mainview/InlineRename";
 import { CatalogPage, CatalogSection, Example } from "./ReviewPage";
-
-export default {
-  id: "design-system-03-patterns",
-  title: "Design System/Patterns",
-  parameters: { gallery: true },
-} satisfies Meta;
 
 function SettingsExample() {
   const id = useId();

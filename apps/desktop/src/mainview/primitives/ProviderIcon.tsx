@@ -29,7 +29,7 @@ import XAI from "@lobehub/icons/es/XAI/components/Mono.js";
 import Xiaomi from "@lobehub/icons/es/XiaomiMiMo/components/Mono.js";
 import ZAI from "@lobehub/icons/es/ZAI/components/Mono.js";
 import { Box } from "lucide-react";
-import { useStore } from "./store";
+import "./provider-icon.css";
 
 // Keys match a provider id exactly or as a prefix before "-" (regional/plan variants).
 // Order matters: "google-vertex" must precede "google".
@@ -83,9 +83,4 @@ export function ProviderIcon({
   );
 }
 
-export function useProviderName(provider: string) {
-  return useStore(
-    (s) =>
-      s.bootstrap.providers.find((p) => p.id === provider)?.name ?? provider,
-  );
-}
+export const providerIconIds = icons.map(([id]) => id);

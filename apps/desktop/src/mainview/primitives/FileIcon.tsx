@@ -19,5 +19,8 @@ const fileIcons: [RegExp, typeof GenericFile][] = [
     FileCode,
   ],
 ];
-export const fileIcon = (name: string) =>
-  fileIcons.find(([pattern]) => pattern.test(name))?.[1] ?? GenericFile;
+export function FileIcon({ name, size }: { name: string; size: number }) {
+  const Icon =
+    fileIcons.find(([pattern]) => pattern.test(name))?.[1] ?? GenericFile;
+  return <Icon size={size} aria-hidden="true" />;
+}

@@ -108,23 +108,15 @@ export function ProjectTrustPrompt({
         <button type="button" onClick={onCancel}>
           {t.cancel}
         </button>
-        <button
-          type="button"
-          className="secondary"
-          disabled={submitting}
-          onClick={onSafe}
-        >
+        <Button disabled={submitting} onClick={onSafe}>
           {t.trustOpenSafe}
-        </button>
-        <button
-          type="button"
-          className="primary"
-          disabled={submitting}
-          onClick={onAccept}
-        >
+        </Button>
+        <Button variant="primary" disabled={submitting} onClick={onAccept}>
           {t.trustAccept}
-        </button>
+        </Button>
       </div>
     </>
   );
 }
+
+import { Button } from "./primitives/Button";

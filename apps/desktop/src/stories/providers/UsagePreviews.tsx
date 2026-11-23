@@ -6,7 +6,7 @@ import {
   Ticket,
 } from "lucide-react";
 import { createContext, useContext, useState } from "react";
-import { ProviderIcon } from "../../mainview/ProviderIcon";
+import { ProviderIcon } from "../../mainview/primitives/ProviderIcon";
 import {
   byUrgency,
   fetchable,

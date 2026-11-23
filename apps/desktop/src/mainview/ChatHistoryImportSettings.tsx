@@ -6,7 +6,7 @@ import type {
   LocalHistorySource,
 } from "../shared/chat-history-import";
 import { useT } from "./i18n";
-import { ProviderIcon } from "./ProviderIcon";
+import { ProviderIcon } from "./primitives/ProviderIcon";
 import { rpc } from "./rpc";
 import { showError, showNotice, useStore } from "./store";
 import "./chat-history-import.css";

@@ -1,0 +1,3 @@
+/* Compile @theme tokens as the app does, without importing any screen styles. */
+@import "tailwindcss";
+@import "../../src/mainview/tokens.css";

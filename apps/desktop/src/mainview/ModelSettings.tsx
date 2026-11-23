@@ -5,6 +5,7 @@ import { modelKey } from "../shared/models";
 import type { Effort, ModelInfo } from "../shared/rpc-schema";
 import { EffortSlider } from "./EffortSlider";
 import { useT } from "./i18n";
+import { Chip } from "./primitives/Chip";
 import { refresh, rpc } from "./rpc";
 import { showError, useStore } from "./store";
 import { defaultEfforts, modelOverrides } from "./ui-mutations";
@@ -214,9 +215,9 @@ export function ModelSettings({ model }: { model: ModelInfo }) {
           </legend>
           <div className="model-setting-chips">
             {effortLevels.map((level) => (
-              <span className="provider-tag" key={level}>
+              <Chip variant="tag" key={level}>
                 {effortLabels[level]}
-              </span>
+              </Chip>
             ))}
           </div>
         </fieldset>

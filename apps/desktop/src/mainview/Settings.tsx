@@ -27,6 +27,8 @@ import { DefaultModelSettings } from "./DefaultModelSettings";
 import { FontSettings } from "./FontSettings";
 import { useT } from "./i18n";
 import { PiDataSettings } from "./PiDataSettings";
+import { IconButton } from "./primitives/IconButton";
+import { Keycap } from "./primitives/Keycap";
 import { updateAppearance, updateSettings } from "./rpc";
 import { revealTarget } from "./search-target";
 import { actionLabels, settingsCategories } from "./settings-search";
@@ -359,39 +361,26 @@ function KeyboardSettings() {
                           +
                         </span>
                       ) : null,
-                      <kbd key={key}>
-                        {(
-                          {
-                            ArrowLeft: "←",
-                            ArrowRight: "→",
-                            ArrowUp: "↑",
-                            ArrowDown: "↓",
-                          } as Record<string, string>
-                        )[key] ?? key}
-                      </kbd>,
+                      <Keycap key={key}>{key}</Keycap>,
                     ])
                   ) : (
                     <span className="settings-unbound">{t.Unbound}</span>
                   )}
                 </button>
-                <button
-                  type="button"
-                  className="settings-icon-button"
+                <IconButton
                   aria-label={`${labels[action]}: ${t.Reset}`}
                   disabled={!Object.hasOwn(settings.keybindings, action)}
                   onClick={() => bind(action, undefined)}
                 >
                   <RotateCcw size={14} aria-hidden="true" />
-                </button>
-                <button
-                  type="button"
-                  className="settings-icon-button"
+                </IconButton>
+                <IconButton
                   aria-label={`${labels[action]}: ${t.Clear}`}
                   disabled={!bindings[action]}
                   onClick={() => bind(action, null)}
                 >
                   <X size={14} aria-hidden="true" />
-                </button>
+                </IconButton>
               </div>
               {conflict?.action === action && (
                 <small

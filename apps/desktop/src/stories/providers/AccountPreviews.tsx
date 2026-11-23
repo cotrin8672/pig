@@ -21,8 +21,9 @@ import { useEffect, useRef, useState } from "react";
 import { ActionsMenu } from "../../mainview/ActionsMenu";
 import { ConfirmButton } from "../../mainview/ConfirmButton";
 import { InlineRename } from "../../mainview/InlineRename";
-import { ProviderIcon } from "../../mainview/ProviderIcon";
+import { ProviderIcon } from "../../mainview/primitives/ProviderIcon";
 import { ProviderDetail } from "../../mainview/Providers";
+import { Chip } from "../../mainview/primitives/Chip";
 import { useStore } from "../../mainview/store";
 import {
   type Account,
@@ -144,7 +145,7 @@ function AccountItem({
         <button type="button" className="provider-row" onClick={onSelect}>
           <Dot state={account.state} />
           <span className="provider-row-name">{account.label}</span>
-          {account.standard && <small className="provider-tag">既定</small>}
+          {account.standard && <Chip variant="tag">既定</Chip>}
         </button>
       )}
       {!renaming && (
