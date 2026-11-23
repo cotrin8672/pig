@@ -53,9 +53,7 @@ test("the shared preview entry does not eagerly import feature UI", () => {
   expect(lazyExports.sort()).toEqual([
     "ActivityPreview",
     "ChatScreenPreview",
-    "ComposerUIPreview",
     "DesktopPreview",
-    "ModelPickerPreview",
     "NotificationPreview",
     "SidebarPreview",
   ]);

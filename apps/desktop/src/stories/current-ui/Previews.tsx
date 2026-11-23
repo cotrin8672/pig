@@ -7,10 +7,8 @@ import "./preview.css";
 
 // Story modules share this entry, but must not eagerly load each other's UI.
 export const DesktopPreview = lazy(() => import("./DesktopPreview"));
-export const ComposerUIPreview = lazy(() => import("./ComposerUIPreview"));
 export const ChatScreenPreview = lazy(() => import("./ChatScreenPreview"));
 export const SidebarPreview = lazy(() => import("./SidebarPreview"));
-export const ModelPickerPreview = lazy(() => import("./ModelPickerPreview"));
 export const NotificationPreview = lazy(() => import("./NotificationPreview"));
 export const ActivityPreview = lazy(() => import("./ActivityPreview"));
 

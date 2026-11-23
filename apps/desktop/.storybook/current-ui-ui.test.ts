@@ -35,15 +35,14 @@ test("the actual App and its feature components render in isolated Storybook pre
       ["current-ui-screen--conversation", "Design System/Screens/App"],
       ["domain-sidebar--default", "Design System/Domain/Sidebar"],
       ["domain-chat-screen--default", "Design System/Domain/ChatScreen"],
-      ["domain-composer-ui--default", "Design System/Domain/ComposerUI"],
-      ["domain-composer-ui--model-picker", "Design System/Domain/ComposerUI"],
+      ["domain-composer-ui--default", "Design System/Features/Composer"],
       [
-        "domain-composer-ui--model-picker-narrow",
-        "Design System/Domain/ComposerUI",
+        "component-model-picker--default",
+        "Design System/Components/ModelPicker",
       ],
       [
-        "domain-composer-ui--model-picker-small",
-        "Design System/Domain/ComposerUI",
+        "design-system-features-composer-submit--composer-actions",
+        "Design System/Components/ComposerSubmit",
       ],
       ["domain-sidebar--notification-center", "Design System/Domain/Sidebar"],
       ["domain-chat-screen--session-panel", "Design System/Domain/ChatScreen"],
@@ -178,7 +177,16 @@ test("the actual App and its feature components render in isolated Storybook pre
           ],
           [
             "domain-composer-ui--default",
-            "!!document.querySelector('form.composer')",
+            `document.querySelectorAll('form.composer').length === 4 &&
+             [...document.querySelectorAll('.composer-story-state')].every(section => {
+               const dock = section.querySelector('.composer-dock').getBoundingClientRect();
+               return dock.height > 0 && dock.top >= section.querySelector('h3').getBoundingClientRect().bottom
+                 && dock.bottom <= section.getBoundingClientRect().bottom + 1;
+             }) &&
+             !!document.querySelector('[aria-label="空入力・送信不可"] button[type=submit]:disabled') &&
+             !!document.querySelector('[aria-label="入力済み・送信可能"] button[type=submit]:enabled') &&
+             !!document.querySelector('[aria-label="応答中"] [aria-keyshortcuts=Escape]') &&
+             document.querySelector('[aria-label="キューあり"] .message-queue')?.textContent.includes('次にテスト結果を確認して')`,
           ],
         ]) {
           await navigate(id, ready);
@@ -213,7 +221,7 @@ test("the actual App and its feature components render in isolated Storybook pre
             ).toBe(false);
         }
         await navigate(
-          "domain-composer-ui--model-picker",
+          "component-model-picker--default",
           "!!document.querySelector('.current-ui-unit .model-picker')",
         );
         await browser.evaluate(
@@ -233,9 +241,13 @@ test("the actual App and its feature components render in isolated Storybook pre
           "document.querySelector('.picker-model-label').textContent==='GPT-6.1 Sol'",
         );
         for (const size of ["narrow", "small"]) {
-          await navigate(
-            `domain-composer-ui--model-picker-${size}`,
-            "!!document.querySelector('.model-source-rail')",
+          await browser.evaluate(`(() => {
+            const select = document.querySelector('.current-ui-unit select');
+            select.value = '${size === "small" ? 280 : 380}';
+            select.dispatchEvent(new Event('change', { bubbles: true }));
+          })()`);
+          await waitFor(
+            `document.querySelector('.pane-view')?.clientWidth === ${size === "small" ? 280 : 380} && !!document.querySelector('.model-source-rail')`,
           );
           expect(
             await browser.evaluate(`(() => {

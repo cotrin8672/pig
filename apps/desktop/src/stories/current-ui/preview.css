@@ -1,3 +1,11 @@
+.composer-story-state > .composer-dock {
+  position: relative;
+}
+.composer-story-state {
+  display: grid;
+  gap: 12px;
+  padding-block: 12px;
+}
 .current-ui-screen {
   position: absolute;
   inset: 0;
