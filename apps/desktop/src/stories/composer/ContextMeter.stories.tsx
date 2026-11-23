@@ -1,10 +1,10 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
-import {
-  ContextMeterHover,
-  ContextMeterStates,
-  type HoverArgs,
-  states,
-} from "./ContextMeterPreview";
+import { type HoverArgs, states } from "./context-meter-fixtures";
+import { ContextMeterHover } from "./ContextMeterHover";
+import { ContextMeterStates } from "./ContextMeterStates";
+import "../tooltips/tooltips.css";
+import "./model-trigger.css";
+import "./context-meter.css";
 
 const meta = {
   title: "Chat/Composer/Context meter",
