@@ -301,9 +301,7 @@ function SearchDialog({ initialQuery }: { initialQuery: string }) {
               {item.detail && (
                 <span className="search-detail">{item.detail}</span>
               )}
-              {item.shortcut && (
-                <Keycap>{item.shortcut}</Keycap>
-              )}
+              {item.shortcut && <Keycap>{item.shortcut}</Keycap>}
             </div>
           );
         })}

@@ -1,7 +1,7 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
-import { type HoverArgs, states } from "./context-meter-fixtures";
 import { ContextMeterHover } from "./ContextMeterHover";
 import { ContextMeterStates } from "./ContextMeterStates";
+import { type HoverArgs, states } from "./context-meter-fixtures";
 import "../tooltips/tooltips.css";
 import "./model-trigger.css";
 import "./context-meter.css";

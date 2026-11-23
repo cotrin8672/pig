@@ -43,13 +43,13 @@ import { attachmentReads } from "./composer-attachments";
 import { composerHistory } from "./composer-input-history";
 import { createDraftMirror } from "./draft-mirror";
 import { drafts, emptyContent, expandedDraft } from "./draft-store";
-import { FileIcon } from "./primitives/FileIcon";
 import { ImagePreview } from "./ImageGallery";
 import { useT } from "./i18n";
 import { MessageQueue } from "./MessageQueue";
 import { ModelPicker } from "./ModelPicker";
 import { applyMention, mentionContext } from "./mention-completion";
 import { createModelPickerSelector } from "./model-picker-view";
+import { FileIcon } from "./primitives/FileIcon";
 import { ensureSessionRuntime, rpc, sends } from "./rpc";
 import { SessionIndicators } from "./SessionIndicators";
 import { SessionPanel } from "./SessionPanel";
@@ -663,14 +663,23 @@ export function Composer({
               >
                 {option.category &&
                   (() => {
-                    const Icon = option.category === "folder" ? Folder : option.category === "file" ? null : categoryIcons[option.category];
+                    const Icon =
+                      option.category === "folder"
+                        ? Folder
+                        : option.category === "file"
+                          ? null
+                          : categoryIcons[option.category];
                     return (
                       <span
                         role="img"
                         className="slash-category"
                         aria-label={t[option.category]}
                       >
-                        {Icon ? <Icon size={14} aria-hidden="true" /> : <FileIcon name={option.value} size={14} />}
+                        {Icon ? (
+                          <Icon size={14} aria-hidden="true" />
+                        ) : (
+                          <FileIcon name={option.value} size={14} />
+                        )}
                       </span>
                     );
                   })()}

@@ -71,7 +71,7 @@ test(
     check(primary.type==='button' && filled(getComputedStyle(primary)) && getComputedStyle(primary).backgroundColor!==getComputedStyle(secondary).backgroundColor && secondary.disabled,'button emphasis and disabled state');
     check(icon.offsetWidth===32 && icon.offsetHeight===32,'square icon target');
     const spinner=document.querySelector('svg.spinner');
-    check(spinner.getBoundingClientRect().width===17 && spinner.getAttribute('aria-hidden')==='true','inline spinner size and semantics');
+    check(getComputedStyle(spinner).width==='17px' && spinner.getAttribute('aria-hidden')==='true','inline spinner layout size and semantics independent of its rotation');
     const [vertex,regional,google,fallback]=faces('providers');
     check(vertex.innerHTML===regional.innerHTML && vertex.innerHTML!==google.innerHTML,'prefer the longest matching provider prefix');
     check(fallback.matches('svg.provider-fallback-icon') && getComputedStyle(fallback).flexShrink==='0','unknown provider has a standalone fallback');

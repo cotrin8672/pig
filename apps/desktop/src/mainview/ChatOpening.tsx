@@ -19,7 +19,6 @@ import { ContextIndicator } from "./ContextIndicator";
 import { addressKey } from "./chat-snapshot";
 import { composerHistory } from "./composer-input-history";
 import { drafts, emptyContent, expandedDraft } from "./draft-store";
-import { FileIcon } from "./primitives/FileIcon";
 import { ImagePreview } from "./ImageGallery";
 import { useT } from "./i18n";
 import { UserMessage } from "./MessageContent";
@@ -35,6 +34,7 @@ import {
   steerOpeningSend,
   withdrawOpeningSend,
 } from "./opening-sends";
+import { FileIcon } from "./primitives/FileIcon";
 import { openChat, rpc, startOpeningChat } from "./rpc";
 import { showError, useStore } from "./store";
 import "./composer.css";

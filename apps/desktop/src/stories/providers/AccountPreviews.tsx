@@ -21,9 +21,9 @@ import { useEffect, useRef, useState } from "react";
 import { ActionsMenu } from "../../mainview/ActionsMenu";
 import { ConfirmButton } from "../../mainview/ConfirmButton";
 import { InlineRename } from "../../mainview/InlineRename";
-import { ProviderIcon } from "../../mainview/primitives/ProviderIcon";
 import { ProviderDetail } from "../../mainview/Providers";
 import { Chip } from "../../mainview/primitives/Chip";
+import { ProviderIcon } from "../../mainview/primitives/ProviderIcon";
 import { useStore } from "../../mainview/store";
 import {
   type Account,
