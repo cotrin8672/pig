@@ -6,6 +6,11 @@ on:
   push:
     tags: ['v*']
   workflow_dispatch:
+    inputs:
+      build_only:
+        description: Build and upload a test artifact without publishing Nightly
+        type: boolean
+        default: true
   schedule:
     - cron: '0 19 * * *' # 04:00 JST nightly from dev; no native build on every push.
 
@@ -49,7 +54,7 @@ jobs:
           publish=true
           if [[ "$GITHUB_EVENT_NAME" == schedule ]]; then
             published=$(gh release view nightly --json body,assets --jq 'select(any(.assets[]; .name == "pig-windows-x64.zip") and any(.assets[]; .name == "pig-windows-x64.zip.sha256")) | .body' 2>/dev/null || true)
-            if [[ "$published" == *"from commit $sha."* ]]; then publish=false; fi
+            if [[ "$published" == *"from commit $sha."* && "$published" == *"Built with Tauri."* ]]; then publish=false; fi
           fi
           echo "sha=$sha" >> "$GITHUB_OUTPUT"
           echo "publish=$publish" >> "$GITHUB_OUTPUT"
@@ -111,9 +116,10 @@ jobs:
       - run: pnpm lint
       - run: pnpm typecheck:tsgo
       - run: pnpm test
-      - name: Build portable app (shared stable profile)
+      - name: Build Electrobun stable app
+        if: steps.release.outputs.tag != 'nightly'
         env:
-          PIG_RELEASE_CHANNEL: ${{ steps.release.outputs.tag == 'nightly' && 'nightly' || 'stable' }}
+          PIG_RELEASE_CHANNEL: stable
           PIG_RELEASE_VERSION: ${{ steps.release.outputs.version }}
           PIG_RELEASE_COMMIT: ${{ steps.release.outputs.sha }}
         timeout-minutes: 20
@@ -121,20 +127,37 @@ jobs:
           set -euo pipefail
           pnpm --filter @pig/desktop exec vite build
           pnpm --filter @pig/desktop exec electrobun build --env=stable
+      - name: Build Tauri Nightly app
+        if: steps.release.outputs.tag == 'nightly'
+        env:
+          PIG_RELEASE_VERSION: ${{ steps.release.outputs.version }}
+        timeout-minutes: 20
+        run: |
+          rustup target add x86_64-pc-windows-msvc
+          rustup show active-toolchain
+          pnpm --filter @pig/desktop tauri:package
       - name: Package ZIP and checksum
         shell: pwsh
-        run: ./.github/scripts/package.ps1 -OutputDirectory $env:RELEASE_DIR
+        env:
+          RELEASE_TAG: ${{ steps.release.outputs.tag }}
+        run: |
+          if ($env:RELEASE_TAG -eq 'nightly') {
+            ./.github/scripts/package.ps1 -OutputDirectory $env:RELEASE_DIR -TauriNightly
+          } else {
+            ./.github/scripts/package.ps1 -OutputDirectory $env:RELEASE_DIR
+          }
       - uses: actions/upload-artifact@v4
         with:
           name: windows-x64-${{ needs.changes.outputs.sha }}
           path: |
             ${{ env.RELEASE_DIR }}/pig-windows-x64.zip
             ${{ env.RELEASE_DIR }}/pig-windows-x64.zip.sha256
-            ${{ env.RELEASE_DIR }}/install.ps1
+            ${{ steps.release.outputs.tag != 'nightly' && format('{0}/install.ps1', env.RELEASE_DIR) || '' }}
           if-no-files-found: error
           compression-level: 0
           retention-days: 7
       - name: Publish release
+        if: github.event_name != 'workflow_dispatch' || !inputs.build_only
         env:
           TAG: ${{ steps.release.outputs.tag }}
           VERSION: ${{ steps.release.outputs.version }}
@@ -142,7 +165,7 @@ jobs:
         run: |
           set -euo pipefail
           if [[ "$TAG" == nightly ]]; then
-            notes="Nightly $VERSION from commit $SHA. Built with the stable identifier and channel to share settings and projects. Unsigned Windows x64 portable build; requires WebView2."
+            notes="Nightly $VERSION from commit $SHA. Built with Tauri. Unsigned Windows x64 portable build; requires WebView2. To switch from Electrobun, close pig and run scoop update pig-nightly --force --no-cache. Tauri keeps desktop settings separate; Pi credentials and sessions are unchanged."
             if ! gh release view nightly >/dev/null 2>&1; then
               gh release create nightly --target "$SHA" --prerelease --latest=false --title 'pig nightly' --notes 'Nightly publication in progress.'
             fi

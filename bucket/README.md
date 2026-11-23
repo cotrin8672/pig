@@ -16,17 +16,19 @@ Neither relocates the AppData profile or uses Scoop `persist`.
   artifact's hash. Wait for the workflow's bucket commit before installing.
 - Nightly: fixed `nightly` prerelease tag, moved to the built `dev` commit, with
   assets replaced by scheduled daily builds (19:00 UTC) or manual `Release`
-  runs on `dev`. Scheduled runs skip unchanged commits; a push runs fast CI
+  runs on `dev` with `build_only` turned off. Scheduled runs skip commits
+  already published with Tauri; a push runs fast CI
   only. Stable tags must point to a commit on `main`.
   `version: "nightly"` intentionally omits a hash: Scoop updates re-download the
   rolling ZIP without integrity checking. The release body includes the base
   version, UTC date and short commit SHA.
-- Both are built with `electrobun build --env=stable` and use the
-  identifier `dev.pig.desktop`, so their WebView profiles share
-  `%LOCALAPPDATA%/dev.pig.desktop/stable`. Quit before switching/updating, and
-  back up the shared profile before testing nightly.
+- Stable keeps its Electrobun profile at `%LOCALAPPDATA%/dev.pig.desktop/stable`.
+  Tauri Nightly uses separate desktop settings under `%APPDATA%\dev.pig.tauri\pig`.
+  Pi credentials and sessions keep their existing locations. Quit before
+  switching/updating and use `scoop update pig-nightly --force --no-cache`
+  for the first update from Electrobun.
 
-Electrobun 1.18.1 replaces `build/stable-win-x64/pig/` with a self-extracting
+For stable, Electrobun replaces `build/stable-win-x64/pig/` with a self-extracting
 bundle. Do **not** ZIP that folder or use the Setup ZIP for Scoop. The packaging
 script extracts `artifacts/stable-win-x64-pig.tar.zst`, which contains the
 original runnable folder, and zips its contents without a wrapping `pig/`:
@@ -41,6 +43,10 @@ pig-windows-x64.zip
   Resources/main.js
   Info.plist
 ```
+
+Tauri Nightly keeps `bin/launcher.exe` so the current Scoop manifest also works
+after the update. The executable's `host/` directory and `pig-remote.exe` are
+alongside it under `bin/`. It does not ship the stable installer.
 
 No GitHub secrets beyond the built-in `GITHUB_TOKEN` are needed. The stable
 bucket commit needs write access to `main`; branch protection/rules can block
