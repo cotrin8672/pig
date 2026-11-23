@@ -104,7 +104,12 @@ test("isolated SDK: idle suspension, cold drafts/history, single-flight wake and
       heartbeat();await host.suspendIdle();now+=RUNTIME_IDLE_MS;heartbeat();
       expect(await host.suspendIdle()).toBe(1);
       expect(globalThis.__shutdowns).toBe(shutdownsBefore+1);
+      // A package update skips sleeping tabs; they discover new extensions on wake.
+      await writeFile(join(cwd,".pi/extensions/reload-probe.ts"),'export default pi => pi.registerCommand("reload-probe",{handler:async()=>{}});');
+      expect(await host.reloadPackageExtensions()).toEqual([]);
+      expect(()=>host.session(id)).toThrow("Chat is not open");
       chat=await host.wakeSession(host.runtimeState().sessions.find(item=>item.address.sessionId===id).address);
+      expect(host.listSlashCommands(chat.address).some(command=>command.name==="reload-probe")).toBe(true);
       await host.closeSession(chat.address);
       // Browsing starts no SDK and changes no history file.
       const before=await readFile(file,"utf8");
