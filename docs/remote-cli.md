@@ -7,6 +7,8 @@
 ## ホストで一度だけ
 
 Tauriポータブル版の `pig.exe` と同じフォルダに `pig-remote.exe` が必要。
+Scoop の Tauri Nightly では、両方ともインストール先の `current\bin` にあり、
+起動ファイル名は `launcher.exe`。下の `.\pig.exe` は `.\launcher.exe` に読み替える。
 開発時は `mise exec -- cargo build --locked --manifest-path apps/desktop/src-tauri/Cargo.toml -p pig-remote`。
 PowerShell 7でそのバイナリのあるフォルダから：
 

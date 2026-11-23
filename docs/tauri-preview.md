@@ -22,8 +22,10 @@ mise exec -- pnpm --filter @pig/desktop tauri:package
 
 デスクトップ設定は `%APPDATA%\dev.pig.tauri\pig` に分離する。通常起動では Pi CLI と同じ
 認証・設定・セッション保存先を使う。同じ会話を Electrobun 版と Tauri 版で同時に操作しない。
-旧版のデスクトップ設定を無断で移行しない。移行ブランチの `pnpm dev` は Tauri だが、
-製品版のインストーラー・更新・Scoop はこの段階では Electrobun のまま。
+旧版のデスクトップ設定は自動移行しない。`dev` の `pnpm dev` は Tauri。
+Tauri Nightly の公開後、Electrobun 版を終了し、初回は
+`scoop update pig-nightly --force --no-cache` で切り替える。安定版の
+インストーラー・アプリ内更新・Scoop は Electrobun のまま。
 
 ## 検証
 

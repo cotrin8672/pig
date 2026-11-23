@@ -61,7 +61,12 @@ impl Bridge {
             // Set the initial process environment: Bun's executable search can
             // use its startup PATH even after JS mutates process.env.
             .env("PATH", std::env::join_paths(path)?)
-            .env("PIG_TAURI_VERSION", app.package_info().version.to_string())
+            .env(
+                "PIG_TAURI_VERSION",
+                option_env!("PIG_RELEASE_VERSION")
+                    .map(str::to_owned)
+                    .unwrap_or_else(|| app.package_info().version.to_string()),
+            )
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::inherit());
