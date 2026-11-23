@@ -35,6 +35,7 @@ export interface DesktopPlatform {
   readonly downloads: string;
   readonly version: string;
   readonly usesLegacyUpdater: boolean;
+  readonly interactiveWidgets?: true;
   readonly defaultShell: Settings["shell"];
   createWindow(
     id: string,

@@ -402,7 +402,11 @@ const hostRequests = {
   cancelOpen: (input) => sessionHost.cancelOpen(input),
   getSessionSnapshot: async (input) =>
     fullSnapshot(await sessionHost.readSessionSnapshot(input)),
-  getMcpAppPreview: (input) => sessionHost.getMcpAppPreview(input),
+  getMcpAppPreview: (input) =>
+    sessionHost.getMcpAppPreview(
+      input,
+      platform.interactiveWidgets === true && input?.interactive === true,
+    ),
   wakeSession: async (input) =>
     fullSnapshot(await sessionHost.wakeSession(input)),
   getSessionHistory: async (input) =>

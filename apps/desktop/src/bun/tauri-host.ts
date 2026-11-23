@@ -98,6 +98,7 @@ installDesktopPlatform({
   downloads: process.env.PIG_TAURI_DOWNLOADS ?? join(homedir(), "Downloads"),
   version: process.env.PIG_TAURI_VERSION ?? "—",
   usesLegacyUpdater: false,
+  interactiveWidgets: true,
   defaultShell: "powershell",
   createWindow(id, offset, handlers): DesktopWindow {
     const events = new Map<WindowEvent, () => void>();

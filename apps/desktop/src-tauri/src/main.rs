@@ -3,6 +3,7 @@
 mod bridge;
 mod input_queue;
 mod native;
+mod widget;
 
 use bridge::Bridge;
 use input_queue::InputKind;
@@ -39,6 +40,7 @@ pub fn create_window(app: &AppHandle, label: &str, offset: f64) -> tauri::Result
         })
         .on_new_window(|_, _| NewWindowResponse::Deny)
         .build()?;
+    widget::restrict_frames(&window)?;
     let label = label.to_owned();
     let app = app.clone();
     let observed = window.clone();
@@ -72,11 +74,14 @@ pub fn create_window(app: &AppHandle, label: &str, offset: f64) -> tauri::Result
 #[tauri::command]
 fn preview_ipc_ping(probe: tauri::State<'_, Probe>, frame: bool) {
     if frame {
-        probe.0.store(true, Ordering::Release);
+        probe.frame_ipc.store(true, Ordering::Release);
     }
 }
 #[derive(Default)]
-struct Probe(AtomicBool);
+struct Probe {
+    frame_ipc: AtomicBool,
+    blocked_navigation: AtomicBool,
+}
 
 fn smoke() -> bool {
     cfg!(debug_assertions) && std::env::var("PIG_TAURI_SMOKE").as_deref() == Ok("1")
@@ -87,10 +92,14 @@ fn pig_smoke_done(window: WebviewWindow, failure: Option<String>) {
     if smoke() {
         let app = window.app_handle();
         let failure = failure.or_else(|| {
-            app.state::<Probe>()
-                .0
-                .load(Ordering::Acquire)
-                .then(|| "Sandbox command reached Rust".to_string())
+            let probe = app.state::<Probe>();
+            if probe.frame_ipc.load(Ordering::Acquire) {
+                Some("Sandbox command reached Rust".to_string())
+            } else if !probe.blocked_navigation.load(Ordering::Acquire) {
+                Some("Widget navigation guard did not run".to_string())
+            } else {
+                None
+            }
         });
         if let Some(error) = &failure {
             eprintln!("pig-tauri-smoke: {error}");
@@ -117,6 +126,7 @@ fn main() {
     };
     builder
         .manage(Probe::default())
+        .register_uri_scheme_protocol("pig-widget", |_, request| widget::serve(request))
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_notification::init())
         .setup(|app| Bridge::start(app.handle()))

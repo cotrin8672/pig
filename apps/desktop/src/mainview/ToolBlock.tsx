@@ -57,6 +57,7 @@ import { SyntaxRangesContext } from "./SyntaxText";
 import { languageFromPath, terminalText } from "./syntax-highlighting";
 import { type TooltipAnchor, useTooltip } from "./Tooltip";
 import { WidgetFrame } from "./WidgetFrame";
+import { tauriWidgets } from "./widget-frame";
 
 type ToolState = Transcript["tools"][string] | undefined;
 type Tone = "running" | "done" | "error";
@@ -486,10 +487,12 @@ const ICON = 14;
 
 function McpToolPreview({
   appRef,
-  toolCallId,
+  call,
+  result,
 }: {
   appRef: McpAppRef;
-  toolCallId: string;
+  call: ChatRenderData["tool"]["call"];
+  result: unknown;
 }) {
   const address = useContext(McpAppContext);
   const t = useT();
@@ -500,14 +503,17 @@ function McpToolPreview({
         defaultOpen
         icon={<Shapes size={ICON} />}
         verb="MCP App"
-        target={[t.mcpAppStatic, appRef.title].filter(Boolean).join(" · ")}
+        target={[!tauriWidgets() && t.mcpAppStatic, appRef.title]
+          .filter(Boolean)
+          .join(" · ")}
         state={undefined}
         status="done"
       >
         <McpAppPreview
           address={address}
           appRef={appRef}
-          toolCallId={toolCallId}
+          toolCallId={call.id}
+          data={{ args: call.arguments, result }}
         />
       </Row>
     </DisclosureScope>
@@ -537,7 +543,9 @@ export const ToolBlock = memo(function ToolBlock(data: ChatRenderData["tool"]) {
               contentKey={data.call.id}
               builtin={BuiltinTool}
             />
-            {app && <McpToolPreview appRef={app} toolCallId={data.call.id} />}
+            {app && (
+              <McpToolPreview appRef={app} call={data.call} result={result} />
+            )}
           </DisclosureScope>
         </SavedOutputContext.Provider>
       </SyntaxRangesContext.Provider>

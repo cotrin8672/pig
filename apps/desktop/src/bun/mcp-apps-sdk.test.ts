@@ -129,6 +129,10 @@ test("SDK MCP Apps bridge reuses authenticated connections for direct/deferred/c
           // Same authenticated connection; no second client.
           expect(starts).toBe(startsBeforeOpen + 1);
           expect(await host.getMcpAppPreview({...input, toolCallId: "other"})).toBeNull();
+          const interactive = await host.getMcpAppPreview(input, true);
+          expect(interactive?.interactive).toBe(true);
+          expect(interactive?.html).toContain("<script>mustNotRun()</script>");
+          expect(await host.getMcpAppPreview({...input, toolCallId: "other"}, true)).toBeNull();
           const callsBeforeDenial = calls;
           globalThis.__denyMcp = true;
           faux.setResponses([
@@ -148,6 +152,7 @@ test("SDK MCP Apps bridge reuses authenticated connections for direct/deferred/c
           expect(next.epoch).toBeGreaterThan(chat.address.epoch);
           expect(await host.getMcpAppPreview({...input, ...next})).toBeNull();
           expect(await host.getMcpAppPreview(input)).toBeNull();
+          expect(await host.getMcpAppPreview(input, true)).toBeNull();
           await host.closeSession(next);
           await host.dispose();
         }

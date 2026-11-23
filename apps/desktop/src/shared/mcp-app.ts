@@ -7,8 +7,8 @@ export type McpAppRef = {
 
 export const MCP_APP_MAX_BYTES = 1024 * 1024;
 
-/** Sanitized static HTML, or nothing: the normal tool result is always the fallback. */
-export type McpAppPreviewResult = { html: string } | null;
+/** Raw HTML is marked and must go only to the isolated Tauri widget document. */
+export type McpAppPreviewResult = { html: string; interactive?: true } | null;
 
 export function mcpAppRef(details: unknown): McpAppRef | undefined {
   if (!details || typeof details !== "object" || !("mcpApp" in details))

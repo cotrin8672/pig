@@ -1,7 +1,11 @@
 import { invoke } from "@tauri-apps/api/core";
+import { createElement } from "react";
+import { createRoot } from "react-dom/client";
+import { widgetBlock } from "../shared/widget";
 import { openChat, rpc } from "./rpc";
 import { useStore } from "./store";
 import probe from "./tauri-isolation-probe.js?raw";
+import { WidgetFrame } from "./WidgetFrame";
 
 async function until(predicate: () => unknown, name: string) {
   for (let i = 0; i < 160; i++) {
@@ -38,6 +42,109 @@ async function assertIframeIsolation() {
   } finally {
     window.removeEventListener("message", receive);
     frame.remove();
+  }
+}
+
+async function assertWidgets() {
+  const box = document.createElement("div");
+  Object.assign(box.style, { position: "fixed", top: "0", left: "0" });
+  document.body.append(box);
+  const root = createRoot(box);
+  const received = new Map<string, MessageEvent>();
+  const listen = (event: MessageEvent) => {
+    if (event.origin === "null" && typeof event.data?.type === "string")
+      received.set(event.data.type, event);
+  };
+  window.addEventListener("message", listen);
+  const viz = widgetBlock(
+    `<button type="button">Test</button><script>${probe}
+      addEventListener("message", ({source,data}) => {
+        if (source === parent && data?.type === "pig:smoke-navigate")
+          location.href = "http://pig-widget.localhost/frame?navigation-test";
+      });
+    </script>`,
+    { origin: "tool", title: "Visualize fixture" },
+  );
+  const mcp = widgetBlock("", { origin: "mcp", title: "MCP fixture" });
+  const load = async (interactive: boolean) =>
+    interactive
+      ? {
+          interactive: true as const,
+          html: `<html><body><p>MCP fixture</p><script>
+const send = (data) => parent.postMessage({jsonrpc:"2.0", ...data}, "*");
+let input;
+addEventListener("message", ({source, data}) => {
+  if (source !== parent) return;
+  if (data.id === 1 && data.result?.protocolVersion === "2026-01-26") {
+    send({method:"ui/notifications/initialized"});
+    send({id:2,method:"tools/call",params:{name:"fixture-no-op",arguments:{}}});
+  }
+  if (data.method === "ui/notifications/tool-input") input = data.params;
+  if (data.method === "ui/notifications/tool-result")
+    parent.postMessage({type:"pig:smoke-mcp-result",input,result:data.params},"*");
+  if (data.id === 2)
+    parent.postMessage({type:"pig:smoke-mcp-denied",denied:data.error?.code === -32601},"*");
+});
+send({id:1,method:"ui/initialize",params:{protocolVersion:"2026-01-26",appInfo:{name:"fixture",version:"1"},appCapabilities:{}}});
+</script></body></html>`,
+        }
+      : { html: "<p>Static fallback</p>" };
+  root.render([
+    createElement(WidgetFrame, { key: "viz", block: viz }),
+    createElement(WidgetFrame, {
+      key: "mcp",
+      block: mcp,
+      load,
+      mcp: {
+        args: { x: 7 },
+        result: {
+          content: [{ type: "text", text: "MCP result" }],
+          details: { hostOnly: true },
+        },
+      },
+    }),
+  ]);
+  try {
+    await until(() => {
+      const frame = box.querySelector<HTMLIFrameElement>(
+        'iframe[aria-label="Visualize fixture"]',
+      );
+      const event = received.get("pig-tauri-preview-isolation");
+      return (
+        frame?.sandbox.value === "allow-scripts" &&
+        event &&
+        event.source === frame.contentWindow &&
+        event.data.isolated &&
+        ["absent", "rejected", "no reply"].includes(event.data.ipc)
+      );
+    }, "Visualize runs in the isolated document");
+    await until(() => {
+      const frame = box.querySelector<HTMLIFrameElement>(
+        'iframe[aria-label="MCP fixture"]',
+      );
+      if (!frame) return false;
+      const result = received.get("pig:smoke-mcp-result");
+      const denied = received.get("pig:smoke-mcp-denied");
+      return (
+        result?.source === frame.contentWindow &&
+        result.data.input?.arguments?.x === 7 &&
+        result.data.result?.content?.[0]?.text === "MCP result" &&
+        !Object.hasOwn(result.data.result, "details") &&
+        denied?.source === frame.contentWindow &&
+        denied.data.denied === true
+      );
+    }, "MCP widget handshake, tool data, and denied host calls");
+    box
+      .querySelector<HTMLIFrameElement>(
+        'iframe[aria-label="Visualize fixture"]',
+      )
+      ?.contentWindow?.postMessage({ type: "pig:smoke-navigate" }, "*");
+    // Rust checks that WebView2 cancelled this fixture navigation.
+    await new Promise((resolve) => setTimeout(resolve, 500));
+  } finally {
+    window.removeEventListener("message", listen);
+    root.unmount();
+    box.remove();
   }
 }
 
@@ -105,6 +212,7 @@ export async function runTauriSmoke() {
     rpc.send.windowControl({ action: "toggleMaximize" });
     await until(() => !useStore.getState().maximized, "restore event");
     await assertIframeIsolation();
+    await assertWidgets();
   } catch (error) {
     failure = error instanceof Error ? error.message : String(error);
   }

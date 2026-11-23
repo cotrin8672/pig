@@ -368,7 +368,11 @@ export type RPCSchema = {
       cancelOpen: { params: { openId: string }; response: void };
       getSessionSnapshot: { params: SessionAddress; response: Snapshot };
       getMcpAppPreview: {
-        params: SessionAddress & { appId: string; toolCallId: string };
+        params: SessionAddress & {
+          appId: string;
+          toolCallId: string;
+          interactive?: true;
+        };
         response: McpAppPreviewResult;
       };
       getSessionHistory: {
