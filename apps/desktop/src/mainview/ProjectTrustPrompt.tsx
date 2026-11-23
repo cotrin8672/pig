@@ -10,6 +10,8 @@ import {
 import type { ReactNode } from "react";
 import type { UIRequest } from "../shared/extension-ui";
 import { useT } from "./i18n";
+import { Button } from "./primitives/Button";
+import { Switch } from "./primitives/Switch";
 
 type Resource = Extract<
   UIRequest,
@@ -95,14 +97,10 @@ export function ProjectTrustPrompt({
       {error}
       <div className="dialog-actions trust-actions">
         <label className="trust-remember">
-          <input
-            type="checkbox"
-            role="switch"
+          <Switch
             checked={remember}
-            aria-checked={remember}
             onChange={(event) => onRemember(event.target.checked)}
           />
-          <span className="model-switch" aria-hidden="true" />
           {t.trustRemember}
         </label>
         <button type="button" onClick={onCancel}>
@@ -118,5 +116,3 @@ export function ProjectTrustPrompt({
     </>
   );
 }
-
-import { Button } from "./primitives/Button";

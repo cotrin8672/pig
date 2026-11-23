@@ -1,6 +1,8 @@
 @import "tailwindcss";
 @import "./tokens.css";
 @import "./primitives/button.css";
+@import "./primitives/text-field.css";
+@import "./primitives/select.css";
 @import "./primitives/spinner.css";
 @import "./tooltip.css";
 
@@ -1313,15 +1315,6 @@ details[open] > summary .tool-chevron,
   gap: 8px;
   padding-top: 2px;
 }
-select {
-  background: var(--ds-bg-elevated-opaque);
-  color: var(--ds-text-secondary);
-  border: 0;
-  border-radius: var(--radius-xs);
-  padding: 5px;
-  font-size: var(--text-md);
-  max-width: 75%;
-}
 .send-controls {
   display: flex;
   gap: 8px;
@@ -1711,24 +1704,13 @@ select {
   display: flex;
   gap: 8px;
 }
-input:where(:not([type="range"], [type="checkbox"], [type="radio"])) {
-  flex: 1;
-  min-width: 0;
-  width: 100%;
-  background: var(--ds-field-inset-bg);
-  border: 1px solid var(--ds-border-strong);
-  border-radius: var(--radius-xs);
-  padding: 8px;
-}
 @media (max-width: 640px) {
   .app-shell {
     --ds-sidebar-width: 176px;
   }
 }
 @media (prefers-reduced-motion: reduce) {
-  button,
-  .model-switch,
-  .model-switch::after {
+  button {
     transition: none;
   }
   .spinner {
@@ -2398,46 +2380,6 @@ input:where(:not([type="range"], [type="checkbox"], [type="radio"])) {
 }
 .provider-model-row:hover {
   background: var(--ds-bg-hover);
-}
-.provider-model-row input[type="checkbox"] {
-  position: absolute;
-  width: 14px;
-  height: 14px;
-  margin: 0;
-  padding: 0;
-  opacity: 0;
-  flex: none;
-  clip-path: inset(50%);
-}
-.model-switch {
-  position: relative;
-  width: 26px;
-  height: 15px;
-  flex: none;
-  border-radius: 999px;
-  background: #ffffff26;
-  transition: background var(--motion-duration-fast) var(--motion-ease-out);
-}
-.model-switch::after {
-  content: "";
-  position: absolute;
-  top: 2px;
-  left: 2px;
-  width: 11px;
-  height: 11px;
-  border-radius: 50%;
-  background: #fff;
-  transition: transform var(--motion-duration-fast) var(--motion-ease-out);
-}
-.provider-model-row input:checked + .model-switch,
-.model-switch[data-mixed] {
-  background: var(--ds-accent);
-}
-.provider-model-row input:checked + .model-switch::after {
-  transform: translateX(11px);
-}
-.model-switch[data-mixed]::after {
-  transform: translateX(5.5px);
 }
 .provider-model-row:has(input:focus-visible) {
   outline: 1px solid var(--ds-focus);

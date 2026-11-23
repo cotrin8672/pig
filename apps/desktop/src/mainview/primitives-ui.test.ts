@@ -23,6 +23,10 @@ test(
     const {Button}=await import(${local("./primitives/Button.tsx")});
     const {IconButton}=await import(${local("./primitives/IconButton.tsx")});
     const {Spinner}=await import(${local("./primitives/Spinner.tsx")});
+    const {Switch}=await import(${local("./primitives/Switch.tsx")});
+    const {Checkbox}=await import(${local("./primitives/Checkbox.tsx")});
+    const {Select}=await import(${local("./primitives/Select.tsx")});
+    const {TextField}=await import(${local("./primitives/TextField.tsx")});
     const {FileIcon}=await import(${local("./primitives/FileIcon.tsx")});
     const {ProviderIcon}=await import(${local("./primitives/ProviderIcon.tsx")});
     ${fixtureHelpers}
@@ -34,6 +38,8 @@ test(
       <Keycap>Enter</Keycap>
       <Button variant="primary">保存</Button><Button disabled>取消</Button>
       <IconButton aria-label="閉じる">×</IconButton><Spinner size={17}/>
+      <label id="toggle"><Switch/>画像</label><Checkbox id="partial" mixed aria-label="会話"/>
+      <TextField aria-label="検索" defaultValue="テスト"/><Select aria-label="言語" defaultValue="ja"><option>en</option><option>ja</option></Select>
       <div id="providers">{['google-vertex','google-vertex-regional','google','unknown'].map(id=><ProviderIcon key={id} provider={id} size={16}/>)}</div>
       <div id="files">{['main.TSX','notes.md','LICENSE'].map(name=><FileIcon key={name} name={name} size={28}/>)}</div>
     </>));
@@ -54,6 +60,12 @@ test(
     check(dots.every(s=>s.width==='6px'&&s.height==='6px'&&filled(s)),'every dot has a visible face');
     check(new Set(dots.map(s=>s.backgroundColor)).size===dots.length,'distinct state colors including unread');
     const key=getComputedStyle(document.querySelector('kbd'));
+    const track=document.querySelector('.model-switch'),off=getComputedStyle(track).backgroundColor;
+    document.querySelector('#toggle').click();await wait();
+    check(track.offsetWidth===26&&document.querySelector('#toggle input').checked&&off!==getComputedStyle(track).backgroundColor,'label toggles a visible switch');
+    check(document.querySelector('#partial').indeterminate && document.querySelector('#partial').offsetWidth<30,'partial checkbox stays compact');
+    check(filled(getComputedStyle(document.querySelector('select')))&&document.querySelector('select').value==='ja','select surface and value');
+    check(parseFloat(getComputedStyle(document.querySelector('input[aria-label="検索"]')).borderTopWidth)===1,'text field has its own border');
     check(filled(key)&&parseFloat(key.borderBottomWidth)>=2,'keycap has a face and lower edge');
     const [primary,secondary,icon]=document.querySelectorAll('button');
     check(primary.type==='button' && filled(getComputedStyle(primary)) && getComputedStyle(primary).backgroundColor!==getComputedStyle(secondary).backgroundColor && secondary.disabled,'button emphasis and disabled state');

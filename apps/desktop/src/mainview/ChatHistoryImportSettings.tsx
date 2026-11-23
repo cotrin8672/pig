@@ -1,12 +1,15 @@
 import { ChevronDown, FileJson, Search } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type {
   ChatHistoryItem,
   ChatHistoryPreview,
   LocalHistorySource,
 } from "../shared/chat-history-import";
 import { useT } from "./i18n";
+import { Checkbox } from "./primitives/Checkbox";
 import { ProviderIcon } from "./primitives/ProviderIcon";
+import { Select } from "./primitives/Select";
+import { TextField } from "./primitives/TextField";
 import { rpc } from "./rpc";
 import { showError, showNotice, useStore } from "./store";
 import "./chat-history-import.css";
@@ -178,12 +181,6 @@ function ImportList({ preview }: { preview: ChatHistoryPreview }) {
     return visible.sort(order[sort]);
   }, [preview, query, project, sort, language]);
   const visibleSelected = items.filter((item) => selected.has(item.id)).length;
-  const allBox = useRef<HTMLInputElement>(null);
-  useEffect(() => {
-    if (allBox.current)
-      allBox.current.indeterminate =
-        visibleSelected > 0 && visibleSelected < items.length;
-  }, [visibleSelected, items.length]);
   const format = useMemo(
     () =>
       new Intl.DateTimeFormat(language, {
@@ -233,7 +230,7 @@ function ImportList({ preview }: { preview: ChatHistoryPreview }) {
       <div className="history-toolbar">
         <label className="history-search">
           <Search size={16} aria-hidden="true" />
-          <input
+          <TextField
             aria-label={t.historyImportSearch}
             placeholder={t.historyImportSearch}
             value={query}
@@ -243,7 +240,7 @@ function ImportList({ preview }: { preview: ChatHistoryPreview }) {
         </label>
         {projectCounts.length > 0 && (
           <div className="settings-select history-filter">
-            <select
+            <Select
               aria-label={t.historyProject}
               value={project}
               disabled={busy}
@@ -255,12 +252,12 @@ function ImportList({ preview }: { preview: ChatHistoryPreview }) {
                   {projectName(path)} ({n})
                 </option>
               ))}
-            </select>
+            </Select>
             <ChevronDown size={14} aria-hidden="true" />
           </div>
         )}
         <div className="settings-select history-sort">
-          <select
+          <Select
             aria-label={t.historySort}
             value={sort}
             disabled={busy}
@@ -269,15 +266,14 @@ function ImportList({ preview }: { preview: ChatHistoryPreview }) {
             <option value="newest">{t.historySortNewest}</option>
             <option value="oldest">{t.historySortOldest}</option>
             <option value="title">{t.historySortTitle}</option>
-          </select>
+          </Select>
           <ChevronDown size={14} aria-hidden="true" />
         </div>
       </div>
 
       <label className="history-listhead">
-        <input
-          ref={allBox}
-          type="checkbox"
+        <Checkbox
+          mixed={visibleSelected > 0 && visibleSelected < items.length}
           checked={items.length > 0 && visibleSelected === items.length}
           disabled={busy || !items.length}
           onChange={(event) =>
@@ -302,8 +298,7 @@ function ImportList({ preview }: { preview: ChatHistoryPreview }) {
       >
         {items.map((item) => (
           <label key={item.id} className="history-item">
-            <input
-              type="checkbox"
+            <Checkbox
               aria-label={item.title}
               checked={selected.has(item.id)}
               onChange={(event) => toggle([item.id], event.target.checked)}

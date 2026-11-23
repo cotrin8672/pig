@@ -68,9 +68,9 @@ export const inventory: {
   },
   {
     layer: "Primitives",
-    name: "TextField / Select / Checkbox",
-    evidence: "既存CSS",
-    source: "styles.css",
+    name: "TextField / Select / Checkbox / Switch",
+    evidence: "既存部品",
+    source: "mainview/primitives",
     plan: "ネイティブ要素と既存スタイルを土台に、用途と状態を揃える。",
   },
   {

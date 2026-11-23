@@ -7,6 +7,7 @@ import {
 } from "../shared/models";
 import { useT } from "./i18n";
 import { formatTokens, ModelSettings } from "./ModelSettings";
+import { Switch } from "./primitives/Switch";
 import { refresh, rpc } from "./rpc";
 import { showError, useStore } from "./store";
 import { modelVisibility } from "./ui-mutations";
@@ -163,11 +164,9 @@ export function ProviderModels({
             <span className="provider-model-name">
               {query.trim() ? t["All matching models"] : t["All models"]}
             </span>
-            <input
-              type="checkbox"
-              role="switch"
+            <Switch
               checked={allVisibleEnabled}
-              aria-checked={partiallyEnabled ? "mixed" : allVisibleEnabled}
+              mixed={partiallyEnabled}
               disabled={!visible.length}
               onChange={(event) =>
                 void update(
@@ -175,11 +174,6 @@ export function ProviderModels({
                   event.target.checked,
                 )
               }
-            />
-            <span
-              className="model-switch"
-              data-mixed={partiallyEnabled || undefined}
-              aria-hidden="true"
             />
           </label>
           <div className="provider-model-list">
@@ -201,16 +195,12 @@ export function ProviderModels({
                             ` · ${formatTokens(model.maxTokens)}`}
                         </small>
                       )}
-                      <input
-                        type="checkbox"
-                        role="switch"
+                      <Switch
                         checked={isModelEnabled(model, disabledModels)}
-                        aria-checked={isModelEnabled(model, disabledModels)}
                         onChange={(event) =>
                           void update([model.id], event.target.checked)
                         }
                       />
-                      <span className="model-switch" aria-hidden="true" />
                     </label>
                     <button
                       type="button"

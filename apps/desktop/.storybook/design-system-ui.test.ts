@@ -19,6 +19,12 @@ for (const viewport of [
         const buttonPage={render:()=> <buttonStory.render/>};
         const iconButton=await import(${source("../src/stories/design-system/IconButton.stories.tsx")});
         const spinner=await import(${source("../src/stories/design-system/Spinner.stories.tsx")});
+        const controls=[
+          (await import(${source("../src/stories/design-system/Switch.stories.tsx")})).States,
+          (await import(${source("../src/stories/design-system/Checkbox.stories.tsx")})).States,
+          (await import(${source("../src/stories/design-system/Select.stories.tsx")})).States,
+          (await import(${source("../src/stories/design-system/TextField.stories.tsx")})).States,
+        ];
         const providers=await import(${source("../src/stories/design-system/ProviderIcon.stories.tsx")});
         const files=await import(${source("../src/stories/design-system/FileIcon.stories.tsx")});
         const chip=await import(${source("../src/stories/design-system/Chip.stories.tsx")});
@@ -46,7 +52,7 @@ for (const viewport of [
         const pages=[
           foundations.ColorAndTypography,foundations.SurfacesAndOutput,
           buttonPage,iconButton.States,spinner.States,patterns.Settings,patterns.Interactions,
-          providers.Providers,files.FileTypes,
+          providers.Providers,files.FileTypes,...controls,
           chip.States,dot.States,count.States,keycap.States,
           domain.ComposerActions,domain.DomainBoundary,
         ];
@@ -68,7 +74,7 @@ for (const viewport of [
                 check(rect.width>=rect.height-1 && rect.height>=1.75*parseFloat(style.fontSize),'key face fits a single glyph at current text scale');
               }
             }
-            if([providers.Providers,files.FileTypes,buttonPage,iconButton.States,spinner.States,chip.States,dot.States,count.States,keycap.States].includes(story)){
+            if([...controls,providers.Providers,files.FileTypes,buttonPage,iconButton.States,spinner.States,chip.States,dot.States,count.States,keycap.States].includes(story)){
               const stage=page.querySelector('.ds-specimen-stage').getBoundingClientRect();
               check(stage.height>=180 && stage.bottom<=variants.getBoundingClientRect().top,'usage example precedes states');
               check(!page.querySelector('.ds-review-boundary'),'no proposal notice on shipped components');

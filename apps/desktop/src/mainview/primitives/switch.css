@@ -28,11 +28,25 @@
   transition: transform var(--motion-duration-fast) var(--motion-ease-out);
 }
 .ui-switch-input:checked + .model-switch,
-.model-switch[data-mixed] { background: var(--ds-accent); }
-.ui-switch-input:checked + .model-switch::after { transform: translateX(11px); }
-.ui-switch-input:indeterminate + .model-switch::after { transform: translateX(5.5px); }
-.ui-switch-input:focus-visible + .model-switch { outline: 1px solid var(--ds-focus); outline-offset: 2px; }
-.ui-switch-input:disabled + .model-switch { opacity: 0.5; }
+.model-switch[data-mixed] {
+  background: var(--ds-accent);
+}
+.ui-switch-input:checked + .model-switch::after {
+  transform: translateX(11px);
+}
+.ui-switch-input:indeterminate + .model-switch::after {
+  transform: translateX(5.5px);
+}
+.ui-switch-input:focus-visible + .model-switch {
+  outline: 1px solid var(--ds-focus);
+  outline-offset: 2px;
+}
+.ui-switch-input:disabled + .model-switch {
+  opacity: 0.5;
+}
 @media (prefers-reduced-motion: reduce) {
-  .model-switch, .model-switch::after { transition: none; }
+  .model-switch,
+  .model-switch::after {
+    transition: none;
+  }
 }
