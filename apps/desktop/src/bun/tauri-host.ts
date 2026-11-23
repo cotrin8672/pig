@@ -225,10 +225,7 @@ installDesktopPlatform({
 });
 
 const { openWindow, remoteRequest } = await import("./app");
-if (
-  process.env.PIG_REMOTE_ENABLED === "1" &&
-  process.env.PIG_REMOTE_BIN
-) {
+if (process.env.PIG_REMOTE_ENABLED === "1" && process.env.PIG_REMOTE_BIN) {
   const { desktopConfigDir } = await import("./desktop-config");
   const { startRemotePipe } = await import("./remote-pipe");
   startRemotePipe(
