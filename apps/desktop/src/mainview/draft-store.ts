@@ -22,7 +22,6 @@ export type EditorDraft = {
   revision: number;
   version: number;
   dirty: boolean;
-  conflict?: DraftState;
   retired?: boolean;
   transferred?: boolean;
   /** Late receipts track the destination version without retaining its payload. */
@@ -34,6 +33,7 @@ type Flight = {
   content: DraftContent;
   expectedRevision: number;
   version: number;
+  acknowledge?: () => void;
 };
 const contentOf = ({
   text,
@@ -96,7 +96,6 @@ export class DraftStore {
         !draft.retired &&
         !draft.transferred &&
         (draft.dirty ||
-          draft.conflict ||
           this.queues.has(key) ||
           this.flights.has(key) ||
           draft.content.text ||
@@ -196,20 +195,14 @@ export class DraftStore {
       flight &&
       remote.revision > flight.expectedRevision &&
       equal(remote, flight.content);
-    if (draft.dirty && consumes(remote, draft.revision)) {
+    const same = equal(draft.content, remote);
+    if (own || same || (draft.dirty && consumes(remote, draft.revision))) {
       this.put(address, {
         ...draft,
         revision: remote.revision,
-        dirty: !equal(draft.content, remote),
-        conflict: undefined,
+        dirty: !same,
       });
-    } else if (own || equal(draft.content, remote)) {
-      this.put(address, {
-        ...draft,
-        revision: remote.revision,
-        dirty: !equal(draft.content, remote),
-        conflict: undefined,
-      });
+      if (own) flight.acknowledge?.();
     } else if (remote.revision === draft.revision) {
       // Initial/repeated state cannot overwrite unsynced edits.
       if (!draft.dirty)
@@ -218,11 +211,11 @@ export class DraftStore {
           content: contentOf(remote),
           version: draft.version + 1,
         });
-    } else if (draft.dirty) {
+    } else if (draft.dirty && !draft.clearedForSend) {
+      // Rebase on the host revision, not on its text, while the user is editing.
       this.put(address, {
         ...draft,
         revision: remote.revision,
-        conflict: remote,
       });
     } else {
       this.put(address, {
@@ -233,17 +226,6 @@ export class DraftStore {
       });
     }
     return true;
-  }
-  resolve(address: SessionAddress, choice: "local" | "extension") {
-    const draft = this.read(address);
-    if (!draft.conflict || draft.retired) return;
-    this.put(address, {
-      ...draft,
-      content: choice === "local" ? draft.content : contentOf(draft.conflict),
-      conflict: undefined,
-      dirty: choice === "local",
-      version: draft.version + 1,
-    });
   }
   transfer(previous: SessionAddress, next: SessionAddress, revision?: number) {
     if (addressKey(previous) === addressKey(next)) return;
@@ -267,34 +249,38 @@ export class DraftStore {
     // A new epoch's startup editor event may beat the replaced publication.
     // Never overwrite that newer extension text with a clean old mirror.
     const keepCurrent =
-      (!old.dirty || old.clearedForSend) &&
-      destination.revision > 0 &&
-      !inherited;
+      destination.dirty ||
+      ((!old.dirty || old.clearedForSend) &&
+        destination.revision > 0 &&
+        !inherited);
     const version = Math.max(old.version, current.version) + 1;
     this.put(previous, {
       ...old,
       content: emptyContent(),
-      conflict: undefined,
       dirty: false,
       retired: true,
       transferred: true,
       transferredVersion: keepCurrent ? undefined : version,
     });
     if (keepCurrent) {
-      if (current !== destination) this.put(next, current);
+      if (
+        destination.dirty &&
+        old.dirty &&
+        !old.clearedForSend &&
+        !equal(old.content, destination.content)
+      )
+        this.put(next, {
+          ...this.withRestoredContent(current, old.content),
+          version,
+        });
+      else if (current !== destination) this.put(next, current);
       return;
     }
     this.put(next, {
       ...current,
       content: old.content,
       dirty: old.dirty,
-      conflict:
-        old.dirty &&
-        current.revision > 0 &&
-        !inherited &&
-        !equal(old.content, current.content)
-          ? { ...current.content, revision: current.revision }
-          : old.conflict,
+      clearedForSend: old.clearedForSend,
       version,
     });
   }
@@ -315,8 +301,6 @@ export class DraftStore {
     this.put(address, {
       ...draft,
       content: emptyContent(),
-      // A discarded owner keeps no payload, including an unresolved remote side.
-      conflict: undefined,
       dirty: false,
       ...(deleted ? { retired: true } : {}),
     });
@@ -325,6 +309,12 @@ export class DraftStore {
     const draft = this.read(address);
     // The replacement owner receives forwarded results; never strand a copy here.
     if (draft.transferred) return;
+    this.put(address, this.withRestoredContent(draft, sent));
+  }
+  private withRestoredContent(
+    draft: EditorDraft,
+    sent: DraftContent,
+  ): EditorDraft {
     const current = draft.content;
     const text = [
       unfoldPastes(sent.text, sent.pastes),
@@ -332,7 +322,7 @@ export class DraftStore {
     ]
       .filter(Boolean)
       .join("\n\n");
-    this.put(address, {
+    return {
       ...draft,
       content: {
         text,
@@ -364,17 +354,25 @@ export class DraftStore {
       version: draft.version + 1,
       dirty: true,
       clearedForSend: false,
-    });
+    };
   }
   clearForSend(address: SessionAddress, sentVersion: number) {
-    if (!this.clearAccepted(address, sentVersion)) return;
-    this.put(address, { ...this.read(address), clearedForSend: true });
+    this.clearAccepted(address, sentVersion, true);
   }
-  clearAccepted(address: SessionAddress, sentVersion: number) {
+  clearAccepted(
+    address: SessionAddress,
+    sentVersion: number,
+    clearedForSend = false,
+  ) {
     const draft = this.read(address);
-    if (draft.retired || draft.version !== sentVersion || draft.conflict)
-      return false;
-    this.edit(address, emptyContent);
+    if (draft.retired || draft.version !== sentVersion) return false;
+    this.put(address, {
+      ...draft,
+      content: emptyContent(),
+      clearedForSend,
+      version: draft.version + 1,
+      dirty: true,
+    });
     return true;
   }
   flushAll(sync: (params: DraftSyncParams) => Promise<DraftSyncResult>) {
@@ -403,27 +401,17 @@ export class DraftStore {
           if (!requestId) return draft;
           throw new Error("This draft belongs to a replaced or closed session");
         }
-        if (draft.conflict)
-          throw new Error(
-            "Extension changed the editor. Choose which draft to keep before sending.",
-          );
         if (!requestId) {
           if (!draft.dirty) return draft;
           // Queued mirrors and retries must never replay an older local edit.
           target = { ...draft, content: copyContent(draft.content) };
-        } else if (
-          attempt === 0 &&
-          draft.version !== target.version &&
-          !draft.dirty
-        ) {
-          throw new Error(
-            "Editor changed before synchronization; your draft has been retained",
-          );
         }
+        const echo = requestId ? undefined : Promise.withResolvers<void>();
         const flight = {
           content: target.content,
           version: target.version,
           expectedRevision: draft.revision,
+          acknowledge: echo?.resolve,
         };
         this.flights.set(key, flight);
         try {
@@ -436,38 +424,31 @@ export class DraftStore {
             ...(requestId ? { requestId, delivery } : {}),
           });
           let timer: ReturnType<typeof setTimeout> | undefined;
-          // A lost background ACK must not hold the shared queue ahead of a send.
-          const boundedReply = requestId
-            ? reply
-            : Promise.race([
+          // The matching host publication can acknowledge a mirror, not a send reservation.
+          const boundedReply = echo
+            ? Promise.race([
                 reply,
+                echo.promise,
                 new Promise<never>((_, reject) => {
                   timer = setTimeout(
                     () => reject(new Error("Draft sync timed out")),
                     this.mirrorBudgetMs,
                   );
                 }),
-              ]);
+              ])
+            : reply;
           const result = await boundedReply.finally(() => clearTimeout(timer));
+          if (!result) return this.read(address);
           this.receive(address, result.draft);
           const now = this.read(address);
           if (!requestId && now.retired) return now;
           if (result.applied)
             return { ...target, revision: result.draft.revision, dirty: false };
-          const recoverable =
-            equal(flight.content, result.draft) ||
-            consumes(result.draft, flight.expectedRevision) ||
-            (!requestId && !now.dirty);
-          if (
-            now.retired ||
-            now.conflict ||
-            !recoverable ||
-            (requestId && now.revision > result.draft.revision)
-          )
-            throw new Error(
-              "Editor revision conflict; your draft has been retained",
-            );
           if (!requestId && !now.dirty) return now;
+          if (now.retired || now.revision <= flight.expectedRevision)
+            throw new Error(
+              "Draft synchronization did not advance the revision",
+            );
           // Sends must still perform an applied CAS to reserve their request ID.
         } catch (error) {
           const now = this.read(address);

@@ -364,14 +364,14 @@ export function Composer({
   useEffect(
     () => () => {
       const latest = drafts.read(slashAddress);
-      if (latest.dirty && !latest.conflict && !latest.retired)
+      if (latest.dirty && !latest.retired)
         void drafts.flush(slashAddress, mirror, latest).catch(showError);
     },
     [slashAddress, mirror],
   );
   // Background mirror is not the command barrier: send still awaits the ordered CAS queue.
   useEffect(() => {
-    if (!draft.dirty || draft.conflict || draft.retired) return;
+    if (!draft.dirty || draft.retired) return;
     const timer = setTimeout(() => {
       void drafts.flush(slashAddress, mirror).catch(showError);
     }, 120);
@@ -383,7 +383,6 @@ export function Composer({
     if (
       (!hasContent && !resume) ||
       (!canSend && !extensionSend) ||
-      draft.conflict ||
       stopping === key
     )
       return;
@@ -505,30 +504,6 @@ export function Composer({
           else if (!sends.queued(address).length) textareaRef.current?.focus();
         }}
       />
-      {draft.conflict && (
-        <section className="draft-conflict" role="alert">
-          <p>
-            An extension changed this editor while you were typing. Both drafts
-            were retained.
-          </p>
-          <details>
-            <summary>Extension draft</summary>
-            <pre>{draft.conflict.text}</pre>
-          </details>
-          <button
-            type="button"
-            onClick={() => drafts.resolve(address, "local")}
-          >
-            Keep my draft
-          </button>
-          <button
-            type="button"
-            onClick={() => drafts.resolve(address, "extension")}
-          >
-            Use extension draft
-          </button>
-        </section>
-      )}
       <form
         className="composer"
         onSubmit={(event) => {

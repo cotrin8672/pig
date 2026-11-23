@@ -1612,7 +1612,6 @@ test.skipIf(!existsSync(edge) && !process.env.PIG_REQUIRE_UI_TESTS)(
         ["extension-dialogs",'<div class="extension-dialogs audit-scroller"></div>'],
         ["toasts",'<div class="notifications audit-scroller"></div>'],
         ["custom-record",'<div class="custom-record"><pre class="audit-scroller"></pre></div>'],
-        ["draft-conflict",'<div class="draft-conflict"><pre class="audit-scroller"></pre></div>'],
       ];
       const screenshot=async()=>{
         window.__scrollbarCapture=true;

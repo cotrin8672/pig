@@ -151,25 +151,6 @@
   color: var(--ds-text-secondary);
   cursor: pointer;
 }
-.trust-remember input[type="checkbox"] {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  margin: 0;
-  padding: 0;
-  opacity: 0;
-  flex: none;
-}
-.trust-remember input:checked + .model-switch {
-  background: var(--ds-accent);
-}
-.trust-remember input:checked + .model-switch::after {
-  transform: translateX(11px);
-}
-.trust-remember:has(input:focus-visible) .model-switch {
-  outline: 1px solid var(--ds-focus);
-  outline-offset: 2px;
-}
 .ui-waiting {
   padding: 8px 12px;
   display: flex;
@@ -216,8 +197,7 @@
   color: var(--ds-text-muted);
   font-size: var(--text-xs);
 }
-.custom-record pre,
-.draft-conflict pre {
+.custom-record pre {
   white-space: pre-wrap;
   overflow-wrap: anywhere;
   max-height: 480px;
@@ -225,14 +205,6 @@
 }
 .custom-record details {
   margin: 8px 0;
-}
-.draft-conflict {
-  padding: 12px;
-  border: 1px solid var(--ds-warning);
-  border-radius: var(--radius-xs);
-}
-.draft-conflict button {
-  margin: 8px 8px 0 0;
 }
 .sdk-request button:focus-visible,
 .ui-waiting button:focus-visible {

@@ -80,7 +80,7 @@ test("suspension transfers ownership without discarding loaded history or a late
   expect(parked.suspended).toBe(true);
   expect(parked.transcript.records).toBe(records);
   expect(drafts.read(next).content.text).toBe("late local input");
-  expect(drafts.read(next).conflict).toBeUndefined();
+  expect(drafts.read(next).revision).toBe(1);
   expect(previews).not.toContain(true);
   receiveRuntimeState({
     hostId: address.hostId,
