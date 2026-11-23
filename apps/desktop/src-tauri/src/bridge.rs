@@ -54,6 +54,13 @@ impl Bridge {
                 "PIG_REMOTE_BIN",
                 std::env::current_exe()?.with_file_name("pig-remote.exe"),
             );
+            if std::env::var_os("PIG_DESKTOP_CONFIG_DIR").is_none() {
+                // Keep existing Tauri pairing keys without redirecting desktop data.
+                command.env(
+                    "PIG_TAURI_PAIRING_DIR",
+                    app.path().app_config_dir()?.join("pig").join("pairing"),
+                );
+            }
         }
         command
             .current_dir(root)
@@ -70,12 +77,6 @@ impl Bridge {
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::inherit());
-        if std::env::var_os("PIG_DESKTOP_CONFIG_DIR").is_none() {
-            command.env(
-                "PIG_DESKTOP_CONFIG_DIR",
-                app.path().app_config_dir()?.join("pig"),
-            );
-        }
         if let Ok(dir) = app.path().download_dir() {
             command.env("PIG_TAURI_DOWNLOADS", dir);
         }

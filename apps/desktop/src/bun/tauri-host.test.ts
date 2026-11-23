@@ -22,7 +22,7 @@ test.skipIf(process.platform !== "win32")(
           ...process.env,
           HOME: home,
           USERPROFILE: home,
-          PIG_DESKTOP_CONFIG_DIR: join(home, "config"),
+          PIG_DESKTOP_CONFIG_DIR: undefined,
           PI_CODING_AGENT_DIR: join(home, "agent"),
           PI_CODING_AGENT_SESSION_DIR: join(home, "sessions"),
           PI_OFFLINE: "1",
@@ -31,7 +31,7 @@ test.skipIf(process.platform !== "win32")(
       },
     );
     try {
-      const cwd = join(home, "config", "general");
+      const cwd = join(home, ".config", "pig", "general");
       const sessions = join(home, "sessions");
       await mkdir(sessions, { recursive: true });
       const timestamp = "2026-01-01T00:00:00Z";

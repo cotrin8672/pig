@@ -165,7 +165,7 @@ jobs:
         run: |
           set -euo pipefail
           if [[ "$TAG" == nightly ]]; then
-            notes="Nightly $VERSION from commit $SHA. Built with Tauri. Unsigned Windows x64 portable build; requires WebView2. To switch from Electrobun, close pig and run scoop update pig-nightly --force --no-cache. Tauri keeps desktop settings separate; Pi credentials and sessions are unchanged."
+            notes="Nightly $VERSION from commit $SHA. Built with Tauri. Unsigned Windows x64 portable build; requires WebView2. To update, close pig and run scoop update pig-nightly --force --no-cache. Tauri and Electrobun use the same desktop settings and chat history by default."
             if ! gh release view nightly >/dev/null 2>&1; then
               gh release create nightly --target "$SHA" --prerelease --latest=false --title 'pig nightly' --notes 'Nightly publication in progress.'
             fi
