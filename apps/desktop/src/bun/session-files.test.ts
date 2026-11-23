@@ -50,6 +50,15 @@ test("session discovery reads headers only, normalizes header paths and rejects 
       const pageSource = () => readSessionFileForPaging(cwd,id,basis.entryCount);
       expect((await pageSource()).prefixDigest).toBe(basis.digest);
       const rows = original.trimEnd().split("\\n");
+      // Split a UTF-8 character at 1 MiB, then span another entire chunk
+      // without a newline. The final record has no terminator.
+      const lead = rows[0]+"\\r\\n\\n"+rows[1].split("Persisted")[0];
+      const body = "a".repeat(1024*1024-Buffer.byteLength(lead)-1)+"日"+"b".repeat(2*1024*1024);
+      const largeRow = rows[1].replace("Persisted",body);
+      await writeFile(file,rows[0]+"\\r\\n\\n"+largeRow);
+      const large = await pageSource();
+      expect(large.manager.getEntries()[0].message.content === body).toBe(true);
+      expect(large.prefixDigest).toBe(sessionHistoryDigest(large.manager));
       await writeFile(file, rows.join("\\r\\n"));
       expect((await pageSource()).prefixDigest).toBe(basis.digest);
       await writeFile(file, rows.map(line=>" "+line).join("\\n"));

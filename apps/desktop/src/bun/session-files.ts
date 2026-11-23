@@ -139,33 +139,42 @@ async function readSessionSource(
   file: string,
   prefixCount?: number,
 ) {
-  const stream = createReadStream(file, { encoding: "utf8" });
-  const lines = createInterface({ input: stream, crlfDelay: Infinity });
+  const stream = createReadStream(file, {
+    encoding: "utf8",
+    highWaterMark: 1024 * 1024,
+  });
   const entries: FileEntry[] = [];
   let sourceHash: ReturnType<typeof createHash> | undefined;
   let remaining = prefixCount ?? 0;
-  try {
-    for await (const line of lines) {
-      if (!line.trim()) continue;
-      const entry = JSON.parse(line) as FileEntry;
-      if (!entry || typeof entry !== "object" || Array.isArray(entry))
-        throw new Error("Invalid session history entry");
-      entries.push(entry);
-      if (entries.length === 1 && entry.type === "session") {
-        if (
-          prefixCount !== undefined &&
-          entry.version === CURRENT_SESSION_VERSION
-        )
-          sourceHash = createHash("sha256");
-      } else if (sourceHash && remaining > 0 && entry.type !== "session") {
-        sourceHash.update(line).update("\n");
-        remaining--;
-      }
+  const parse = (line: string) => {
+    if (!line.trim()) return;
+    const entry = JSON.parse(line) as FileEntry;
+    if (!entry || typeof entry !== "object" || Array.isArray(entry))
+      throw new Error("Invalid session history entry");
+    entries.push(entry);
+    if (entries.length === 1 && entry.type === "session") {
+      if (
+        prefixCount !== undefined &&
+        entry.version === CURRENT_SESSION_VERSION
+      )
+        sourceHash = createHash("sha256");
+    } else if (sourceHash && remaining > 0 && entry.type !== "session") {
+      sourceHash.update(line).update("\n");
+      remaining--;
     }
-  } finally {
-    lines.close();
-    stream.destroy();
+  };
+  // Await chunks, not individual entries. Split before joining the carry so a
+  // multi-MiB tool result is never scanned repeatedly for its first newline.
+  let carry = "";
+  for await (const chunk of stream) {
+    const lines = (chunk as string).split(/[\r\n]/);
+    for (let i = 0; i < lines.length - 1; i++) {
+      parse(carry + lines[i]);
+      carry = "";
+    }
+    carry += lines[lines.length - 1];
   }
+  parse(carry);
   const header = entries[0];
   if (
     header?.type !== "session" ||
