@@ -3,7 +3,7 @@ import "./text-field.css";
 
 export function TextField(
   props: Omit<ComponentPropsWithRef<"input">, "type"> & {
-    type?: "text" | "search" | "email" | "url" | "password" | "tel";
+    type?: "text" | "search" | "email" | "url" | "password" | "tel" | "number";
   },
 ) {
   return <input {...props} />;

@@ -1,5 +1,6 @@
 import { MoreHorizontal } from "lucide-react";
 import { type ReactNode, useEffect, useId, useRef, useState } from "react";
+import "./actions-menu.css";
 
 /** Shared native popover, positioning and keyboard behavior for sidebar actions. */
 export function ActionsMenu({

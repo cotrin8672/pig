@@ -1,15 +1,13 @@
 import {
-  ChevronDown,
   Import,
   Info,
   Keyboard,
   Palette,
   RotateCcw,
-  Search,
   Settings2,
   X,
 } from "lucide-react";
-import { type ReactNode, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import {
   type ActionId,
   actionIds,
@@ -27,35 +25,19 @@ import { DefaultModelSettings } from "./DefaultModelSettings";
 import { FontSettings } from "./FontSettings";
 import { useT } from "./i18n";
 import { PiDataSettings } from "./PiDataSettings";
+import { SettingsCard } from "./patterns/SettingsCard";
+import { SettingsRow } from "./patterns/SettingsRow";
+import { Checkbox } from "./primitives/Checkbox";
 import { IconButton } from "./primitives/IconButton";
 import { Keycap } from "./primitives/Keycap";
+import { SearchField } from "./primitives/SearchField";
+import { SegmentedControl } from "./primitives/SegmentedControl";
+import { Select } from "./primitives/Select";
 import { updateAppearance, updateSettings } from "./rpc";
 import { revealTarget } from "./search-target";
 import { actionLabels, settingsCategories } from "./settings-search";
 import { type SettingsCategory, useStore } from "./store";
 import "./settings.css";
-
-function SettingsSection({ children }: { children: ReactNode }) {
-  return <div className="settings-card">{children}</div>;
-}
-
-function SettingsRow({
-  label,
-  setting,
-  children,
-}: {
-  label: ReactNode;
-  /** Search palette target id, see settings-search.ts. */
-  setting?: string;
-  children: ReactNode;
-}) {
-  return (
-    <div className="settings-row" data-setting={setting}>
-      <div className="settings-label">{label}</div>
-      {children}
-    </div>
-  );
-}
 
 export function Settings() {
   const t = useT();
@@ -126,26 +108,23 @@ export function Settings() {
           <h2>{categories.find(({ id }) => id === category)?.label}</h2>
           {category === "general" && <DefaultModelSettings />}
           {category === "general" && (
-            <SettingsSection>
+            <SettingsCard>
               <SettingsRow
                 setting="language"
                 label={<label htmlFor="settings-language">{t.Language}</label>}
               >
-                <div className="settings-select">
-                  <select
-                    id="settings-language"
-                    value={settings.language}
-                    onChange={(e) =>
-                      updateSettings({
-                        language: e.target.value as "en" | "ja",
-                      })
-                    }
-                  >
-                    <option value="en">English</option>
-                    <option value="ja">日本語</option>
-                  </select>
-                  <ChevronDown size={14} aria-hidden="true" />
-                </div>
+                <Select
+                  id="settings-language"
+                  value={settings.language}
+                  onChange={(e) =>
+                    updateSettings({
+                      language: e.target.value as "en" | "ja",
+                    })
+                  }
+                >
+                  <option value="en">English</option>
+                  <option value="ja">日本語</option>
+                </Select>
               </SettingsRow>
               <SettingsRow
                 setting="agent-shell"
@@ -155,21 +134,18 @@ export function Settings() {
                   </label>
                 }
               >
-                <div className="settings-select">
-                  <select
-                    id="settings-agent-shell"
-                    value={settings.shell}
-                    onChange={(event) =>
-                      updateSettings({
-                        shell: event.target.value as "git-bash" | "powershell",
-                      })
-                    }
-                  >
-                    <option value="git-bash">{t["Git Bash"]}</option>
-                    <option value="powershell">{t.PowerShell}</option>
-                  </select>
-                  <ChevronDown size={14} aria-hidden="true" />
-                </div>
+                <Select
+                  id="settings-agent-shell"
+                  value={settings.shell}
+                  onChange={(event) =>
+                    updateSettings({
+                      shell: event.target.value as "git-bash" | "powershell",
+                    })
+                  }
+                >
+                  <option value="git-bash">{t["Git Bash"]}</option>
+                  <option value="powershell">{t.PowerShell}</option>
+                </Select>
               </SettingsRow>
               <SettingsRow
                 setting="block-images"
@@ -179,9 +155,8 @@ export function Settings() {
                   </label>
                 }
               >
-                <input
+                <Checkbox
                   id="settings-block-images"
-                  type="checkbox"
                   checked={settings.blockImages}
                   onChange={(event) =>
                     updateSettings({ blockImages: event.target.checked })
@@ -194,43 +169,31 @@ export function Settings() {
                   <span id="context-display-label">{t["Context display"]}</span>
                 }
               >
-                <fieldset
-                  className="segmented-control"
+                <SegmentedControl
                   aria-labelledby="context-display-label"
-                >
-                  {(["remaining", "used"] as const).map((mode) => (
-                    <button
-                      key={mode}
-                      type="button"
-                      aria-pressed={settings.contextDisplay === mode}
-                      onClick={() => updateSettings({ contextDisplay: mode })}
-                    >
-                      {mode === "remaining" ? t.Remaining : t.Used}
-                    </button>
-                  ))}
-                </fieldset>
+                  value={settings.contextDisplay}
+                  onChange={(mode) => updateSettings({ contextDisplay: mode })}
+                  options={[
+                    { value: "remaining", label: t.Remaining },
+                    { value: "used", label: t.Used },
+                  ]}
+                />
               </SettingsRow>
               <SettingsRow
                 setting="usage-display"
                 label={<span id="usage-display-label">{t.usageDisplay}</span>}
               >
-                <fieldset
-                  className="segmented-control"
+                <SegmentedControl
                   aria-labelledby="usage-display-label"
-                >
-                  {(["remaining", "used"] as const).map((mode) => (
-                    <button
-                      key={mode}
-                      type="button"
-                      aria-pressed={settings.usageDisplay === mode}
-                      onClick={() => updateSettings({ usageDisplay: mode })}
-                    >
-                      {mode === "remaining" ? t.Remaining : t.Used}
-                    </button>
-                  ))}
-                </fieldset>
+                  value={settings.usageDisplay}
+                  onChange={(mode) => updateSettings({ usageDisplay: mode })}
+                  options={[
+                    { value: "remaining", label: t.Remaining },
+                    { value: "used", label: t.Used },
+                  ]}
+                />
               </SettingsRow>
-            </SettingsSection>
+            </SettingsCard>
           )}
           {category === "appearance" && (
             <>
@@ -295,17 +258,15 @@ function KeyboardSettings() {
   );
   return (
     <>
-      <div className="settings-search">
-        <Search size={16} aria-hidden="true" />
-        <input
-          type="search"
-          aria-label={t["Search shortcuts"]}
-          placeholder={t["Search shortcuts"]}
-          value={query}
-          onChange={(event) => setQuery(event.target.value)}
-        />
-      </div>
-      <SettingsSection>
+      <SearchField
+        className="settings-search"
+        type="search"
+        aria-label={t["Search shortcuts"]}
+        placeholder={t["Search shortcuts"]}
+        value={query}
+        onChange={(event) => setQuery(event.target.value)}
+      />
+      <SettingsCard>
         {filtered.map((action) => (
           <SettingsRow
             key={action}
@@ -397,7 +358,7 @@ function KeyboardSettings() {
         {filtered.length === 0 && (
           <p className="settings-empty">{t["No matching shortcuts"]}</p>
         )}
-      </SettingsSection>
+      </SettingsCard>
     </>
   );
 }
@@ -408,7 +369,7 @@ export function AppearanceSettings() {
   const alpha = Math.round(appearance.opacity[appearance.backdrop] * 100);
   return (
     <>
-      <SettingsSection>
+      <SettingsCard>
         <SettingsRow setting="theme-color" label={t.themeColor}>
           <ColorPicker
             label={t.themeColor}
@@ -422,31 +383,22 @@ export function AppearanceSettings() {
           setting="backdrop"
           label={<span id="backdrop-label">{t["Window backdrop"]}</span>}
         >
-          <fieldset
-            className="segmented-control"
+          <SegmentedControl
             aria-labelledby="backdrop-label"
-          >
-            {(["none", "acrylic", "mica"] as const).map((backdrop) => (
-              <button
-                key={backdrop}
-                type="button"
-                aria-pressed={appearance.backdrop === backdrop}
-                onClick={() =>
-                  updateAppearance((current) => ({
-                    ...current,
-                    backdrop,
-                    effect: backdrop === "none" ? current.effect : backdrop,
-                  }))
-                }
-              >
-                {backdrop === "none"
-                  ? t.None
-                  : backdrop === "acrylic"
-                    ? t.Acrylic
-                    : t.Mica}
-              </button>
-            ))}
-          </fieldset>
+            value={appearance.backdrop}
+            onChange={(backdrop) =>
+              updateAppearance((current) => ({
+                ...current,
+                backdrop,
+                effect: backdrop === "none" ? current.effect : backdrop,
+              }))
+            }
+            options={[
+              { value: "none", label: t.None },
+              { value: "acrylic", label: t.Acrylic },
+              { value: "mica", label: t.Mica },
+            ]}
+          />
         </SettingsRow>
         <SettingsRow
           setting="window-opacity"
@@ -471,7 +423,7 @@ export function AppearanceSettings() {
             <output htmlFor="window-opacity">{alpha}%</output>
           </div>
         </SettingsRow>
-      </SettingsSection>
+      </SettingsCard>
       <p className="settings-hint">
         {t["Acrylic and Mica require Windows 11."]}
       </p>

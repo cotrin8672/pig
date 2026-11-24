@@ -9,6 +9,7 @@ import {
 } from "react";
 import { createPortal } from "react-dom";
 import { useT } from "./i18n";
+import { Button } from "./primitives/Button";
 
 const highlightName = "pig-annotation";
 const supportsHighlights = typeof CSS !== "undefined" && "highlights" in CSS;
@@ -245,9 +246,9 @@ export function AnnotationPopover({
             <button type="button" onClick={cancel}>
               {t.Cancel}
             </button>
-            <button type="submit" className="primary">
+            <Button type="submit" variant="primary">
               {t["Add comment"]}
-            </button>
+            </Button>
           </div>
         </form>
       ) : (

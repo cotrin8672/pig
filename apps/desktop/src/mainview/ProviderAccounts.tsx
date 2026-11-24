@@ -13,10 +13,10 @@ import {
 } from "../shared/account-models";
 import type { AccountTarget } from "../shared/provider-accounts";
 import type { ProviderInfo } from "../shared/rpc-schema";
-import { ActionsMenu } from "./ActionsMenu";
-import { ConfirmButton } from "./ConfirmButton";
-import { InlineRename } from "./InlineRename";
 import { useT } from "./i18n";
+import { ActionsMenu } from "./patterns/ActionsMenu";
+import { ConfirmButton } from "./patterns/ConfirmButton";
+import { InlineRename } from "./patterns/InlineRename";
 import { Chip } from "./primitives/Chip";
 import { ProviderIcon } from "./primitives/ProviderIcon";
 import { startProviderLogin } from "./provider-login";

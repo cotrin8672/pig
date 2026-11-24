@@ -3,7 +3,6 @@ import {
   Box,
   Hash,
   Import,
-  LoaderCircle,
   SquareFunction,
   TriangleAlert,
   Type,
@@ -11,8 +10,8 @@ import {
 } from "lucide-react";
 import type { ComponentType, ReactNode } from "react";
 import { CodeText } from "../../mainview/HighlightedCode";
-import { DisclosureScope } from "../../mainview/LazyDetails";
 import { PiLensRenderer } from "../../mainview/PiLensRenderer";
+import { DisclosureScope } from "../../mainview/patterns/LazyDetails";
 import { languageFromPath } from "../../mainview/syntax-highlighting";
 import { ToolBlock, ToolRow } from "../../mainview/ToolBlock";
 import {
@@ -26,6 +25,7 @@ import {
 } from "./kit";
 import { baseName, body, dirName } from "./lens-model";
 import "./lens.css";
+import { Spinner } from "../../mainview/primitives/Spinner";
 
 /** Default is the shipped pi-lens renderer, so each proposal is compared with today. */
 const Shipped = ({ tool }: ToolProps) => (
@@ -52,7 +52,7 @@ export function lensStories<K extends string>(
 }
 
 export const Spin = ({ size = 12 }: { size?: number }) => (
-  <LoaderCircle size={size} className="spinner" aria-label="実行中" />
+  <Spinner size={size} label="実行中" />
 );
 
 /** The built-in collapsible tool row, so proposals share the transcript's rhythm. */

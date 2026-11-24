@@ -1,4 +1,4 @@
-import { ChevronDown, RefreshCw, Search, X } from "lucide-react";
+import { ChevronDown, RefreshCw } from "lucide-react";
 import { useRef, useState } from "react";
 import {
   isModelEnabled,
@@ -7,6 +7,7 @@ import {
 } from "../shared/models";
 import { useT } from "./i18n";
 import { formatTokens, ModelSettings } from "./ModelSettings";
+import { SearchField } from "./primitives/SearchField";
 import { Switch } from "./primitives/Switch";
 import { refresh, rpc } from "./rpc";
 import { showError, useStore } from "./store";
@@ -136,24 +137,16 @@ export function ProviderModels({
       ) : (
         <>
           <div className="provider-model-toolbar">
-            <div className="provider-model-search">
-              <Search size={13} />
-              <input
-                aria-label={t.searchProviderModels(name)}
-                placeholder={t["Filter models"]}
-                value={query}
-                onChange={(event) => setQuery(event.target.value)}
-              />
-              {query && (
-                <button
-                  type="button"
-                  aria-label={t["Clear model filter"]}
-                  onClick={() => setQuery("")}
-                >
-                  <X size={12} />
-                </button>
-              )}
-            </div>
+            <SearchField
+              variant="inline"
+              className="provider-model-search"
+              aria-label={t.searchProviderModels(name)}
+              placeholder={t["Filter models"]}
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+              onClear={() => setQuery("")}
+              clearLabel={t["Clear model filter"]}
+            />
             <span className="provider-model-count">
               {query.trim()
                 ? t.modelCount(visible.length, true)

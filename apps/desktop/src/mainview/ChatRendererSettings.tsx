@@ -2,6 +2,8 @@ import { useState, useSyncExternalStore } from "react";
 import { reloadChatRenderers } from "./chat-renderer-client";
 import { rendererSnapshot, subscribeRenderers } from "./chat-renderer-registry";
 import { useT } from "./i18n";
+import { SettingsCard } from "./patterns/SettingsCard";
+import { SettingsRow } from "./patterns/SettingsRow";
 import { rpc } from "./rpc";
 
 export function ChatRendererSettings() {
@@ -9,19 +11,23 @@ export function ChatRendererSettings() {
   const state = useSyncExternalStore(subscribeRenderers, rendererSnapshot);
   const [busy, setBusy] = useState(false);
   return (
-    <section className="settings-card" aria-label={t["Chat renderers"]}>
-      <div className="settings-row" data-setting="chat-renderers">
-        <div className="settings-label">
-          <strong>{t["Chat renderers"]}</strong>
-          <p className="muted">
-            {
-              t[
-                "Load trusted local TSX components. Changes only affect chat display."
-              ]
-            }
-          </p>
-          <code>{state.file || "~/.config/pig/chat-renderers.tsx"}</code>
-        </div>
+    <SettingsCard aria-label={t["Chat renderers"]}>
+      <SettingsRow
+        setting="chat-renderers"
+        label={
+          <>
+            <strong>{t["Chat renderers"]}</strong>
+            <p className="muted">
+              {
+                t[
+                  "Load trusted local TSX components. Changes only affect chat display."
+                ]
+              }
+            </p>
+            <code>{state.file || "~/.config/pig/chat-renderers.tsx"}</code>
+          </>
+        }
+      >
         <button
           type="button"
           disabled={busy}
@@ -38,7 +44,7 @@ export function ChatRendererSettings() {
         >
           {t["Reload chat renderers"]}
         </button>
-      </div>
+      </SettingsRow>
       {state.error && (
         <p className="error" role="alert">
           {state.error}
@@ -57,6 +63,6 @@ export function ChatRendererSettings() {
           ]
         }
       </p>
-    </section>
+    </SettingsCard>
   );
 }

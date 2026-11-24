@@ -6,9 +6,7 @@ import {
   Image,
   Lock,
   LogIn,
-  Search,
   SquarePen,
-  X,
   Zap,
 } from "lucide-react";
 import {
@@ -42,6 +40,7 @@ import { useT } from "./i18n";
 import type { ModelPickerSnapshot } from "./model-picker-view";
 import { changeSelection, usePicker } from "./Picker";
 import { ProviderIcon } from "./primitives/ProviderIcon";
+import { SearchField } from "./primitives/SearchField";
 import { startProviderLogin } from "./provider-login";
 import {
   ensureSessionRuntime,
@@ -346,40 +345,33 @@ export const ModelPicker = memo(function ModelPicker({
             }
           }}
         >
-          <div className="model-search">
-            <Search size={14} />
-            <input
-              ref={search}
-              role="combobox"
-              aria-expanded={open}
-              aria-controls={listId}
-              aria-activedescendant={
-                open && visible[activeIndex]
-                  ? `${listId}-${activeIndex}`
-                  : undefined
-              }
-              aria-label={t["Search models"]}
-              placeholder={t["Search models"]}
-              spellCheck={false}
-              value={query}
-              onChange={(event) => {
-                setQuery(event.target.value);
-                setHighlight(-1);
-              }}
-            />
-            {query && (
-              <button
-                type="button"
-                aria-label={t["Clear search"]}
-                onClick={() => {
-                  setQuery("");
-                  setHighlight(-1);
-                  search.current?.focus();
-                }}
-              >
-                <X size={12} />
-              </button>
-            )}
+          <SearchField
+            variant="inline"
+            className="model-search"
+            ref={search}
+            role="combobox"
+            aria-expanded={open}
+            aria-controls={listId}
+            aria-activedescendant={
+              open && visible[activeIndex]
+                ? `${listId}-${activeIndex}`
+                : undefined
+            }
+            aria-label={t["Search models"]}
+            placeholder={t["Search models"]}
+            spellCheck={false}
+            value={query}
+            onChange={(event) => {
+              setQuery(event.target.value);
+              setHighlight(-1);
+            }}
+            onClear={() => {
+              setQuery("");
+              setHighlight(-1);
+              search.current?.focus();
+            }}
+            clearLabel={t["Clear search"]}
+          >
             <button
               type="button"
               aria-label={t["Fast mode"]}
@@ -389,7 +381,7 @@ export const ModelPicker = memo(function ModelPicker({
             >
               <Zap size={14} />
             </button>
-          </div>
+          </SearchField>
           <div
             className="model-browser"
             data-has-rail={

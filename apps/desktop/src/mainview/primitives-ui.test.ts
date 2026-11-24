@@ -29,6 +29,11 @@ test(
     const {TextField}=await import(${local("./primitives/TextField.tsx")});
     const {FileIcon}=await import(${local("./primitives/FileIcon.tsx")});
     const {ProviderIcon}=await import(${local("./primitives/ProviderIcon.tsx")});
+    const {SegmentedControl}=await import(${local("./primitives/SegmentedControl.tsx")});
+    const {SearchField}=await import(${local("./primitives/SearchField.tsx")});
+    const {SettingsCard}=await import(${local("./patterns/SettingsCard.tsx")});
+    const {SettingsRow}=await import(${local("./patterns/SettingsRow.tsx")});
+    const picks=[];
     ${fixtureHelpers}
     const root=createFixtureRoot(createRoot);
     flushSync(()=>root.render(<>
@@ -39,7 +44,11 @@ test(
       <Button variant="primary">保存</Button><Button disabled>取消</Button>
       <IconButton aria-label="閉じる">×</IconButton><Spinner size={17}/>
       <label id="toggle"><Switch/>画像</label><Checkbox id="partial" mixed aria-label="会話"/>
-      <TextField aria-label="検索" defaultValue="テスト"/><Select aria-label="言語" defaultValue="ja"><option>en</option><option>ja</option></Select>
+      <TextField aria-label="検索" defaultValue="テスト"/>
+      <SegmentedControl aria-label="表示" value="a" onChange={v=>picks.push(v)} options={[{value:'a',label:'A'},{value:'b',label:'B'},{value:'c',label:'C',disabled:true}]}/>
+      <SearchField id="search" aria-label="絞り込み" value="x" onChange={()=>{}} onClear={()=>picks.push('clear')} clearLabel="消去"/>
+      <SearchField id="empty-search" aria-label="空" value="" onChange={()=>{}} onClear={()=>{}} clearLabel="消去"/>
+      <SettingsCard id="card"><SettingsRow label="一" setting="one"><span>A</span></SettingsRow><SettingsRow label="二"><span>B</span></SettingsRow></SettingsCard><Select aria-label="言語" defaultValue="ja"><option>en</option><option>ja</option></Select>
       <div id="providers">{['google-vertex','google-vertex-regional','google','unknown'].map(id=><ProviderIcon key={id} provider={id} size={16}/>)}</div>
       <div id="files">{['main.TSX','notes.md','LICENSE'].map(name=><FileIcon key={name} name={name} size={28}/>)}</div>
     </>));
@@ -70,6 +79,18 @@ test(
     const [primary,secondary,icon]=document.querySelectorAll('button');
     check(primary.type==='button' && filled(getComputedStyle(primary)) && getComputedStyle(primary).backgroundColor!==getComputedStyle(secondary).backgroundColor && secondary.disabled,'button emphasis and disabled state');
     check(icon.offsetWidth===32 && icon.offsetHeight===32,'square icon target');
+    const segments=[...document.querySelectorAll('.segmented-control button')];
+    check(segments[0].getAttribute('aria-pressed')==='true' && filled(getComputedStyle(segments[0])) && !filled(getComputedStyle(segments[1])),'selected segment is raised');
+    segments[0].click();segments[1].click();segments[2].click();
+    check(picks.join(',')==='b' && segments[2].disabled,'only a new, enabled segment reports a change');
+    const field=document.querySelector('#search').closest('.ui-search-field');
+    check(filled(getComputedStyle(field)) && !filled(getComputedStyle(field.querySelector('input'))) && field.querySelector('svg').getAttribute('aria-hidden')==='true','search field draws one surface around a borderless input');
+    field.querySelector('button[aria-label="消去"]').click();
+    check(picks.at(-1)==='clear' && !document.querySelector('#empty-search').closest('.ui-search-field').querySelector('button'),'clear button only while there is text');
+    const sel=document.querySelector('.ui-select');
+    check(sel.querySelector('svg') && getComputedStyle(sel.querySelector('select')).appearance!=='auto','select draws its own chevron');
+    const card=document.querySelector('#card'),rows=card.querySelectorAll('.settings-row');
+    check(filled(getComputedStyle(card)) && getComputedStyle(card).opacity==='1' && rows[0].dataset.setting==='one' && parseFloat(getComputedStyle(rows[1]).borderTopWidth)===1,'settings card is a translucent surface with separated rows');
     const spinner=document.querySelector('svg.spinner');
     check(getComputedStyle(spinner).width==='17px' && spinner.getAttribute('aria-hidden')==='true','inline spinner layout size and semantics independent of its rotation');
     const [vertex,regional,google,fallback]=faces('providers');

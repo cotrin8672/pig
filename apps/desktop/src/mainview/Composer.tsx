@@ -3,7 +3,6 @@ import {
   ClipboardPaste,
   FileText,
   Folder,
-  LoaderCircle,
   Puzzle,
   X,
 } from "lucide-react";
@@ -50,6 +49,7 @@ import { ModelPicker } from "./ModelPicker";
 import { applyMention, mentionContext } from "./mention-completion";
 import { createModelPickerSelector } from "./model-picker-view";
 import { FileIcon } from "./primitives/FileIcon";
+import { Spinner } from "./primitives/Spinner";
 import { ensureSessionRuntime, rpc, sends } from "./rpc";
 import { SessionIndicators } from "./SessionIndicators";
 import { SessionPanel } from "./SessionPanel";
@@ -622,7 +622,7 @@ export function Composer({
                 aria-description={load.name}
                 aria-busy="true"
               >
-                <LoaderCircle size={22} className="spinner" aria-hidden />
+                <Spinner size={22} />
                 <span>{load.name}</span>
                 <button
                   type="button"

@@ -1,4 +1,6 @@
 import { useState } from "react";
+import { TextField } from "../primitives/TextField";
+import "./inline-rename.css";
 
 /** Edits a title in place: Enter or leaving the field commits, Escape restores. */
 export function InlineRename({
@@ -29,7 +31,7 @@ export function InlineRename({
     onDone();
   };
   return (
-    <input
+    <TextField
       className="inline-rename"
       aria-label={label}
       placeholder={placeholder}

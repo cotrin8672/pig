@@ -1,5 +1,8 @@
 import { useEffect } from "react";
 import { useT } from "./i18n";
+import { SettingsCard } from "./patterns/SettingsCard";
+import { SettingsRow } from "./patterns/SettingsRow";
+import { Button } from "./primitives/Button";
 import { rpc } from "./rpc";
 import { showError, useStore } from "./store";
 
@@ -37,25 +40,29 @@ export function AppUpdateSettings() {
       error: "",
     }[state.status];
   return (
-    <section className="settings-card" aria-label={t.appUpdateTitle}>
-      <div className="settings-row app-update" data-setting="app-update">
-        <div className="settings-label">
-          <div>
-            pig <span className="app-update-version">{state.version}</span>
-          </div>
-          <div
-            className="app-update-status"
-            data-error={state.error ? "" : undefined}
-            role={state.error ? "alert" : "status"}
-            aria-live="polite"
-          >
-            {status}
-          </div>
-        </div>
+    <SettingsCard aria-label={t.appUpdateTitle}>
+      <SettingsRow
+        className="app-update"
+        setting="app-update"
+        label={
+          <>
+            <div>
+              pig <span className="app-update-version">{state.version}</span>
+            </div>
+            <div
+              className="app-update-status"
+              data-error={state.error ? "" : undefined}
+              role={state.error ? "alert" : "status"}
+              aria-live="polite"
+            >
+              {status}
+            </div>
+          </>
+        }
+      >
         {state.method !== "disabled" && (
-          <button
-            type="button"
-            className={available ? "primary" : "secondary"}
+          <Button
+            variant={available ? "primary" : "secondary"}
             disabled={busy}
             onClick={() =>
               available
@@ -64,9 +71,9 @@ export function AppUpdateSettings() {
             }
           >
             {available ? t.appUpdateRestart : t.appUpdateCheck}
-          </button>
+          </Button>
         )}
-      </div>
-    </section>
+      </SettingsRow>
+    </SettingsCard>
   );
 }

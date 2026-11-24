@@ -7,7 +7,6 @@ import {
   FileText,
   Folder,
   Layers,
-  LoaderCircle,
   Pencil,
   Plug,
   Search,
@@ -50,9 +49,10 @@ import {
   TerminalOutput,
 } from "./HighlightedCode";
 import { useT } from "./i18n";
-import { DisclosureContext, DisclosureScope } from "./LazyDetails";
 import { McpAppContext, McpAppPreview } from "./McpAppPreview";
 import { Markdown, MessageContent, ToolResultContent } from "./MessageContent";
+import { DisclosureContext, DisclosureScope } from "./patterns/LazyDetails";
+import { Spinner } from "./primitives/Spinner";
 import { SyntaxRangesContext } from "./SyntaxText";
 import { languageFromPath, terminalText } from "./syntax-highlighting";
 import { type TooltipAnchor, useTooltip } from "./Tooltip";
@@ -185,7 +185,7 @@ function Row({
           </code>
           <span className="tool-meta">
             {status === "running" ? (
-              <LoaderCircle size={12} className="spinner" />
+              <Spinner size={12} />
             ) : status === "error" ? (
               <span className="tool-failed">{t.Failed}</span>
             ) : (
@@ -747,7 +747,7 @@ export const ToolGroup = memo(
               )}
             </span>
             <span className="tool-meta">
-              {running && <LoaderCircle size={12} className="spinner" />}
+              {running && <Spinner size={12} />}
               {!running && failed && (
                 <span className="tool-failed">{t.Failed}</span>
               )}

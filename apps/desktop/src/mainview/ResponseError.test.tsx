@@ -3,7 +3,7 @@ import type { ChatRenderer } from "@pig/chat-renderers";
 import { renderToStaticMarkup } from "react-dom/server";
 import { dictionary } from "../shared/i18n";
 import { installChatRenderers } from "./chat-renderer-registry";
-import { DisclosureScope } from "./LazyDetails";
+import { DisclosureScope } from "./patterns/LazyDetails";
 import { ResponseError } from "./ResponseError";
 import { useStore } from "./store";
 

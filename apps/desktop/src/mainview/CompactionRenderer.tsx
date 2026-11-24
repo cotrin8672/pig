@@ -3,8 +3,8 @@ import { FoldVertical, LoaderCircle } from "lucide-react";
 import type { TranscriptRecord } from "../shared/transcript";
 import { ChatContent } from "./ChatContent";
 import { useT } from "./i18n";
-import { LazyDetails } from "./LazyDetails";
 import { Markdown } from "./MessageContent";
+import { LazyDetails } from "./patterns/LazyDetails";
 import "./compaction.css";
 
 export function BuiltinCompaction({ data }: ChatRendererProps<"compaction">) {

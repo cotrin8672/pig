@@ -6,13 +6,13 @@ import {
   Check,
   ChevronRight,
   CornerDownRight,
-  LoaderCircle,
   MessageCircleQuestion,
   Repeat,
 } from "lucide-react";
 import { useState } from "react";
 import { useT } from "./i18n";
 import { ToolResultContent } from "./MessageContent";
+import { Spinner } from "./primitives/Spinner";
 import { ToolRow, toolTone } from "./ToolBlock";
 import "./agent-tools.css";
 
@@ -262,11 +262,7 @@ function Lanes({ lanes, t }: { lanes: Lane[]; t: Dict }) {
             onClick={() => setOpen(open === i ? null : i)}
           >
             <span className="agent-state" aria-hidden="true">
-              {lane.state === "running" ? (
-                <LoaderCircle size={11} className="spinner" />
-              ) : (
-                <i />
-              )}
+              {lane.state === "running" ? <Spinner size={11} /> : <i />}
             </span>
             <span className="agent-name">@{lane.agent}</span>
             <span className="agent-task">{lane.task}</span>

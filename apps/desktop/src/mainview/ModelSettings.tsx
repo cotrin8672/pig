@@ -8,6 +8,7 @@ import { useT } from "./i18n";
 import { Chip } from "./primitives/Chip";
 import { Select } from "./primitives/Select";
 import { Switch } from "./primitives/Switch";
+import { TextField } from "./primitives/TextField";
 import { refresh, rpc } from "./rpc";
 import { showError, useStore } from "./store";
 import { defaultEfforts, modelOverrides } from "./ui-mutations";
@@ -67,7 +68,7 @@ function TokenField({
           </button>
         ))}
       </div>
-      <input
+      <TextField
         key={value}
         type="number"
         min={1}
@@ -176,7 +177,7 @@ export function ModelSettings({ model }: { model: ModelInfo }) {
           {t.Alias}
           {override.name && <Reset onClick={() => save({ name: undefined })} />}
         </span>
-        <input
+        <TextField
           key={override.name}
           defaultValue={override.name}
           placeholder={model.id}

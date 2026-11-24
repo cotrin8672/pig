@@ -1,10 +1,4 @@
-import {
-  ChevronDown,
-  CircleAlert,
-  Clock3,
-  LoaderCircle,
-  RefreshCw,
-} from "lucide-react";
+import { ChevronDown, CircleAlert, Clock3, RefreshCw } from "lucide-react";
 import {
   type CSSProperties,
   type FocusEvent,
@@ -33,6 +27,7 @@ import {
 } from "../shared/provider-usage";
 import { useT } from "./i18n";
 import { ProviderIcon } from "./primitives/ProviderIcon";
+import { Spinner } from "./primitives/Spinner";
 import { useTooltip } from "./Tooltip";
 import "./provider-usage.css";
 
@@ -401,11 +396,7 @@ export function ProviderUsageView({
                     {balance ? (
                       balanceText(balance)
                     ) : entry.status === "loading" ? (
-                      <LoaderCircle
-                        size={11}
-                        className="spinner"
-                        aria-label={t.usageLoading}
-                      />
+                      <Spinner size={11} label={t.usageLoading} />
                     ) : (
                       <CircleAlert size={11} aria-label={problem} />
                     )}

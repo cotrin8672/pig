@@ -3,7 +3,7 @@ import {
   LayoutGrid,
   MessageSquare,
   MessageSquareText,
-  Search,
+  type Search,
   SlidersHorizontal,
   Zap,
 } from "lucide-react";
@@ -23,6 +23,7 @@ import type { ConversationHit } from "../shared/rpc-schema";
 import { useT } from "./i18n";
 import { navigate } from "./navigation";
 import { Keycap } from "./primitives/Keycap";
+import { SearchField } from "./primitives/SearchField";
 import { openChat, rpc } from "./rpc";
 import { SolidBlurFilter } from "./SolidBlurFilter";
 import {
@@ -225,45 +226,43 @@ function SearchDialog({ initialQuery }: { initialQuery: string }) {
       }}
     >
       <SolidBlurFilter id="search-palette-solid" />
-      <div className="search-palette-input">
-        <Search size={16} aria-hidden="true" />
-        <input
-          ref={input}
-          type="text"
-          role="combobox"
-          aria-expanded="true"
-          aria-controls={listId}
-          aria-autocomplete="list"
-          aria-activedescendant={current >= 0 ? optionId(current) : undefined}
-          aria-label={t["Search everything"]}
-          placeholder={t.searchPlaceholder}
-          spellCheck={false}
-          value={query}
-          onChange={(event) => {
-            setQuery(event.target.value);
-            setActive(0);
-          }}
-          onKeyDown={(event) => {
-            if (event.nativeEvent.isComposing || event.keyCode === 229) return;
-            const count = results.length;
-            if (event.key === "Escape") {
-              event.preventDefault();
-              event.stopPropagation();
-              close();
-            } else if (event.key === "ArrowDown" || event.key === "ArrowUp") {
-              event.preventDefault();
-              if (count)
-                setActive(
-                  (current + (event.key === "ArrowDown" ? 1 : count - 1)) %
-                    count,
-                );
-            } else if (event.key === "Enter") {
-              event.preventDefault();
-              choose(results[current]);
-            }
-          }}
-        />
-      </div>
+      <SearchField
+        variant="inline"
+        className="search-palette-input"
+        ref={input}
+        type="text"
+        role="combobox"
+        aria-expanded="true"
+        aria-controls={listId}
+        aria-autocomplete="list"
+        aria-activedescendant={current >= 0 ? optionId(current) : undefined}
+        aria-label={t["Search everything"]}
+        placeholder={t.searchPlaceholder}
+        spellCheck={false}
+        value={query}
+        onChange={(event) => {
+          setQuery(event.target.value);
+          setActive(0);
+        }}
+        onKeyDown={(event) => {
+          if (event.nativeEvent.isComposing || event.keyCode === 229) return;
+          const count = results.length;
+          if (event.key === "Escape") {
+            event.preventDefault();
+            event.stopPropagation();
+            close();
+          } else if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+            event.preventDefault();
+            if (count)
+              setActive(
+                (current + (event.key === "ArrowDown" ? 1 : count - 1)) % count,
+              );
+          } else if (event.key === "Enter") {
+            event.preventDefault();
+            choose(results[current]);
+          }
+        }}
+      />
       <div
         ref={list}
         id={listId}

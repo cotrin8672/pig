@@ -413,7 +413,7 @@ test.skipIf(!existsSync(edge) && !process.env.PIG_REQUIRE_UI_TESTS)(
       import {contentBase,encodeContentAppend} from ${source("../shared/content-append.ts")};
       import {expandSnapshotDelta} from ${source("../shared/snapshot-delta.ts")};
       import {ToolBlock,ToolGroup,ThinkingBlock} from ${source("./ToolBlock.tsx")};
-      import {DisclosureScope} from ${source("./LazyDetails.tsx")};
+      import {DisclosureScope} from ${source("./patterns/LazyDetails.tsx")};
       import {Markdown,BuiltinMarkdown,markdownComponents} from ${source("./MessageContent.tsx")};
       import ReactMarkdown from ${JSON.stringify(fileURLToPath(import.meta.resolve("react-markdown")))};
       import remarkGfm from ${JSON.stringify(fileURLToPath(import.meta.resolve("remark-gfm")))};

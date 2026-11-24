@@ -2,12 +2,14 @@ import type { ReactNode } from "react";
 import "./specimen.css";
 
 export function PrimitiveSpecimen({
+  layer = "Primitives",
   title,
   intro,
   context,
   children,
   variants,
 }: {
+  layer?: "Primitives" | "Patterns";
   title: string;
   intro: string;
   context: string;
@@ -17,7 +19,7 @@ export function PrimitiveSpecimen({
   return (
     <main className="ds-specimen">
       <header>
-        <small>Design system / Primitives</small>
+        <small>Design system / {layer}</small>
         <h1>{title}</h1>
         <p>{intro}</p>
       </header>

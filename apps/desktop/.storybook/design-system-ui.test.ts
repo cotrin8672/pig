@@ -25,6 +25,15 @@ for (const viewport of [
           (await import(${source("../src/stories/design-system/Select.stories.tsx")})).States,
           (await import(${source("../src/stories/design-system/TextField.stories.tsx")})).States,
         ];
+        const newStories=[
+          (await import(${source("../src/stories/design-system/SegmentedControl.stories.tsx")})).States,
+          (await import(${source("../src/stories/design-system/SearchField.stories.tsx")})).States,
+          (await import(${source("../src/stories/design-system/SettingsCard.stories.tsx")})).States,
+          (await import(${source("../src/stories/design-system/SettingsRow.stories.tsx")})).States,
+          (await import(${source("../src/stories/design-system/ActionsMenu.stories.tsx")})).States,
+          (await import(${source("../src/stories/design-system/InlineRename.stories.tsx")})).States,
+          (await import(${source("../src/stories/design-system/ConfirmButton.stories.tsx")})).Default,
+        ].map(story=>({...story,render:()=> <story.render/>}));
         const providers=await import(${source("../src/stories/design-system/ProviderIcon.stories.tsx")});
         const files=await import(${source("../src/stories/design-system/FileIcon.stories.tsx")});
         const chip=await import(${source("../src/stories/design-system/Chip.stories.tsx")});
@@ -53,7 +62,7 @@ for (const viewport of [
           foundations.ColorAndTypography,foundations.SurfacesAndOutput,
           buttonPage,iconButton.States,spinner.States,patterns.Settings,patterns.Interactions,
           providers.Providers,files.FileTypes,...controls,
-          chip.States,dot.States,count.States,keycap.States,
+          chip.States,dot.States,count.States,keycap.States,...newStories,
           domain.ComposerActions,domain.DomainBoundary,
         ];
         const canvas=document.createElement('canvas'),context=canvas.getContext('2d');
@@ -74,7 +83,7 @@ for (const viewport of [
                 check(rect.width>=rect.height-1 && rect.height>=1.75*parseFloat(style.fontSize),'key face fits a single glyph at current text scale');
               }
             }
-            if([...controls,providers.Providers,files.FileTypes,buttonPage,iconButton.States,spinner.States,chip.States,dot.States,count.States,keycap.States].includes(story)){
+            if([...controls,...newStories,providers.Providers,files.FileTypes,buttonPage,iconButton.States,spinner.States,chip.States,dot.States,count.States,keycap.States].includes(story)){
               const stage=page.querySelector('.ds-specimen-stage').getBoundingClientRect();
               check(stage.height>=180 && stage.bottom<=variants.getBoundingClientRect().top,'usage example precedes states');
               check(!page.querySelector('.ds-review-boundary'),'no proposal notice on shipped components');

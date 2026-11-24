@@ -16,7 +16,7 @@ test("Grep in Edge: shared geometry, grouped output, disclosure, search and anno
     const {createRoot}=await import(${fixtureImport(import.meta.resolve("react-dom/client"))});
     const {flushSync}=await import(${fixtureImport(import.meta.resolve("react-dom"))});
     const {ToolBlock,ToolGroup}=await import(${source("./ToolBlock.tsx")});
-    const {DisclosureScope}=await import(${source("./LazyDetails.tsx")});
+    const {DisclosureScope}=await import(${source("./patterns/LazyDetails.tsx")});
     const {rememberAnnotationRange}=await import(${source("./annotation-highlights.ts")});
     const {installChatRenderers}=await import(${source("./chat-renderer-registry.ts")});
     const {grep,edit,ls}=${JSON.stringify({ grep, edit, ls })};

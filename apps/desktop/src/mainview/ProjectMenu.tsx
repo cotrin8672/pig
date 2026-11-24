@@ -8,9 +8,9 @@ import {
   Trash2,
 } from "lucide-react";
 import type { ProjectFlags } from "../shared/projects";
-import { ActionsMenu } from "./ActionsMenu";
-import { ConfirmButton } from "./ConfirmButton";
 import { useT } from "./i18n";
+import { ActionsMenu } from "./patterns/ActionsMenu";
+import { ConfirmButton } from "./patterns/ConfirmButton";
 import { refresh, refreshSessions, rpc } from "./rpc";
 import { showError, useStore } from "./store";
 import {

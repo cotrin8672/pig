@@ -35,6 +35,7 @@ import type {
 } from "../../../../packages/config/src";
 import { useT } from "./i18n";
 import { Markdown } from "./MessageContent";
+import { TextField } from "./primitives/TextField";
 import {
   type DockRun,
   type DockTab,
@@ -207,7 +208,7 @@ function ActionForm({
             {field.multiline ? (
               <textarea {...props} rows={3} />
             ) : (
-              <input {...props} type="text" />
+              <TextField {...props} />
             )}
           </div>
         );

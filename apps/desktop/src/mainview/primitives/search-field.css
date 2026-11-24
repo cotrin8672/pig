@@ -1,0 +1,56 @@
+/* Container rules have zero specificity so placement classes can size them. */
+:where(.ui-search-field) {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  color: var(--ds-text-muted);
+}
+:where(.ui-search-field[data-variant="field"]) {
+  height: 34px;
+  padding: 0 10px;
+  border-radius: var(--radius-xs);
+  background: var(--ds-field-inset-bg);
+  box-shadow: var(--ds-elevation-stroke);
+}
+/* The field, not the borderless input inside it, shows the focus ring. */
+.ui-search-field[data-variant="field"]:has(input:focus-visible) {
+  outline: 2px solid color-mix(in srgb, var(--ds-focus) 70%, transparent);
+  outline-offset: 2px;
+}
+:where(.ui-search-field[data-variant="inline"]) {
+  height: 32px;
+  padding: 0 6px;
+}
+.ui-search-field input,
+.ui-search-field input:focus {
+  flex: 1;
+  min-width: 0;
+  width: 100%;
+  height: 100%;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  color: var(--ds-text-primary);
+}
+.ui-search-field input:focus-visible {
+  outline: none;
+}
+.ui-search-field input::placeholder {
+  color: var(--ds-placeholder-ink);
+}
+.ui-search-field button {
+  flex: none;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  color: var(--ds-text-muted);
+}
+.ui-search-field button:hover {
+  color: var(--ds-text-primary);
+}
+.ui-search-field button[aria-pressed="true"] {
+  color: var(--ds-accent);
+}

@@ -1,0 +1,19 @@
+.segmented-control {
+  display: flex;
+  gap: 4px;
+  min-width: 0;
+  margin: 0;
+  padding: 4px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: var(--ds-field-inset-bg);
+}
+.segmented-control button {
+  min-width: 64px;
+  font-size: var(--text-sm);
+}
+.segmented-control button[aria-pressed="true"] {
+  background: var(--ds-bg-active);
+  color: var(--ds-accent);
+  box-shadow: var(--ds-elevation-stroke);
+}

@@ -1,9 +1,10 @@
-import { Check, ChevronRight, LoaderCircle, X } from "lucide-react";
+import { Check, ChevronRight, X } from "lucide-react";
 import { type ReactNode, useEffect, useState } from "react";
 import { CodeText, TerminalOutput } from "../../mainview/HighlightedCode";
 import type { Phase, Proposal, ToolProps } from "./kit";
 import { shell } from "./tools";
 import "./bash.css";
+import { Spinner } from "../../mainview/primitives/Spinner";
 
 /*
  * Mini-terminal proposals. All keep the same two parts — the command and its
@@ -54,8 +55,7 @@ function useTerm({ tool, phase }: ToolProps) {
 type Term = ReturnType<typeof useTerm>;
 
 function StatusGlyph({ phase }: { phase: Phase }) {
-  if (phase === "running")
-    return <LoaderCircle size={12} className="spinner" aria-label="実行中" />;
+  if (phase === "running") return <Spinner size={12} label="実行中" />;
   return phase === "done" ? (
     <Check size={12} aria-label="成功" />
   ) : (

@@ -67,37 +67,10 @@
   border-bottom: 1px solid var(--ds-border);
 }
 .history-search {
-  display: flex;
   flex: 1 1 220px;
-  align-items: center;
-  gap: 8px;
-  min-width: 0;
-  height: 34px;
-  padding: 0 10px;
-  background: var(--ds-field-inset-bg);
-  box-shadow: var(--ds-elevation-stroke);
-  border-radius: var(--radius-xs);
-  color: var(--ds-text-muted);
-}
-.history-search input {
-  min-width: 0;
-  width: 100%;
-  padding: 0;
-  background: transparent;
-  border: 0;
-  color: var(--ds-text-primary);
-}
-.history-search input::placeholder {
-  color: var(--ds-placeholder-ink);
 }
 .history-filter {
   width: 220px;
-}
-/* Long project names must not wrap the toolbar or footer selects. */
-.history-panel .settings-select select {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 .history-sort {
   width: 150px;

@@ -10,6 +10,7 @@ import {
 import { defaultThemeColor, normalizeThemeColor } from "../shared/theme-color";
 import { colorAtPoint, type Hsv, hexToHsv, hsvToHex } from "./color-space";
 import { useT } from "./i18n";
+import { TextField } from "./primitives/TextField";
 import "./color-picker.css";
 
 export const colorPresets = [
@@ -260,9 +261,8 @@ export function ColorPicker({
             </fieldset>
             <div className="color-picker-hex">
               <label htmlFor={`${id}-hex`}>HEX</label>
-              <input
+              <TextField
                 id={`${id}-hex`}
-                type="text"
                 value={draft}
                 maxLength={7}
                 spellCheck={false}

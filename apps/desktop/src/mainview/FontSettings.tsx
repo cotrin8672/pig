@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
 import { FontPicker } from "./FontPicker";
 import { getT, useT } from "./i18n";
+import { SettingsCard } from "./patterns/SettingsCard";
+import { SettingsRow } from "./patterns/SettingsRow";
 import { rpc, updateSettings } from "./rpc";
 import { showError, useStore } from "./store";
 
@@ -26,27 +28,26 @@ export function FontSettings() {
     };
   }, []);
   return (
-    <div className="settings-card font-settings">
+    <SettingsCard className="font-settings">
       {(
         [
           ["fontFamily", t["Interface font"]],
           ["codeFontFamily", t["Code font"]],
         ] as const
       ).map(([field, label]) => (
-        <div
-          className="settings-row"
+        <SettingsRow
           key={field}
-          data-setting={field === "fontFamily" ? "interface-font" : "code-font"}
+          setting={field === "fontFamily" ? "interface-font" : "code-font"}
+          label={label}
         >
-          <div className="settings-label">{label}</div>
           <FontPicker
             label={label}
             value={settings[field]}
             fonts={fonts}
             onChange={(family) => updateSettings({ [field]: family })}
           />
-        </div>
+        </SettingsRow>
       ))}
-    </div>
+    </SettingsCard>
   );
 }

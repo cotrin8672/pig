@@ -2,7 +2,6 @@ import {
   CircleHelp,
   GripVertical,
   ListEnd,
-  LoaderCircle,
   Paperclip,
   PencilLine,
   SendHorizontal,
@@ -12,6 +11,7 @@ import { type KeyboardEvent, useRef, useState } from "react";
 import { unfoldPastes } from "../shared/paste";
 import type { DraftContent } from "../shared/runtime-contract";
 import { useT } from "./i18n";
+import { Spinner } from "./primitives/Spinner";
 import { showError } from "./store";
 
 type QueueItem = {
@@ -191,12 +191,7 @@ export function MessageQueue({
             >
               <span className="message-queue-handle">
                 {locked ? (
-                  <LoaderCircle
-                    size={14}
-                    className="spinner message-queue-started"
-                    role="img"
-                    aria-label={t["Already sending"]}
-                  />
+                  <Spinner size={14} label={t["Already sending"]} />
                 ) : movable ? (
                   // The timing icon turns into the grip on hover/focus, in place.
                   <button

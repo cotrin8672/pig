@@ -4,7 +4,8 @@ import {
   useEffect,
   useState,
 } from "react";
-import { useT } from "./i18n";
+import { useT } from "../i18n";
+import "./confirm-button.css";
 
 /** How long the armed state waits for the second press. Matches the ring animation. */
 const ARMED_MS = 3000;

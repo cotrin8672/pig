@@ -2,6 +2,7 @@ import type { Meta } from "@storybook/react-vite";
 import { useState } from "react";
 import { ComposerSubmit } from "../../mainview/ComposerSubmit";
 import { EffortChip } from "../../mainview/EffortChip";
+import { Select } from "../../mainview/primitives/Select";
 import type { Effort } from "../../shared/rpc-schema";
 import { CatalogPage, CatalogSection, Example } from "./ReviewPage";
 import "../../mainview/composer.css";
@@ -100,7 +101,7 @@ function EffortExample() {
         <div className="ds-review-field">
           <label>
             段階のサンプル
-            <select
+            <Select
               value={effort}
               onChange={(event) => setEffort(event.target.value as Effort)}
             >
@@ -109,7 +110,7 @@ function EffortExample() {
                   {level}
                 </option>
               ))}
-            </select>
+            </Select>
           </label>
         </div>
         <div className="ds-review-inline">

@@ -1,0 +1,31 @@
+/* Zero specificity: screen classes (history panel, fonts) adjust the card. */
+:where(.settings-card) {
+  background: var(--ds-tile);
+  box-shadow: var(--ds-elevation-stroke);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+}
+:where(.settings-row) {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 20px;
+  padding: 16px 20px;
+  font-size: var(--text-md);
+}
+.settings-row + .settings-row {
+  border-top: 1px solid var(--ds-bg-chip);
+}
+.settings-label {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+@container (max-width: 480px) {
+  :where(.settings-row) {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 12px;
+  }
+  .settings-row > :last-child {
+    justify-self: end;
+  }
+}

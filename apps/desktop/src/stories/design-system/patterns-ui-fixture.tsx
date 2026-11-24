@@ -1,7 +1,7 @@
 import { useId, useRef, useState } from "react";
-import { ActionsMenu } from "../../mainview/ActionsMenu";
-import { ConfirmButton } from "../../mainview/ConfirmButton";
-import { InlineRename } from "../../mainview/InlineRename";
+import { ActionsMenu } from "../../mainview/patterns/ActionsMenu";
+import { ConfirmButton } from "../../mainview/patterns/ConfirmButton";
+import { InlineRename } from "../../mainview/patterns/InlineRename";
 import { CatalogPage, CatalogSection, Example } from "./ReviewPage";
 
 function SettingsExample() {
@@ -72,7 +72,7 @@ function InteractionExamples() {
         <Example
           title="ActionsMenu"
           evidence="既存部品"
-          source="mainview/ActionsMenu.tsx"
+          source="mainview/patterns/ActionsMenu.tsx"
           use="対象に対する補助的な操作をまとめる。"
           avoid="モデルなどの値を選ぶ用途。重要な主操作を全て隠すこと。"
         >
@@ -110,7 +110,7 @@ function InteractionExamples() {
         <Example
           title="ConfirmButton"
           evidence="既存部品"
-          source="mainview/ConfirmButton.tsx"
+          source="mainview/patterns/ConfirmButton.tsx"
           use="軽い二度押し確認。一定時間・Escape・blurで解除される。"
           avoid="詳しい説明や追加の入力が必要な確認。処理の重大さを二度押しだけで説明すること。"
         >
@@ -122,7 +122,7 @@ function InteractionExamples() {
         <Example
           title="InlineRename"
           evidence="既存部品"
-          source="mainview/InlineRename.tsx"
+          source="mainview/patterns/InlineRename.tsx"
           use="短い名前のその場編集。Enter・blurで確定、Escapeで取消。"
           avoid="長文編集や複数項目の編集。IMEの確定を保存と混同すること。"
         >

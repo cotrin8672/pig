@@ -2,14 +2,16 @@ import {
   Bell,
   ChevronDown,
   CircleAlert,
-  LoaderCircle,
   Puzzle,
   RefreshCw,
   Settings2,
   Settings as SettingsIcon,
 } from "lucide-react";
 import { type CSSProperties, useState } from "react";
+import { SettingsCard } from "../../mainview/patterns/SettingsCard";
+import { SettingsRow } from "../../mainview/patterns/SettingsRow";
 import { ProviderIcon } from "../../mainview/primitives/ProviderIcon";
+import { SegmentedControl } from "../../mainview/primitives/SegmentedControl";
 import {
   byUrgency,
   fetchable,
@@ -28,6 +30,7 @@ import {
 import "../../mainview/notifications.css";
 import "../../mainview/settings.css";
 import "./usage-dock.css";
+import { Spinner } from "../../mainview/primitives/Spinner";
 
 /** Remaining share (0–100) of a metric that has one. */
 const share = (m: UsageMetric) =>
@@ -194,7 +197,7 @@ function Figures({
   if (entry.status === "loading")
     return (
       <span className="ud-value" data-muted>
-        <LoaderCircle size={11} className="spinner" aria-label="取得中" />
+        <Spinner size={11} label="取得中" />
       </span>
     );
   if (entry.status === "error")
@@ -342,28 +345,19 @@ export function UsageDisplaySetting({
   onChange: (value: UsageDisplay) => void;
 }) {
   return (
-    <div className="settings-card ud-settings">
-      <div className="settings-row">
-        <div className="settings-label">
-          <span id="usage-display-label">使用量の表示</span>
-        </div>
-        <fieldset
-          className="segmented-control"
+    <SettingsCard className="ud-settings">
+      <SettingsRow label={<span id="usage-display-label">使用量の表示</span>}>
+        <SegmentedControl
           aria-labelledby="usage-display-label"
-        >
-          {(["remaining", "used"] as const).map((mode) => (
-            <button
-              key={mode}
-              type="button"
-              aria-pressed={value === mode}
-              onClick={() => onChange(mode)}
-            >
-              {mode === "remaining" ? "残り" : "使用済み"}
-            </button>
-          ))}
-        </fieldset>
-      </div>
-    </div>
+          value={value}
+          onChange={onChange}
+          options={[
+            { value: "remaining", label: "残り" },
+            { value: "used", label: "使用済み" },
+          ]}
+        />
+      </SettingsRow>
+    </SettingsCard>
   );
 }
 

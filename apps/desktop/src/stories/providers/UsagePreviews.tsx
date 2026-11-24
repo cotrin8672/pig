@@ -1,10 +1,4 @@
-import {
-  CircleAlert,
-  ExternalLink,
-  LoaderCircle,
-  RefreshCw,
-  Ticket,
-} from "lucide-react";
+import { CircleAlert, ExternalLink, RefreshCw, Ticket } from "lucide-react";
 import { createContext, useContext, useState } from "react";
 import { ProviderIcon } from "../../mainview/primitives/ProviderIcon";
 import {
@@ -23,6 +17,7 @@ import {
 } from "./usage-data";
 import "../../mainview/notifications.css";
 import "./usage.css";
+import { Spinner } from "../../mainview/primitives/Spinner";
 
 const number = new Intl.NumberFormat("ja-JP");
 const Display = createContext<UsageDisplay>("remaining");
@@ -141,7 +136,7 @@ function Body({ entry }: { entry: UsageEntry }) {
     case "loading":
       return (
         <div className="usage-state" role="status">
-          <LoaderCircle size={12} className="spinner" aria-hidden="true" />
+          <Spinner size={12} />
           取得中…
         </div>
       );

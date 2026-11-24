@@ -5,7 +5,6 @@ import {
   CircleAlert,
   Copy,
   ExternalLink,
-  LoaderCircle,
   PanelLeft,
   Puzzle,
   Settings2,
@@ -44,11 +43,14 @@ import {
 import { fontFamilyValue } from "./font-family";
 import { SavedOutputContext } from "./HighlightedCode";
 import { getT, useT } from "./i18n";
-import { DisclosureScope, LazyDetails } from "./LazyDetails";
 import { Markdown, MarkdownCwd, UserMessage } from "./MessageContent";
 import { modelDividers } from "./model-dividers";
 import { NotificationCenter } from "./NotificationCenter";
 import { OptimisticMessages } from "./OptimisticMessages";
+import { DisclosureScope, LazyDetails } from "./patterns/LazyDetails";
+import { Button } from "./primitives/Button";
+import { Spinner } from "./primitives/Spinner";
+import { TextField } from "./primitives/TextField";
 import "./model-dividers.css";
 import { initEditMenu } from "./edit-menu";
 import { MainViewport } from "./MainViewport";
@@ -541,7 +543,7 @@ function OAuthLoginDialog({ login }: { login: LoginState }) {
         </div>
       ) : (
         <div className="oauth-status status" role="status">
-          <LoaderCircle size={14} className="spinner" />
+          <Spinner size={14} />
           {status}
         </div>
       )}
@@ -637,7 +639,7 @@ function OAuthLoginDialog({ login }: { login: LoginState }) {
                       answer(value.trim());
                   }}
                 >
-                  <input
+                  <TextField
                     ref={input}
                     aria-label={prompt.message}
                     autoComplete="off"
@@ -649,13 +651,13 @@ function OAuthLoginDialog({ login }: { login: LoginState }) {
                     value={value}
                     onChange={(e) => setValue(e.target.value)}
                   />
-                  <button
-                    className="primary"
+                  <Button
+                    variant="primary"
                     type="submit"
                     disabled={!value.trim() && prompt.type !== "text"}
                   >
                     {t.Submit}
-                  </button>
+                  </Button>
                 </form>
               )}
             </div>

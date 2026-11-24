@@ -29,29 +29,13 @@
   background: color-mix(in srgb, var(--ds-bg-inset) 32%, transparent);
 }
 .search-palette-input {
-  display: flex;
-  align-items: center;
   gap: 10px;
-  padding: 10px 16px;
+  height: auto;
+  padding: 14px 16px;
   border-bottom: 1px solid var(--ds-border-strong);
-  color: var(--ds-text-muted);
 }
-/* Beat the global input field style: the input row itself is the field, no inner box. */
-.search-palette-input input:not([type="range"]),
-.search-palette-input input:not([type="range"]):focus {
-  flex: 1;
-  min-width: 0;
-  padding: 4px 0;
-  background: transparent;
-  border: 0;
-  border-radius: 0;
-  outline: none;
-  box-shadow: none;
-  color: var(--ds-text-primary);
+.search-palette-input input {
   font-size: var(--text-md);
-}
-.search-palette-input input::placeholder {
-  color: var(--ds-placeholder-ink);
 }
 /* Fixed height: result count, empty and indexing states never resize the palette. */
 .search-results {

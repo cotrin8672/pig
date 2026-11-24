@@ -1,0 +1,82 @@
+/*
+  Two-press confirmation (ConfirmButton). The first press arms the button and a
+  ring counts down around it; a second press within 3s runs the action. Both
+  labels share one grid cell so the width never changes.
+*/
+@property --confirm-left {
+  syntax: "<percentage>";
+  inherits: false;
+  initial-value: 100%;
+}
+.confirm-button {
+  position: relative;
+}
+.confirm-label {
+  display: inline-grid;
+  align-items: center;
+  justify-items: center;
+}
+.confirm-idle,
+.confirm-armed {
+  grid-area: 1 / 1;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+  transition:
+    opacity var(--motion-duration-fast),
+    transform var(--motion-duration-fast) var(--motion-ease-out);
+}
+.confirm-armed,
+.confirm-button.armed .confirm-idle {
+  opacity: 0;
+  transform: translateY(4px);
+}
+.confirm-button.armed .confirm-armed {
+  opacity: 1;
+  transform: none;
+}
+.confirm-button.armed:not(.primary) {
+  background: color-mix(in srgb, currentColor 14%, transparent);
+}
+.confirm-button::before {
+  content: "";
+  position: absolute;
+  /* Straddle the fill edge so its antialiased corners cannot peek past the ring. */
+  inset: -1px;
+  box-sizing: border-box;
+  border: 2px solid var(--confirm-ring, currentColor);
+  border-radius: inherit;
+  mask: conic-gradient(#000 var(--confirm-left), transparent 0);
+  opacity: 0;
+  pointer-events: none;
+}
+.confirm-button.primary {
+  --confirm-ring: var(--ds-warning);
+}
+.confirm-button.armed::before {
+  opacity: 1;
+  animation: confirm-countdown 3s linear forwards;
+}
+@keyframes confirm-countdown {
+  to {
+    --confirm-left: 0%;
+  }
+}
+.confirm-status {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+@media (prefers-reduced-motion: reduce) {
+  .confirm-idle,
+  .confirm-armed {
+    transition: none;
+  }
+  .confirm-button.armed::before {
+    animation: none;
+  }
+}

@@ -33,7 +33,7 @@ if (process.env.PIG_RENDERER_BUILTINS_CHILD !== "1") {
   const { ImageGallery } = await import("./ImageGallery");
   const { ToolBlock, ToolGroup, ThinkingBlock } = await import("./ToolBlock");
   const { CustomRecord } = await import("./CustomRecord");
-  const { DisclosureScope } = await import("./LazyDetails");
+  const { DisclosureScope } = await import("./patterns/LazyDetails");
   afterEach(() => installChatRenderers([]));
 
   test("existing markdown, gallery, shell, thinking and custom records use the shared dispatch", () => {

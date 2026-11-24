@@ -1,9 +1,11 @@
-import { ChevronDown, Search } from "lucide-react";
 import { useId, useState } from "react";
 import type { UtilityModelInfo } from "../shared/rpc-schema";
 import { useT } from "./i18n";
 import { ProviderDetail } from "./Providers";
+import { SettingsCard } from "./patterns/SettingsCard";
 import { ProviderIcon } from "./primitives/ProviderIcon";
+import { SearchField } from "./primitives/SearchField";
+import { Select } from "./primitives/Select";
 import { updateSettings } from "./rpc";
 import { useStore } from "./store";
 import "./settings.css";
@@ -47,48 +49,42 @@ export function ModelSelect({
   );
   const groups = [...new Set(visible.map((model) => model.provider))];
   return (
-    <div className="settings-card utility-model-select" data-setting={setting}>
+    <SettingsCard className="utility-model-select" data-setting={setting}>
       <label htmlFor={id}>{label}</label>
-      <div className="settings-search">
-        <Search size={14} aria-hidden="true" />
-        <input
-          aria-label={t["Search models"]}
-          placeholder={t["Search models"]}
-          value={query}
-          onChange={(event) => setQuery(event.target.value)}
-        />
-      </div>
-      <div className="settings-select">
-        <select
-          id={id}
-          value={key}
-          onChange={(event) => {
-            const model = models.find(
-              (item) => selectionKey(item) === event.target.value,
-            );
-            onChange(model ? { provider: model.provider, id: model.id } : null);
-          }}
-        >
-          <option value="">{emptyLabel ?? t.None}</option>
-          {!available && value && (
-            <option value={key} disabled>
-              {name(value.provider)} / {value.id} — {t["Model unavailable"]}
-            </option>
-          )}
-          {groups.map((provider) => (
-            <optgroup key={provider} label={name(provider)}>
-              {visible
-                .filter((model) => model.provider === provider)
-                .map((model) => (
-                  <option key={selectionKey(model)} value={selectionKey(model)}>
-                    {model.name} ({model.id})
-                  </option>
-                ))}
-            </optgroup>
-          ))}
-        </select>
-        <ChevronDown size={14} aria-hidden="true" />
-      </div>
+      <SearchField
+        aria-label={t["Search models"]}
+        placeholder={t["Search models"]}
+        value={query}
+        onChange={(event) => setQuery(event.target.value)}
+      />
+      <Select
+        id={id}
+        value={key}
+        onChange={(event) => {
+          const model = models.find(
+            (item) => selectionKey(item) === event.target.value,
+          );
+          onChange(model ? { provider: model.provider, id: model.id } : null);
+        }}
+      >
+        <option value="">{emptyLabel ?? t.None}</option>
+        {!available && value && (
+          <option value={key} disabled>
+            {name(value.provider)} / {value.id} — {t["Model unavailable"]}
+          </option>
+        )}
+        {groups.map((provider) => (
+          <optgroup key={provider} label={name(provider)}>
+            {visible
+              .filter((model) => model.provider === provider)
+              .map((model) => (
+                <option key={selectionKey(model)} value={selectionKey(model)}>
+                  {model.name} ({model.id})
+                </option>
+              ))}
+          </optgroup>
+        ))}
+      </Select>
       {!available && (
         <p className="settings-hint" role="status">
           {t["Reconnect the provider to use the saved model."]}
@@ -102,7 +98,7 @@ export function ModelSelect({
       {!!models.length && !visible.length && (
         <p className="settings-hint">{t["No matching models"]}</p>
       )}
-    </div>
+    </SettingsCard>
   );
 }
 
@@ -194,11 +190,11 @@ export function ClassificationSettings() {
         ))}
       </nav>
       {current ? (
-        <div className="settings-card utility-provider">
+        <SettingsCard className="utility-provider">
           <ProviderDetail key={current.id} provider={current}>
             {false}
           </ProviderDetail>
-        </div>
+        </SettingsCard>
       ) : (
         <p className="settings-hint">
           {t["No classification providers available."]}

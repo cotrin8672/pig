@@ -13,6 +13,7 @@ import { projectLabel } from "../shared/projects";
 import { ChatWidthHandles, useChatWidth } from "./ChatWidth";
 import { useT } from "./i18n";
 import { navigate } from "./navigation";
+import { Button } from "./primitives/Button";
 import { useStore } from "./store";
 import { isThreadAtBottom } from "./thread-scroll";
 
@@ -139,14 +140,10 @@ export function ChatEmpty({ cwd }: { cwd?: string }) {
         </p>
       )}
       {!enabled.length && (
-        <button
-          type="button"
-          className="primary"
-          onClick={() => navigate("providers")}
-        >
+        <Button variant="primary" onClick={() => navigate("providers")}>
           <Settings2 size={14} />
           {models.length ? t["Enable models"] : t["Connect a provider"]}
-        </button>
+        </Button>
       )}
     </div>
   );

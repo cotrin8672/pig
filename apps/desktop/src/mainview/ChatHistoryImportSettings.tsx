@@ -1,4 +1,4 @@
-import { ChevronDown, FileJson, Search } from "lucide-react";
+import { FileJson } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import type {
   ChatHistoryItem,
@@ -6,10 +6,13 @@ import type {
   LocalHistorySource,
 } from "../shared/chat-history-import";
 import { useT } from "./i18n";
+import { SettingsCard } from "./patterns/SettingsCard";
+import { Button } from "./primitives/Button";
 import { Checkbox } from "./primitives/Checkbox";
 import { ProviderIcon } from "./primitives/ProviderIcon";
+import { SearchField } from "./primitives/SearchField";
+import { SegmentedControl } from "./primitives/SegmentedControl";
 import { Select } from "./primitives/Select";
-import { TextField } from "./primitives/TextField";
 import { rpc } from "./rpc";
 import { showError, showNotice, useStore } from "./store";
 import "./chat-history-import.css";
@@ -68,33 +71,29 @@ export function ChatHistoryImport() {
   return (
     <div className="history-import" data-setting="chat-history-import">
       <p className="history-intro">{t.historyImportDescription}</p>
-      <nav
-        className="segmented-control history-tabs"
+      <SegmentedControl
+        className="history-tabs"
         aria-label={t.historySources}
-      >
-        {sources.map((source) => (
-          <button
-            key={source}
-            type="button"
-            aria-pressed={tab === source}
-            disabled={busy && tab !== source}
-            onClick={() => select(source)}
-          >
-            {sourceIcon(source)}
-            <span>
-              {source === "codex"
-                ? "Codex"
-                : source === "claude-code"
-                  ? "Claude Code"
-                  : t.historySourceFile}
-            </span>
-          </button>
-        ))}
-      </nav>
-      <section
-        className="settings-card history-panel"
-        aria-label={t.historyImportTitle}
-      >
+        value={tab}
+        onChange={select}
+        options={sources.map((source) => ({
+          value: source,
+          disabled: busy && tab !== source,
+          label: (
+            <>
+              {sourceIcon(source)}
+              <span>
+                {source === "codex"
+                  ? "Codex"
+                  : source === "claude-code"
+                    ? "Claude Code"
+                    : t.historySourceFile}
+              </span>
+            </>
+          ),
+        }))}
+      />
+      <SettingsCard className="history-panel" aria-label={t.historyImportTitle}>
         {file?.preview ? (
           <ImportList key={file.preview.id} preview={file.preview} />
         ) : (
@@ -109,31 +108,21 @@ export function ChatHistoryImport() {
               <>
                 <FileJson size={28} aria-hidden="true" />
                 <p>{t.historySourceFileHint}</p>
-                <button
-                  type="button"
-                  className="secondary"
-                  onClick={() => load("file")}
-                >
+                <Button onClick={() => load("file")}>
                   {t.historyChooseFile}
-                </button>
+                </Button>
               </>
             ) : (
               <>
                 <p>
                   {file?.error ? `${t.historyLoadFailed} ${file.error}` : ""}
                 </p>
-                <button
-                  type="button"
-                  className="secondary"
-                  onClick={() => load(tab)}
-                >
-                  {t.historyRetry}
-                </button>
+                <Button onClick={() => load(tab)}>{t.historyRetry}</Button>
               </>
             )}
           </div>
         )}
-      </section>
+      </SettingsCard>
     </div>
   );
 }
@@ -228,47 +217,41 @@ function ImportList({ preview }: { preview: ChatHistoryPreview }) {
   return (
     <>
       <div className="history-toolbar">
-        <label className="history-search">
-          <Search size={16} aria-hidden="true" />
-          <TextField
-            aria-label={t.historyImportSearch}
-            placeholder={t.historyImportSearch}
-            value={query}
-            disabled={busy}
-            onChange={(event) => setQuery(event.target.value)}
-          />
-        </label>
+        <SearchField
+          className="history-search"
+          aria-label={t.historyImportSearch}
+          placeholder={t.historyImportSearch}
+          value={query}
+          disabled={busy}
+          onChange={(event) => setQuery(event.target.value)}
+        />
         {projectCounts.length > 0 && (
-          <div className="settings-select history-filter">
-            <Select
-              aria-label={t.historyProject}
-              value={project}
-              disabled={busy}
-              onChange={(event) => setProject(event.target.value)}
-            >
-              <option value={ALL}>{t.historyAllProjects(total)}</option>
-              {projectCounts.map(([path, n]) => (
-                <option key={path} value={path}>
-                  {projectName(path)} ({n})
-                </option>
-              ))}
-            </Select>
-            <ChevronDown size={14} aria-hidden="true" />
-          </div>
-        )}
-        <div className="settings-select history-sort">
           <Select
-            aria-label={t.historySort}
-            value={sort}
+            className="history-filter"
+            aria-label={t.historyProject}
+            value={project}
             disabled={busy}
-            onChange={(event) => setSort(event.target.value as Sort)}
+            onChange={(event) => setProject(event.target.value)}
           >
-            <option value="newest">{t.historySortNewest}</option>
-            <option value="oldest">{t.historySortOldest}</option>
-            <option value="title">{t.historySortTitle}</option>
+            <option value={ALL}>{t.historyAllProjects(total)}</option>
+            {projectCounts.map(([path, n]) => (
+              <option key={path} value={path}>
+                {projectName(path)} ({n})
+              </option>
+            ))}
           </Select>
-          <ChevronDown size={14} aria-hidden="true" />
-        </div>
+        )}
+        <Select
+          className="history-sort"
+          aria-label={t.historySort}
+          value={sort}
+          disabled={busy}
+          onChange={(event) => setSort(event.target.value as Sort)}
+        >
+          <option value="newest">{t.historySortNewest}</option>
+          <option value="oldest">{t.historySortOldest}</option>
+          <option value="title">{t.historySortTitle}</option>
+        </Select>
       </div>
 
       <label className="history-listhead">
@@ -345,16 +328,15 @@ function ImportList({ preview }: { preview: ChatHistoryPreview }) {
           {preview.rejected > 0 &&
             ` ${t.historyImportRejected(preview.rejected)}`}
         </span>
-        <button
-          type="button"
-          className="primary"
+        <Button
+          variant="primary"
           disabled={busy || !count}
           onClick={() => {
             void submit();
           }}
         >
           {busy ? t.historyImportBusy : t.historyImportSubmit(count)}
-        </button>
+        </Button>
       </div>
     </>
   );

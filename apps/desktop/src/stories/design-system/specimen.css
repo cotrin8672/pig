@@ -74,6 +74,7 @@
   gap: 6px;
 }
 .ds-specimen-variants figure {
+  min-width: 0;
   display: grid;
   grid-template-rows: 64px auto;
   justify-items: center;
@@ -84,5 +85,10 @@
 }
 .ds-specimen-sample {
   display: grid;
+  /* Samples may shrink below their preferred width instead of overflowing. */
+  grid-template-columns: minmax(0, max-content);
+  place-content: center;
   place-items: center;
+  width: 100%;
+  min-width: 0;
 }

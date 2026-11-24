@@ -48,6 +48,7 @@ import {
 import { markdownUrl } from "./markdown-url";
 import { editKey, messageEdits } from "./message-edits";
 import { positionedKatex } from "./positioned-katex";
+import { Button } from "./primitives/Button";
 import { openChatLink, regenerate, rpc } from "./rpc";
 import { ScheduledHead } from "./ScheduledPrompt";
 import { SentAttachments } from "./SentAttachments";
@@ -454,13 +455,13 @@ export const UserMessage = memo(function UserMessage({
             >
               {t.Cancel}
             </button>
-            <button
+            <Button
               type="submit"
-              className="primary"
+              variant="primary"
               disabled={disabled || (!draft.trim() && !sources.length)}
             >
               {t["Save and resend"]}
-            </button>
+            </Button>
           </div>
         </form>
       ) : (

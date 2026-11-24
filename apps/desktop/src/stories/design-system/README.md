@@ -4,8 +4,8 @@
 
 1. **Screens / App**: 全体画面のプレビュー
 2. **Domain / Sidebar・ChatScreen・ComposerUI**: 画面を構成する大枠。その配下に個別部品を置く
-3. **Patterns / ConfirmButton**: 二度押し確認
-4. **Primitives**: 本番の最小部品を部品名ごとに展示
+3. **Patterns**: `mainview/patterns/` の組み合わせ部品（SettingsCard・SettingsRow・ActionsMenu・ConfirmButton・InlineRename）
+4. **Primitives**: `mainview/primitives/` の最小部品を部品名ごとに展示
 5. **Foundations**: 既存の色・文字・半透明面、出力枠の構成案
 
 ## 境界

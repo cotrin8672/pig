@@ -23,6 +23,8 @@ test("the shared preview entry does not eagerly import feature UI", () => {
     "react",
     "lucide-react",
     "../../mainview/dynamic-theme",
+    // A leaf primitive (an icon and its keyframes), not feature UI.
+    "../../mainview/primitives/Spinner",
     "../../mainview/store",
     "./preview.css",
   ]);

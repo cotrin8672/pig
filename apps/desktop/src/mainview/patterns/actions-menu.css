@@ -1,0 +1,58 @@
+/* Rows reveal the trigger on hover/focus (see styles.css). */
+.thread-more {
+  width: 24px;
+  height: 26px;
+  padding: 0;
+  opacity: 0;
+  color: var(--ds-text-muted);
+}
+.session-menu {
+  position: fixed;
+  inset: auto;
+  margin: 0;
+  width: 180px;
+  max-width: calc(100vw - 16px);
+  max-height: calc(100dvh - 16px);
+  padding: 4px;
+  border: 1px solid #ffffff16;
+  border-radius: 8px;
+  background: var(--ds-bg-elevated-opaque);
+  color: var(--ds-text-primary);
+  box-shadow: 0 8px 24px #0004;
+}
+.session-menu > button {
+  display: flex;
+  justify-content: flex-start;
+  width: 100%;
+  height: 28px;
+  padding: 0 8px;
+  gap: 8px;
+  border-radius: 5px;
+  font-size: 12px;
+  white-space: nowrap;
+}
+.session-menu > button > svg {
+  flex: none;
+  color: var(--ds-text-muted);
+}
+.session-menu > .session-menu-delete {
+  margin-top: 4px;
+  color: var(--ds-error);
+}
+/* Keep the menu separator outside the confirmation ring. */
+.session-menu > .session-menu-delete::after {
+  content: "";
+  position: absolute;
+  top: -4px;
+  left: 0;
+  right: 0;
+  height: 1px;
+  background: #ffffff0c;
+  pointer-events: none;
+}
+.session-menu > .session-menu-delete > svg {
+  color: inherit;
+}
+.session-menu button:active {
+  transform: none;
+}
