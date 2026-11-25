@@ -102,3 +102,47 @@ test.skipIf(!existsSync(fixtureEdge) && !process.env.PIG_REQUIRE_UI_TESTS)(
     ),
   60_000,
 );
+
+test.skipIf(!existsSync(fixtureEdge) && !process.env.PIG_REQUIRE_UI_TESTS)(
+  "the live agent chip appears in the Composer before spawn returns",
+  () =>
+    runUiFixture(
+      "composer-agent-start",
+      `
+      const {createRoot}=await import(${fixtureImport(import.meta.resolve("react-dom/client"))});
+      const {flushSync}=await import(${fixtureImport(import.meta.resolve("react-dom"))});
+      const {Composer}=await import(${local("./Composer.tsx")});
+      await import(${local("./styles.css")});
+      ${fixtureHelpers}
+      window.__requests={listSlashCommands:async()=>[]};
+      const root=createFixtureRoot(createRoot);
+      const address={hostId:'ui',sessionId:'agents',epoch:1};
+      const base={address,snapshotSeq:1,info:{id:'agents',cwd:'fixture',title:'Agents',modified:1},effort:'off',effortLevels:[],ready:true,modelCatalog:[],transcript:{records:[],tools:{},history:{revision:'branch'},current:null,running:true,liveToEntry:{}}};
+      const startedAt=new Date().toISOString();
+      const state=phase=>phase?{generation:'gen',commands:[],keymaps:[],diagnostics:[],views:[{
+        adapterId:'pig:codex-subagents',revision:phase==='queued'?1:2,view:{id:'codex-subagents',kind:'agents',title:'Subagents',
+          source:{scope:{kind:'session',id:address.sessionId},label:'@ogulcancelik/pi-codex-subagents',freshness:'live'},
+          runs:[{id:'spawn',title:'review',startedAt,state:{phase}}]}
+      }]}:undefined;
+      const render=phase=>flushSync(()=>root.render(<div className="chat-shell" style={{height:'80vh',width:420,justifyContent:'end'}}><Composer snapshot={{...base,sessionUI:state(phase)}}/></div>));
+      const chip=()=>document.querySelector('.composer-session button[data-tab="tasks"]');
+      const layout=()=>['.composer','.composer-pickers','.send-controls'].map(selector=>JSON.stringify(document.querySelector(selector).getBoundingClientRect())).join();
+      render();
+      await wait();
+      check(!chip(),'no chip before the spawn event');
+      const before=layout();
+      render('queued');
+      const queued=chip();
+      check(queued?.textContent==='1'&&queued.dataset.live==='false','one chip must be visible before any tool result');
+      check(layout()===before,'the chip must not move the Composer, model picker or send controls');
+      const bounds=queued.getBoundingClientRect();
+      check(document.elementFromPoint(bounds.x+bounds.width/2,bounds.y+bounds.height/2)?.closest('button')===queued,'the queued chip is clickable in the toolbar');
+      queued.click();
+      await until(()=>document.querySelector('.session-panel:popover-open [data-state="queued"]')?.textContent.includes('review'),'waiting agent is listed by name');
+      render('running');
+      check(chip()===queued&&queued.dataset.live==='true','spawn confirmation updates the same chip to running');
+      await capturePixels();
+      `,
+    ),
+  60_000,
+);
