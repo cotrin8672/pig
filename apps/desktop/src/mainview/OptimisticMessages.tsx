@@ -3,6 +3,7 @@ import type { Snapshot } from "../shared/rpc-schema";
 import { RESUME_REQUEST_PREFIX } from "../shared/runtime-contract";
 import { expandedDraft } from "./draft-store";
 import { UserMessage } from "./MessageContent";
+import { usePendingArrival } from "./MessageQueue";
 import { sends } from "./rpc";
 import { isPendingSteer } from "./send-controller";
 import { transcriptRequestIds } from "./transcript-requests";
@@ -15,6 +16,7 @@ export function OptimisticMessages({
   snapshot: Snapshot;
   onChange?: () => void;
 }) {
+  const arrival = usePendingArrival(snapshot.ready !== false);
   const tick = useSyncExternalStore(
     sends.subscribe,
     sends.getTick,
@@ -40,7 +42,10 @@ export function OptimisticMessages({
     .flatMap((send) =>
       send.content ? (
         <div className="response-turn" key={send.key.requestId}>
-          <article className="message user">
+          <article
+            ref={arrival(send.key.requestId, send.content)}
+            className="message user"
+          >
             <UserMessage
               sessionId={snapshot.info.id}
               disabled

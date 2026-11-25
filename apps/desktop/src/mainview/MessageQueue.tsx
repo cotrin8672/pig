@@ -7,12 +7,13 @@ import {
   SendHorizontal,
   X,
 } from "lucide-react";
-import { type KeyboardEvent, useRef, useState } from "react";
+import { type KeyboardEvent, useLayoutEffect, useRef, useState } from "react";
 import { unfoldPastes } from "../shared/paste";
 import type { DraftContent } from "../shared/runtime-contract";
 import { useT } from "./i18n";
 import { Spinner } from "./primitives/Spinner";
 import { showError } from "./store";
+import "./message-queue-arrival.css";
 
 type QueueItem = {
   id: string;
@@ -28,6 +29,41 @@ const attachmentCount = (content: DraftContent) =>
   content.images.length +
   (content.files?.length ?? 0) +
   (content.annotations?.length ?? 0);
+
+// A pending draft can move between the bubble and the two tray sections.
+// Weak ownership keeps presentation state out of the send controller and history.
+const presented = new WeakMap<DraftContent, Set<string>>();
+
+export function usePendingArrival(ready = true) {
+  const previous = useRef<Set<string> | undefined>(undefined);
+  const current = new Set<string>();
+  useLayoutEffect(() => {
+    previous.current = ready ? current : undefined;
+  });
+  return (id: string, content: DraftContent) => (node: HTMLElement | null) => {
+    if (!node) return;
+    current.add(id);
+    const ids = presented.get(content) ?? new Set<string>();
+    const fresh = !ids.has(id) && previous.current && !previous.current.has(id);
+    ids.add(id);
+    presented.set(content, ids);
+    if (!ready || !fresh) return;
+    const motion = matchMedia("(prefers-reduced-motion: reduce)");
+    if (motion.matches) return;
+    // Unlike a mount animation, this doesn't restart when a keyed row moves.
+    const animation = node.animate(
+      [
+        { opacity: 0, transform: "translateY(4px)" },
+        { opacity: 1, transform: "translateY(0)" },
+      ],
+      { duration: 120, easing: "cubic-bezier(0.22, 1, 0.36, 1)" },
+    );
+    const stop = () => animation.cancel();
+    motion.addEventListener("change", stop, { once: true });
+    const release = () => motion.removeEventListener("change", stop);
+    void animation.finished.then(release, release);
+  };
+}
 
 /**
  * Everything still waiting to reach the agent, in one compact tray on the
@@ -59,6 +95,7 @@ export function MessageQueue({
   const list = useRef<HTMLOListElement>(null);
   const [busy, setBusy] = useState<string>();
   const [drag, setDrag] = useState<{ id: string; over?: number }>();
+  const arrival = usePendingArrival();
   if (!items.length && !steering.length) return null;
   // A started head cannot be passed; everything after it can move.
   const first = items.findIndex((item) => !item.locked);
@@ -125,30 +162,37 @@ export function MessageQueue({
           const Icon = unconfirmed ? CircleHelp : SendHorizontal;
           return (
             <li key={id} className="message-queue-steer">
-              <span className="message-queue-handle">
-                <Icon
-                  size={13}
-                  className="message-queue-mode"
-                  role="img"
-                  aria-label={
-                    unconfirmed ? t["Send unconfirmed"] : t["Steering pending"]
-                  }
-                />
-              </span>
-              <p aria-description={text}>{text || t.Message}</p>
-              {attachments(content)}
-              {unconfirmed && (
-                <button
-                  type="button"
-                  className="message-queue-action message-queue-check"
-                  aria-label={t["Check send status"]}
-                  aria-description={t.sendUnconfirmed}
-                  disabled={busy === id}
-                  onClick={() => onCheck && void act(id, onCheck)}
-                >
-                  {t["Send unconfirmed"]}
-                </button>
-              )}
+              <div
+                className="message-queue-row-content"
+                ref={arrival(id, content)}
+              >
+                <span className="message-queue-handle">
+                  <Icon
+                    size={13}
+                    className="message-queue-mode"
+                    role="img"
+                    aria-label={
+                      unconfirmed
+                        ? t["Send unconfirmed"]
+                        : t["Steering pending"]
+                    }
+                  />
+                </span>
+                <p aria-description={text}>{text || t.Message}</p>
+                {attachments(content)}
+                {unconfirmed && (
+                  <button
+                    type="button"
+                    className="message-queue-action message-queue-check"
+                    aria-label={t["Check send status"]}
+                    aria-description={t.sendUnconfirmed}
+                    disabled={busy === id}
+                    onClick={() => onCheck && void act(id, onCheck)}
+                  >
+                    {t["Send unconfirmed"]}
+                  </button>
+                )}
+              </div>
             </li>
           );
         })}
@@ -189,70 +233,75 @@ export function MessageQueue({
               }}
               onDragEnd={() => setDrag(undefined)}
             >
-              <span className="message-queue-handle">
-                {locked ? (
-                  <Spinner size={14} label={t["Already sending"]} />
-                ) : movable ? (
-                  // The timing icon turns into the grip on hover/focus, in place.
-                  <button
-                    type="button"
-                    className="message-queue-grip"
-                    aria-label={`${index + 1}. ${t["Reorder queued message"]}`}
-                    disabled={!!busy}
-                    onKeyDown={(event) => keyMove(event, index, id)}
-                  >
+              <div
+                className="message-queue-row-content"
+                ref={arrival(id, content)}
+              >
+                <span className="message-queue-handle">
+                  {locked ? (
+                    <Spinner size={14} label={t["Already sending"]} />
+                  ) : movable ? (
+                    // The timing icon turns into the grip on hover/focus, in place.
+                    <button
+                      type="button"
+                      className="message-queue-grip"
+                      aria-label={`${index + 1}. ${t["Reorder queued message"]}`}
+                      disabled={!!busy}
+                      onKeyDown={(event) => keyMove(event, index, id)}
+                    >
+                      <ListEnd
+                        size={13}
+                        className="message-queue-grip-idle"
+                        aria-hidden="true"
+                      />
+                      <GripVertical
+                        size={14}
+                        className="message-queue-grip-active"
+                        aria-hidden="true"
+                      />
+                    </button>
+                  ) : (
                     <ListEnd
                       size={13}
-                      className="message-queue-grip-idle"
-                      aria-hidden="true"
+                      className="message-queue-mode"
+                      role="img"
+                      aria-label={t["Send after response"]}
                     />
-                    <GripVertical
-                      size={14}
-                      className="message-queue-grip-active"
-                      aria-hidden="true"
-                    />
-                  </button>
-                ) : (
-                  <ListEnd
-                    size={13}
-                    className="message-queue-mode"
-                    role="img"
-                    aria-label={t["Send after response"]}
-                  />
-                )}
-              </span>
-              <p aria-description={text}>{text || t.Message}</p>
-              {attachments(content)}
-              <div className="message-queue-actions">
-                {onSteer && (
+                  )}
+                </span>
+                <p aria-description={text}>{text || t.Message}</p>
+                {attachments(content)}
+                <div className="message-queue-actions">
+                  {onSteer && (
+                    <button
+                      type="button"
+                      className="message-queue-action"
+                      aria-label={t["Steer with queued message"]}
+                      disabled={!!busy || locked}
+                      onClick={() => void act(id, onSteer, true)}
+                    >
+                      <SendHorizontal size={14} aria-hidden="true" />
+                    </button>
+                  )}
                   <button
                     type="button"
                     className="message-queue-action"
-                    aria-label={t["Steer with queued message"]}
-                    disabled={!!busy || locked}
-                    onClick={() => void act(id, onSteer, true)}
+                    aria-label={t["Edit queued message"]}
+                    disabled={!!busy}
+                    onClick={() => void act(id, onEdit)}
                   >
-                    <SendHorizontal size={14} aria-hidden="true" />
+                    <PencilLine size={14} aria-hidden="true" />
                   </button>
-                )}
-                <button
-                  type="button"
-                  className="message-queue-action"
-                  aria-label={t["Edit queued message"]}
-                  disabled={!!busy}
-                  onClick={() => void act(id, onEdit)}
-                >
-                  <PencilLine size={14} aria-hidden="true" />
-                </button>
-                <button
-                  type="button"
-                  className="message-queue-action"
-                  aria-label={t["Delete queued message"]}
-                  disabled={!!busy}
-                  onClick={() => void act(id, onDelete, true)}
-                >
-                  <X size={14} aria-hidden="true" />
-                </button>
+                  <button
+                    type="button"
+                    className="message-queue-action"
+                    aria-label={t["Delete queued message"]}
+                    disabled={!!busy}
+                    onClick={() => void act(id, onDelete, true)}
+                  >
+                    <X size={14} aria-hidden="true" />
+                  </button>
+                </div>
               </div>
             </li>
           );

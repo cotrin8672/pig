@@ -21,7 +21,7 @@ import { composerHistory } from "./composer-input-history";
 import { drafts, emptyContent, expandedDraft } from "./draft-store";
 import { useT } from "./i18n";
 import { UserMessage } from "./MessageContent";
-import { MessageQueue } from "./MessageQueue";
+import { MessageQueue, usePendingArrival } from "./MessageQueue";
 import { ModelPicker } from "./ModelPicker";
 import {
   openingDraftKey,
@@ -336,11 +336,12 @@ export function OpeningComposer({ preview }: { preview?: Snapshot }) {
 
 export function OpeningMessages() {
   const target = useOpeningTarget();
+  const arrival = usePendingArrival();
   return openingSends(target)
     .filter((send) => send.delivery !== "followUp")
     .map((send) => (
       <div className="response-turn" key={send.id}>
-        <article className="message user">
+        <article ref={arrival(send.id, send.content)} className="message user">
           <UserMessage
             sessionId="opening"
             disabled
