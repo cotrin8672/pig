@@ -96,6 +96,8 @@ export const en = {
   paneSplitColumns: "Split pane left/right",
   paneClose: "Close pane (keep session)",
   paneDropPrompt: "Drag onto a pane",
+  paneDropColumns: "Insert here and equalize column widths",
+  paneDropRows: "Insert here and equalize row heights",
   paneDropSwap: (title: string) => `Swap with ${title}`,
   paneDropPlace: (title: string, side: "top" | "bottom" | "left" | "right") =>
     `Place ${{ top: "above", bottom: "below", left: "left of", right: "right of" }[side]} ${title}`,
@@ -1041,6 +1043,8 @@ export const ja: Dictionary = {
   paneSplitColumns: "Paneを左右に分割",
   paneClose: "Paneを閉じる（セッションは残す）",
   paneDropPrompt: "移動先のPaneへドラッグ",
+  paneDropColumns: "ここに挿入して列を等幅に",
+  paneDropRows: "ここに挿入して行を同じ高さに",
   paneDropSwap: (title: string) => `${title}と入れ替え`,
   paneDropPlace: (title: string, side: "top" | "bottom" | "left" | "right") =>
     `${title}${{ top: "の上", bottom: "の下", left: "の左", right: "の右" }[side]}に配置`,
