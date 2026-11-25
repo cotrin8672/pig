@@ -580,6 +580,8 @@ main > *,
 }
 .thread-scroll {
   --scrollbar-inset: var(--radius-sm);
+  /* Transcript layers must stay below the jump button and composer dock. */
+  isolation: isolate;
   flex: 1;
   min-height: 0;
   overflow: auto;
@@ -1276,15 +1278,15 @@ details[open] > summary .tool-chevron,
 }
 /* The glass lives on a layer, not on .composer: an ancestor with
    backdrop-filter becomes the backdrop root, and popovers inside the composer
-   (model picker, slash options) would no longer blur the chat behind them.
-   No blur on the composer itself: seeing the chat behind it matters. */
+   (model picker, slash options) would no longer blur the chat behind them. */
 .composer::before {
   content: "";
   position: absolute;
   inset: -1px; /* Covers the border box, as the composer background did. */
   z-index: -1;
   border-radius: inherit;
-  background: var(--ds-bg-popover);
+  background: var(--ds-bg-composer);
+  backdrop-filter: blur(var(--ds-popover-blur));
   /* Drawn here: this layer paints over the composer's own (transparent) border. */
   box-shadow: inset 0 0 0 1px var(--ds-border-strong);
   pointer-events: none;

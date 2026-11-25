@@ -44,7 +44,8 @@ test.skipIf(!existsSync(fixtureEdge) && !process.env.PIG_REQUIRE_UI_TESTS)(
       for(const sel of ['textarea','.model-picker > summary','.send-button'])
         check(alpha(ink(off,sel))<0.7&&alpha(ink(on,sel))>0.9,sel+' ink must fade only in the inactive pane: '+ink(on,sel)+' / '+ink(off,sel));
       const glass=(el)=>getComputedStyle(el,'::before').backgroundColor;
-      check(glass(off)!==glass(on)&&alpha(glass(off))>0,'the inactive composer keeps a visible, quieter surface: '+glass(off));
+      check(glass(off)===glass(on)&&alpha(glass(off))>0,'pane activation must not change the glass tint: '+glass(off));
+      check(getComputedStyle(off,'::before').backdropFilter===getComputedStyle(on,'::before').backdropFilter,'pane activation must not change the glass blur');
       check(getComputedStyle(off).boxShadow==='none'&&getComputedStyle(on).boxShadow!=='none','only the active composer floats');
       check(getComputedStyle(off).opacity==='1','no whole-surface opacity');
       check(off.getBoundingClientRect().height===on.getBoundingClientRect().height,'receding must not change the composer size');
