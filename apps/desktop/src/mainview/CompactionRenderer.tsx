@@ -5,7 +5,7 @@ import { ChatContent } from "./ChatContent";
 import { useT } from "./i18n";
 import { Markdown } from "./MessageContent";
 import { LazyDetails } from "./patterns/LazyDetails";
-import "./compaction.css";
+import "./transcript-notices.css";
 
 export function BuiltinCompaction({ data }: ChatRendererProps<"compaction">) {
   const t = useT();

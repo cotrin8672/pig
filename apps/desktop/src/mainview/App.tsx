@@ -1198,7 +1198,7 @@ export const Chat = memo(function Chat({
           {ja ? "実行環境の準備を再試行" : "Retry runtime initialization"}
         </button>
       )}
-      <span role="status" className="sr-status">
+      <span role="status" className="sr-only">
         {observedRun &&
           !transcript.running &&
           !snapshot.failure &&

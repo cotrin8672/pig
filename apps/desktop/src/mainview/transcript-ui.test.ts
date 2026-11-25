@@ -108,7 +108,7 @@ test.skipIf(!existsSync(edge) && !process.env.PIG_REQUIRE_UI_TESTS)(
         check(card.scrollWidth===card.clientWidth,'narrow cards must not overflow');
         const icon=card.querySelector('svg'),heading=card.querySelector('strong');
         check(getComputedStyle(icon).flexShrink==='0'&&getComputedStyle(icon).width==='16px','icon stays aligned at narrow widths');
-        check(getComputedStyle(icon).animationName==='compaction-spin','only the active icon animates');
+        check(getComputedStyle(icon).animationName==='transcript-notice-spin','only the active icon animates');
         check(getComputedStyle(heading).opacity==='1','text stays fully visible');
         await capturePixels();
       }

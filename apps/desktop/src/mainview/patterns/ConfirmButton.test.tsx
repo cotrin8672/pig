@@ -14,7 +14,5 @@ test("ConfirmButton starts idle with both labels stacked and no announcement", (
     '<span class="confirm-idle" aria-hidden="false">Install</span>',
   );
   expect(html).toContain('class="confirm-armed" aria-hidden="true"');
-  expect(html).toContain(
-    '<span class="confirm-status" aria-live="polite"></span>',
-  );
+  expect(html).toContain('<span class="sr-only" aria-live="polite"></span>');
 });

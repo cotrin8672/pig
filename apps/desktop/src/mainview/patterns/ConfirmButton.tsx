@@ -64,7 +64,7 @@ export function ConfirmButton({
           {t.Confirm}
         </span>
       </span>
-      <span className="confirm-status" aria-live="polite">
+      <span className="sr-only" aria-live="polite">
         {armed ? t["Press again to confirm"] : ""}
       </span>
     </button>

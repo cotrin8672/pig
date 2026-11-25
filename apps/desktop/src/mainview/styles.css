@@ -351,14 +351,6 @@ p {
 .project-heading:focus-within .project-actions {
   opacity: 1;
 }
-.sr-status {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  overflow: hidden;
-  clip-path: inset(50%);
-  white-space: nowrap;
-}
 .project-threads {
   margin-left: 12px;
   padding-left: 5px;
@@ -2542,49 +2534,6 @@ details[open] > summary .tool-chevron,
   font-size: 10px;
   color: var(--ds-text-muted);
 }
-.session-dialog {
-  margin: auto;
-  width: min(340px, calc(100vw - 32px));
-  padding: 14px;
-  border: 1px solid #ffffff16;
-  border-radius: 10px;
-  color: var(--ds-text-primary);
-  background: var(--ds-bg-elevated-opaque);
-  box-shadow: 0 12px 36px #0004;
-}
-.session-dialog::backdrop {
-  background: #0005;
-}
-.session-dialog form {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-.session-dialog .dialog-heading h2 {
-  font-size: 13px;
-}
-.session-dialog p {
-  margin: 0;
-  font-size: 12px;
-}
-.session-dialog-name {
-  overflow-wrap: anywhere;
-  font-weight: 500;
-}
-.session-dialog .dialog-actions {
-  gap: 6px;
-}
-.session-dialog button {
-  font-size: 12px;
-}
-.danger-button {
-  background: color-mix(in srgb, var(--ds-error) 14%, transparent);
-  color: var(--ds-error);
-}
-.danger-button:hover {
-  background: color-mix(in srgb, var(--ds-error) 22%, transparent);
-}
-
 .message-content {
   min-width: 0;
   overflow-wrap: anywhere;

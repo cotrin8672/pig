@@ -1,3 +1,4 @@
+.compaction-card,
 .response-error {
   margin: 12px 0;
   padding: 12px 16px;
@@ -7,20 +8,51 @@
   font-size: var(--text-sm);
   overflow-wrap: anywhere;
 }
+.compaction-heading,
 .response-error-heading {
   display: flex;
   align-items: center;
   gap: 8px;
+}
+.compaction-heading {
+  color: var(--ds-text-secondary);
+}
+.response-error-heading {
   color: var(--ds-error);
-}
-.response-error-heading > svg {
-  flex: none;
-}
-.response-error-heading > strong {
-  font-weight: var(--font-weight-medium);
 }
 .response-error[data-reason="stopped"] .response-error-heading {
   color: var(--ds-text-muted);
+}
+.compaction-heading > svg,
+.response-error-heading > svg,
+.response-retry > svg {
+  flex: none;
+}
+.compaction-heading > strong,
+.response-error-heading > strong {
+  font-weight: var(--font-weight-medium);
+}
+.compaction-card[data-active] .compaction-heading > svg {
+  color: var(--ds-accent);
+}
+.compaction-card > p {
+  margin: 6px 0 0 24px;
+  color: var(--ds-text-muted);
+  font-size: var(--text-xs);
+}
+.compaction-card > details {
+  margin: 8px 0 0 24px;
+}
+.compaction-card summary,
+.response-error > details > summary {
+  cursor: pointer;
+}
+.compaction-card summary {
+  color: var(--ds-text-muted);
+  font-size: var(--text-xs);
+}
+.compaction-card .prose {
+  margin-top: 8px;
 }
 .response-error > p {
   margin: 6px 0 0;
@@ -29,9 +61,6 @@
 .response-error > details {
   margin-top: 8px;
   color: var(--ds-text-muted);
-}
-.response-error > details > summary {
-  cursor: pointer;
 }
 .response-error pre {
   margin: 8px 0 0;
@@ -53,18 +82,17 @@
   line-height: 1.6;
   white-space: nowrap;
 }
-.response-retry > svg {
-  flex: none;
-}
+.compaction-card[data-active] .compaction-heading > svg,
 .response-retry[data-waiting] > svg {
-  animation: response-retry-spin 1.6s linear infinite;
+  animation: transcript-notice-spin 1.6s linear infinite;
 }
-@keyframes response-retry-spin {
+@keyframes transcript-notice-spin {
   to {
     transform: rotate(360deg);
   }
 }
 @media (prefers-reduced-motion: reduce) {
+  .compaction-card[data-active] .compaction-heading > svg,
   .response-retry[data-waiting] > svg {
     animation: none;
   }
