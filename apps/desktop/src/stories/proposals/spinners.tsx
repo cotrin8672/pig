@@ -68,7 +68,7 @@ const SPINNERS = {
 
 const variants = Object.keys(SPINNERS) as (keyof typeof SPINNERS)[];
 
-export const spinnerProposals = Object.fromEntries(
+export const spinnerProposals = Object.fromEntries<Proposal<object>>(
   variants.map((variant) => {
     const { title, tui, fit } = SPINNERS[variant];
     return [

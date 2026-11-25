@@ -8,6 +8,7 @@ function machine(title: string, tui: string, fit: string, drawing: ReactNode) {
     fit,
     Glyph: () => (
       <svg
+        aria-hidden="true"
         className="pp-machine"
         viewBox="0 0 32 22"
         fill="none"
@@ -51,8 +52,12 @@ export const mechanicalSpinners = {
     <>
       <g className="pp-m-gear">
         <circle cx="15" cy="11" r="6" />
-        {Array.from({ length: 8 }, (_, i) => (
-          <path key={i} transform={`rotate(${i * 45} 15 11)`} d="M14 5V2h2v3" />
+        {[0, 45, 90, 135, 180, 225, 270, 315].map((angle) => (
+          <path
+            key={angle}
+            transform={`rotate(${angle} 15 11)`}
+            d="M14 5V2h2v3"
+          />
         ))}
       </g>
       <path className="pp-m-pawl" d="M28 4l-6 6-2-1" />
@@ -71,18 +76,23 @@ export const mechanicalSpinners = {
     "フィルム送り",
     "▣▣",
     "窓の中でコマがひとつずつ送られる。",
-    <>
-      <svg x="3" y="3" width="26" height="16" viewBox="0 0 26 16">
-        <g className="pp-m-film">
-          {[-10, 0, 10, 20, 30].map((x) => (
-            <g key={x} transform={`translate(${x} 0)`}>
-              <rect x="1" y="4" width="7" height="8" />
-              <path d="M3 1h2m-2 14h2" />
-            </g>
-          ))}
-        </g>
-      </svg>
-    </>,
+    <svg
+      aria-hidden="true"
+      x="3"
+      y="3"
+      width="26"
+      height="16"
+      viewBox="0 0 26 16"
+    >
+      <g className="pp-m-film">
+        {[-10, 0, 10, 20, 30].map((x) => (
+          <g key={x} transform={`translate(${x} 0)`}>
+            <rect x="1" y="4" width="7" height="8" />
+            <path d="M3 1h2m-2 14h2" />
+          </g>
+        ))}
+      </g>
+    </svg>,
   ),
   Gauge: machine(
     "圧力計",

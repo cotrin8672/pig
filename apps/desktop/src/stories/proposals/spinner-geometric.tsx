@@ -197,7 +197,7 @@ export const geometricSpinners = {
                 (row) =>
                   (bits & (1 << row)) !== 0 && (
                     <rect
-                      key={`${col}-${row}`}
+                      key={`${bits}-${row}`}
                       x={col * 4}
                       y={6 + row * 4}
                       width="2.8"
@@ -468,7 +468,7 @@ export const geometricSpinners = {
         [4, 13, 0, -1],
       ].map(([x, y, dx, dy], i) => (
         <rect
-          key={i}
+          key={`${x}-${y}`}
           x={x}
           y={y}
           width="7"
