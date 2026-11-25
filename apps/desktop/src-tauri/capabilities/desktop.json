@@ -5,6 +5,7 @@
   "webviews": ["pig-*"],
   "permissions": [
     "allow-pig-connect",
+    "allow-pig-highlight-ts",
     "allow-pig-packet",
     "allow-pig-smoke-done",
     "allow-preview-ipc-ping",

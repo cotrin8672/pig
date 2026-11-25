@@ -16,6 +16,16 @@ async function until(predicate: () => unknown, name: string) {
 }
 
 async function assertIframeIsolation() {
+  const { highlightNative } = await import("./native-syntax");
+  const source = "const drink = '🍵';\r\n// 日本語";
+  const rows = await highlightNative(source);
+  if (
+    rows
+      .map((line) => line.map((token) => token.content).join(""))
+      .join("\n") !== source ||
+    !rows.some((line) => line.some((token) => token.color))
+  )
+    throw new Error("Native highlighter lost source or syntax colors.");
   await invoke("preview_ipc_ping", { frame: false });
   let reply: { isolated?: boolean; ipc?: string } | undefined;
   const frame = document.createElement("iframe");

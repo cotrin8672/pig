@@ -12,12 +12,35 @@ export {
 } from "./syntax-source";
 
 const cache = createHighlightCache(compute);
-export function cachedHighlight(text: string, language?: string) {
+function engineKey(language?: string, saved = false) {
   const lang = codeLanguage(language);
+  return saved &&
+    lang === "typescript" &&
+    typeof window !== "undefined" &&
+    "__TAURI_INTERNALS__" in window
+    ? "saved-typescript"
+    : lang;
+}
+export function cachedHighlight(
+  text: string,
+  language?: string,
+  saved = false,
+) {
+  const lang = engineKey(language, saved);
   if (!lang || !canHighlight(text)) return undefined;
   return cache.peek(text, lang);
 }
 async function compute(text: string, language: string, signal: AbortSignal) {
+  if (language === "saved-typescript") {
+    try {
+      const { highlightNative } = await import("./native-syntax");
+      if (signal.aborted) return undefined;
+      return await highlightNative(text);
+    } catch {
+      if (signal.aborted) return undefined;
+      language = "typescript";
+    }
+  }
   if (typeof window !== "undefined" && typeof window.Worker === "function") {
     try {
       const { syntaxWorker } = await import("./syntax-worker-client");
@@ -35,8 +58,9 @@ export function highlightCode(
   text: string,
   language?: string,
   signal?: AbortSignal,
+  saved = false,
 ): Promise<ThemedToken[][] | undefined> {
-  const lang = codeLanguage(language);
+  const lang = engineKey(language, saved);
   if (signal?.aborted || !lang || !text || !canHighlight(text))
     return Promise.resolve(undefined);
   return cache.run(text, lang, signal);

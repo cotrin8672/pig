@@ -1,6 +1,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod bridge;
+mod syntax;
 mod input_queue;
 mod native;
 mod widget;
@@ -132,6 +133,7 @@ fn main() {
         .setup(|app| Bridge::start(app.handle()))
         .invoke_handler(tauri::generate_handler![
             bridge::pig_connect,
+            syntax::pig_highlight_ts,
             bridge::pig_packet,
             preview_ipc_ping,
             pig_smoke_done,
