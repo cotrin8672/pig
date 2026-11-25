@@ -1299,6 +1299,7 @@ test.skipIf(!existsSync(edge) && !process.env.PIG_REQUIRE_UI_TESTS)(
       const streamingSearch=document.querySelector(".model-search input");
       await type(streamingSearch,"Large model 9");
       check(document.querySelector(".model-option"),"open streaming picker must have searchable results");
+      check(document.querySelectorAll(".model-option").length<80,"long search results must mount only the viewport");
       catalogReads=0;
       for(let token=0;token<100;token++){
         await render(<Composer snapshot={{...readyInputSnapshot,snapshotSeq:token+102,address:{...readyInputSnapshot.address},model:{...readyInputSnapshot.model},effortLevels:[...readyInputSnapshot.effortLevels],contextUsage:{tokens:token,contextWindow:1000,percent:token/10},transcript:{...readyInputSnapshot.transcript,running:true,records:[assistant("live",1000,[{type:"text",text:"Streaming "+token}])]}}}/>);
@@ -1306,6 +1307,8 @@ test.skipIf(!existsSync(edge) && !process.env.PIG_REQUIRE_UI_TESTS)(
       check(catalogReads===0,"an open picker must not rescan its catalog during 100 body/context updates: "+catalogReads);
       check(document.querySelector(".model-search input")===streamingSearch && streamingSearch.value==="Large model 9" && document.activeElement===streamingSearch,"streaming must preserve open picker search, focus and DOM");
       metrics.newChatInput.openStreamingCatalogReads=catalogReads;
+      streamingSearch.dispatchEvent(new KeyboardEvent("keydown",{key:"ArrowUp",bubbles:true}));
+      await until(()=>document.querySelector('.model-option[data-highlighted="true"]')?.getAttribute("data-model-index")==="110","keyboard wrap must reveal the last of 111 matching models");
       await click(document.querySelector(".model-picker summary"));
       await render(<div/>);
       flushSync(()=>useStore.setState({bootstrap:pickerBootstrap,openingTarget:beforeNewChat.openingTarget,newChatDrafts:beforeNewChat.newChatDrafts}));

@@ -189,12 +189,13 @@ export const ModelPicker = memo(function ModelPicker({
         ? source
         : (currentSource?.key ?? sources[0]?.key);
   const activeSource = sources.find((entry) => entry.key === activeKey);
-  const searching = !!query.trim();
+  const needle = query.trim().toLowerCase();
+  const searching = !!needle;
   const visible = searching
     ? choices.filter(({ source, model }) =>
         `${source.label} ${model.name} ${model.id} ${model.provider}`
           .toLowerCase()
-          .includes(query.trim().toLowerCase()),
+          .includes(needle),
       )
     : activeKey === "recent"
       ? recent
@@ -213,19 +214,39 @@ export const ModelPicker = memo(function ModelPicker({
   }, [open]);
   const locked = activeSource && accountLocked(activeSource, snapshot);
   const signedOut = activeSource && !activeSource.configured;
+  const virtual = open && visible.length > 80 && !locked;
+  const rows = useVirtualizer({
+    enabled: virtual,
+    count: visible.length,
+    getScrollElement: () => list.current,
+    getItemKey: (i) => choiceKey(visible[i]),
+    estimateSize: () => 32,
+    overscan: 5,
+  });
+  const windowRows = virtual ? rows.getVirtualItems() : undefined;
+  const focusRow = useRef(false);
   useEffect(() => {
-    if (open && activeIndex >= 0)
-      list.current
-        ?.querySelector(`[data-model-index="${activeIndex}"]`)
-        ?.scrollIntoView({ block: "nearest" });
-  }, [open, activeIndex]);
+    if (open && activeIndex >= 0) {
+      if (virtual) rows.scrollToIndex(activeIndex, { align: "auto" });
+      else
+        list.current
+          ?.querySelector(`[data-model-index="${activeIndex}"]`)
+          ?.scrollIntoView({ block: "nearest" });
+    }
+  }, [open, activeIndex, virtual, rows]);
   // biome-ignore lint/correctness/useExhaustiveDependencies: Re-measure when the highlighted row or list changes.
   useLayoutEffect(() => {
-    if (open && activeIndex >= 0)
-      updateMarquee(
-        list.current?.querySelector(`[data-model-index="${activeIndex}"]`),
+    if (open && activeIndex >= 0) {
+      const option = list.current?.querySelector<HTMLButtonElement>(
+        `[data-model-index="${activeIndex}"]`,
       );
-  }, [open, activeIndex, query, activeKey]);
+      updateMarquee(option);
+      if (option && focusRow.current) {
+        option.focus({ preventScroll: true });
+        focusRow.current = false;
+      }
+    }
+  }, [open, activeIndex, query, activeKey, windowRows]);
   function desired({ source, model }: AccountModel): ModelSelection {
     return {
       model,
@@ -331,12 +352,7 @@ export const ModelPicker = memo(function ModelPicker({
                   visible.length) %
                 visible.length;
               setHighlight(next);
-              if (target.matches(".model-option"))
-                list.current
-                  ?.querySelector<HTMLButtonElement>(
-                    `[data-model-index="${next}"]`,
-                  )
-                  ?.focus();
+              focusRow.current = target.matches(".model-option");
             }
             if (event.key === "Enter" && target === search.current) {
               event.preventDefault();
@@ -493,7 +509,15 @@ export const ModelPicker = memo(function ModelPicker({
                       </button>
                     </div>
                   )}
-                  {visible.map((choice, index) => {
+                  {windowRows && (
+                    <div
+                      aria-hidden
+                      style={{ height: windowRows[0]?.start ?? 0 }}
+                    />
+                  )}
+                  {(windowRows ?? visible).map((_, i) => {
+                    const index = windowRows?.[i].index ?? i;
+                    const choice = visible[index];
                     const { model, source } = choice;
                     const selected =
                       choiceKey(choice) === selectionKey(current);
@@ -502,7 +526,11 @@ export const ModelPicker = memo(function ModelPicker({
                       (index === 0 ||
                         visible[index - 1].source.key !== source.key);
                     return (
-                      <div key={choiceKey(choice)}>
+                      <div
+                        key={choiceKey(choice)}
+                        data-index={index}
+                        ref={virtual ? rows.measureElement : undefined}
+                      >
                         {showGroup && (
                           <div className="picker-group-title">
                             {source.label}
@@ -552,6 +580,15 @@ export const ModelPicker = memo(function ModelPicker({
                       </div>
                     );
                   })}
+                  {windowRows && (
+                    <div
+                      aria-hidden
+                      style={{
+                        height:
+                          rows.getTotalSize() - (windowRows.at(-1)?.end ?? 0),
+                      }}
+                    />
+                  )}
                   {!visible.length && (
                     <p className="picker-empty">
                       {searching
@@ -581,3 +618,5 @@ export const ModelPicker = memo(function ModelPicker({
     </details>
   );
 });
+
+import { useVirtualizer } from "@tanstack/react-virtual";
