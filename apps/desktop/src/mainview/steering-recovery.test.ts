@@ -141,6 +141,20 @@ test.each([
   expect(f.acknowledged).toMatchObject([key]);
 });
 
+test("a host-confirmed recovery removes an existing steering row without restoring its draft again", () => {
+  const f = fixture();
+  f.sends.restore([intent]);
+  expect(f.sends.pendingSteering(address, true)).toHaveLength(1);
+  f.drafts.receive(address, { ...content, revision: 2 });
+  f.sends.restore([{ ...intent, recovered: true }]);
+  f.sends.restore([intent]);
+  f.sends.reconcile(snapshot());
+  expect(f.sends.pendingSteering(address, true)).toEqual([]);
+  expect(f.sends.optimistic(address)).toEqual([]);
+  expect(f.drafts.read(address).content).toEqual(content);
+  expect(f.notices).toEqual([]);
+});
+
 test("several cancelled inputs keep send order ahead of the newer draft", () => {
   const f = fixture();
   f.sends.restore([
@@ -227,6 +241,20 @@ test("unknown input can follow an explicit transfer without acknowledging across
   expect(f.acknowledged).toEqual([]);
   expect(f.errors).toEqual([]);
   expect(f.notices).toEqual(["unknown"]);
+});
+
+test("a timed-out save of recovered steering is retried before acknowledgement", async () => {
+  let attempts = 0;
+  const f = fixture(async () => {
+    if (++attempts === 1) throw new Error("Draft sync timed out");
+  });
+  f.sends.restore([intent]);
+  f.sends.reconcile(snapshot());
+  await Bun.sleep(0);
+  expect(attempts).toBe(2);
+  expect(f.drafts.read(address).content.text).toBe("first");
+  expect(f.acknowledged).toMatchObject([key]);
+  expect(f.errors).toEqual([]);
 });
 
 test("failed draft persistence retains recovery data and reports the error without acknowledging", async () => {

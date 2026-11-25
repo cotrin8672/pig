@@ -66,6 +66,7 @@ export class ComposerBridge {
     );
     const next = {
       ...copied,
+      ...(params.mirrorTag ? { mirrorTag: params.mirrorTag } : {}),
       images: params.keepImages ? current.images : copied.images,
       revision: this.revision(current),
     };

@@ -123,6 +123,7 @@ export class DraftStore {
   private listeners = new Set<() => void>();
   private queues = new Map<string, Promise<unknown>>();
   private flights = new Map<string, Flight>();
+  private readonly mirrorId = crypto.randomUUID();
   constructor(private readonly mirrorBudgetMs = 5_000) {}
   subscribe = (listener: () => void) => {
     this.listeners.add(listener);
@@ -196,7 +197,9 @@ export class DraftStore {
       remote.revision > flight.expectedRevision &&
       equal(remote, flight.content);
     const same = equal(draft.content, remote);
-    if (own || same || (draft.dirty && consumes(remote, draft.revision))) {
+    // A mirror may reach the host even when its ACK times out before a send.
+    const ownMirror = remote.mirrorTag === `${this.mirrorId}:${remote.revision}`;
+    if (own || ownMirror || same || (draft.dirty && consumes(remote, draft.revision))) {
       this.put(address, {
         ...draft,
         revision: remote.revision,
@@ -421,7 +424,9 @@ export class DraftStore {
             epoch: address.epoch,
             expectedRevision: flight.expectedRevision,
             content: flight.content,
-            ...(requestId ? { requestId, delivery } : {}),
+            ...(requestId
+              ? { requestId, delivery }
+              : { mirrorTag: `${this.mirrorId}:${flight.expectedRevision + 1}` }),
           });
           let timer: ReturnType<typeof setTimeout> | undefined;
           // The matching host publication can acknowledge a mirror, not a send reservation.

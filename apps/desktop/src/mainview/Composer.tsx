@@ -360,17 +360,28 @@ export function Composer({
     () => () => {
       const latest = drafts.read(slashAddress);
       if (latest.dirty && !latest.retired)
-        void drafts.flush(slashAddress, mirror, latest).catch(showError);
+        void drafts.flush(slashAddress, mirror, latest).catch(console.warn);
     },
     [slashAddress, mirror],
   );
   // Background mirror is not the command barrier: send still awaits the ordered CAS queue.
   useEffect(() => {
     if (!draft.dirty || draft.retired) return;
-    const timer = setTimeout(() => {
-      void drafts.flush(slashAddress, mirror).catch(showError);
-    }, 120);
-    return () => clearTimeout(timer);
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout>;
+    const flush = (retry: boolean) => {
+      void drafts.flush(slashAddress, mirror).catch((error) => {
+        if (cancelled || !drafts.read(slashAddress).dirty) return;
+        // Retry outside the send lane; the next flush picks up the latest edit.
+        if (retry) timer = setTimeout(() => flush(false), 500);
+        else showError(error);
+      });
+    };
+    timer = setTimeout(() => flush(true), 120);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
   }, [slashAddress, draft, mirror]);
   function send(delivery: PromptDelivery = "steer") {
     const loading = attachmentReads.pending(address) > 0;

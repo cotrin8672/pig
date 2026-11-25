@@ -82,6 +82,7 @@ export type Sequence = (
   step: () => unknown,
 ) => unknown;
 const cancelledError = "Send cancelled";
+class SendAcknowledgementTimeout extends Error {}
 /** Retries reuse the immutable request ID; the host ledger deduplicates dispatch. */
 export class SendController {
   private states = new Map<string, SendState>();
@@ -206,7 +207,12 @@ export class SendController {
   ) {
     if (!this.activeDraft(address)) return;
     try {
-      await this.drafts.flush(address, this.transport.syncDraft);
+      await this.drafts
+        .flush(address, this.transport.syncDraft)
+        .catch((error) => {
+          if (!this.activeDraft(address)) throw error;
+          return this.drafts.flush(address, this.transport.syncDraft);
+        });
       // Acknowledge only after saving, and never against a replaced owner.
       for (const key of keys) {
         if (!this.activeDraft(address)) return;
@@ -217,7 +223,11 @@ export class SendController {
         });
       }
     } catch (error) {
-      if (this.activeDraft(address)) this.rejected(String(error));
+      if (this.activeDraft(address)) {
+        if (error instanceof Error && /timed out|timeout/i.test(error.message))
+          console.warn("Cannot save send recovery:", error);
+        else this.rejected(String(error));
+      }
     }
   }
   /** Pending steering stays in the tray; returned input lives in the composer. */
@@ -230,6 +240,7 @@ export class SendController {
           address,
         ) &&
         !state.detached &&
+        !state.returned &&
         state.content &&
         (state.state === "unknown" ||
           (state.optimistic &&
@@ -497,6 +508,35 @@ export class SendController {
         this.dispatched.add(id);
       const existing = this.operations.get(id);
       if (existing?.detached) continue;
+      if (existing && intent.recovered && !existing.returned) {
+        // Another view already saved this request back to the draft.
+        const transfer = this.transfers.get(id);
+        const address = transfer?.address ?? receipt;
+        const returned: SendState = {
+          ...existing,
+          state:
+            existing.state === "accepted"
+              ? "accepted"
+              : receipt.state === "pending"
+                ? "unknown"
+                : receipt.state,
+          returned: true,
+          optimistic: false,
+          content: undefined,
+          recoveredQueue: false,
+          version: -1,
+        };
+        this.retries.delete(id);
+        if (this.issuing.has(id) && !this.dispatched.has(id))
+          this.cancelled.add(id);
+        if (transfer) transfer.state = returned;
+        this.put(
+          address,
+          returned,
+          this.read(address)?.key.requestId === receipt.requestId,
+        );
+        continue;
+      }
       if (existing?.returned) {
         if (receipt.state === "accepted" || receipt.state === "rejected")
           this.settle(receipt, existing, {
@@ -678,6 +718,7 @@ export class SendController {
       this.settle(address, state, {
         state: "rejected",
         message: String(error),
+        quiet: error instanceof SendAcknowledgementTimeout,
       });
       if (this.reserved.has(id)) {
         // Save the restored draft before withdrawing a possibly committed CAS.
@@ -720,7 +761,12 @@ export class SendController {
         reply,
         new Promise<never>((_, reject) => {
           timer = setTimeout(
-            () => reject(new Error("Send acknowledgement timed out")),
+            () =>
+              reject(
+                new SendAcknowledgementTimeout(
+                  "Send acknowledgement timed out",
+                ),
+              ),
             this.lookupBudgetMs,
           );
         }),
@@ -738,9 +784,10 @@ export class SendController {
     const read = async () => {
       check();
       const receipt = await this.withReplyBudget(
-        this.transport.getPromptReceipt(key),
-      );
+        Promise.resolve().then(() => this.transport.getPromptReceipt(key)),
+      ).catch(() => undefined);
       check();
+      if (!receipt) return;
       if (!sameAddress(receipt, key) || receipt.requestId !== requestId)
         throw new Error("Receipt address mismatch");
       return receipt;
@@ -762,14 +809,18 @@ export class SendController {
       return await sync();
     } catch (error) {
       const receipt = await read();
-      const saved = prepared(receipt);
+      const saved = receipt && prepared(receipt);
       if (saved) return saved;
-      if (receipt.state !== "unknown" || receipt.reason !== "not-found")
+      if (
+        receipt &&
+        (receipt.state !== "unknown" || receipt.reason !== "not-found")
+      )
         throw error;
       // Same CAS revision and ID: at most one write can win, even if the first arrives late.
       const retried = await sync().catch(() => undefined);
       if (retried?.applied) return retried;
-      const recovered = prepared(await read()) ?? retried;
+      const later = await read();
+      const recovered = (later && prepared(later)) ?? retried;
       if (recovered) return recovered;
       throw error;
     }
@@ -857,6 +908,7 @@ export class SendController {
       message?: string;
       disposition?: PromptAccepted["disposition"];
       cancelled?: true;
+      quiet?: boolean;
     },
     forwarded = false,
   ) {
@@ -885,6 +937,7 @@ export class SendController {
       result.state === "rejected" &&
       !forwarded &&
       !result.cancelled &&
+      !result.quiet &&
       !this.withdrawn.has(id)
     )
       this.rejected(result.message ?? "Send failed");

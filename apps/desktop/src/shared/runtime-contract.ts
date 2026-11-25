@@ -87,6 +87,7 @@ export type DraftContent = {
 };
 export type DraftState = DraftContent & {
   revision: number;
+  mirrorTag?: string;
   consumedRevision?: number;
 };
 export type DraftImagesRef = {
@@ -95,6 +96,7 @@ export type DraftImagesRef = {
 };
 export type DraftSyncParams = SessionAddress & {
   expectedRevision: number;
+  mirrorTag?: string;
   content: DraftContent;
   keepImages?: true;
   requestId?: string;

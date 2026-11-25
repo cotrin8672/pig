@@ -976,7 +976,7 @@ test("an unverified CAS reservation never dispatches prompt", async () => {
   expect(sends.retained()).toEqual([]);
 });
 
-for (const initial of ["saved", "missing", "late"]) {
+for (const initial of ["saved", "missing", "late", "offline"]) {
   test(`an unanswered CAS with a ${initial} reservation resumes under one ID`, async () => {
     const drafts = new DraftStore();
     drafts.edit(address, () => ({ ...emptyContent(), text: "send once" }));
@@ -997,15 +997,17 @@ for (const initial of ["saved", "missing", "late"]) {
           const applied = await syncDraft(input);
           return { ...applied, applied: initial !== "late" };
         },
-        getPromptReceipt: async (key) =>
-          saved
+        getPromptReceipt: async (key) => {
+          if (initial === "offline") throw new Error("Receipt unavailable");
+          return saved
             ? {
                 ...key,
                 state: "pending",
                 stage: "prepared",
                 draftRevision: saved.expectedRevision + 1,
               }
-            : { ...key, state: "unknown", reason: "not-found" },
+            : { ...key, state: "unknown", reason: "not-found" };
+        },
         prompt: async (input) => {
           prompts.push(input);
           return accepted;
@@ -1035,6 +1037,41 @@ for (const initial of ["saved", "missing", "late"]) {
     expect(drafts.read(address).content).toEqual(emptyContent());
   });
 }
+
+test("unreachable draft reservation returns the input once without dispatching or reporting a timeout", async () => {
+  const drafts = new DraftStore();
+  const original = { ...emptyContent(), text: "preserve me" };
+  drafts.edit(address, () => original);
+  const cas: DraftSyncParams[] = [];
+  const errors: string[] = [];
+  let prompts = 0;
+  const sends = new SendController(
+    drafts,
+    {
+      syncDraft: (input) => {
+        if (!input.requestId) return syncDraft(input);
+        cas.push(input);
+        return new Promise(() => {});
+      },
+      prompt: async () => {
+        prompts++;
+        return accepted;
+      },
+      getPromptReceipt: () => new Promise(() => {}),
+    },
+    () => {},
+    5,
+    (error) => errors.push(error),
+  );
+  await sends.send(address);
+  expect(cas).toHaveLength(2);
+  expect(cas[1]).toEqual(cas[0]);
+  expect(prompts).toBe(0);
+  expect(sends.read(address)?.state).toBe("rejected");
+  expect(drafts.read(address).content.text).toBe(original.text);
+  expect(sends.pendingSteering(address, true)).toEqual([]);
+  expect(errors).toEqual([]);
+});
 
 test("checking an old unknown ID after a new send does not query or overwrite the current operation", async () => {
   const ids: string[] = [],

@@ -180,11 +180,14 @@ test.skipIf(!existsSync(fixtureEdge) && !process.env.PIG_REQUIRE_UI_TESTS)(
     await import(${local("./styles.css")});
     ${fixtureHelpers}
     const root=createFixtureRoot(createRoot),gate=Promise.withResolvers(),requests=[];
-    let checks=0,confirmed=false;
+    let checks=0,confirmed=false,mirrors=0;
     const address={hostId:'unconfirmed',sessionId:'chat',epoch:1};
     window.__requests={
       listSlashCommands:async()=>[],
-      syncDraft:async params=>({applied:true,draft:{...params.content,revision:params.expectedRevision+1}}),
+      syncDraft:async params=>{
+        if(!params.requestId&&++mirrors===1)throw new Error('Draft sync timed out');
+        return {applied:true,draft:{...params.content,revision:params.expectedRevision+1}};
+      },
       acknowledgePromptRecovery:()=>{},
       prompt:params=>{requests.push(params);return gate.promise;},
       getPromptReceipt:async params=>{checks++;if(confirmed)return {...params,state:'accepted',accepted:{disposition:'queued'},acceptedAt:1};throw new Error('Disconnected');},
@@ -195,6 +198,10 @@ test.skipIf(!existsSync(fixtureEdge) && !process.env.PIG_REQUIRE_UI_TESTS)(
     const render=async()=>{flushSync(()=>root.render(<Chat snapshot={snapshot}/>));await wait();};
     await render();
     drafts.edit(address,content=>({...content,text:'作業を続けて'}));
+    await until(()=>mirrors===1,'background sync was attempted');
+    check(document.querySelector('.composer textarea').value==='作業を続けて','a failed background sync must leave the draft editable');
+    await until(()=>!drafts.read(address).dirty,'the background retry must sync the latest draft');
+    check(mirrors===2&&!useStore.getState().noticeHistory.length,'recovered background sync needs no error toast');
     const sending=sends.send(address);
     await until(()=>requests.length===1&&document.querySelector('.message-queue-steer'),'pending input must initially appear as steering');
     gate.reject(new Error('Prompt response disconnected'));await sending;
@@ -204,7 +211,7 @@ test.skipIf(!existsSync(fixtureEdge) && !process.env.PIG_REQUIRE_UI_TESTS)(
     await render();
     check(sends.read(address).state==='unknown','repeated receipt failures must leave an honest unknown state');
     check(!document.querySelector('.message.user'),'unknown input must not remain as steering or a normal optimistic bubble');
-    check(!document.querySelector('.message-queue-check'),'unknown input must not be stranded in the tray');
+    check(!document.querySelector('.message-queue-steer, .message-queue-check'),'returned input must not also appear in the tray');
     check(useStore.getState().noticeHistory.some(notice=>notice.message.includes('could not be confirmed')),'unknown results must notify once instead of disappearing');
     check(drafts.read(address).content.text==='作業を続けて\\n\\nnewer typing','failed input must return ahead of newer typing');
     check(document.querySelector('.composer textarea').value==='作業を続けて\\n\\nnewer typing','the actual editor must display the restored draft');

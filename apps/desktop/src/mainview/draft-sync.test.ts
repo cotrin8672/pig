@@ -55,6 +55,22 @@ test.each([
   expect(sends.read(address)?.state).toBe("accepted");
 }, 1_000);
 
+test("a timed-out mirror of partial input cannot repopulate the composer during send", async () => {
+  const { store, host } = fixture(false, 10);
+  store.edit(address, () => content("part"));
+  await expect(store.flush(address, async (params) => {
+    host.sync(params);
+    return new Promise(() => {});
+  })).rejects.toThrow("Draft sync timed out");
+  store.edit(address, () => content("partial input completed"));
+  const sent = store.read(address);
+  store.clearForSend(address, sent.version);
+  const reserved = await store.flush(address, async (params) => host.sync(params), sent, "send-id");
+  host.consume(address, reserved.revision, () => {});
+  store.receive(address, host.read(address));
+  expect(store.read(address).content.text).toBe("");
+});
+
 test.each([
   { text: "", events: true },
   { text: "", events: false },
