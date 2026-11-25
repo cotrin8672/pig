@@ -36,6 +36,22 @@ Windowsでは `cargo test --locked --manifest-path examples/remote-pairing-poc/C
 
 ## 調査結果と設計への反映
 
+### Storybook の画面案（Settings → Remote Pairing）
+
+統計と通知の間にリンク形の「Pairing」を置く。開いた画面では「このPCをホスト」と
+「別PCに接続」を分け、自宅で招待を発行する操作と、外出先で使う操作を取り違えないようにする。
+Story は模擬データのみで、待ち受けや端末登録は行わない。
+
+- [Claude Code Remote Control](https://code.claude.com/docs/en/remote-control) は実行中のセッションを
+  URL または QR から開ける。pig の招待は会話リンクではなく、端末に継続アクセスを許すものなので、
+  「会話を開く」と「端末を登録」を別の操作にする。
+- [OpenCode のペアリング](https://opencode.ai/docs/cli/web) は接続先をリンクや QR で渡せる。
+  pig の初版は自分の Windows PC 間で、両端を同時に操作しない用途。QR の常設より、
+  期限と使用回数を示した招待をコピーし、後で貼り付ける方式を優先する。
+- [OpenCode のサーバー選択実装](https://github.com/anomalyco/opencode/blob/v1.19.5/packages/app/src/components/dialog-select-server.tsx)
+  は通常の一覧と追加フォームを同時に見せず、追加操作で切り替える。pig でも招待入力や権限の説明は操作時だけにする。
+  開閉は既存の `snappy-motion.css` の折り畳みと同様に、見出しを固定して本文の高さを往復させる。
+
 | 確認したもの | 設計に使う点 |
 | --- | --- |
 | [iroh Endpoint](https://docs.rs/iroh/latest/iroh/endpoint/struct.Endpoint.html)、[Router](https://docs.rs/iroh/latest/iroh/protocol/struct.Router.html) | Rust側で端末鍵を持つEndpointを作り、pig専用のプロトコル名（ALPN）だけ受ける。相手は接続で認証された公開鍵から識別し、本文の自己申告IDを信用しない。 |

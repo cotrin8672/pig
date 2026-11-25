@@ -1,0 +1,45 @@
+.pairing-stack {
+  display: grid;
+  gap: 16px;
+  max-width: 640px;
+}
+.pairing-stack > fieldset {
+  justify-self: start;
+}
+.pairing-device,
+.pairing-form {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+.pairing-form {
+  padding: 8px 20px 16px;
+}
+.pairing-form small:first-child {
+  width: 100%;
+}
+.pairing-stack small {
+  color: var(--ds-text-muted);
+}
+.pairing-form [role="status"]:empty {
+  display: none;
+}
+.pairing-reveal {
+  display: grid;
+  grid-template-rows: 0fr;
+  transition: grid-template-rows var(--motion-duration-fast)
+    var(--motion-ease-out);
+}
+.pairing-reveal[data-open] {
+  grid-template-rows: 1fr;
+}
+.pairing-reveal > div {
+  min-height: 0;
+  overflow: hidden;
+}
+@media (prefers-reduced-motion: reduce) {
+  .pairing-reveal {
+    transition: none;
+  }
+}
