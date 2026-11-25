@@ -16,6 +16,23 @@ class FakeWorker extends EventTarget {
 }
 const tick = () => Bun.sleep(0);
 
+test("live updates precede queued history without interrupting an active parse", async () => {
+  const worker = new FakeWorker();
+  const queue = createRenderWorkerQueue<string, string>(async () => worker);
+  const results = [
+    queue.run("active"),
+    queue.run("history"),
+    queue.run("live", undefined, true),
+  ];
+  for (const expected of ["active", "live", "history"]) {
+    await tick();
+    const sent = worker.sent.at(-1);
+    expect(sent?.input).toBe(expected);
+    worker.reply(sent!.id, expected);
+  }
+  expect(await Promise.all(results)).toEqual(["active", "history", "live"]);
+});
+
 class CloningWorker extends EventTarget {
   sent: { id: number; input: { text: string } }[] = [];
   postMessage(value: unknown) {

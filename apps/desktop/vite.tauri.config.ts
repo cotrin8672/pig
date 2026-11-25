@@ -2,7 +2,7 @@ import { fileURLToPath } from "node:url";
 import tailwindcss from "@tailwindcss/vite";
 import react from "@vitejs/plugin-react";
 import { defineConfig } from "vite";
-import { workerModuleAliases } from "./scripts/worker-build";
+import { workerPlugins } from "./scripts/worker-build";
 
 export default defineConfig({
   plugins: [react(), tailwindcss()],
@@ -22,18 +22,7 @@ export default defineConfig({
       },
     ],
   },
-  worker: {
-    plugins: () => [
-      {
-        name: "worker-safe-dom-free-modules",
-        enforce: "pre",
-        resolveId(id) {
-          if (Object.hasOwn(workerModuleAliases, id))
-            return workerModuleAliases[id];
-        },
-      },
-    ],
-  },
+  worker: { plugins: workerPlugins },
   build: {
     outDir: "../../build/tauri-webview",
     emptyOutDir: true,

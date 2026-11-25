@@ -87,6 +87,7 @@ export async function prepareMarkdown(
           return await markdownWorker.run(
             { text, streaming },
             controller.signal,
+            streaming,
           );
         } catch {
           if (controller.signal.aborted) return undefined;
