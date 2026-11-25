@@ -72,10 +72,12 @@
   background: currentColor;
 }
 .turn-spinner-glass-top > i {
-  animation: turn-spinner-drain 2.6s linear infinite;
+  animation: turn-spinner-drain 2.6s cubic-bezier(0.33, 0.17, 0.88, 0.47)
+    infinite;
 }
 .turn-spinner-glass-bottom > i {
-  animation: turn-spinner-fill 2.6s linear infinite;
+  animation: turn-spinner-fill 2.6s cubic-bezier(0.33, 0.17, 0.88, 0.47)
+    infinite;
 }
 .turn-spinner-glass-stream {
   position: absolute;
@@ -84,16 +86,20 @@
   translate: -50% 0;
   width: max(1px, 0.045em);
   height: 50%;
+  overflow: hidden;
+  animation: turn-spinner-stream 2.6s linear infinite;
+}
+.turn-spinner-glass-stream > i {
+  position: absolute;
+  inset: -0.12em 0 0;
   background:
     linear-gradient(currentColor, transparent 85%, currentColor) 0 0 / 100%
     0.12em;
-  animation:
-    turn-spinner-stream 2.6s linear infinite,
-    turn-spinner-grains 130ms linear infinite;
+  animation: turn-spinner-grains 130ms linear infinite;
 }
 @keyframes turn-spinner-grains {
   to {
-    background-position-y: 0.12em;
+    transform: translateY(0.12em);
   }
 }
 @keyframes turn-spinner-flip {
@@ -108,7 +114,6 @@
 @keyframes turn-spinner-drain {
   0% {
     transform: translateY(0);
-    animation-timing-function: cubic-bezier(0.33, 0.17, 0.88, 0.47);
   }
   78%,
   100% {
@@ -118,7 +123,6 @@
 @keyframes turn-spinner-fill {
   0% {
     transform: translateY(100%);
-    animation-timing-function: cubic-bezier(0.33, 0.17, 0.88, 0.47);
   }
   78%,
   100% {
@@ -429,15 +433,24 @@
 }
 
 .turn-spinner-m-pulse {
-  stroke-dasharray: 0.16 1;
+  transform: translate(2px, 15px);
   animation: turn-spinner-m-send 1.6s linear infinite;
 }
 @keyframes turn-spinner-m-send {
-  from {
-    stroke-dashoffset: 0.16;
+  21.4% {
+    transform: translate(11px, 15px);
+  }
+  40.5% {
+    transform: translate(11px, 7px);
+  }
+  61.9% {
+    transform: translate(20px, 7px);
+  }
+  76.2% {
+    transform: translate(20px, 13px);
   }
   to {
-    stroke-dashoffset: -1;
+    transform: translate(30px, 13px);
   }
 }
 
@@ -448,12 +461,39 @@
   fill: var(--ds-text-secondary);
 }
 .turn-spinner-run-glyph circle {
-  offset-path: path("M5 6 Q5 3 8 3 Q11 3 11 6 V14 Q11 17 8 17 Q5 17 5 14 Z");
+  transform: translate(5px, 6px);
   animation: turn-spinner-run-braille-lap 1s linear infinite;
 }
 @keyframes turn-spinner-run-braille-lap {
+  10% {
+    transform: translate(6px, 4px);
+  }
+  18% {
+    transform: translate(8px, 3px);
+  }
+  26% {
+    transform: translate(10px, 4px);
+  }
+  32% {
+    transform: translate(11px, 6px);
+  }
+  56% {
+    transform: translate(11px, 14px);
+  }
+  62% {
+    transform: translate(10px, 16px);
+  }
+  68% {
+    transform: translate(8px, 17px);
+  }
+  74% {
+    transform: translate(6px, 16px);
+  }
+  80% {
+    transform: translate(5px, 14px);
+  }
   to {
-    offset-distance: 100%;
+    transform: translate(5px, 6px);
   }
 }
 

@@ -197,11 +197,11 @@ function Switchboard() {
   return (
     <Mechanical>
       <path d="M2 15h9V7h9v6h10" opacity=".3" />
-      <path
+      <circle
         className="turn-spinner-m-pulse"
-        d="M2 15h9V7h9v6h10"
-        pathLength="1"
-        strokeWidth="3"
+        r="1.5"
+        fill="currentColor"
+        stroke="none"
       />
     </Mechanical>
   );
@@ -232,7 +232,9 @@ function Hourglass() {
       <span className="turn-spinner-glass-top">
         <i />
       </span>
-      <i className="turn-spinner-glass-stream" />
+      <span className="turn-spinner-glass-stream">
+        <i />
+      </span>
       <span className="turn-spinner-glass-bottom">
         <i />
       </span>
