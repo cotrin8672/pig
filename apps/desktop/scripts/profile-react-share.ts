@@ -86,11 +86,13 @@ const probe = (history: number) => `
   root2.unmount();
 `;
 
-for (const history of process.argv.includes("--thousand")
-  ? [500]
-  : process.argv.includes("--short")
-    ? [50]
-    : [50, 200])
+for (const history of process.argv.includes("--scale")
+  ? [50, 500, 2500]
+  : process.argv.includes("--thousand")
+    ? [500]
+    : process.argv.includes("--short")
+      ? [50]
+      : [50, 200])
   await runUiFixture(`react-share-${history}`, probe(history), {
     viewport: { width: 1100, height: 800 },
   });
