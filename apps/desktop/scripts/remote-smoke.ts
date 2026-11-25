@@ -1,17 +1,20 @@
-// Build pig-remote first. No external relay, provider credentials or normal profile.
+// Default: debug transport on loopback. --release boots the portable Tauri app.
 import assert from "node:assert/strict";
 import { mkdir } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { tauriSmokeProfile } from "./tauri-smoke-profile";
 
+const release = process.argv.includes("--release");
+const publicRelay = release || process.argv.includes("--public");
 const fixture = await tauriSmokeProfile();
-const publicRelay = process.argv.includes("--public");
 const base = fixture.env.PIG_DESKTOP_CONFIG_DIR;
 const host = join(base, "pairing");
 const client = join(fixture.env.HOME, "laptop");
-const portable = process.argv.includes("--portable")
-  ? resolve(import.meta.dir, "../build/tauri-portable-smoke")
-  : undefined;
+const portable = release
+  ? resolve(import.meta.dir, "../build/tauri-portable")
+  : process.argv.includes("--portable")
+    ? resolve(import.meta.dir, "../build/tauri-portable-smoke")
+    : undefined;
 const exe = portable
   ? join(portable, "pig-remote.exe")
   : resolve(import.meta.dir, "../src-tauri/target/debug/pig-remote.exe");
@@ -20,10 +23,10 @@ for (const [k, v] of Object.entries(process.env))
   if (v && !/API_KEY|TOKEN|SECRET|PASSWORD|PI_|PIG_|PROXY/i.test(k)) env[k] = v;
 Object.assign(env, fixture.env, {
   PIG_REMOTE_ENABLED: "1",
-  PIG_REMOTE_BIN: exe,
   PIG_REMOTE_LOOPBACK: publicRelay ? "" : "1",
   PI_CODING_AGENT_SESSION_DIR: join(base, "sessions"),
 });
+if (!release) env.PIG_REMOTE_BIN = exe;
 const cli = async (
   op: string,
   dir: string,
@@ -44,6 +47,8 @@ const cli = async (
     success,
     `${op} failed: ${await new Response(p.stderr).text()}`,
   );
+  if (!success)
+    assert.equal(JSON.parse(out).ok, false, `${op} was not refused`);
   return out.trim();
 };
 let child: ReturnType<typeof Bun.spawn> | undefined;
@@ -78,16 +83,18 @@ try {
     }),
   );
   child = Bun.spawn(
-    [
-      portable ? join(portable, "host/bin/bun.exe") : process.execPath,
-      "--no-env-file",
-      portable
-        ? join(portable, "host/app/bun/tauri-host.js")
-        : resolve(import.meta.dir, "../src/bun/tauri-host.ts"),
-    ],
+    release && portable
+      ? [join(portable, "pig.exe")]
+      : [
+          portable ? join(portable, "host/bin/bun.exe") : process.execPath,
+          "--no-env-file",
+          portable
+            ? join(portable, "host/app/bun/tauri-host.js")
+            : resolve(import.meta.dir, "../src/bun/tauri-host.ts"),
+        ],
     {
       env,
-      cwd: portable ? join(portable, "host/app") : fixture.env.HOME,
+      cwd: portable && !release ? join(portable, "host/app") : fixture.env.HOME,
       stdin: "pipe",
       stdout: "pipe",
       stderr: "inherit",

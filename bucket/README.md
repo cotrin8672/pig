@@ -16,14 +16,16 @@ Neither relocates the AppData profile or uses Scoop `persist`.
   artifact's hash. Wait for the workflow's bucket commit before installing.
 - Nightly: fixed `nightly` prerelease tag, moved to the built `dev` commit, with
   assets replaced by scheduled daily builds (19:00 UTC) or manual `Release`
-  runs on `dev`. Scheduled runs skip unchanged commits; a push runs fast CI
+  runs on `dev` with `build_only` turned off. Scheduled runs skip commits
+  already published with Tauri; a push runs fast CI
   only. Stable tags must point to a commit on `main`.
   `version: "nightly"` intentionally omits a hash: Scoop updates re-download the
   rolling ZIP without integrity checking. The release body includes the base
   version, UTC date and short commit SHA.
-- Both are built with `tauri:package` and use the identifier
-  `dev.pig.tauri`. Quit before switching/updating, and
-  back up the shared profile before testing nightly.
+- Both are built with `tauri:package` and share desktop settings in
+  `~/.config/pig` by default. Quit before switching/updating, and back up
+  settings before testing nightly. For the first Nightly update from
+  Electrobun, use `scoop update pig-nightly --force --no-cache`.
 
 The packaging script preserves the existing shim target and keeps Tauri's host
 resources beside the executable. Do not package the NSIS installer for Scoop:

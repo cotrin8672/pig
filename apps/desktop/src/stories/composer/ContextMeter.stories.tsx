@@ -7,7 +7,8 @@ import "./model-trigger.css";
 import "./context-meter.css";
 
 const meta = {
-  title: "Chat/Composer/Context meter",
+  id: "chat-composer-context-meter",
+  title: "Design System/Domain/ContextMeter",
   parameters: {
     windowPreview: true,
     docs: {
@@ -26,19 +27,11 @@ export default meta;
 type Story = StoryObj<HoverArgs>;
 
 export const States: Story = {
-  name: "状態ごとの表示",
-  parameters: { controls: { disable: true } },
-  render: () => (
-    <div className="tt-page">
-      <ContextMeterStates />
-    </div>
-  ),
-};
-
-export const Hover: Story = {
-  name: "Composerでホバー",
+  name: "ContextMeter",
   render: (args) => (
     <div className="tt-page">
+      <ContextMeterStates />
+      <h3>ホバーで確認</h3>
       <ContextMeterHover {...args} />
     </div>
   ),

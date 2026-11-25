@@ -1,5 +1,5 @@
 import { selectPaneSession } from "../mainview/pane-selection";
-import type { SendController } from "../mainview/send-controller";
+import type { SendController, SendState } from "../mainview/send-controller";
 import { showNotice, useStore } from "../mainview/store";
 import { safeTerminalURL } from "../mainview/terminal-ui";
 import type {
@@ -78,13 +78,23 @@ export function updateUiPreferences(patch: Record<string, unknown>) {
       },
     }));
 }
+let queuedPreview: SendState | undefined;
+export function setQueuedPreview(item?: SendState) {
+  queuedPreview = item;
+}
 export const sends = {
   subscribe: () => () => {},
   getTick: () => 0,
   read: () => undefined,
   optimistic: () => [],
   pendingSteering: () => [],
-  queued: () => [],
+  queued: (address: SessionAddress) =>
+    queuedPreview &&
+    queuedPreview.key.hostId === address.hostId &&
+    queuedPreview.key.sessionId === address.sessionId &&
+    queuedPreview.key.epoch === address.epoch
+      ? [queuedPreview]
+      : [],
   lookup: unavailable,
   send: unavailable,
   stop: unavailable,

@@ -6,6 +6,11 @@ on:
   push:
     tags: ['v*']
   workflow_dispatch:
+    inputs:
+      build_only:
+        description: Build and upload a test artifact without publishing Nightly
+        type: boolean
+        default: true
   schedule:
     - cron: '0 19 * * *' # 04:00 JST nightly from dev; no native build on every push.
 
@@ -111,11 +116,18 @@ jobs:
       - run: pnpm typecheck:tsgo
       - run: pnpm test
       - name: Build Tauri portable app
-        run: pnpm --filter @pig/desktop tauri:package
+        env:
+          PIG_RELEASE_VERSION: ${{ steps.release.outputs.version }}
+        timeout-minutes: 20
+        run: |
+          rustup target add x86_64-pc-windows-msvc
+          rustup show active-toolchain
+          pnpm --filter @pig/desktop tauri:package
       - name: Package ZIP and checksum
         shell: pwsh
         run: ./.github/scripts/package.ps1 -OutputDirectory $env:RELEASE_DIR
       - name: Build signed Tauri installer
+        if: github.event_name != 'workflow_dispatch' || !inputs.build_only
         working-directory: apps/desktop
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
@@ -152,6 +164,7 @@ jobs:
           compression-level: 0
           retention-days: 7
       - name: Publish release
+        if: github.event_name != 'workflow_dispatch' || !inputs.build_only
         env:
           TAG: ${{ steps.release.outputs.tag }}
           VERSION: ${{ steps.release.outputs.version }}
@@ -159,7 +172,7 @@ jobs:
         run: |
           set -euo pipefail
           if [[ "$TAG" == nightly ]]; then
-            notes="Nightly $VERSION from commit $SHA. Tauri for Windows x64; requires WebView2. Use pig-setup.exe for in-app updates."
+            notes="Nightly $VERSION from commit $SHA. Built with Tauri. Requires WebView2. Use pig-setup.exe for in-app updates. Desktop settings and chat history are shared with Electrobun by default."
             if ! gh release view nightly >/dev/null 2>&1; then
               gh release create nightly --target "$SHA" --prerelease --latest=false --title 'pig nightly' --notes 'Nightly publication in progress.'
             fi

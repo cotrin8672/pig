@@ -54,6 +54,13 @@ impl Bridge {
                 "PIG_REMOTE_BIN",
                 std::env::current_exe()?.with_file_name("pig-remote.exe"),
             );
+            if std::env::var_os("PIG_DESKTOP_CONFIG_DIR").is_none() {
+                // Keep existing Tauri pairing keys without redirecting desktop data.
+                command.env(
+                    "PIG_TAURI_PAIRING_DIR",
+                    app.path().app_config_dir()?.join("pig").join("pairing"),
+                );
+            }
         }
         command
             .current_dir(root)
@@ -61,7 +68,12 @@ impl Bridge {
             // Set the initial process environment: Bun's executable search can
             // use its startup PATH even after JS mutates process.env.
             .env("PATH", std::env::join_paths(path)?)
-            .env("PIG_TAURI_VERSION", app.package_info().version.to_string())
+            .env(
+                "PIG_TAURI_VERSION",
+                option_env!("PIG_RELEASE_VERSION")
+                    .map(str::to_owned)
+                    .unwrap_or_else(|| app.package_info().version.to_string()),
+            )
             .env(
                 "PIG_TAURI_INSTALLER",
                 if option_env!("PIG_INSTALLER_VERSION").is_some() {
@@ -73,12 +85,6 @@ impl Bridge {
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::inherit());
-        if std::env::var_os("PIG_DESKTOP_CONFIG_DIR").is_none() {
-            command.env(
-                "PIG_DESKTOP_CONFIG_DIR",
-                app.path().app_config_dir()?.join("pig"),
-            );
-        }
         if let Ok(dir) = app.path().download_dir() {
             command.env("PIG_TAURI_DOWNLOADS", dir);
         }

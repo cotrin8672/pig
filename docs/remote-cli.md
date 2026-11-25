@@ -7,6 +7,8 @@
 ## ホストで一度だけ
 
 Tauriポータブル版の `pig.exe` と同じフォルダに `pig-remote.exe` が必要。
+Scoop の Tauri Nightly では、両方ともインストール先の `current\bin` にあり、
+起動ファイル名は `launcher.exe`。下の `.\pig.exe` は `.\launcher.exe` に読み替える。
 開発時は `mise exec -- cargo build --locked --manifest-path apps/desktop/src-tauri/Cargo.toml -p pig-remote`。
 PowerShell 7でそのバイナリのあるフォルダから：
 
@@ -80,3 +82,8 @@ mise exec -- bun run apps/desktop/scripts/remote-smoke.ts
 GUIは開かない。通常の接続ではirohの探索・直接接続・公開リレーを使い、別回線の到達性や中継の稼働は保証しない。
 `--portable` は `tauri:smoke:package` で作った同梱バイナリを使用する。
 `--public` を併用すると外部のiroh探索を使用する（リレー経由を強制する検査ではない）。
+
+配布用ビルドは `tauri:package` の後に
+`mise exec -- bun run apps/desktop/scripts/remote-smoke.ts --release` で検査する。
+実際の Tauri アプリを一時プロファイルで開き、同梱 CLI と公開 iroh の探索で
+登録・チャット送受信・解除まで確認する。別端末や別回線での到達性までは検査しない。

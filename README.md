@@ -25,19 +25,21 @@ scoop install pig          # Latest stable release
 # Or: scoop install pig-nightly   # Latest successful dev build
 ```
 
-Both packages install the same unsigned portable app, with the `pig` command
+Both packages install an unsigned portable app, with the `pig` command
 and Start menu shortcut. **Scoop treats them as separate apps, not replacements:**
 installing both conflicts on the `pig` shim and shortcut. Fully exit the app,
 then use `scoop reset pig` or `scoop reset pig-nightly` to select which runs
 (also reset the remaining package after uninstalling the other).
-Tauri builds share the `dev.pig.tauri` desktop profile; pi credentials and
-sessions keep their existing SDK locations. Do not run both clients
-concurrently; back up data before switching.
+Tauri and Electrobun use `~/.config/pig` for desktop settings by default.
+Pi credentials and sessions keep their existing SDK locations. Do not run
+both clients concurrently; back up data before switching.
 Scoop uninstall does not remove this data. No Scoop `persist` directory is needed.
 
 Update with `scoop update` followed by `scoop update pig` or
 `scoop update pig-nightly`. Nightly uses a rolling prerelease and Scoop's
-`nightly` version: updates re-download it without hash verification.
+`nightly` version: updates re-download it without hash verification. For the
+first update from Electrobun to Tauri, close pig and run
+`scoop update pig-nightly --force --no-cache` to bypass a same-day cached build.
 
 Scoop manages its own files; the installer updater is disabled for Scoop and
 portable ZIPs. Installer updates ask before stopping agents and saving drafts.
@@ -48,18 +50,18 @@ Development lands on `dev`; `main` holds released code. PRs and pushes to
 `main` or `dev` run fast CI, not native release builds. The `Release` workflow
 publishes/replaces the `nightly` prerelease from `dev` daily at 19:00 UTC
 (04:00 JST), skipping it when the published commit is unchanged. Run `Release`
-manually on `dev` for an immediate nightly. Checks and packaging use one
+manually on `dev` to build a portable test artifact without publishing; turn off
+`build_only` only to publish. Checks and packaging use one
 resolved commit, never a moving branch tip. Scheduled workflows always run the
 workflow files on `main`, so workflow changes take effect on the schedule only
 after they reach `main`. Both installer feeds use the same increasing Actions
 run number for version ordering, independent of the human-readable release tag.
-
 Before publishing, configure `TAURI_SIGNING_PRIVATE_KEY` and its password
 `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` as Actions secrets and the matching public
 key contents as repository variable `TAURI_SIGNING_PUBLIC_KEY`. Back up the
 private key offline. This updater signature is not Windows Authenticode.
-For stable releases, land the release changes on `main` and tag the version in
-`apps/desktop/package.json` (the workflow rejects tags outside `main`):
+For stable releases, bring only the selected release commits into `main`,
+push `main`, then tag the version in `apps/desktop/package.json` on `main`:
 
 ```sh
 git tag v0.1.0 && git push --tags
@@ -75,9 +77,8 @@ merge `main` back into `dev` so the branches do not diverge. See
 
 ## Run
 
-On this migration branch, `mise run dev` starts the Windows
+On `dev`, `mise run dev` starts the Windows
 [Tauri app](docs/tauri-preview.md) with the existing chat UI and Pi host.
-Desktop settings are separate from Electrobun.
 
 Requires Windows with WebView2, Node 22+, pnpm 10.14, Bun (tested with 1.4.2),
 and [mise](https://mise.jdx.dev/) for the pinned type checkers.
@@ -170,8 +171,8 @@ in use. Do not edit the generated devkit to change this setting.
 | `pnpm test:all` | All three maintained suites | Local full verification |
 
 CI also runs Lint, TypeScript and a Vite webview build. Superseded CI runs are
-cancelled. Native Electrobun packaging runs only for stable tags and scheduled
-or manual nightlies, after the same fast checks pass. A release deliberately
+cancelled. Native packaging runs only for stable tags (Electrobun) and scheduled
+or manual nightlies (Tauri), after the same fast checks pass. A release deliberately
 rechecks its exact revision rather than assuming a previous CI build covered
 it. It does **not** rerun the slow regression suites or wait for their daily run.
 Before releases or changes to SDK/storage/UI behavior, run the relevant suites
