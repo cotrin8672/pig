@@ -17,6 +17,30 @@ import {
 } from "./markdown-processing";
 import { markdownUrl } from "./markdown-url";
 
+test("cached completed math matches uncached trees, including all source positions", () => {
+  const cache = new Map();
+  for (const text of [
+    "$x^2$ and $x^2$",
+    "日本語🍵\r\n\r\n$x^2$\r\n\r\n$$\r\nx^2\r\n$$",
+    "~~~math\nx^2\n~~~\n\n> $x^2$",
+    "$$\nx^2",
+    "$$\nx^2\n$$",
+    "$\\notARealCommand{x}$",
+    "[a][ref]\n\n$x^2$\n\n[ref]: javascript:bad",
+    "| A | B |\n|---|---|\n| $x^2$ | `x` |",
+    ...Array.from({ length: 36 }, (_, i) => `$x_${i}$`),
+  ]) {
+    const expected = parseMarkdown(text, true);
+    expect(parseMarkdown(text, true, cache)).toEqual(expected);
+    const hit = parseMarkdown(text, true, cache);
+    expect(hit).toEqual(expected);
+    expect(renderTree(hit.tree)).toBe(renderTree(expected.tree));
+  }
+  const many = Array.from({ length: 80 }, (_, i) => `$x_${i}$`).join("\n\n");
+  expect(parseMarkdown(many, true, cache)).toEqual(parseMarkdown(many, true));
+  expect(cache.size).toBe(32);
+});
+
 const renderTree = (tree: Root | undefined) => {
   if (!tree) throw new Error("Expected a parsed Markdown tree");
   return renderToStaticMarkup(

@@ -48,12 +48,17 @@ export function complete(scope: Element, math: Element, source: string) {
  * completed source ranges; EOF is not a closing fence for a growing equation. */
 export function positionedKatex({
   streaming = false,
+  cache,
 }: {
   streaming?: boolean;
+  cache?: Map<string, RootContent[]>;
 } = {}) {
   const transform = rehypeKatex();
   return (tree: Root, file: Parameters<typeof transform>[1]) => {
     const source = String(file.value);
+    // Keep the first eligible formulas from this parse. FIFO would evict all
+    // hits on every append when a document contains more than 32 distinct ones.
+    const next = cache && new Map<string, RootContent[]>();
     const visit = (parent: Root | Element): boolean => {
       const children: RootContent[] = parent.children;
       let pending = false;
@@ -100,7 +105,37 @@ export function positionedKatex({
         }
         const fragment: Root = { type: "root", children: [node] };
         const position = closed ? node.position : undefined;
-        transform(fragment, file);
+        const literal =
+          math.children.length === 1 && math.children[0].type === "text"
+            ? math.children[0].value
+            : undefined;
+        const key =
+          cache && closed && literal !== undefined && literal.length <= 512
+            ? JSON.stringify([
+                node.tagName,
+                math.tagName,
+                classes(math),
+                literal,
+              ])
+            : undefined;
+        const hit = key && (next?.get(key) ?? cache?.get(key));
+        if (hit && next) {
+          fragment.children = structuredClone(hit);
+          if (next.size < 32) next.set(key, hit);
+        } else {
+          const messages = file.messages.length;
+          transform(fragment, file);
+          if (
+            next &&
+            next.size < 32 &&
+            key &&
+            fragment.children[0] !== node &&
+            messages === file.messages.length &&
+            JSON.stringify(fragment.children).length <= 16384
+          ) {
+            next.set(key, structuredClone(fragment.children));
+          }
+        }
         for (const rendered of fragment.children) rendered.position = position;
         children.splice(index, 1, ...fragment.children);
         index += fragment.children.length - 1;
@@ -109,5 +144,9 @@ export function positionedKatex({
       return pending;
     };
     visit(tree);
+    if (cache && next) {
+      cache.clear();
+      for (const [key, nodes] of next) cache.set(key, nodes);
+    }
   };
 }
