@@ -121,6 +121,7 @@ export const en = {
   appUpdateTitle: "About & updates",
   appUpdateCheck: "Check for updates",
   appUpdateRestart: "Update and restart",
+  appUpdateIncludeNightly: "Include nightly builds",
   appUpdateConfirm:
     "Update pig and restart? Running agents and terminals will be stopped. Drafts will be saved before closing.",
   appUpdateChecking: "Checking for updates…",
@@ -1090,6 +1091,7 @@ export const ja: Dictionary = {
   appUpdateTitle: "アプリについて・更新",
   appUpdateCheck: "更新を確認",
   appUpdateRestart: "更新して再起動",
+  appUpdateIncludeNightly: "nightly ビルドも更新対象に含める",
   appUpdateConfirm:
     "pig を更新して再起動しますか？実行中のエージェントとターミナルは終了します。下書きは終了前に保存します。",
   appUpdateChecking: "更新を確認中…",

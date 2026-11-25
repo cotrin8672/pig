@@ -52,6 +52,7 @@ import {
   saveImage,
   showImageMenu,
 } from "./images";
+import { InstallerUpdater } from "./installer-updater";
 import { LocalChatHistory } from "./local-chat-history";
 import {
   cancelAllLogins,
@@ -701,8 +702,11 @@ const hostMessages = {
       .then(async () => {
         const next = patchSettings(settings, patch);
         await saveSettings(settingsFile, next);
+        const channelChanged = next.includeNightly !== settings.includeNightly;
         settings = next;
         hub.broadcast("settings", settings);
+        if (channelChanged && appUpdater instanceof InstallerUpdater)
+          void appUpdater.check();
       })
       .catch((error) => {
         report(error);
@@ -1116,37 +1120,49 @@ platform.onBeforeQuit(() => {
 });
 process.on("exit", dispose);
 
-const appUpdater = platform.usesLegacyUpdater
-  ? new AppUpdater(
-      process.execPath,
-      join(desktopConfigDir, "app-update-result.json"),
-      (state) => hub.broadcast("appUpdate", state),
-      async (handoff) => {
-        if (quitting) return false;
-        quitting = true;
-        try {
-          const t = dictionary(settings.language);
-          const response = await platform.showMessageBox({
-            title: t.appUpdateTitle,
-            message: t.appUpdateConfirm,
-            buttons: [t.cancel, t.appUpdateRestart],
-            defaultId: 0,
-            cancelId: 0,
-          });
-          if (response !== 1 || !(await confirmDraftsBeforeClose()))
-            return false;
-          const commit = await handoff();
-          await disposeSessions();
-          await commit();
-          quitReady = true;
-          platform.quit();
-          return true;
-        } finally {
-          quitting = false;
-        }
-      },
+const shutdownForUpdate: ConstructorParameters<typeof AppUpdater>[3] = async (
+  handoff,
+) => {
+  if (quitting) return false;
+  quitting = true;
+  try {
+    const t = dictionary(settings.language);
+    const response = await platform.showMessageBox({
+      title: t.appUpdateTitle,
+      message: t.appUpdateConfirm,
+      buttons: [t.cancel, t.appUpdateRestart],
+      defaultId: 0,
+      cancelId: 0,
+    });
+    if (response !== 1 || !(await confirmDraftsBeforeClose())) return false;
+    const commit = await handoff();
+    await disposeSessions();
+    await commit();
+    quitReady = true;
+    platform.quit();
+    return true;
+  } finally {
+    quitting = false;
+  }
+};
+const notifyUpdate = (state: AppUpdateState) =>
+  hub.broadcast("appUpdate", state);
+const appUpdater = platform.installerUpdater
+  ? new InstallerUpdater(
+      platform.version,
+      platform.installerUpdater,
+      () => settings.includeNightly,
+      notifyUpdate,
+      shutdownForUpdate,
     )
-  : undefined;
+  : platform.usesLegacyUpdater
+    ? new AppUpdater(
+        process.execPath,
+        join(desktopConfigDir, "app-update-result.json"),
+        notifyUpdate,
+        shutdownForUpdate,
+      )
+    : undefined;
 // Lazy: well after startup work settles, check once quietly; never on the startup path.
 const lazyUpdateCheck =
   appUpdater &&

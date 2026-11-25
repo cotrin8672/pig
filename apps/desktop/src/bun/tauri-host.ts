@@ -101,6 +101,15 @@ installDesktopPlatform({
   downloads: process.env.PIG_TAURI_DOWNLOADS ?? join(homedir(), "Downloads"),
   version: process.env.PIG_TAURI_VERSION ?? "—",
   usesLegacyUpdater: false,
+  installerUpdater:
+    process.env.PIG_TAURI_INSTALLER === "1"
+      ? {
+          check: (nightly) => native("updateCheck", nightly),
+          prepare: (nightly, version) =>
+            native("updatePrepare", nightly, version),
+          install: () => native("updateInstall"),
+        }
+      : undefined,
   interactiveWidgets: true,
   defaultShell: "powershell",
   createWindow(requestedId, offset, handlers): DesktopWindow {

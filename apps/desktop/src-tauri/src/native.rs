@@ -23,7 +23,7 @@ fn focused(app: &AppHandle) -> Option<WebviewWindow> {
 struct Warning {
     title: String,
     message: String,
-    buttons: [String; 3],
+    buttons: Vec<String>,
     cancel_id: usize,
 }
 
@@ -39,6 +39,9 @@ pub fn call(app: &AppHandle, method: &str, args: &[Value]) -> Result<Value, Stri
             .ok_or("Window is closed.".into())
     };
     match method {
+        "updateCheck" | "updatePrepare" | "updateInstall" => {
+            return tauri::async_runtime::block_on(crate::updates::call(app, method, args));
+        }
         "minimize" => window()?.minimize().map_err(failure)?,
         "toggleMaximize" => {
             let window = window()?;
@@ -75,7 +78,22 @@ pub fn call(app: &AppHandle, method: &str, args: &[Value]) -> Result<Value, Stri
             let input: Warning = serde_json::from_value(args.first().cloned().unwrap_or_default())
                 .map_err(|e| e.to_string())?;
             // The safe default is always Cancel, including Escape/close.
-            let [retry, cancel, discard] = input.buttons;
+            if let [cancel, confirm] = input.buttons.as_slice() {
+                let result = app
+                    .dialog()
+                    .message(input.message)
+                    .title(input.title)
+                    .buttons(MessageDialogButtons::OkCancelCustom(
+                        confirm.clone(),
+                        cancel.clone(),
+                    ))
+                    .blocking_show_with_result();
+                return Ok(json!(usize::from(
+                    matches!(result, MessageDialogResult::Custom(label) if label == *confirm)
+                )));
+            }
+            let [retry, cancel, discard]: [String; 3] =
+                input.buttons.try_into().map_err(|_| "Invalid buttons")?;
             let value = app
                 .dialog()
                 .message(input.message)

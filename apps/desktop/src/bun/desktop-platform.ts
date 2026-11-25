@@ -35,6 +35,11 @@ export interface DesktopPlatform {
   readonly downloads: string;
   readonly version: string;
   readonly usesLegacyUpdater: boolean;
+  readonly installerUpdater?: {
+    check(includeNightly: boolean): Promise<string | null>;
+    prepare(includeNightly: boolean, version: string): Promise<void>;
+    install(): Promise<void>;
+  };
   readonly interactiveWidgets?: true;
   readonly defaultShell: Settings["shell"];
   createWindow(

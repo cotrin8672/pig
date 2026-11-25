@@ -4,6 +4,7 @@ mod bridge;
 mod syntax;
 mod input_queue;
 mod native;
+mod updates;
 mod widget;
 
 use bridge::Bridge;
@@ -125,10 +126,16 @@ fn main() {
             }
         }))
     };
+    let builder = if option_env!("PIG_INSTALLER_VERSION").is_some() {
+        builder.plugin(tauri_plugin_updater::Builder::new().build())
+    } else {
+        builder
+    };
     builder
         .manage(Probe::default())
         .register_uri_scheme_protocol("pig-widget", |_, request| widget::serve(request))
         .plugin(tauri_plugin_dialog::init())
+        .manage(updates::Prepared::default())
         .plugin(tauri_plugin_notification::init())
         .setup(|app| {
             Bridge::start(app.handle())?;

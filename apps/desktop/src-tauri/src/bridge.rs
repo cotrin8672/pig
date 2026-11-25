@@ -62,6 +62,14 @@ impl Bridge {
             // use its startup PATH even after JS mutates process.env.
             .env("PATH", std::env::join_paths(path)?)
             .env("PIG_TAURI_VERSION", app.package_info().version.to_string())
+            .env(
+                "PIG_TAURI_INSTALLER",
+                if option_env!("PIG_INSTALLER_VERSION").is_some() {
+                    "1"
+                } else {
+                    "0"
+                },
+            )
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::inherit());

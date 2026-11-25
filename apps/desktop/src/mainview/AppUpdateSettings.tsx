@@ -3,12 +3,14 @@ import { useT } from "./i18n";
 import { SettingsCard } from "./patterns/SettingsCard";
 import { SettingsRow } from "./patterns/SettingsRow";
 import { Button } from "./primitives/Button";
-import { rpc } from "./rpc";
+import { Switch } from "./primitives/Switch";
+import { rpc, updateSettings } from "./rpc";
 import { showError, useStore } from "./store";
 
 export function AppUpdateSettings() {
   const t = useT();
   const state = useStore((s) => s.appUpdate);
+  const includeNightly = useStore((s) => s.settings.includeNightly);
   useEffect(() => {
     void rpc.request
       .getAppUpdate()
@@ -41,6 +43,20 @@ export function AppUpdateSettings() {
     }[state.status];
   return (
     <SettingsCard aria-label={t.appUpdateTitle}>
+      {state.method === "installer" && (
+        <SettingsRow label={t.appUpdateIncludeNightly}>
+          <label>
+            <Switch
+              aria-label={t.appUpdateIncludeNightly}
+              checked={includeNightly}
+              disabled={busy}
+              onChange={(event) =>
+                updateSettings({ includeNightly: event.target.checked })
+              }
+            />
+          </label>
+        </SettingsRow>
+      )}
       <SettingsRow
         className="app-update"
         setting="app-update"
