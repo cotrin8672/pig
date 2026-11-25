@@ -68,6 +68,17 @@ const probe = (history: number) => `
   const host=document.getElementById('root');host.style.display='none';void document.body.offsetHeight;
   t=performance.now();host.style.display='';void document.body.offsetHeight;
   window.__fixtureMetrics.fullStyleLayoutMs=f(performance.now()-t);
+  if (${history}===500) {
+    await wait();thread.scrollTop=thread.scrollHeight;await wait();
+    const rect=thread.getBoundingClientRect(),before=thread.scrollTop;
+    const reader=[...thread.querySelectorAll('[data-record-id]')].find(r=>r.getBoundingClientRect().bottom>rect.top+24);
+    const y=reader.getBoundingClientRect().top;
+    window.__fixtureInput={method:'Input.dispatchMouseEvent',params:{type:'mouseWheel',x:rect.left+12,y:rect.top+80,deltaX:0,deltaY:-420}};
+    await until(()=>!window.__fixtureInput && thread.scrollTop<before,'wheel failed');await wait();
+    const movement=reader.getBoundingClientRect().top-y;
+    window.__fixtureMetrics.wheel={input:-420,offsetDelta:thread.scrollTop-before,readerMovement:movement};
+    check(reader.isConnected && Math.abs(movement-420)<=2,'wheel reader drift: '+JSON.stringify(window.__fixtureMetrics.wheel));
+  }
   root.unmount();await sleep(100);
   const root2=createFixtureRoot(createRoot);
   renders=[];t=performance.now();flushSync(()=>root2.render(view(99)));
