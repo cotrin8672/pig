@@ -20,7 +20,7 @@ export const SUPPORTED_EXTENSIONS: readonly {
   { name: "pi-codex-search", verified: "0.1.6" },
   { name: "pi-codex-tools", verified: "0.4.2" },
   { name: "@dietrichgebert/ponytail", verified: "5.3.3" },
-  { name: "@bacnh85/pi-rtk", verified: "0.2.8" },
+  { name: "@izhimu/pi-rtk", verified: "0.2.0" },
 ];
 
 export function supportedExtension(name: string) {
