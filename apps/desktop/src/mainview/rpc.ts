@@ -12,6 +12,7 @@ import {
 import type {
   Appearance,
   ModelSelection,
+  SessionInfo,
   Snapshot,
 } from "../shared/rpc-schema";
 import {
@@ -487,12 +488,28 @@ function refreshProjectSessions(cwd: string): Promise<void> {
   const flight = { dirty: false, promise: Promise.resolve() };
   sessionRefreshes.set(cwd, flight);
   flight.promise = Promise.resolve().then(async () => {
+    let retriedTimeout = false;
     try {
       do {
         flight.dirty = false;
         if (!sessionCwds().has(cwd)) return;
         const before = useStore.getState().sessions[cwd];
-        const sessions = await rpc.request.listSessions({ cwd });
+        let sessions: SessionInfo[];
+        try {
+          sessions = await rpc.request.listSessions({ cwd });
+        } catch (error) {
+          if (
+            !(error instanceof Error) ||
+            !/timed out|timeout/i.test(error.message)
+          )
+            throw error;
+          // Keep rendering the last known list if the host is still unavailable.
+          if (retriedTimeout) return;
+          retriedTimeout = true;
+          flight.dirty = true;
+          continue;
+        }
+        retriedTimeout = false;
         if (!sessionCwds().has(cwd)) return;
         if (useStore.getState().sessions[cwd] !== before) flight.dirty = true;
         if (!flight.dirty)

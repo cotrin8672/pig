@@ -967,6 +967,60 @@ export class SessionHost {
     void open.promise.catch(() => {});
     return open.promise;
   }
+  private async openHistoryOnly(open: Opening, id: string, file: string) {
+    const { input, controller } = open;
+    let history = this.histories.get(id);
+    let prepared:
+      | { manager: SDKSessionManager; fresh?: HistoryHandle }
+      | undefined;
+    if (!history) {
+      const reader = await readSessionFile(input.cwd, id, file);
+      controller.signal.throwIfAborted();
+      // A live open may have claimed the session while the file was being read.
+      const acquired = this.sessions.get(id);
+      if (acquired) {
+        const snapshot = this.snapshot(acquired);
+        open.state = { state: "ready", snapshot };
+        return snapshot;
+      }
+      prepared = { manager: reader };
+      history = this.histories.get(id);
+      if (!history) {
+        const accounts = validateSessionAccounts(
+          this.options.sessionAccounts?.read(id) ?? {},
+        );
+        history = {
+          address: this.address(id),
+          cwd: input.cwd,
+          file,
+          leaf: reader.getLeafId(),
+          digest: sessionHistoryDigest(reader),
+          entryCount: reader.getEntryCount(),
+          revision: crypto.randomUUID(),
+          seq: 0,
+          openId: input.openId,
+          info: sessionInfo(reader, input.cwd),
+          accounts,
+          accountHistory: reader
+            .getEntries()
+            .some(
+              (entry) =>
+                entry.type === "message" &&
+                (entry.message.role === "user" ||
+                  entry.message.role === "assistant"),
+            ),
+          selection: this.historySelection(reader, accounts),
+        };
+        this.histories.set(id, history);
+        prepared.fresh = history;
+      }
+    }
+    const snapshot = await this.historySnapshot(history, prepared);
+    controller.signal.throwIfAborted();
+    open.state = { state: "ready", snapshot };
+    this.options.emit({ type: "ready", openId: input.openId, snapshot });
+    return snapshot;
+  }
   private async open(open: Opening): Promise<Snapshot> {
     const timing = traceOpen(open.input.openId);
     let m: Managed | undefined;
@@ -1018,58 +1072,8 @@ export class SessionHost {
       const known = input.id && this.histories.get(input.id);
       if (known && known.cwd !== input.cwd)
         throw new Error("Session does not belong to this project");
-      if (input.historyOnly && input.id && file) {
-        let prepared:
-          | { manager: SDKSessionManager; fresh?: HistoryHandle }
-          | undefined;
-        let history = known || undefined;
-        if (!history) {
-          const reader = await readSessionFile(input.cwd, input.id, file);
-          prepared = { manager: reader };
-          controller.signal.throwIfAborted();
-          const acquired = this.sessions.get(input.id);
-          if (acquired) {
-            const snapshot = this.snapshot(acquired);
-            open.state = { state: "ready", snapshot };
-            return snapshot;
-          }
-          history = this.histories.get(input.id);
-          if (!history) {
-            const accounts = validateSessionAccounts(
-              this.options.sessionAccounts?.read(input.id) ?? {},
-            );
-            history = {
-              address: this.address(input.id),
-              cwd: input.cwd,
-              file,
-              leaf: reader.getLeafId(),
-              digest: sessionHistoryDigest(reader),
-              entryCount: reader.getEntryCount(),
-              revision: crypto.randomUUID(),
-              seq: 0,
-              openId: input.openId,
-              info: sessionInfo(reader, input.cwd),
-              accounts,
-              accountHistory: reader
-                .getEntries()
-                .some(
-                  (entry) =>
-                    entry.type === "message" &&
-                    (entry.message.role === "user" ||
-                      entry.message.role === "assistant"),
-                ),
-              selection: this.historySelection(reader, accounts),
-            };
-            this.histories.set(input.id, history);
-            prepared.fresh = history;
-          }
-        }
-        const snapshot = await this.historySnapshot(history, prepared);
-        controller.signal.throwIfAborted();
-        open.state = { state: "ready", snapshot };
-        this.options.emit({ type: "ready", openId: input.openId, snapshot });
-        return snapshot;
-      }
+      if (input.historyOnly && input.id && file)
+        return await this.openHistoryOnly(open, input.id, file);
       resuming = known || undefined;
       if (resuming && (!file || !sameSessionPath(file, resuming.file)))
         throw new Error("Session file changed while suspended");

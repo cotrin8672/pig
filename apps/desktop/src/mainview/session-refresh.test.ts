@@ -161,6 +161,25 @@ if (process.env.PIG_SESSION_REFRESH_CHILD !== "1") {
     expect(useStore.getState().sessions.one[0].id).toBe("retried");
   });
 
+  test("list timeouts get one retry without replacing the cached list or raising an error", async () => {
+    const pending = refreshSessions("one");
+    for (const attempt of [0, 1]) {
+      await flush();
+      expect(calls).toHaveLength(attempt + 1);
+      calls[attempt].result.reject(
+        new Error("Desktop request listSessions timed out."),
+      );
+      expect(useStore.getState().sessions.one).toEqual([info("old")]);
+    }
+    await pending;
+    expect(useStore.getState().sessions.one).toEqual([info("old")]);
+    const next = refreshSessions("one");
+    await flush();
+    calls[2].result.resolve([info("latest")]);
+    await next;
+    expect(useStore.getState().sessions.one).toEqual([info("latest")]);
+  });
+
   test("removed projects are pruned and in-flight results cannot restore them", async () => {
     const pending = refreshSessions("one");
     await flush();

@@ -7,7 +7,8 @@ test("isolated SDK: idle suspension, cold drafts/history, single-flight wake and
   const home = await mkdtemp(join(tmpdir(), "pig-suspension-"));
   try {
     const script = `
-      import {expect} from "bun:test";
+      import {expect, spyOn} from "bun:test";
+      import * as sessionFiles from ${JSON.stringify(new URL("./session-files.ts", import.meta.url).href)};
       import {mkdir, writeFile, readFile, stat, utimes} from "node:fs/promises";
       import {join} from "node:path";
       import {fauxProvider, fauxAssistantMessage} from "@earendil-works/pi-ai";
@@ -111,6 +112,26 @@ test("isolated SDK: idle suspension, cold drafts/history, single-flight wake and
       chat=await host.wakeSession(host.runtimeState().sessions.find(item=>item.address.sessionId===id).address);
       expect(host.listSlashCommands(chat.address).some(command=>command.name==="reload-probe")).toBe(true);
       await host.closeSession(chat.address);
+      // A live open wins while the browser is reading the same history file.
+      const reading=Promise.withResolvers(), resumeRead=Promise.withResolvers();
+      const readHistory=sessionFiles.readSessionFile;
+      const spy=spyOn(sessionFiles,"readSessionFile").mockImplementationOnce(async (...args)=>{
+        const result=await readHistory(...args);
+        reading.resolve();await resumeRead.promise;return result;
+      });
+      const browsing=host.openSession({cwd,id,openId:"racing-browser",historyOnly:true});
+      await reading.promise;
+      let live;
+      try {
+        live=await host.openSession({cwd,id,openId:"racing-live"});
+      } finally {
+        resumeRead.resolve();spy.mockRestore();
+      }
+      const browsed=await browsing;
+      expect(browsed.address).toEqual(live.address);
+      expect(browsed.suspended).toBeUndefined();
+      expect(events.filter(e=>e.type==="ready" && e.openId==="racing-browser")).toHaveLength(0);
+      await host.closeSession(live.address);
       // Browsing starts no SDK and changes no history file.
       const before=await readFile(file,"utf8");
       const priorStarts=starts;
