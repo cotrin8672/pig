@@ -192,10 +192,19 @@ export function AskUserRenderer({ data }: ChatRendererProps<"tool">) {
 type Lane = {
   agent: string;
   task: string;
+  model?: string;
   state: "running" | "done" | "error";
   seconds?: number;
   output: string;
 };
+function modelRef(model: unknown, provider: unknown) {
+  const id = str(model);
+  const source = str(provider);
+  return id && source && !id.startsWith(`${source}/`)
+    ? `${source}/${id}`
+    : id || source;
+}
+
 function lastAssistantText(messages: unknown): string {
   if (!Array.isArray(messages)) return "";
   for (let i = messages.length - 1; i >= 0; i--) {
@@ -228,6 +237,7 @@ function lanesOf(tool: Tool, tone: string): Lane[] {
       return {
         agent: str(r.agent),
         task: str(r.task),
+        model: modelRef(r.model, r.provider),
         state: running ? "running" : failed ? "error" : "done",
         seconds: typeof ms === "number" ? Math.round(ms / 1000) : undefined,
         output: str(r.finalOutput) || lastAssistantText(r.messages),
@@ -242,6 +252,7 @@ function lanesOf(tool: Tool, tone: string): Lane[] {
   return tasks.map((entry) => ({
     agent: str(obj(entry).agent) || "?",
     task: str(obj(entry).task),
+    model: str(obj(entry).model) || str(a.model),
     state: tone === "running" ? "running" : tone === "error" ? "error" : "done",
     output: tone === "running" ? "" : outputText(tool),
   }));
@@ -266,6 +277,7 @@ function Lanes({ lanes, t }: { lanes: Lane[]; t: Dict }) {
             </span>
             <span className="agent-name">@{lane.agent}</span>
             <span className="agent-task">{lane.task}</span>
+            {lane.model && <span className="agent-model">{lane.model}</span>}
             <span className="agent-meta">
               {lane.state === "running"
                 ? t.running
@@ -354,7 +366,7 @@ function agentLane(entry: unknown): Lane {
   const e = obj(entry);
   const state = str(e.status) || str(e.agent_status);
   return {
-    agent: str(e.agent_name) || str(e.agentName),
+    agent: str(e.task_name) || str(e.agent_name) || str(e.agentName),
     task: "",
     state:
       state === "running" || state === "starting"
@@ -362,7 +374,11 @@ function agentLane(entry: unknown): Lane {
         : state === "failed" || state === "interrupted"
           ? "error"
           : "done",
-    output: str(e.finalResponse) || str(e.error),
+    output:
+      str(e.final_response) ||
+      str(e.finalResponse) ||
+      str(e.error) ||
+      str(e.summary),
   };
 }
 const mention = (name: unknown) => (str(name) ? `@${str(name)}` : "");
@@ -382,8 +398,15 @@ export function CodexAgentRenderer({ data }: ChatRendererProps<"tool">) {
   let lanes: Lane[] = [];
   let prompt = "";
   if (name === "spawn_agent") {
-    target = mention(a.task_name);
-    meta = [str(a.agent_type), str(a.model)].filter(Boolean).join(" · ");
+    target = [
+      mention(a.task_name || d.task_name),
+      modelRef(d.modelId, d.provider) || str(a.model),
+    ]
+      .filter(Boolean)
+      .join(" · ");
+    meta = [str(a.agent_type), str(d.thinking) || str(a.thinking)]
+      .filter(Boolean)
+      .join(" · ");
     prompt = str(a.message);
   } else if (name === "send_message") {
     meta = d.delivery === "steer" ? t.steered : d.delivery ? t.newTurn : "";
@@ -392,8 +415,9 @@ export function CodexAgentRenderer({ data }: ChatRendererProps<"tool">) {
     meta = t.statuses[str(d.previous_status)] ?? str(d.previous_status);
   } else if (name === "wait_agent") {
     target = targets(a.targets) || t.anyAgent;
-    const event = outputJson(data).event;
+    const event = d.run_id ? d : outputJson(data).event;
     if (event) lanes = [agentLane(event)];
+    else if (Array.isArray(d.agents)) lanes = d.agents.map(agentLane);
   } else if (name === "wait_all_agents") {
     target = targets(a.targets) || t.allAgents;
     const responses = outputJson(data).responses;
@@ -402,7 +426,9 @@ export function CodexAgentRenderer({ data }: ChatRendererProps<"tool">) {
     const response = outputJson(data);
     if (response.agent_name) lanes = [agentLane(response)];
   } else if (name === "list_agents") {
-    if (Array.isArray(d.agents)) lanes = d.agents.map(agentLane);
+    const rows = obj(data.state?.result).details;
+    if (Array.isArray(rows)) lanes = rows.map(agentLane);
+    else if (Array.isArray(d.agents)) lanes = d.agents.map(agentLane);
     if (typeof d.total === "number") meta = t.agents(d.total);
   }
   return (

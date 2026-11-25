@@ -1,8 +1,6 @@
+import { CODEX_SUBAGENT_COMPLETION } from "../shared/supported-extensions";
 import type { TranscriptRecord } from "../shared/transcript";
 import { dataText } from "./custom-data";
-
-/** pi-codex-subagents posts each child's final response with this type. */
-export const CODEX_SUBAGENT_COMPLETION = "pi-codex-subagent-completion";
 
 export type Inbound = {
   sender: string;
@@ -36,6 +34,15 @@ export function inboundMessage(record: TranscriptRecord): Inbound | undefined {
   if (record.kind !== "message" || record.message.role !== "custom") return;
   const { customType, content } = record.message;
   const text = contentText(content);
+  if (customType === "pig-subagent-completion") {
+    const d = obj(record.message.details ?? record.details);
+    return {
+      sender: str(d.agent_name) || str(d.task_name) || customType,
+      status: str(d.status) || undefined,
+      text: str(d.final_response) || str(d.error) || text,
+      subagent: true,
+    };
+  }
   if (customType !== CODEX_SUBAGENT_COMPLETION)
     return { sender: customType, text, subagent: false };
   const details = obj(record.message.details ?? record.details);

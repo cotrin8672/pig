@@ -30,7 +30,7 @@ import { receivePackageOp, showError, useStore } from "./store";
 import { useTooltip } from "./Tooltip";
 import "./extensions.css";
 
-function CopyCommand({ name }: { name: string }) {
+function CopyCommand({ source }: { source: string }) {
   const t = useT();
   const [copied, setCopied] = useState(false);
   const timer = useRef<ReturnType<typeof setTimeout>>(undefined);
@@ -39,7 +39,7 @@ function CopyCommand({ name }: { name: string }) {
     try {
       if (!navigator.clipboard?.writeText)
         throw new Error(t["Clipboard is unavailable."]);
-      await navigator.clipboard.writeText(`pi install npm:${name}`);
+      await navigator.clipboard.writeText(`pi install ${source}`);
       setCopied(true);
       clearTimeout(timer.current);
       timer.current = setTimeout(() => setCopied(false), 1500);
@@ -51,10 +51,10 @@ function CopyCommand({ name }: { name: string }) {
     <button
       type="button"
       className="package-command"
-      aria-label={t.copyCommand(name)}
+      aria-label={t.copyCommand(source)}
       onClick={() => void copy()}
     >
-      <span className="package-command-text">$ pi install npm:{name}</span>
+      <span className="package-command-text">$ pi install {source}</span>
       <span
         className={`package-copy-feedback ${copied ? "is-copied" : ""}`}
         aria-live="polite"
@@ -310,14 +310,21 @@ export function Extensions() {
       cancelled = true;
     };
   }, [installedRetry]);
-  function run(action: PackageOpStatus["action"], source: string) {
+  function run(
+    action: PackageOpStatus["action"],
+    source: string,
+    name?: string,
+  ) {
     if (operation(source, useStore.getState().packageOps)?.status === "running")
       return;
     const opId = crypto.randomUUID();
     receivePackageOp({ opId, source, action, status: "running" });
     try {
       if (action === "install")
-        rpc.send.installPackage({ opId, name: npmName(source) ?? source });
+        rpc.send.installPackage({
+          opId,
+          name: name ?? npmName(source) ?? source,
+        });
       else if (action === "uninstall")
         rpc.send.uninstallPackage({ opId, source });
       else rpc.send.updatePackage({ opId, source });
@@ -427,11 +434,14 @@ export function Extensions() {
             </p>
             <div className="package-list market-grid" aria-busy={loading}>
               {items.map((pkg) => {
-                const match = installed.find(
-                  (p) => npmName(p.source) === pkg.name,
-                );
-                const source = match?.source ?? `npm:${pkg.name}`;
                 const supported = supportedExtension(pkg.name);
+                const installSource = supported?.source ?? `npm:${pkg.name}`;
+                const match = installed.find(
+                  (p) =>
+                    p.source === installSource ||
+                    npmName(p.source) === pkg.name,
+                );
+                const source = match?.source ?? installSource;
                 const op = operation(source, ops);
                 const report = new URL(
                   "https://github.com/earendil-works/pi/issues/new",
@@ -493,7 +503,7 @@ export function Extensions() {
                       </div>
                     </div>
                     <div className="package-card-footer">
-                      <CopyCommand name={pkg.name} />
+                      <CopyCommand source={installSource} />
                       <div className="package-actions">
                         {match ? (
                           <ConfirmButton
@@ -526,7 +536,7 @@ export function Extensions() {
                                     "Packages can run code on your machine. Only install packages you trust."
                                   ]
                             }
-                            onConfirm={() => run("install", source)}
+                            onConfirm={() => run("install", source, pkg.name)}
                           >
                             <Download size={14} />
 

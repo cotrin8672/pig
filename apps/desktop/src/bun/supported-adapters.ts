@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from "node:crypto";
 import { readFileSync, realpathSync } from "node:fs";
-import { join, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { type EventBus, getAgentDir } from "@earendil-works/pi-coding-agent";
 import type {
   AdapterContext,
@@ -13,6 +13,7 @@ import type {
   SessionAdapter,
   SessionUIState,
 } from "../../../../packages/config/src";
+import { CODEX_SUBAGENT_COMPLETION } from "../shared/supported-extensions";
 
 // Display connections for the Extensions listed in shared/supported-extensions.ts.
 // They only observe what the Extension publishes; the Extension stays the source of truth.
@@ -310,6 +311,311 @@ export function connectNicoSubagents(
   };
 }
 
+// An unpacked local Pi package need not be inside node_modules.
+function pigAgentsCommand(ctx: AdapterContext) {
+  const installed = loadedFrom(ctx, "pi-subagent", "agents");
+  if (installed) return installed;
+  return ctx.pi.commands().find(({ name, source }) => {
+    if (name !== "agents") return false;
+    try {
+      return (
+        JSON.parse(readFileSync(join(dirname(source), "package.json"), "utf8"))
+          .name === "pi-subagent"
+      );
+    } catch {
+      return false;
+    }
+  })?.source;
+}
+export function connectPigSubagents(
+  bus: Pick<EventBus, "emit">,
+): SessionAdapter {
+  return {
+    id: "pig:native-subagents",
+    connect(ctx) {
+      const source = pigAgentsCommand(ctx);
+      if (!source) return;
+      const parent = ctx.session.id;
+      // Delegate to the owning extension's read-only picker. Never open a path from a row.
+      ctx.commands.register({
+        id: "peek",
+        title: "Inspect subagent history",
+        run: () => ctx.pi.invoke({ name: "agents", source }),
+      });
+      let generation = 0;
+      const refresh = () => {
+        const request = ++generation;
+        bus.emit("pig:subagents:snapshot", {
+          parentId: parent,
+          reply(rows: unknown) {
+            if (request !== generation || !Array.isArray(rows)) return;
+            const runs = pigAgentRuns(rows);
+            if (!runs) return;
+            if (!runs.length) return ctx.views.remove("subagents");
+            ctx.views.set({
+              kind: "agents",
+              id: "subagents",
+              title: "Subagents",
+              source: {
+                label: "pi-subagent",
+                scope: { kind: "session", id: parent },
+                freshness: "live",
+              },
+              runs,
+              actions: runs.some((run) => run.session)
+                ? [{ id: "peek", command: "peek", label: "Inspect history" }]
+                : undefined,
+            });
+          },
+        });
+      };
+      const off = ctx.sources.onBus("pig:subagents:changed", (data) => {
+        if (record(data).parentId === parent) refresh();
+      });
+      refresh();
+      return () => {
+        generation++;
+        off();
+      };
+    },
+  };
+}
+
+function pigAgentRuns(rows: unknown[]): AgentRun[] | undefined {
+  const runs: AgentRun[] = [];
+  const ids = new Set<string>();
+  // Split the output preview budget across the snapshot so older final responses
+  // cannot crowd a live run out of the adapter view (1 MiB wire limit).
+  const previewLimit = Math.min(
+    16_000,
+    Math.floor(96_000 / Math.max(1, rows.length)),
+  );
+  for (const item of rows) {
+    const row = record(item);
+    const {
+      run_id: id,
+      agent_id: agentId,
+      task_name: title,
+      child_session_id: child,
+    } = row;
+    if (
+      !validId(id) ||
+      !validId(agentId) ||
+      !validId(title) ||
+      (child !== undefined && !validId(child)) ||
+      ids.has(id)
+    )
+      return;
+    const state = pigAgentState(row.status);
+    if (!state) return; // Reject a malformed replacement as a whole; don't drop a live pin.
+    ids.add(id);
+    const result =
+      text(row.error, previewLimit) ?? text(row.final_response, previewLimit);
+    runs.push({
+      id,
+      agentId,
+      title,
+      state,
+      session: child ? { kind: "session", id: child } : undefined,
+      output: result ? { text: result } : undefined,
+    });
+  }
+  return runs;
+}
+
+function validId(id: unknown): id is string {
+  return typeof id === "string" && id.length <= 16384 && !!id.trim();
+}
+function pigAgentState(status: unknown): RunState | undefined {
+  switch (status) {
+    case "starting":
+      return { phase: "queued" };
+    case "running":
+      return { phase: "running" };
+    case "completed":
+      return { phase: "finished", outcome: "success" };
+    case "failed":
+      return { phase: "finished", outcome: "error" };
+    case "interrupted":
+      return { phase: "finished", outcome: "interrupted" };
+  }
+}
+
+const CODEX_SUBAGENTS_PKG = "@ogulcancelik/pi-codex-subagents";
+const codexAgentName = (value: unknown) =>
+  text(value, 256)
+    ?.trim()
+    .replace(/^\/+|\/+$/g, "") || "";
+const codexOutcome = (status: unknown) =>
+  status === "completed"
+    ? "success"
+    : status === "failed"
+      ? "error"
+      : status === "interrupted"
+        ? "interrupted"
+        : undefined;
+
+export function connectCodexSubagents(): SessionAdapter {
+  return {
+    id: "pig:codex-subagents",
+    connect(ctx) {
+      if (!loadedFrom(ctx, CODEX_SUBAGENTS_PKG, "subagents")) return;
+      const runs = new Map<string, AgentRun>();
+      const calls = new Map<string, Map<string, string>>();
+      const render = () => {
+        const finished = [...runs].filter(
+          ([, run]) => run.state.phase === "finished",
+        );
+        for (const [name] of finished.slice(
+          0,
+          Math.max(0, finished.length - 50),
+        ))
+          runs.delete(name);
+        if (!runs.size) return ctx.views.remove("codex-subagents");
+        ctx.views.set({
+          kind: "agents",
+          id: "codex-subagents",
+          title: "Subagents",
+          source: {
+            label: CODEX_SUBAGENTS_PKG,
+            scope: { kind: "session", id: ctx.session.id },
+            freshness: "live",
+          },
+          runs: [...runs.values()].reverse(),
+        });
+      };
+      const finish = (
+        name: string,
+        outcome: RunState["outcome"],
+        callId?: string,
+      ) => {
+        const run = runs.get(name);
+        if (!outcome || !run || run.state.phase === "finished") return;
+        if (callId && run.id !== callId) return;
+        runs.set(name, {
+          ...run,
+          state: { phase: "finished", outcome },
+          endedAt: new Date().toISOString(),
+        });
+      };
+      // shortcut: track live calls from this connection; use an upstream status API when available.
+      return ctx.sources.onEvent((event) => {
+        if (event.type === "message_start") {
+          const message = record(event.message);
+          if (
+            message.role !== "custom" ||
+            message.customType !== CODEX_SUBAGENT_COMPLETION
+          )
+            return;
+          const d = record(message.details);
+          finish(codexAgentName(d.agent_name), codexOutcome(d.status));
+          render();
+          return;
+        }
+        if (
+          event.type !== "tool_execution_start" &&
+          event.type !== "tool_execution_end"
+        )
+          return;
+        const callId = text(event.toolCallId, 256);
+        if (!callId) return;
+        const tool = event.toolName;
+        const launch = tool === "spawn_agent" || tool === "send_message";
+        if (event.type === "tool_execution_start") {
+          const a = record(event.args);
+          const name = codexAgentName(
+            tool === "spawn_agent" ? a.task_name : a.target,
+          );
+          const run = runs.get(name);
+          if (launch && name && (!run || run.state.phase === "finished")) {
+            runs.delete(name);
+            runs.set(name, {
+              id: callId,
+              title: name,
+              state: { phase: "queued" },
+              startedAt: new Date().toISOString(),
+            });
+            calls.set(callId, new Map([[name, callId]]));
+            render();
+          } else if (tool === "interrupt_agent" && run) {
+            calls.set(callId, new Map([[name, run.id]]));
+          } else if (tool === "wait_all_agents") {
+            const targets = Array.isArray(a.targets)
+              ? a.targets.map(codexAgentName).filter(Boolean)
+              : [];
+            calls.set(
+              callId,
+              new Map(
+                [...runs].flatMap(([name, run]) =>
+                  (
+                    targets.length
+                      ? targets.includes(name)
+                      : run.state.phase === "running"
+                  )
+                    ? [[name, run.id] as const]
+                    : [],
+                ),
+              ),
+            );
+          }
+          return;
+        }
+
+        const targets = calls.get(callId);
+        calls.delete(callId);
+        const result = record(event.result);
+        const d = record(result.details);
+        if (launch) {
+          const name = targets?.keys().next().value;
+          const run = name ? runs.get(name) : undefined;
+          if (!name || run?.id !== callId || run.state.phase !== "queued")
+            return;
+          if (event.isError === true) runs.delete(name);
+          else runs.set(name, { ...run, state: { phase: "running" } });
+        } else if (event.isError === true) {
+          return;
+        } else if (tool === "interrupt_agent") {
+          for (const [name, id] of targets ?? [])
+            finish(name, codexOutcome(d.previous_status) ?? "interrupted", id);
+        } else if (tool === "wait_agent") {
+          const match =
+            /^Wait completed: (\S+) (completed|failed|interrupted)\.$/.exec(
+              text(d.message) ?? "",
+            );
+          if (match) finish(codexAgentName(match[1]), codexOutcome(match[2]));
+        } else if (tool === "wait_all_agents") {
+          if (
+            d.truncated === true &&
+            d.message === "All target agents reached final status."
+          ) {
+            for (const [name, id] of targets ?? []) finish(name, "unknown", id);
+          } else {
+            const first = Array.isArray(result.content)
+              ? record(result.content[0])
+              : {};
+            let payload: Value;
+            try {
+              payload = record(
+                JSON.parse(typeof first.text === "string" ? first.text : ""),
+              );
+            } catch {
+              return;
+            }
+            if (Array.isArray(payload.responses)) {
+              for (const item of payload.responses) {
+                const response = record(item);
+                const name = codexAgentName(response.agent_name);
+                finish(name, codexOutcome(response.status), targets?.get(name));
+              }
+            }
+          }
+        } else return;
+        render();
+      });
+    },
+  };
+}
+
 const SCHEDULE_PKG = "pi-schedule-prompt";
 
 // Mirrors pi-schedule-prompt 0.5.x storage.ts: <agentDir>/schedule-prompts/projects/<sha256(realpath(cwd))>.json
@@ -456,6 +762,8 @@ export function withSupportedAdapters(
   return {
     ...config,
     sessionAdapters: [
+      connectPigSubagents(bus),
+      connectCodexSubagents(),
       connectNicoSubagents(bus),
       connectSchedulePrompt(),
       ...(config.sessionAdapters ?? []),

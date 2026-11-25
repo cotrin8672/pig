@@ -16,6 +16,7 @@ mock.module("./rpc", () => ({
 }));
 const {
   AskUserRenderer,
+  CodexAgentRenderer,
   SubagentRenderer,
   SchedulePromptRenderer,
   cadence,
@@ -70,7 +71,14 @@ test("subagent draws one lane per child with failures counted", () => {
         live: false,
         state: done("", {
           results: [
-            { agent: "scout", task: "find", exitCode: 0, finalOutput: "ok" },
+            {
+              agent: "scout",
+              task: "find",
+              model: "gpt-mini",
+              provider: "openai",
+              exitCode: 0,
+              finalOutput: "ok",
+            },
             { agent: "tester", task: "test", exitCode: 1 },
           ],
         }),
@@ -79,6 +87,8 @@ test("subagent draws one lane per child with failures counted", () => {
   );
   for (const text of ["@scout", "@tester", t.succeeded(1, 2)])
     expect(html).toContain(text);
+  expect(html).toContain('<span class="agent-model">openai/gpt-mini</span>');
+  expect(html.match(/class="agent-model"/g)).toHaveLength(1);
 });
 
 test("schedule_prompt reads cron as words and parses the list", () => {
@@ -184,27 +194,54 @@ test("fire markers claim only later prompts, once each and in marker order", () 
   expect(scheduledUsers([records[0]])).toEqual(new Map());
 });
 
-test("pi-codex-subagents tools are one row each with child results as lanes", async () => {
-  const { CodexAgentRenderer } = await import("./AgentToolRenderers");
-  const row = (name: string, args: Record<string, unknown>, state: unknown) =>
+test("pi-codex-subagents tools are one row each with child results as lanes", () => {
+  const row = (
+    name: string,
+    args: Record<string, unknown>,
+    state: unknown,
+    live = false,
+  ) =>
     renderToStaticMarkup(
       <CodexAgentRenderer
         DefaultRenderer={none}
         data={{
           call: { id: name, name, arguments: args },
-          live: false,
+          live,
           state: state as never,
         }}
       />,
     );
   const spawn = row(
     "spawn_agent",
-    { task_name: "review", message: "Check the diff", agent_type: "reviewer" },
-    done("Spawned review.", { task_name: "review" }),
+    {
+      task_name: "review",
+      message: "Check the diff",
+      agent_type: "reviewer",
+      model: "openai/requested-model",
+    },
+    done("Spawned review.", {
+      task_name: "/review",
+      modelId: "effective-model",
+      provider: "anthropic",
+      thinking: "high",
+    }),
   );
-  for (const text of [t.agentVerbs.spawn_agent, "@review", "reviewer"])
+  for (const text of [
+    t.agentVerbs.spawn_agent,
+    "@review · anthropic/effective-model",
+    "reviewer · high",
+  ])
     expect(spawn).toContain(text);
+  expect(spawn).not.toContain("openai/requested-model");
   expect(spawn).toContain('class="tool-row done"');
+  const starting = row(
+    "spawn_agent",
+    { task_name: "review", model: "openai/requested-model" },
+    undefined,
+    true,
+  );
+  expect(starting).toContain("@review · openai/requested-model");
+  expect(starting).toContain('class="tool-row running"');
   const wait = row(
     "wait_all_agents",
     {},
@@ -222,6 +259,20 @@ test("pi-codex-subagents tools are one row each with child results as lanes", as
   expect(wait).toContain('class="agent-lanes"');
   expect(wait).toContain('data-state="error"');
   expect(wait).toContain("@b");
+  const pigRow = {
+    agent_id: "a",
+    run_id: "r",
+    task_name: "inspect",
+    status: "failed",
+    error: "failure",
+  };
+  for (const html of [
+    row("wait_agent", {}, done("", pigRow)),
+    row("list_agents", {}, done("", [pigRow])),
+  ]) {
+    expect(html).toContain("@inspect");
+    expect(html).toContain('data-state="error"');
+  }
 });
 
 test("extension messages draw as a sender bubble, subagent results by agent name", async () => {
@@ -262,6 +313,17 @@ test("extension messages draw as a sender bubble, subagent results by agent name
   expect(completion).toContain("Found 2 bugs");
   expect(completion).not.toContain("subagent_notification");
   expect(completion).not.toContain("custom-record");
+  const native = draw(
+    record("pig-subagent-completion", "fallback", {
+      agent_name: "review",
+      task_name: "review",
+      status: "completed",
+      final_response: "Checked docs",
+    }),
+  );
+  expect(native).toContain("<strong>review</strong>");
+  expect(native).toContain("Checked docs");
+  expect(native).not.toContain("fallback");
   const other = draw(record("supervisor_request", "Need a decision"));
   expect(other).toContain("<strong>supervisor_request</strong>");
   expect(other).toContain("Need a decision");

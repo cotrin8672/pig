@@ -1,6 +1,18 @@
+export const CODEX_SUBAGENT_COMPLETION = "pi-codex-subagent-completion";
+
 /** pi packages verified with pig. `verified` is the version tested with pig, not a pin. */
-export const SUPPORTED_EXTENSIONS = [
-  { name: "@ogulcancelik/pi-codex-subagents", verified: "0.3.5" },
+export const SUPPORTED_EXTENSIONS: readonly {
+  name: string;
+  verified: string;
+  source?: string;
+  repoUrl?: string;
+}[] = [
+  {
+    name: "pi-subagent",
+    verified: "1.0.0",
+    source: "git:github.com/cotrin8672/pi-subagent@v1.0.0",
+    repoUrl: "https://github.com/cotrin8672/pi-subagent",
+  },
   { name: "pi-ask-user", verified: "0.17.2" },
   { name: "pi-schedule-prompt", verified: "0.5.1" },
   { name: "pi-lens", verified: "4.5.1" },
@@ -9,7 +21,7 @@ export const SUPPORTED_EXTENSIONS = [
   { name: "pi-codex-tools", verified: "0.4.2" },
   { name: "@dietrichgebert/ponytail", verified: "5.3.3" },
   { name: "@bacnh85/pi-rtk", verified: "0.2.8" },
-] as const;
+];
 
 export function supportedExtension(name: string) {
   return SUPPORTED_EXTENSIONS.find((pkg) => pkg.name === name);

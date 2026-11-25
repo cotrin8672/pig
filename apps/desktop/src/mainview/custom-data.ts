@@ -34,6 +34,7 @@ export function customPresentation(record: TranscriptRecord) {
       details: undefined,
       hidden:
         record.customType === "desktop.import" ||
+        record.customType === "pig-subagent-state" ||
         record.customType === "pig.rewind" ||
         record.customType === "piris.rewind",
     };

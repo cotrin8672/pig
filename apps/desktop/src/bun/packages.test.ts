@@ -586,6 +586,90 @@ test("installed discovery is nonblocking and resource loads cannot overlap mutat
     await rm(home, { recursive: true, force: true });
   }
 }, 30_000);
+test("replaced subagent is absent from supported and npm marketplace search", async () => {
+  const name = "@ogulcancelik/pi-codex-subagents";
+  const original = globalThis.fetch;
+  globalThis.fetch = (async () => Response.json({
+    total: 1, objects: [{ package: { name } }],
+  })) as unknown as typeof fetch;
+  try {
+    for (const supported of [false, true]) {
+      expect(await searchPackages({ query: name, supported, page: 0 }))
+        .toMatchObject({ items: [], total: 0 });
+    }
+  } finally {
+    globalThis.fetch = original;
+  }
+});
+test("Git-distributed supported card does not depend on npm", async () => {
+  const original = globalThis.fetch;
+  let calls = 0;
+  globalThis.fetch = (async () => {
+    calls++;
+    return new Response(null, { status: 404 });
+  }) as unknown as typeof fetch;
+  try {
+    const { items } = await searchPackages({
+      query: "pi-subagent",
+      supported: true,
+      page: 0,
+    });
+    expect(items).toMatchObject([
+      {
+        name: "pi-subagent",
+        version: "1.0.0",
+        types: ["extension"],
+        repoUrl: "https://github.com/cotrin8672/pi-subagent",
+      },
+    ]);
+    expect(items[0]?.npmUrl).toBeUndefined();
+    expect(calls).toBe(0);
+  } finally {
+    globalThis.fetch = original;
+  }
+});
+
+test("Marketplace installs and removes the configured Git tag through SDK settings", async () => {
+  const agentDir = await mkdtemp(join(tmpdir(), "pig-git-package-"));
+  try {
+    const script = `
+      import { expect } from "bun:test";
+      import { DefaultPackageManager } from "@earendil-works/pi-coding-agent";
+      import { listInstalled, packageOperation } from "./src/bun/packages";
+      const source = "git:github.com/cotrin8672/pi-subagent@v1.0.0";
+      const mutations = [];
+      // Stub the transport, not SDK persistence or discovery.
+      DefaultPackageManager.prototype.install = async s => { mutations.push(["install", s]); };
+      DefaultPackageManager.prototype.remove = async s => { mutations.push(["remove", s]); };
+      const run = (action, input) => packageOperation(action, { opId: action, ...input },
+        e => expect(e.source).toBe(source), () => {}, async () => {});
+      await run("install", { name: "pi-subagent", source: "git:untrusted/replacement" });
+      const installed = await listInstalled();
+      expect(installed).toMatchObject([{ name: "pi-subagent", source, scope: "user" }]);
+      await run("uninstall", { source: installed[0].source });
+      expect(await listInstalled()).toEqual([]);
+      expect(mutations).toEqual([["install", source], ["remove", source]]);
+    `;
+    const child = Bun.spawn([process.execPath, "--eval", script], {
+      cwd: join(import.meta.dir, "../.."),
+      env: {
+        ...process.env,
+        HOME: agentDir,
+        USERPROFILE: agentDir,
+        PI_CODING_AGENT_DIR: agentDir,
+      },
+      stderr: "pipe",
+    });
+    const [code, stderr] = await Promise.all([
+      child.exited,
+      new Response(child.stderr).text(),
+    ]);
+    expect({ code, stderr }).toMatchObject({ code: 0 });
+  } finally {
+    await rm(agentDir, { recursive: true, force: true });
+  }
+}, 30_000);
+
 test("oversized registry responses are rejected", async () => {
   const original = globalThis.fetch;
   globalThis.fetch = (async () =>

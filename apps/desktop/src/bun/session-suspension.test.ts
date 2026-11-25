@@ -97,10 +97,21 @@ test("isolated SDK: idle suspension, cold drafts/history, single-flight wake and
       // Extensions do not veto suspension; the SDK shuts them down officially.
       await mkdir(join(cwd,".pi/extensions"),{recursive:true});
       await writeFile(join(cwd,".pi/extensions/shutdown-probe.ts"),'export default pi => pi.on("session_shutdown",()=>{globalThis.__shutdowns=(globalThis.__shutdowns??0)+1;});');
+      const pkg=join(cwd,".pi/extensions/subagents");
+      await mkdir(pkg,{recursive:true});
+      await writeFile(join(pkg,"package.json"),JSON.stringify({name:"pi-subagent",pi:{extensions:["index.ts"]}}));
+      await writeFile(join(pkg,"index.ts"), 'export default pi => { let parentId; let status="starting"; pi.registerCommand("agents",{handler:()=>{}}); pi.on("session_start",(_e,ctx)=>{parentId=ctx.sessionManager.getSessionId(); globalThis.__finishChild=()=>{status="completed";pi.events.emit("pig:subagents:changed",{parentId});};}); pi.events.on("pig:subagents:snapshot",q=>{if(q.parentId===parentId)q.reply([{agent_id:"a",task_name:"Review",run_id:"r",status}]);}); }');
       await host.reloadSession(chat.address);
       chat=host.runtimeState().sessions.find(item=>item.address.sessionId===id).snapshot;
       draft=host.getSessionDraft(chat.address);
       host.syncDraft({...chat.address,expectedRevision:draft.revision,content:{text:"",pastes:[],images:[]}});
+      // The initial public-bus snapshot pins a starting child even if the parent is idle.
+      const nativeView=()=>host.getSessionSnapshot(chat.address).sessionUI.views.find(e=>e.view.source.label==="pi-subagent");
+      expect(nativeView().view.runs[0].state.phase).toBe("queued");
+      heartbeat();await host.suspendIdle();now+=RUNTIME_IDLE_MS;heartbeat();
+      expect(await host.suspendIdle()).toBe(0);
+      globalThis.__finishChild();
+      expect(nativeView().view.runs[0].state.outcome).toBe("success");
       const shutdownsBefore=globalThis.__shutdowns??0;
       heartbeat();await host.suspendIdle();now+=RUNTIME_IDLE_MS;heartbeat();
       expect(await host.suspendIdle()).toBe(1);
