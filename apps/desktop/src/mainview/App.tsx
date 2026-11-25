@@ -42,7 +42,7 @@ import {
 import { fontFamilyValue } from "./font-family";
 import { SavedOutputContext } from "./HighlightedCode";
 import { useT } from "./i18n";
-import { Markdown, MarkdownCwd, UserMessage } from "./MessageContent";
+import { AnswerMarkdown, MarkdownCwd, UserMessage } from "./MessageContent";
 import { modelDividers } from "./model-dividers";
 import { NotificationCenter } from "./NotificationCenter";
 import { OAuthLoginDialog } from "./OAuthLoginDialog";
@@ -510,7 +510,7 @@ const AssistantBlocks = memo(function AssistantBlocks({
             />
           ) : block.type === "text" ? (
             <div className="prose">
-              <Markdown text={block.text} streaming={streaming} />
+              <AnswerMarkdown text={block.text} streaming={streaming} />
             </div>
           ) : block.type === "thinking" ? (
             <ThinkingBlock

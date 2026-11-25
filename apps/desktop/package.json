@@ -28,6 +28,7 @@
     "@material/material-color-utilities": "0.4.0",
     "@pig/chat-renderers": "workspace:*",
     "@silvia-odwyer/photon": "0.3.3",
+    "@streamdown/math": "1.0.4",
     "@tanstack/react-virtual": "^3.14.28",
     "@tauri-apps/api": "2.12.5",
     "@xterm/addon-fit": "0.10.0",
@@ -50,6 +51,8 @@
     "remark-gfm": "^4.0.0",
     "remark-math": "^6.0.0",
     "shiki": "4.6.0",
+    "smooth-stream-text": "0.2.2",
+    "streamdown": "2.8.1",
     "zustand": "^5.0.0"
   },
   "devDependencies": {

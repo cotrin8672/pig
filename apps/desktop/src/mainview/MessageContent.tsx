@@ -1,5 +1,6 @@
 import type { ImageContent, TextContent } from "@earendil-works/pi-ai";
 import type { ChatRendererProps } from "@pig/chat-renderers";
+import { math } from "@streamdown/math";
 import type { Root } from "hast";
 import { Check, Copy, Pencil } from "lucide-react";
 import {
@@ -19,6 +20,8 @@ import {
 import ReactMarkdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import remarkMath from "remark-math";
+import { createSmoothStream } from "smooth-stream-text";
+import { Streamdown } from "streamdown";
 import { parseAnnotations, withAnnotations } from "../shared/annotations";
 import { splitAttachmentPaths } from "../shared/attachments";
 import { isFileLink } from "../shared/file-links";
@@ -227,6 +230,104 @@ export const markdownComponents: Components = {
       <ImageGallery sources={[src]} alt={alt} />
     ) : null,
 };
+
+const answerPlugins = { math };
+const answerComponents = {
+  ...markdownComponents,
+  strong: ({ children }: React.ComponentProps<"strong">) => (
+    <strong>{children}</strong>
+  ),
+};
+const answerExtensions = (
+  streaming: boolean,
+): NonNullable<React.ComponentProps<typeof Streamdown>["rehypePlugins"]> => [
+  [markdownExtensions, { streaming }],
+];
+const liveExtensions = answerExtensions(true);
+const finalExtensions = answerExtensions(false);
+
+const motionQuery = "(prefers-reduced-motion: reduce)";
+const skipMotion = () => true;
+const reducedMotion = () =>
+  globalThis.matchMedia?.(motionQuery).matches ?? true;
+function watchMotion(notify: () => void) {
+  const query = globalThis.matchMedia?.(motionQuery);
+  query?.addEventListener("change", notify);
+  return () => query?.removeEventListener("change", notify);
+}
+const ignoreMotion = () => () => {};
+
+function StreamdownBody({ data: { text } }: ChatRendererProps<"markdown">) {
+  const live = useContext(MarkdownStreaming);
+  const reduced = useSyncExternalStore(
+    live ? watchMotion : ignoreMotion,
+    live ? reducedMotion : skipMotion,
+    skipMotion,
+  );
+  const smooth = live && !reduced;
+  const [shown, setShown] = useState(text);
+  const pacer = useRef<ReturnType<typeof createSmoothStream> | null>(null);
+  useLayoutEffect(() => {
+    if (!smooth) return;
+    const stream = createSmoothStream({
+      targetLatencyMs: 90,
+      settleMs: 90,
+      idleGraceMs: 50,
+      boundary: "char",
+    });
+    pacer.current = stream;
+    const unsubscribe = stream.subscribe((state) => setShown(state.text));
+    return () => {
+      pacer.current = null;
+      unsubscribe();
+      stream.destroy();
+    };
+  }, [smooth]);
+  useLayoutEffect(() => {
+    if (!smooth) return;
+    const stream = pacer.current;
+    if (!stream) return;
+    const previous = stream.getState();
+    const added = text.length - previous.source.length;
+    if (
+      !previous.source ||
+      text.length > 8192 ||
+      added > 1024 ||
+      !text.startsWith(previous.source) ||
+      (previous.text === previous.source && added < 24)
+    )
+      stream.reset(text);
+    else stream.setSource(text);
+  }, [text, smooth]);
+  return (
+    <Streamdown
+      mode="streaming"
+      isAnimating={live}
+      parseIncompleteMarkdown={live}
+      plugins={answerPlugins}
+      components={answerComponents}
+      rehypePlugins={live ? liveExtensions : finalExtensions}
+      skipHtml
+      urlTransform={markdownUrl}
+    >
+      {normalizeMath(smooth && text.startsWith(shown) ? shown : text)}
+    </Streamdown>
+  );
+}
+
+export const AnswerMarkdown = memo(function AnswerMarkdown({
+  text,
+  streaming = false,
+}: {
+  text: string;
+  streaming?: boolean;
+}) {
+  return (
+    <MarkdownStreaming.Provider value={streaming}>
+      <ChatContent kind="markdown" data={{ text }} builtin={StreamdownBody} />
+    </MarkdownStreaming.Provider>
+  );
+});
 
 // Reuse post-processing only for the same parsed tree in this mounted instance.
 // No shared JSX/DOM cache: child state, context and renderer changes still apply.
