@@ -137,6 +137,7 @@ export const useStore = create<{
   packageOps: Record<string, PackageOpStatus>;
   notices: (Notice & { id: string })[];
   noticeHistory: NoticeRecord[];
+  clearingNotices: boolean;
   login?: LoginState;
   providerSelection?: AccountTarget;
   /** Selected-view state only; pendingOpens tracks startup without locking navigation. */
@@ -189,6 +190,7 @@ export const useStore = create<{
   deletingSessions: {},
   rewinds: {},
   noticeHistory: [],
+  clearingNotices: false,
   opening: false,
   pendingOpens: {},
   maximized: false,
@@ -285,15 +287,27 @@ export function markNoticeRead(id?: string) {
     ),
   }));
 }
-export function clearNotices() {
-  if (requestNoticeHistory) {
-    void requestNoticeHistory({ type: "clear" }).then(
-      receiveNoticeHistory,
-      notifyHistoryFailure,
-    );
+export async function clearNotices() {
+  if (!requestNoticeHistory) {
+    useStore.setState({ noticeHistory: [], notices: [] });
     return;
   }
-  useStore.setState({ noticeHistory: [], notices: [] });
+  const { clearingNotices, notices } = useStore.getState();
+  if (clearingNotices) return;
+  // Keep applying host updates while the list is hidden, so failure reveals the latest history.
+  useStore.setState({ clearingNotices: true });
+  try {
+    receiveNoticeHistory(await requestNoticeHistory({ type: "clear" }));
+    useStore.setState((state) => ({
+      notices: state.notices.filter(
+        (notice) => !notices.some(({ id }) => id === notice.id),
+      ),
+    }));
+  } catch (error) {
+    notifyHistoryFailure(error);
+  } finally {
+    useStore.setState({ clearingNotices: false });
+  }
 }
 export function dismissNotice(id: string) {
   useStore.setState((s) => ({

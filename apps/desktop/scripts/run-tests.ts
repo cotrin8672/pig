@@ -53,6 +53,7 @@ const ui = [
   "sidebar-update-dot-ui",
   "sidebar-resize-ui",
   "session-status-ui",
+  "notification-center-ui",
   "primitives-ui",
   "session-resume-ui",
   "runtime-suspension-ui",

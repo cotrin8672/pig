@@ -93,25 +93,9 @@
   padding: 5px;
   color: var(--ds-text-secondary);
 }
-.notification-filters {
-  border: 0;
-  margin: 0;
-  padding: 0 0 8px;
-  min-width: 0;
-  display: flex;
-  gap: 4px;
-}
-.notification-filters button {
-  min-width: 64px;
-  padding: 5px 10px;
-  font-size: 12px;
-  color: var(--ds-text-secondary);
-  border: 1px solid transparent;
-}
-.notification-filters button[aria-pressed="true"] {
-  background: var(--ds-bg-active);
-  color: var(--ds-text-primary);
-  border-color: var(--ds-border-strong);
+.segmented-control.notification-filters {
+  width: fit-content;
+  margin-bottom: 8px;
 }
 .notification-history {
   max-height: min(320px, calc(100vh - 160px));
