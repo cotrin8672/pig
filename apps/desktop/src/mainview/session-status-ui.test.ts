@@ -7,6 +7,8 @@ import {
   runUiFixture,
 } from "../../scripts/ui-fixture";
 
+const local = (path: string) => fixtureImport(new URL(path, import.meta.url));
+
 test.skipIf(!existsSync(fixtureEdge) && !process.env.PIG_REQUIRE_UI_TESTS)(
   "chat and project status dots keep their soft glow in every state",
   () =>
@@ -15,8 +17,8 @@ test.skipIf(!existsSync(fixtureEdge) && !process.env.PIG_REQUIRE_UI_TESTS)(
       `
       const {createRoot}=await import(${fixtureImport(import.meta.resolve("react-dom/client"))});
       const {flushSync}=await import(${fixtureImport(import.meta.resolve("react-dom"))});
-      await import(${fixtureImport(new URL("./styles.css", import.meta.url))});
-      const {IndicatorDot}=await import(${fixtureImport(new URL("./primitives/IndicatorDot.tsx", import.meta.url))});
+      await import(${local("./styles.css")});
+      const {IndicatorDot}=await import(${local("./primitives/IndicatorDot.tsx")});
       ${fixtureHelpers}
       const states=['running','completed','waiting','failed'];
       const root=createFixtureRoot(createRoot);
@@ -48,6 +50,55 @@ test.skipIf(!existsSync(fixtureEdge) && !process.env.PIG_REQUIRE_UI_TESTS)(
         check(halo.slice(0,3).some((value,index)=>Math.abs(value-background[index])>=2),'soft glow must be visible outside the dot: '+dot.className);
       }
       `,
+    ),
+  60_000,
+);
+
+test.skipIf(!existsSync(fixtureEdge) && !process.env.PIG_REQUIRE_UI_TESTS)(
+  "composer counters keep one aligned top-layer panel per group and close when dismissed",
+  () =>
+    runUiFixture(
+      "composer-counter-popovers",
+      `
+      const {createRoot}=await import(${fixtureImport(import.meta.resolve("react-dom/client"))});
+      const {flushSync}=await import(${fixtureImport(import.meta.resolve("react-dom"))});
+      const {SessionIndicators}=await import(${local("./SessionIndicators.tsx")});
+      const {SessionPanel}=await import(${local("./SessionPanel.tsx")});
+      const {addressKey}=await import(${local("./chat-snapshot.ts")});
+      const {useStore}=await import(${local("./store.ts")});
+      await import(${local("./styles.css")});
+      ${fixtureHelpers}
+      const root=createFixtureRoot(createRoot);
+      const address={hostId:'fixture',sessionId:'counters',epoch:1},key=addressKey(address);
+      const statuses=[{key:'lint',text:'Lint warning'}],widgets=[{key:'plan',lines:['Next step']}];
+      useStore.setState({extensionStatuses:{[key]:{statuses,widgets}}});
+      flushSync(()=>root.render(<form className="composer" style={{position:'fixed',left:24,top:480,width:380}}>
+        <SessionPanel configError="Missing config" initialTab="info" onAction={async()=>{}} onReload={async()=>{}}/>
+        <SessionIndicators address={address}/>
+      </form>));
+      const form=document.querySelector('form'),activity=form.querySelector('.session-panel');
+      const panel=form.querySelector('.session-indicators [role="dialog"]');
+      const [status,widget]=form.querySelectorAll('.session-indicators button');
+      const aligned=p=>{
+        const frame=form.getBoundingClientRect(),popup=p.getBoundingClientRect();
+        return Math.abs(popup.left-frame.left)<1&&Math.abs(popup.right-frame.right)<1&&Math.abs(frame.top-popup.bottom-8)<1;
+      };
+      await until(()=>activity.matches(':popover-open'),'the initial section opens on mount');
+      check(aligned(activity)&&activity.style.maxHeight==='420px','activity preserves its own height limit and matches the composer');
+      widget.click();
+      await until(()=>panel.matches(':popover-open')&&panel.textContent.includes('Next step'),'widget opens its panel');
+      check(!activity.matches(':popover-open')&&panel.style.maxHeight==='360px'&&aligned(panel),'opening the other group light-dismisses activity');
+      status.click();await wait();
+      check(panel.matches(':popover-open')&&panel.textContent.includes('Lint warning')&&!panel.textContent.includes('Next step'),'switching counters reuses the panel');
+      form.style.width='270px';
+      await until(()=>aligned(panel),'the panel follows a pane-only width change');
+      status.click();await wait();
+      check(!panel.matches(':popover-open')&&status.getAttribute('aria-expanded')==='false','clicking the same counter closes it');
+      status.click();await wait();
+      flushSync(()=>useStore.setState({extensionStatuses:{[key]:{statuses:[],widgets}}}));
+      await until(()=>!panel.matches(':popover-open'),'removing the active section hides the panel');
+      `,
+      { viewport: { width: 680, height: 640 } },
     ),
   60_000,
 );

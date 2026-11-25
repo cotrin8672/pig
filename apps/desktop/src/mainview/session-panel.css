@@ -14,13 +14,6 @@
   min-height: 0;
   min-width: 0;
 }
-.session-activity {
-  display: flex;
-  align-items: center;
-  gap: 2px;
-  flex: none;
-  min-width: 0;
-}
 .session-activity .session-indicator[data-warning="true"] {
   color: var(--ds-warning);
 }
@@ -63,14 +56,6 @@
   outline: 2px solid var(--ds-focus);
   outline-offset: -2px;
 }
-.session-task-dot {
-  display: block;
-  width: 6px;
-  height: 6px;
-  border-radius: var(--radius-round);
-  flex: 0 0 auto;
-  background: var(--ds-success);
-}
 .session-schedule-list {
   margin: 0;
   padding: 0;
@@ -80,14 +65,11 @@
   padding: 6px 12px;
   color: var(--ds-text-secondary);
 }
-.session-schedule-row + .session-schedule-row {
-  border-top: 1px solid
-    color-mix(in srgb, var(--ds-border-strong) 40%, transparent);
-}
 .session-schedule-row[data-enabled="false"] {
   color: var(--ds-text-faint);
 }
-.session-schedule-band {
+.session-schedule-band,
+.session-task-band {
   display: flex;
   align-items: center;
   gap: 8px;
@@ -97,7 +79,8 @@
   flex: none;
   color: var(--ds-text-muted);
 }
-.session-schedule-name {
+.session-schedule-name,
+.session-task-name {
   flex: 1;
   min-width: 0;
   overflow: hidden;
@@ -172,15 +155,10 @@
   min-width: 0;
   color: var(--ds-text-secondary);
 }
+.session-schedule-row + .session-schedule-row,
 .session-task-row + .session-task-row {
   border-top: 1px solid
     color-mix(in srgb, var(--ds-border-strong) 40%, transparent);
-}
-.session-task-band {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  min-width: 0;
 }
 .session-task-main {
   display: flex;
@@ -199,23 +177,18 @@
   color: var(--ds-text-muted);
 }
 .session-task-dot {
-  background: var(--ds-text-faint);
+  display: block;
   width: 7px;
   height: 7px;
+  border-radius: var(--radius-round);
+  flex: 0 0 auto;
+  background: var(--ds-text-faint);
 }
 .session-task-row[data-state="running"] .session-task-dot {
   background: var(--ds-success);
 }
 .session-task-row[data-state="error"] .session-task-dot {
   background: var(--ds-warning);
-}
-.session-task-name {
-  color: var(--ds-text-primary);
-  flex: 1;
-  min-width: 0;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
 }
 .session-task-name.is-command {
   font-family: var(--font-mono);

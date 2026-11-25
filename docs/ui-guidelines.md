@@ -548,6 +548,7 @@ UIの追加・変更・レビュー時に適用する。スクリーンショッ
   `setWidget` は文字列配列だけ表示し、TUI専用のコンポーネント関数は実行せずに無視する。拡張の実行は止めない。
   Composerの上下に帯・行を足さず、中身は開いたときだけ描画する、1つのtop layerパネルに出す。パネルはComposerの上で
   左右端をComposerに揃え、Paneのリサイズに追従する。状態の有無でPicker・送信ボタン・Composerを動かさない。
+  位置・開閉・追従は `SessionPanel` と同じ `useComposerPopover` で扱う。
   今後のバックグラウンドタスク・サブエージェント等も同じ列へ追加する。`transcript-ui.test.ts` が配置不変とパネル位置を検査する。
 - Adapterのセッション表示（進捗TODO・サブエージェント／バックグラウンド実行・予約プロンプト・その他の情報と接続エラー）も
   `SessionPanel` が同じ列（`.composer-session`）に種類ごとの件数Chip（進捗は `完了/全体`、実行中は小さな状態点、

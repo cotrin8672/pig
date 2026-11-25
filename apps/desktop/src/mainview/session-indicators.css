@@ -8,7 +8,8 @@
   min-width: 0;
   margin-left: -4px;
 }
-.session-indicators {
+.session-indicators,
+.session-activity {
   display: flex;
   align-items: center;
   gap: 2px;
