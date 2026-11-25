@@ -57,9 +57,42 @@ export async function runUiFixture(
       entrypoints: [entry],
       target: "browser",
       minify: true,
-      define: { "process.env.NODE_ENV": '"production"' },
+      define: {
+        "process.env.NODE_ENV": '"production"',
+        __VIRTUAL_TURNS__: String(process.env.VITE_VIRTUAL_TURNS !== "0"),
+      },
       plugins: [
         await renderWorkerFixturePlugin(),
+        ...(process.env.PIG_REACT_COMPILER === "1"
+          ? [
+              {
+                name: "profile-react-compiler",
+                setup(b: import("bun").PluginBuilder) {
+                  b.onLoad(
+                    { filter: /[\\/]mainview[\\/]App\.tsx$/ },
+                    async ({ path }) => {
+                      const { createRequire } = await import("node:module");
+                      const require = createRequire(import.meta.url);
+                      const babel = require(
+                        require.resolve("@babel/core", {
+                          paths: [require.resolve("@vitejs/plugin-react")],
+                        }),
+                      );
+                      const result = await babel.transformFileAsync(path, {
+                        babelrc: false,
+                        configFile: false,
+                        parserOpts: { plugins: ["typescript", "jsx"] },
+                        plugins: [
+                          require.resolve("babel-plugin-react-compiler"),
+                        ],
+                      });
+                      return { contents: result.code, loader: "tsx" };
+                    },
+                  );
+                },
+              },
+            ]
+          : []),
         {
           name: "isolated-host",
           setup(b) {

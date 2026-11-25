@@ -27,6 +27,8 @@ import appIcon from "../../assets/icon.svg";
 import { SIDEBAR_WIDTH } from "../shared/desktop-state";
 import { createFinishedWorkIndex, groupBlocks } from "../shared/tool-view";
 import { ChatEmpty, ChatLayout } from "./ChatLayout";
+import { VirtualTurns } from "./VirtualTurns";
+declare const __VIRTUAL_TURNS__: boolean;
 import { ChatOpening, OpeningComposer, OpeningMessages } from "./ChatOpening";
 import { Compaction } from "./CompactionRenderer";
 import { Composer } from "./Composer";
@@ -815,7 +817,7 @@ export const Chat = memo(function Chat({
   const resizeContent = useCallback(
     (wasAtBottom: boolean) => {
       const element = thread.current;
-      if (!element) return;
+      if (!element || element.querySelector("[data-virtual-turns]")) return;
       if (view.follow) {
         if (wasAtBottom) element.scrollTop = element.scrollHeight;
       } else if (
@@ -854,10 +856,17 @@ export const Chat = memo(function Chat({
     };
   }, []);
   const preparePrepend = useCallback(() => {
-    if (!thread.current) return;
+    if (!thread.current || thread.current.querySelector("[data-virtual-turns]"))
+      return;
     // A native wheel can move the viewport before its React scroll event lands.
     if (!isThreadAtBottom(thread.current)) view.follow = false;
-    prependScroll.current = captureThreadAnchor(thread.current);
+    // Keep the same reader across batches, including asynchronous Markdown
+    // growth between them. User input clears this anchor above.
+    prependScroll.current =
+      retainedAnchor.current?.record &&
+      thread.current.contains(retainedAnchor.current.record)
+        ? retainedAnchor.current
+        : captureThreadAnchor(thread.current);
   }, [view]);
   const { edge, hiddenRecords, loadingHistory, historyError, loadEarlier } =
     useHistoryPaging(snapshot, thread, preparePrepend);
@@ -977,12 +986,17 @@ export const Chat = memo(function Chat({
     hiddenRecords,
   ]);
   useLayoutEffect(() => {
-    if (thread.current && !view.follow) thread.current.scrollTop = view.top;
+    if (
+      thread.current &&
+      !view.follow &&
+      !thread.current.querySelector("[data-virtual-turns]")
+    )
+      thread.current.scrollTop = view.top;
   }, [view]);
   // biome-ignore lint/correctness/useExhaustiveDependencies: Follow newly committed content only while the user is at the end.
   useLayoutEffect(() => {
     const element = thread.current;
-    if (!element) return;
+    if (!element || element.querySelector("[data-virtual-turns]")) return;
     if (prependScroll.current) {
       if (view.follow) element.scrollTop = element.scrollHeight;
       else restoreThreadAnchor(element, prependScroll.current);
@@ -993,6 +1007,26 @@ export const Chat = memo(function Chat({
       element.scrollTop = element.scrollHeight;
     }
   }, [transcript, notices, view, hiddenRecords]);
+  const renderTurns = (items: (React.ReactElement | null)[]) => {
+    const rows = items.filter((row) => row !== null);
+    if (
+      rows.length <= 200 ||
+      typeof __VIRTUAL_TURNS__ === "undefined" ||
+      !__VIRTUAL_TURNS__
+    )
+      return rows;
+    const target =
+      jump &&
+      transcript.records.find((record) => record.entryId === jump.entryId)?.id;
+    return (
+      <VirtualTurns
+        follow={view}
+        thread={thread}
+        rows={rows}
+        target={target ? (liveIds.get(target) ?? target) : undefined}
+      />
+    );
+  };
   const layout = (
     <ChatLayout
       threadRef={thread}
@@ -1021,157 +1055,159 @@ export const Chat = memo(function Chat({
         </p>
       )}
       {!hasConversation && <ChatEmpty cwd={info.cwd} />}
-      {interleaveExtensionNotices(
-        cut >= 0
-          ? { ...transcript, records: transcript.records.slice(0, cut) }
-          : transcript,
-        notices ?? [],
-      ).map((item) => {
-        if ("notice" in item)
-          return (
-            <ExtensionNoticeLine key={item.notice.id} notice={item.notice} />
+      {renderTurns(
+        interleaveExtensionNotices(
+          cut >= 0
+            ? { ...transcript, records: transcript.records.slice(0, cut) }
+            : transcript,
+          notices ?? [],
+        ).map((item) => {
+          if ("notice" in item)
+            return (
+              <ExtensionNoticeLine key={item.notice.id} notice={item.notice} />
+            );
+          const { record, index } = item;
+          if (index < hiddenRecords) return null;
+          const key = liveIds.get(record.id) ?? record.id;
+          const divider = dividers.get(record.id);
+          if (!isVisibleRecord(record)) return null;
+          const range = work.get(index);
+          const folded = range !== undefined && !openWork[range.key];
+          const toggle = range && !renderedWork.has(range.key) && (
+            <WorkToggle
+              open={!folded}
+              tools={range.tools}
+              onToggle={() =>
+                setOpenWork(
+                  (open) =>
+                    (view.work = {
+                      ...open,
+                      [range.key]: !open[range.key],
+                    }),
+                )
+              }
+            />
           );
-        const { record, index } = item;
-        if (index < hiddenRecords) return null;
-        const key = liveIds.get(record.id) ?? record.id;
-        const divider = dividers.get(record.id);
-        if (!isVisibleRecord(record)) return null;
-        const range = work.get(index);
-        const folded = range !== undefined && !openWork[range.key];
-        const toggle = range && !renderedWork.has(range.key) && (
-          <WorkToggle
-            open={!folded}
-            tools={range.tools}
-            onToggle={() =>
-              setOpenWork(
-                (open) =>
-                  (view.work = {
-                    ...open,
-                    [range.key]: !open[range.key],
-                  }),
-              )
-            }
-          />
-        );
-        if (range) renderedWork.add(range.key);
-        if (folded && index !== range.final)
-          return toggle ? <Fragment key={key}>{toggle}</Fragment> : null;
-        if (record.kind !== "message" || record.message.role === "custom")
-          return (
-            <Fragment key={key}>
-              {toggle}
-              <CustomRecord record={record} />
-            </Fragment>
-          );
-        const { id, message } = record;
-        const live =
-          transcript.running && index === transcript.records.length - 1;
-        // Don't invalidate text-only or folded blocks with unrelated tool updates.
-        const hasTools =
-          !folded &&
-          message.role === "assistant" &&
-          message.content.some((block) => block.type === "toolCall");
-        return (
-          <div
-            key={key}
-            className="response-turn"
-            data-record-id={id}
-            data-record-order={record.order}
-            tabIndex={-1}
-          >
-            {divider && (
-              <div className="model-divider">
-                <span
-                  className="model-divider-model"
-                  aria-description={`${divider.from.provider}/${divider.from.id}`}
-                >
-                  <ProviderIcon provider={divider.from.provider} size={14} />
-                  {divider.from.id}
-                </span>
-                →
-                <span
-                  className="model-divider-model"
-                  aria-description={`${divider.to.provider}/${divider.to.id}`}
-                >
-                  <ProviderIcon provider={divider.to.provider} size={14} />
-                  {divider.to.id}
-                </span>
-              </div>
-            )}
-            <SavedOutputContext.Provider value={Boolean(record.entryId)}>
-              <DisclosureScope id={id} values={view.details}>
+          if (range) renderedWork.add(range.key);
+          if (folded && index !== range.final)
+            return toggle ? <Fragment key={key}>{toggle}</Fragment> : null;
+          if (record.kind !== "message" || record.message.role === "custom")
+            return (
+              <Fragment key={key}>
                 {toggle}
-                <article className={`message ${message.role}`}>
-                  {message.role === "user" ? (
-                    <UserMessage
-                      message={message}
-                      sessionId={info.id}
-                      entryId={record.entryId}
-                      disabled={readOnly || !snapshot.model}
-                      scheduled={scheduled.get(id)}
-                    />
-                  ) : message.role === "assistant" ? (
-                    <>
-                      <AssistantBlocks
-                        content={message.content}
-                        folded={folded}
-                        live={live}
-                        streaming={
-                          live &&
-                          transcript.current === id &&
-                          !message.errorMessage
-                        }
-                        thinkingLabel={
-                          status?.hiddenThinkingLabel ?? t.Thinking
-                        }
-                        tools={hasTools ? transcript.tools : noTools}
-                        toolsRunning={hasTools && transcript.running}
-                        cards={
-                          hasTools ? snapshot.sessionUI?.toolCards : undefined
-                        }
+                <CustomRecord record={record} />
+              </Fragment>
+            );
+          const { id, message } = record;
+          const live =
+            transcript.running && index === transcript.records.length - 1;
+          // Don't invalidate text-only or folded blocks with unrelated tool updates.
+          const hasTools =
+            !folded &&
+            message.role === "assistant" &&
+            message.content.some((block) => block.type === "toolCall");
+          return (
+            <div
+              key={key}
+              className="response-turn"
+              data-record-id={id}
+              data-record-order={record.order}
+              tabIndex={-1}
+            >
+              {divider && (
+                <div className="model-divider">
+                  <span
+                    className="model-divider-model"
+                    aria-description={`${divider.from.provider}/${divider.from.id}`}
+                  >
+                    <ProviderIcon provider={divider.from.provider} size={14} />
+                    {divider.from.id}
+                  </span>
+                  →
+                  <span
+                    className="model-divider-model"
+                    aria-description={`${divider.to.provider}/${divider.to.id}`}
+                  >
+                    <ProviderIcon provider={divider.to.provider} size={14} />
+                    {divider.to.id}
+                  </span>
+                </div>
+              )}
+              <SavedOutputContext.Provider value={Boolean(record.entryId)}>
+                <DisclosureScope id={id} values={view.details}>
+                  {toggle}
+                  <article className={`message ${message.role}`}>
+                    {message.role === "user" ? (
+                      <UserMessage
+                        message={message}
+                        sessionId={info.id}
+                        entryId={record.entryId}
+                        disabled={readOnly || !snapshot.model}
+                        scheduled={scheduled.get(id)}
                       />
-                      {retried.has(id) ? (
-                        <RetryNotice
-                          attempt={retried.get(id) ?? 1}
-                          message={
-                            message.errorMessage ?? "Model request failed"
+                    ) : message.role === "assistant" ? (
+                      <>
+                        <AssistantBlocks
+                          content={message.content}
+                          folded={folded}
+                          live={live}
+                          streaming={
+                            live &&
+                            transcript.current === id &&
+                            !message.errorMessage
                           }
-                          waiting={
-                            snapshot.retry?.attempt === retried.get(id) &&
-                            id === [...retried.keys()].at(-1)
-                              ? snapshot.retry
-                              : undefined
+                          thinkingLabel={
+                            status?.hiddenThinkingLabel ?? t.Thinking
+                          }
+                          tools={hasTools ? transcript.tools : noTools}
+                          toolsRunning={hasTools && transcript.running}
+                          cards={
+                            hasTools ? snapshot.sessionUI?.toolCards : undefined
                           }
                         />
-                      ) : (
-                        (message.errorMessage ||
-                          message.stopReason === "error") && (
-                          <ResponseError
+                        {retried.has(id) ? (
+                          <RetryNotice
+                            attempt={retried.get(id) ?? 1}
                             message={
                               message.errorMessage ?? "Model request failed"
                             }
-                            stopReason={message.stopReason}
+                            waiting={
+                              snapshot.retry?.attempt === retried.get(id) &&
+                              id === [...retried.keys()].at(-1)
+                                ? snapshot.retry
+                                : undefined
+                            }
                           />
-                        )
-                      )}
-                    </>
-                  ) : (
-                    <CustomRecord record={record} />
-                  )}
-                  {record.details !== undefined && (
-                    <DisclosureScope id="record-details">
-                      <LazyDetails name="details" summary="Details">
-                        {() => <pre>{dataText(record.details)}</pre>}
-                      </LazyDetails>
-                    </DisclosureScope>
-                  )}
-                </article>
-                {footer(index)}
-              </DisclosureScope>
-            </SavedOutputContext.Provider>
-          </div>
-        );
-      })}
+                        ) : (
+                          (message.errorMessage ||
+                            message.stopReason === "error") && (
+                            <ResponseError
+                              message={
+                                message.errorMessage ?? "Model request failed"
+                              }
+                              stopReason={message.stopReason}
+                            />
+                          )
+                        )}
+                      </>
+                    ) : (
+                      <CustomRecord record={record} />
+                    )}
+                    {record.details !== undefined && (
+                      <DisclosureScope id="record-details">
+                        <LazyDetails name="details" summary="Details">
+                          {() => <pre>{dataText(record.details)}</pre>}
+                        </LazyDetails>
+                      </DisclosureScope>
+                    )}
+                  </article>
+                  {footer(index)}
+                </DisclosureScope>
+              </SavedOutputContext.Provider>
+            </div>
+          );
+        }),
+      )}
       {rewind && cut >= 0 && (
         <div className="response-turn">
           <article className="message user">

@@ -8,6 +8,7 @@ export function isThreadAtBottom(
 export type ThreadView = {
   follow: boolean;
   top: number;
+  reading?: { key: string; offset: number };
   work: Record<string, boolean>;
   details: Record<string, boolean>;
 };

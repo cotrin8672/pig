@@ -5,7 +5,18 @@ import { defineConfig } from "vite";
 import { workerPlugins } from "./scripts/worker-build";
 
 export default defineConfig({
-  plugins: [react(), tailwindcss()],
+  define: { __VIRTUAL_TURNS__: process.env.VITE_VIRTUAL_TURNS !== "0" },
+  plugins: [
+    react(
+      process.env.PIG_REACT_COMPILER === "1"
+        ? {
+            include: /[/\\]mainview[/\\]App\.tsx$/,
+            babel: { plugins: ["babel-plugin-react-compiler"] },
+          }
+        : undefined,
+    ),
+    tailwindcss(),
+  ],
   root: fileURLToPath(new URL("./src/mainview", import.meta.url)),
   base: "./",
   // Do not load the Electrobun-generated tsconfig for this independent build.
