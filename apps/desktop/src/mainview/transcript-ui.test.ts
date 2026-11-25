@@ -160,7 +160,7 @@ test.skipIf(!existsSync(edge) && !process.env.PIG_REQUIRE_UI_TESTS)(
 );
 
 test.skipIf(!existsSync(edge) && !process.env.PIG_REQUIRE_UI_TESTS)(
-  "running status keeps the original static text and extension overrides in Edge",
+  "running status keeps its turn spinner, translated label and extension overrides in Edge",
   () =>
     runUiFixture(
       "running-status",
@@ -173,24 +173,33 @@ test.skipIf(!existsSync(edge) && !process.env.PIG_REQUIRE_UI_TESTS)(
     ${fixtureHelpers}
     const root=createFixtureRoot(createRoot);
     flushSync(()=>useStore.setState(s=>({settings:{...s.settings,language:'ja'}})));
-    flushSync(()=>root.render(<RunningIndicator/>));
+    const render=(props={})=>flushSync(()=>root.render(<RunningIndicator turnKey="session/turn-1" {...props}/>));
+    render();
     await wait();
     const line=document.querySelector('p.running[role="status"]');
-    check(line?.textContent==='処理中…' && line.childElementCount===0,'original plain label, no spinner');
-    check(line.getAnimations({subtree:true}).length===0,'no waiting animation');
-    const before=line.getBoundingClientRect().toJSON();
-    let changes=0;
-    const observer=new MutationObserver(()=>changes++);
-    observer.observe(line,{subtree:true,childList:true,characterData:true,attributes:true});
+    const spinner=()=>line.querySelector('[data-turn-spinner]');
+    const label=()=>{
+      const copy=line.cloneNode(true);
+      copy.querySelectorAll('[aria-hidden="true"]').forEach(el=>el.remove());
+      return copy.textContent.trim();
+    };
+    const initial=spinner();
+    const variant=initial?.dataset.turnSpinner;
+    const sameSpinner=()=>spinner()===initial && spinner()?.dataset.turnSpinner===variant;
+    check(variant && initial.getAttribute('aria-hidden')==='true' && label()==='処理中…','decorative spinner with a localized status');
     await new Promise(resolve=>setTimeout(resolve,2900));
-    observer.disconnect();
-    check(changes===0 && line.textContent==='処理中…','no rotating words or spinner frames');
-    check(JSON.stringify(line.getBoundingClientRect().toJSON())===JSON.stringify(before),'waiting must not move the line');
-    flushSync(()=>root.render(<RunningIndicator symbol="🐖" message="Shipping it"/>));
-    check(line.textContent==='🐖 Shipping it','extension message and symbol stay visible');
+    check(sameSpinner() && label()==='処理中…','turn spinner and default label stay stable while waiting');
     flushSync(()=>useStore.setState(s=>({settings:{...s.settings,language:'en'}})));
-    flushSync(()=>root.render(<RunningIndicator/>));
-    check(line.textContent==='Working…','language change uses the fixed translated label');
+    check(label()==='Working…' && sameSpinner(),'language change updates only the translated label');
+    render({message:'Shipping it'});
+    check(label()==='Shipping it' && sameSpinner(),'extension message keeps the turn spinner');
+    render({symbol:'🐖',message:'Shipping it'});
+    check(!spinner() && line.textContent.includes('🐖') && line.textContent.includes('Shipping it'),'extension symbol replaces the spinner');
+    render();
+    window.__fixtureInput={method:'Emulation.setEmulatedMedia',params:{features:[{name:'prefers-reduced-motion',value:'reduce'}]}};
+    await until(()=>!window.__fixtureInput && matchMedia('(prefers-reduced-motion: reduce)').matches,'emulate reduced motion');
+    check(line.getAnimations({subtree:true}).every(a=>a.playState!=='running'),'reduced motion stops spinner animations');
+    check(label()==='Working…','reduced motion retains the status label');
     root.unmount();
   `,
     ),

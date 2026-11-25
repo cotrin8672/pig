@@ -456,6 +456,15 @@ function ConversationWorkspace({ active: shown }: { active: boolean }) {
 
 const noTools: ChatSnapshot["transcript"]["tools"] = {};
 
+function runningTurnKey({ info, transcript }: ChatSnapshot) {
+  for (let i = transcript.records.length - 1; i >= 0; i--) {
+    const record = transcript.records[i];
+    if (record.kind === "message" && record.message.role === "user")
+      return `${info.id}:${record.message.timestamp}`;
+  }
+  return info.id;
+}
+
 const AssistantBlocks = memo(function AssistantBlocks({
   content,
   folded,
@@ -1007,6 +1016,7 @@ export const Chat = memo(function Chat({
       )}
       {transcript.running && !transcript.compaction && (
         <RunningIndicator
+          turnKey={runningTurnKey(snapshot)}
           symbol={status?.workingSymbol}
           message={status?.workingMessage}
         />
