@@ -915,7 +915,8 @@ details[open] > summary .tool-chevron,
   border-left: 2px solid #ffffff1c;
 }
 .tool-body pre,
-.tool-body .message-content.literal pre {
+.tool-body .message-content.literal pre,
+.lens-frame {
   --scrollbar-inset: var(--radius-xs);
   /* Eight lines, vertical padding and room for a horizontal scrollbar. */
   max-height: calc(8lh + 16px + var(--scrollbar-size));
@@ -926,6 +927,9 @@ details[open] > summary .tool-chevron,
   background: #0000003d;
   color: var(--ds-text-secondary);
   font-size: var(--text-sm);
+}
+.tool-body pre,
+.tool-body .message-content.literal pre {
   white-space: pre;
 }
 .tool-body > * + * {
