@@ -299,7 +299,7 @@ function ProviderGroup({
 }
 
 /**
- * Stand-in for the app's existing OAuth sign-in card (App.tsx OAuthLoginDialog),
+ * Stand-in for the app's existing OAuth sign-in card (OAuthLoginDialog),
  * which "+" opens unchanged. Production keeps its real prompts and links.
  */
 function SignInCard({
