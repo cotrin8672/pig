@@ -700,7 +700,6 @@ pre {
 .prose .markdown-table-scroll {
   --scrollbar-inset: var(--radius-xs);
   max-width: 100%;
-  margin: 12px 0;
   overflow: auto;
   border: 1px solid var(--ds-border-strong);
   border-radius: var(--radius-xs);

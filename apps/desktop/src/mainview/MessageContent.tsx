@@ -34,7 +34,11 @@ import { dataText } from "./custom-data";
 import { CodeText } from "./HighlightedCode";
 import { ImageGallery } from "./ImageGallery";
 import { useT } from "./i18n";
-import { MarkdownBlockquote, MarkdownPre } from "./MarkdownBlocks";
+import {
+  MarkdownBlockquote,
+  MarkdownPre,
+  MarkdownTable,
+} from "./MarkdownBlocks";
 import { markdownExtensions } from "./markdown-extensions";
 import {
   appendOpenCodeFence,
@@ -133,11 +137,7 @@ function linkTip(
 export const markdownComponents: Components = {
   pre: MarkdownPre,
   blockquote: MarkdownBlockquote,
-  table: ({ children }) => (
-    <div className="markdown-table-scroll">
-      <table>{children}</table>
-    </div>
-  ),
+  table: MarkdownTable,
   code: function MarkdownCode({ className, children }) {
     const linked = useContext(InsideMarkdownLink);
     const t = useT();
