@@ -46,6 +46,7 @@ export function selectConversationView(s: State) {
       : undefined;
   return {
     openingView,
+    restoringChat: !!s.active && s.restoringChats.has(s.active),
     activeSnapshot: active,
     openingSnapshot: opening,
     generalCwd: s.bootstrap.generalCwd,

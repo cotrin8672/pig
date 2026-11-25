@@ -8,6 +8,67 @@ import {
 } from "../../scripts/ui-fixture";
 
 test.skipIf(!existsSync(fixtureEdge) && !process.env.PIG_REQUIRE_UI_TESTS)(
+  "relaunch restores resized panes, focus and saved chats without starting SDK sessions",
+  () =>
+    runUiFixture(
+      "pane-relaunch",
+      `
+    const {createRoot}=await import(${fixtureImport(import.meta.resolve("react-dom/client"))});
+    const {App}=await import(${fixtureImport(new URL("./App.tsx", import.meta.url))});
+    const {useStore}=await import(${fixtureImport(new URL("./store.ts", import.meta.url))});
+    await import(${fixtureImport(new URL("./styles.css", import.meta.url))});
+    ${fixtureHelpers}
+    const initial=useStore.getState(),cwd='fixture',hostId='pane-relaunch';
+    const info=id=>({id,cwd,title:'Saved '+id,modified:1});
+    const a=info('a'),b=info('b'),opens=[];
+    const leaf=id=>({type:'pane',id});
+    const split=(axis,first,second,weights)=>({type:'split',axis,children:[first,second],weights});
+    const paneTree=split('columns',split('rows',leaf(1),leaf(3),[0.65,0.35]),split('rows',leaf(2),leaf(4),[0.4,0.6]),[0.32,0.68]);
+    useStore.setState({initialized:true});
+    useStore.setState({paneTree,activePane:2,panes:{
+      1:{sessionId:a.id},2:{sessionId:b.id},3:{openId:'local-draft'},4:{sessionId:'deleted'},
+    }});
+    useStore.setState(initial,true);
+    const waitForB=Promise.withResolvers();
+    window.__requests={
+      bootstrap:async()=>({...initial.bootstrap,generalCwd:cwd}),
+      settings:async()=>({...initial.settings,language:'en'}),
+      appearance:async()=>initial.appearance,
+      actionKeymaps:async()=>[],listSessions:async()=>[a,b],listInstalled:async()=>[],
+      getRecovery:async()=>({hostId}),listSlashCommands:async()=>[],
+      runtimeState:async()=>({hostId,publicationSeq:0,sessions:[],pendingUI:[],drafts:[],statuses:[]}),
+      openSession:async ({id,historyOnly})=>{
+        opens.push({id,historyOnly});
+        if(id==='b')await waitForB.promise;
+        return {address:{hostId,sessionId:id,epoch:1},snapshotSeq:1,info:info(id),
+          effort:'off',effortLevels:[],suspended:true,
+          transcript:{records:[{id:'last-'+id,parentId:null,branchId:'last-'+id,order:0,
+            kind:'message',message:{role:'user',content:'Previous message '+id,timestamp:0}}],
+            tools:{},current:null,running:false,liveToEntry:{}}};
+      },
+    };
+    const root=createFixtureRoot(createRoot);
+    root.render(<App/>);
+    const pane=id=>document.querySelector('[data-pane-id="'+id+'"]');
+    await until(()=>pane(2)?.querySelector('[role="status"]')&&pane(1)?.textContent.includes('Previous message a'),
+      'the focused chat can still be loading while the unfocused one is restored');
+    check(pane(2).dataset.active==='true'&&!pane(2).querySelector('textarea'),'loading must not replace the restored selection with a new chat');
+    waitForB.resolve();
+    await until(()=>pane(2)?.textContent.includes('Previous message b')&&pane(3)?.querySelector('textarea')&&pane(4)?.querySelector('textarea'),
+      'saved history and independent empty editors must return in the same panes');
+    const workspace=pane(2).parentElement.getBoundingClientRect();
+    const first=pane(1).getBoundingClientRect();
+    check(Math.abs(first.width/workspace.width-0.32)<0.01&&Math.abs(first.height/workspace.height-0.65)<0.01,
+      'nested split proportions must survive relaunch');
+    check(pane(2).dataset.active==='true'&&useStore.getState().active==='b','background loads must not steal focus');
+    check(opens.length===2&&opens.every(open=>open.historyOnly),'no SDK session or missing chat may be opened');
+  `,
+      { realRpc: true },
+    ),
+  60_000,
+);
+
+test.skipIf(!existsSync(fixtureEdge) && !process.env.PIG_REQUIRE_UI_TESTS)(
   "annotations belong only to the pane containing the selected response",
   () =>
     runUiFixture(

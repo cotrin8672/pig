@@ -37,6 +37,7 @@ import type { Message } from "../shared/transcript";
 import type { ChatSnapshot } from "./chat-snapshot";
 import type { ExtensionNotice } from "./extension-notices";
 import type { PaneNode } from "./pane-layout";
+import { savePaneWorkspace } from "./pane-workspace-cache";
 import { isViewedNotice } from "./session-read";
 import { loadSidebarCache, saveSidebarCache } from "./sidebar-cache";
 
@@ -99,6 +100,7 @@ export const useStore = create<{
   paneTree: PaneNode;
   activePane: number;
   panes: Record<number, { sessionId?: string; openId?: string }>;
+  restoringChats: ReadonlySet<string>;
   page: "chat" | "providers" | "extensions" | "settings" | "statistics";
   searchOpen: boolean;
   settingsCategory: SettingsCategory;
@@ -171,6 +173,7 @@ export const useStore = create<{
   paneTree: { type: "pane", id: 1 },
   activePane: 1,
   panes: { 1: {} },
+  restoringChats: new Set(),
   addresses: {},
   pendingUI: [],
   terminals: {},
@@ -199,6 +202,14 @@ export const useStore = create<{
   actionKeymaps: [],
 }));
 useStore.subscribe((state, previous) => {
+  if (
+    state.initialized &&
+    previous.initialized &&
+    (state.paneTree !== previous.paneTree ||
+      state.activePane !== previous.activePane ||
+      state.panes !== previous.panes)
+  )
+    savePaneWorkspace(state);
   if (
     !state.initialized ||
     (state.sessions === previous.sessions &&

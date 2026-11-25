@@ -11,6 +11,7 @@ import {
 } from "../shared/notification-history";
 import type {
   Appearance,
+  Bootstrap,
   ModelSelection,
   SessionInfo,
   Snapshot,
@@ -50,6 +51,7 @@ import {
   takeOpeningOps,
 } from "./opening-sends";
 import { selectPaneSession } from "./pane-selection";
+import { loadPaneWorkspace } from "./pane-workspace-cache";
 import { createRendererRpc } from "./rpc-transport";
 import {
   liveAddress,
@@ -72,6 +74,7 @@ import { createSnapshotRecovery } from "./snapshot-recovery";
 import {
   connectNoticeHistory,
   type OpeningTarget,
+  type PendingOpen,
   readViewedNotices,
   receiveNoticeHistory,
   receiveNoticeToast,
@@ -590,8 +593,12 @@ export async function refresh() {
   const desiredDefault = defaultModelPreference.value("default");
   if (desiredDefault !== undefined) bootstrap.defaultModel = desiredDefault;
   bootstrap.desktop = overlayDesktop(bootstrap.desktop);
+  const workspace = useStore.getState().initialized
+    ? undefined
+    : loadPaneWorkspace();
   useStore.setState((s) => ({
     initialized: true,
+    ...(workspace ? preparePaneRestore(workspace, bootstrap) : {}),
     ...(!appearanceInFlight &&
     !appearancePending &&
     s.appearance === before.appearance
@@ -623,7 +630,11 @@ export async function refresh() {
       ),
     )
     .catch(console.warn);
-  await refreshSessions();
+  try {
+    await refreshSessions();
+  } finally {
+    if (workspace) void restorePaneChats(workspace).catch(showSessionReadError);
+  }
 }
 export const sends = new SendController(
   drafts,
@@ -1066,20 +1077,13 @@ export async function openChat(
       showOpening(paneOpenId, push);
       return;
     }
-    const openId = crypto.randomUUID();
+    const [openId, local] = createLocalChat(cwd, selection);
     useStore.setState({
       pendingOpens: {
         ...state.pendingOpens,
-        [openId]: {
-          cwd,
-          draftId: openId,
-          deferred: true,
-          selection: selection ?? newChatSelection(),
-        },
+        [openId]: local,
       },
     });
-    const initial = useStore.getState().pendingOpens[openId].selection;
-    if (initial) queueOpeningSelection(openId, initial);
     showOpening(openId, push);
     return;
   }
@@ -1264,9 +1268,115 @@ export async function regenerate(
   }
   await sending;
 }
-function newChatSelection(): ModelSelection | undefined {
-  const { models, disabledModels, defaultModel, accountCatalogs } =
-    useStore.getState().bootstrap;
+function createLocalChat(
+  cwd: string,
+  selection = newChatSelection(),
+): [string, PendingOpen] {
+  const openId = crypto.randomUUID();
+  return [
+    openId,
+    {
+      cwd,
+      draftId: openId,
+      deferred: true,
+      selection,
+      queued: selection
+        ? [{ id: crypto.randomUUID(), kind: "select", selection }]
+        : undefined,
+    },
+  ];
+}
+
+type SavedPaneWorkspace = NonNullable<ReturnType<typeof loadPaneWorkspace>>;
+
+function preparePaneRestore(
+  workspace: SavedPaneWorkspace,
+  bootstrap: Bootstrap,
+) {
+  const pendingOpens = { ...useStore.getState().pendingOpens };
+  const restoringChats = new Set<string>();
+  const panes = Object.fromEntries(
+    Object.entries(workspace.panes).map(([id, pane]) => {
+      if (pane.sessionId) {
+        restoringChats.add(pane.sessionId);
+        return [id, pane];
+      }
+      const [openId, target] = createLocalChat(
+        bootstrap.generalCwd,
+        newChatSelection(bootstrap),
+      );
+      pendingOpens[openId] = target;
+      return [id, { openId }];
+    }),
+  );
+  return {
+    ...workspace,
+    panes,
+    pendingOpens,
+    restoringChats,
+    active: workspace.panes[workspace.activePane].sessionId,
+  };
+}
+
+async function restorePaneChats({ panes }: SavedPaneWorkspace) {
+  const listed = Object.values(useStore.getState().sessions).flat();
+  await Promise.all(
+    Object.entries(panes).map(async ([key, { sessionId }]) => {
+      const paneId = Number(key);
+      if (!sessionId) return;
+      const session = listed.find(({ id }) => id === sessionId);
+      let loaded = false;
+      try {
+        if (
+          session &&
+          useStore.getState().panes[paneId]?.sessionId === sessionId
+        ) {
+          await connectRuntime();
+          if (useStore.getState().panes[paneId]?.sessionId !== sessionId)
+            return;
+          const snapshot = await rpc.request.openSession({
+            openId: crypto.randomUUID(),
+            cwd: session.cwd,
+            id: sessionId,
+            historyOnly: true,
+          });
+          await settleRuntimeRead();
+          if (snapshot.info.id === sessionId && liveAddress(snapshot.address)) {
+            receiveSnapshot(snapshot);
+            readOpeningRecovery(snapshot.address);
+            loaded = true;
+          }
+        }
+      } catch (error) {
+        if (useStore.getState().panes[paneId]?.sessionId === sessionId)
+          showSessionReadError(error);
+      } finally {
+        useStore.setState((state) => {
+          const restoringChats = new Set(state.restoringChats);
+          restoringChats.delete(sessionId);
+          const pane = state.panes[paneId];
+          // A delayed restore must not reopen a closed pane or replace a newer choice.
+          if (loaded || pane?.sessionId !== sessionId || pane.openId)
+            return { restoringChats };
+          const [openId, target] = createLocalChat(state.bootstrap.generalCwd);
+          return {
+            restoringChats,
+            panes: { ...state.panes, [paneId]: { openId } },
+            pendingOpens: { ...state.pendingOpens, [openId]: target },
+            ...(state.activePane === paneId && state.active === sessionId
+              ? { active: undefined }
+              : {}),
+          };
+        });
+      }
+    }),
+  );
+}
+
+function newChatSelection(
+  bootstrap = useStore.getState().bootstrap,
+): ModelSelection | undefined {
+  const { models, disabledModels, defaultModel, accountCatalogs } = bootstrap;
   const available = models.filter(
     (model) =>
       (!accountCatalogs ||
@@ -1417,18 +1527,7 @@ async function openSnapshot(
             showError(error);
           });
     }
-    // Recovery bytes are available only after this project's Trust/startup completed.
-    void Promise.resolve()
-      .then(() => rpc.request.getRecovery(snapshot.address))
-      .then((state) => {
-        if (
-          liveAddress(snapshot.address) &&
-          state.hostId === snapshot.address.hostId &&
-          useStore.getState().hostId === state.hostId
-        )
-          receiveRecovery(state);
-      })
-      .catch(showSessionReadError);
+    readOpeningRecovery(snapshot.address);
     if (ownsOpeningView(openId, revision)) {
       useStore.setState({ active: snapshot.info.id });
       if (push && optimistic)
@@ -1505,6 +1604,21 @@ async function openSnapshot(
       });
     }
   }
+}
+
+function readOpeningRecovery(address: SessionAddress) {
+  // Recovery bytes are available only after this project's Trust/startup completed.
+  void Promise.resolve()
+    .then(() => rpc.request.getRecovery(address))
+    .then((state) => {
+      if (
+        liveAddress(address) &&
+        state.hostId === address.hostId &&
+        useStore.getState().hostId === state.hostId
+      )
+        receiveRecovery(state);
+    })
+    .catch(showSessionReadError);
 }
 
 export function initSessionLinks() {

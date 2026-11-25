@@ -424,28 +424,31 @@ function SidebarPage({ page }: { page: string }) {
 }
 
 function ConversationWorkspace({ active: shown }: { active: boolean }) {
+  const t = useT();
   const {
     activeSnapshot: active,
     openingSnapshot,
     openingView,
+    restoringChat,
     generalCwd,
   } = useStore(useShallow(selectConversationView));
-  const idle = shown && !openingView && !active;
+  const idle = shown && !openingView && !restoringChat && !active;
   // With no chat shown, the workspace is simply a new local draft. Drafts do
   // not start an SDK session until the first send, so this is free.
   useLayoutEffect(() => {
     if (idle && generalCwd) void openChat(generalCwd, undefined, false);
   }, [idle, generalCwd]);
+  const snapshot = openingView ? openingSnapshot : active;
   return (
     <PaneWorkspace renderChat={renderPaneChat}>
-      {openingView ? (
-        openingSnapshot ? (
-          <Chat key={chatViewKey(openingSnapshot)} snapshot={openingSnapshot} />
-        ) : (
-          <ChatOpening />
-        )
-      ) : active ? (
-        <Chat key={chatViewKey(active)} snapshot={active} />
+      {snapshot ? (
+        renderPaneChat(snapshot)
+      ) : openingView ? (
+        <ChatOpening />
+      ) : restoringChat ? (
+        <p className="muted" role="status">
+          {t["Opening chat…"]}
+        </p>
       ) : null}
     </PaneWorkspace>
   );
