@@ -33,6 +33,7 @@ import { AnnotationPopover } from "./AnnotationPopover";
 import { AskUserPanel } from "./AskUserPanel";
 import { rememberAnnotationRange } from "./annotation-highlights";
 import { imageTypes, maxImageBase64 } from "./attachment-reads";
+import { ComposerAttachments } from "./ComposerAttachments";
 import { ComposerEditor, insertEditorNewline } from "./ComposerEditor";
 import { ComposerFrame } from "./ComposerFrame";
 import { ComposerSubmit } from "./ComposerSubmit";
@@ -42,7 +43,6 @@ import { attachmentReads } from "./composer-attachments";
 import { composerHistory } from "./composer-input-history";
 import { createDraftMirror } from "./draft-mirror";
 import { drafts, emptyContent, expandedDraft } from "./draft-store";
-import { ImagePreview } from "./ImageGallery";
 import { useT } from "./i18n";
 import { MessageQueue } from "./MessageQueue";
 import { ModelPicker } from "./ModelPicker";
@@ -116,11 +116,6 @@ export function Composer({
   const previews = loads.filter((load) => load.preview);
   const { text, images, pastes, files = [], annotations = [] } = draft.content;
   const shownPastes = pastes.filter((paste) => text.includes(paste.marker));
-  const imageSources = useMemo(
-    () =>
-      images.map(({ image }) => `data:${image.mimeType};base64,${image.data}`),
-    [images],
-  );
   const [stopping, setStopping] = useState<string>();
   function stop() {
     if (stopping === key) return;
@@ -568,53 +563,22 @@ export function Composer({
                 </div>
               );
             })}
-            {images.map(({ id }, index) => (
-              <div className="composer-attachment" key={id}>
-                <ImagePreview
-                  sources={imageSources}
-                  index={index}
-                  alt={t.imageN(index + 1, images.length)}
-                />
-                <button
-                  type="button"
-                  className="composer-attachment-remove"
-                  aria-label={`${t["Remove attachment"]}: ${t.imageN(index + 1, images.length)}`}
-                  onClick={() =>
-                    drafts.edit(address, (content) => ({
-                      ...content,
-                      images: content.images.filter((item) => item.id !== id),
-                    }))
-                  }
-                >
-                  <X size={14} />
-                </button>
-              </div>
-            ))}
-            {files.map(({ id, name, path }) => {
-              return (
-                <div
-                  className="composer-attachment file"
-                  key={id}
-                  aria-description={path}
-                >
-                  <FileIcon name={name} size={28} />
-                  <span>{name}</span>
-                  <button
-                    type="button"
-                    className="composer-attachment-remove"
-                    aria-label={`${t["Remove attachment"]}: ${name}`}
-                    onClick={() =>
-                      drafts.edit(address, (content) => ({
-                        ...content,
-                        files: content.files?.filter((item) => item.id !== id),
-                      }))
-                    }
-                  >
-                    <X size={14} />
-                  </button>
-                </div>
-              );
-            })}
+            <ComposerAttachments
+              images={images}
+              files={files}
+              onRemoveImage={(id) =>
+                drafts.edit(address, (content) => ({
+                  ...content,
+                  images: content.images.filter((item) => item.id !== id),
+                }))
+              }
+              onRemoveFile={(id) =>
+                drafts.edit(address, (content) => ({
+                  ...content,
+                  files: content.files?.filter((item) => item.id !== id),
+                }))
+              }
+            />
             {previews.map((load) => (
               <div
                 className={`composer-attachment pending ${load.kind === "file" ? "file" : ""}`}
