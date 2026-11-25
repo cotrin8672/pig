@@ -94,13 +94,19 @@ function openInShell(target: string) {
   );
 }
 
+// Rust opens the first WebView while this process initializes the SDK.
+// Its attach and bootstrap frames wait in stdin until the handlers exist.
+let initialWindow = true;
 installDesktopPlatform({
   downloads: process.env.PIG_TAURI_DOWNLOADS ?? join(homedir(), "Downloads"),
   version: process.env.PIG_TAURI_VERSION ?? "—",
   usesLegacyUpdater: false,
   interactiveWidgets: true,
   defaultShell: "powershell",
-  createWindow(id, offset, handlers): DesktopWindow {
+  createWindow(requestedId, offset, handlers): DesktopWindow {
+    const alreadyOpen = initialWindow;
+    initialWindow = false;
+    const id = alreadyOpen ? "pig-initial" : requestedId;
     const events = new Map<WindowEvent, () => void>();
     let flags: Flags | undefined;
     let generation = 0;
@@ -149,7 +155,7 @@ installDesktopPlatform({
         events.get(event)?.();
       },
     });
-    write(["create", id, offset]);
+    if (!alreadyOpen) write(["create", id, offset]);
     return {
       get ptr() {
         return (flags?.handle ?? null) as Pointer | null;

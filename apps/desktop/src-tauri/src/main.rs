@@ -130,7 +130,11 @@ fn main() {
         .register_uri_scheme_protocol("pig-widget", |_, request| widget::serve(request))
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_notification::init())
-        .setup(|app| Bridge::start(app.handle()))
+        .setup(|app| {
+            Bridge::start(app.handle())?;
+            create_window(app.handle(), "pig-initial", 0.0)?;
+            Ok(())
+        })
         .invoke_handler(tauri::generate_handler![
             bridge::pig_connect,
             syntax::pig_highlight_ts,
