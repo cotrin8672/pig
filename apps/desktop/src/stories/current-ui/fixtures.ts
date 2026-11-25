@@ -8,6 +8,7 @@ import type { ModelInfo, Snapshot } from "../../shared/rpc-schema";
 import { defaultSettings } from "../../shared/settings";
 import type { Message, TranscriptRecord } from "../../shared/transcript";
 import { setStoryPreviewActive } from "../browser-rpc";
+import { reviewCompletion, spawnAgent } from "../proposals/codex-agent-data";
 
 export const scenes = [
   "conversation",
@@ -16,6 +17,7 @@ export const scenes = [
   "empty",
   "settings",
   "split",
+  "subagent",
 ] as const;
 export type PreviewArgs = {
   scene: (typeof scenes)[number];
@@ -400,6 +402,66 @@ export function createPreviewState(
     main.sessionUI = activityFixture(generation, now);
   }
   if (args.scene === "empty") main.info.title = "新しいチャット";
+  if (args.scene === "subagent") {
+    // A finished answer, then a subagent result that starts the next response.
+    const call = spawnAgent.tool.call;
+    main.transcript = {
+      ...main.transcript,
+      tools: { [call.id]: spawnAgent.tool.state ?? { status: "done" } },
+      records: [
+        ...records,
+        record("record-4", 4, {
+          role: "user",
+          content: "送信周りのレビューをサブエージェントに任せて。",
+          timestamp: now - 12000,
+        }),
+        record("record-5", 5, {
+          role: "assistant",
+          content: [
+            {
+              type: "toolCall",
+              id: call.id,
+              name: call.name,
+              arguments: call.arguments as Record<string, string>,
+            },
+          ],
+          api: "anthropic-messages",
+          provider: models[0].provider,
+          model: models[0].id,
+          usage,
+          stopReason: "toolUse",
+          timestamp: now - 11000,
+        }),
+        record("record-6", 6, {
+          role: "toolResult",
+          toolCallId: call.id,
+          toolName: call.name,
+          content: [{ type: "text", text: "Spawned review." }],
+          isError: false,
+          timestamp: now - 10500,
+        }),
+        answer(
+          "record-7",
+          7,
+          "`review` に任せました。結果が届いたら続きを進めます。",
+          now - 10000,
+        ),
+        {
+          ...reviewCompletion,
+          id: "record-8",
+          entryId: "record-8",
+          parentId: "record-7",
+          order: 8,
+        },
+        answer(
+          "record-9",
+          9,
+          "レビュー結果が届きました。2件とも再現できたので、下書きの消去順から直します。",
+          now - 2000,
+        ),
+      ],
+    };
+  }
   return {
     ...initial,
     initialized: true,

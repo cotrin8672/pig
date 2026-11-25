@@ -1,6 +1,6 @@
 /** pi packages verified with pig. `verified` is the version tested with pig, not a pin. */
 export const SUPPORTED_EXTENSIONS = [
-  { name: "pi-subagents", verified: "0.89.1" },
+  { name: "@ogulcancelik/pi-codex-subagents", verified: "0.3.5" },
   { name: "pi-ask-user", verified: "0.17.2" },
   { name: "pi-schedule-prompt", verified: "0.5.1" },
   { name: "pi-lens", verified: "4.5.1" },

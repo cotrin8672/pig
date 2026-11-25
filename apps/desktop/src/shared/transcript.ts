@@ -102,7 +102,7 @@ export function hydrate(messages: Message[]): Transcript {
 
 export interface ResponseStats {
   imported?: boolean;
-  /** Turn index of the prompting user message, if it is in the transcript. */
+  /** Turn index of the prompting user or extension message, if it is in the transcript. */
   userIndex?: number;
   stopReason: string;
   durationMs: number;
@@ -125,7 +125,18 @@ export interface ResponseStats {
   text: string;
 }
 
-/** Aggregates the assistant messages between the previous user turn and `end`. */
+/**
+ * A response starts at a user prompt, or at an extension message (subagent
+ * results and the like) that arrived after the previous response had ended.
+ * `previous` is the preceding message record.
+ */
+export const startsResponse = (message: Message, previous?: Message) =>
+  message.role === "user" ||
+  (message.role === "custom" &&
+    previous?.role === "assistant" &&
+    previous.stopReason !== "toolUse");
+
+/** Aggregates the assistant messages between the previous response start and `end`. */
 export function responseStats(
   turns: readonly { message: Message }[],
   end: number,
@@ -148,7 +159,12 @@ export function responseStats(
   let start = last.timestamp;
   for (let i = end; i >= 0; i--) {
     const message = turns[i].message;
-    if (message.role === "user") {
+    // Callers may pass one response, so a leading extension message is its start.
+    const previous = turns[i - 1]?.message;
+    if (
+      startsResponse(message, previous) ||
+      (!previous && message.role === "custom")
+    ) {
       userIndex = i;
       start = message.timestamp;
       break;

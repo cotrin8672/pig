@@ -332,6 +332,100 @@ export function SubagentRenderer({ data }: ChatRendererProps<"tool">) {
   );
 }
 
+/* ---------------- spawn_agent … (pi-codex-subagents) ---------------- */
+
+const CODEX_AGENT_TOOLS = new Set([
+  "spawn_agent",
+  "wait_agent",
+  "wait_all_agents",
+  "list_agents",
+  "read_agent_response",
+  "send_message",
+  "interrupt_agent",
+]);
+function outputJson(tool: Tool): Value {
+  try {
+    return obj(JSON.parse(outputText(tool)));
+  } catch {
+    return {}; // Truncated output; the raw text is shown instead.
+  }
+}
+function agentLane(entry: unknown): Lane {
+  const e = obj(entry);
+  const state = str(e.status) || str(e.agent_status);
+  return {
+    agent: str(e.agent_name) || str(e.agentName),
+    task: "",
+    state:
+      state === "running" || state === "starting"
+        ? "running"
+        : state === "failed" || state === "interrupted"
+          ? "error"
+          : "done",
+    output: str(e.finalResponse) || str(e.error),
+  };
+}
+const mention = (name: unknown) => (str(name) ? `@${str(name)}` : "");
+const targets = (value: unknown) =>
+  Array.isArray(value) ? value.map(mention).filter(Boolean).join(" · ") : "";
+
+/** Codex-style agent tools: one row each, child results as agent lanes. */
+export function CodexAgentRenderer({ data }: ChatRendererProps<"tool">) {
+  const t = useT().agentTools;
+  const tone = status(data);
+  const a = args(data);
+  const d = details(data);
+  const name = data.call.name;
+  const done = tone === "done";
+  let target = mention(a.target);
+  let meta = "";
+  let lanes: Lane[] = [];
+  let prompt = "";
+  if (name === "spawn_agent") {
+    target = mention(a.task_name);
+    meta = [str(a.agent_type), str(a.model)].filter(Boolean).join(" · ");
+    prompt = str(a.message);
+  } else if (name === "send_message") {
+    meta = d.delivery === "steer" ? t.steered : d.delivery ? t.newTurn : "";
+    prompt = str(a.message);
+  } else if (name === "interrupt_agent") {
+    meta = t.statuses[str(d.previous_status)] ?? str(d.previous_status);
+  } else if (name === "wait_agent") {
+    target = targets(a.targets) || t.anyAgent;
+    const event = outputJson(data).event;
+    if (event) lanes = [agentLane(event)];
+  } else if (name === "wait_all_agents") {
+    target = targets(a.targets) || t.allAgents;
+    const responses = outputJson(data).responses;
+    if (Array.isArray(responses)) lanes = responses.map(agentLane);
+  } else if (name === "read_agent_response") {
+    const response = outputJson(data);
+    if (response.agent_name) lanes = [agentLane(response)];
+  } else if (name === "list_agents") {
+    if (Array.isArray(d.agents)) lanes = d.agents.map(agentLane);
+    if (typeof d.total === "number") meta = t.agents(d.total);
+  }
+  return (
+    <ToolRow
+      defaultOpen={done && lanes.length > 0}
+      icon={<Bot size={14} />}
+      verb={t.agentVerbs[name] ?? name}
+      target={target}
+      meta={meta}
+      state={data.state}
+      status={tone}
+    >
+      {done && lanes.length ? (
+        <Lanes lanes={lanes} t={t} />
+      ) : done && prompt ? (
+        <blockquote className="agent-prompt">{prompt}</blockquote>
+      ) : (
+        <ToolResultContent result={data.state?.result} />
+      )}
+    </ToolRow>
+  );
+}
+
 /* ---------------- schedule_prompt (pi-schedule-prompt) ---------------- */
 
 /** Common cron shapes in plain words; anything else stays the expression. */
@@ -469,6 +563,12 @@ export const subagentRenderer: ChatRenderer<"tool"> = {
   kind: "tool",
   match: named("subagent"),
   component: SubagentRenderer,
+};
+export const codexAgentRenderer: ChatRenderer<"tool"> = {
+  id: "builtin:pi-codex-subagents",
+  kind: "tool",
+  match: (data) => !data.card && CODEX_AGENT_TOOLS.has(data.call.name),
+  component: CodexAgentRenderer,
 };
 export const schedulePromptRenderer: ChatRenderer<"tool"> = {
   id: "builtin:pi-schedule-prompt",

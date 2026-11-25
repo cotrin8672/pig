@@ -112,4 +112,28 @@ describe("tool-view", () => {
     // ...but not while it is still calling tools.
     expect(finishedWork(records.slice(0, 3), true, all).size).toBe(0);
   });
+
+  test("an extension message after a finished response folds each response on its own", () => {
+    const all = () => true;
+    const step = () =>
+      rec({ role: "assistant", content: [call], stopReason: "toolUse" });
+    const answer = () =>
+      rec({ role: "assistant", content: [text("a")], stopReason: "stop" });
+    const steer = () =>
+      rec({ role: "custom", customType: "x", content: "s", display: true });
+    const records = [
+      user(),
+      step(),
+      steer(), // mid-run steering stays inside the response
+      answer(),
+      steer(), // arrives after the answer: a new response
+      step(),
+      answer(),
+    ];
+    const work = finishedWork(records, false, all);
+    expect(work.get(1)).toMatchObject({ first: 1, final: 3 });
+    expect(work.get(2)).toBe(work.get(1));
+    expect(work.has(4)).toBe(false);
+    expect(work.get(5)).toMatchObject({ first: 5, final: 6 });
+  });
 });

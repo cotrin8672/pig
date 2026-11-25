@@ -4,6 +4,7 @@ import type { TranscriptRecord } from "../shared/transcript";
 import { useT } from "./i18n";
 import "./scheduled-prompt.css";
 
+import { SenderHead } from "./SenderBubble";
 import { scheduledMarker } from "./scheduled-prompt-model";
 
 /** The label riding on top of a scheduled prompt's bubble. */
@@ -16,12 +17,12 @@ export function ScheduledHead({
 }) {
   const t = useT().agentTools;
   return (
-    <span className="scheduled-head">
-      <CalendarClock size={12} aria-hidden="true" />
-      <span>{t.scheduled}</span>
-      <strong>{name}</strong>
-      {session && <span className="scheduled-session">{session}</span>}
-    </span>
+    <SenderHead
+      icon={<CalendarClock size={12} aria-hidden="true" />}
+      label={t.scheduled}
+      name={name}
+      detail={session}
+    />
   );
 }
 
@@ -35,7 +36,7 @@ export function ScheduledPromptRecord({ data }: ChatRendererProps<"custom">) {
       <div className="response-turn">
         <article className="message user">
           <div className="user-turn">
-            <div className="user-bubble scheduled-bubble">
+            <div className="user-bubble sender-bubble">
               <ScheduledHead name={marker.jobName} session={marker.model} />
               {marker.prompt}
             </div>

@@ -1,0 +1,60 @@
+/* A user-side bubble sent by someone other than the user (a schedule, a subagent, an extension). */
+.user-bubble.sender-bubble {
+  display: grid;
+  gap: 4px;
+  border: 1px solid color-mix(in srgb, var(--ds-info) 45%, transparent);
+  background: color-mix(in srgb, var(--ds-info) 26%, var(--ds-bg-tertiary));
+}
+.sender-head {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  color: var(--ds-info);
+  font-size: var(--text-xs);
+  white-space: nowrap;
+}
+.sender-head strong {
+  overflow: hidden;
+  color: var(--ds-text-primary);
+  font-weight: var(--font-weight-medium);
+  text-overflow: ellipsis;
+}
+.sender-detail {
+  color: var(--ds-text-muted);
+}
+.sender-detail::before {
+  content: "· ";
+}
+.sender-head[data-failed="true"],
+.sender-head[data-failed="true"] .sender-detail {
+  color: var(--ds-error);
+}
+/* Long messages to the agent are folded; the toggle sits at the bubble's foot. */
+.sender-body {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 12;
+  overflow-wrap: anywhere;
+}
+.sender-body[data-open] {
+  -webkit-line-clamp: unset;
+}
+.sender-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-self: start;
+  gap: 4px;
+  margin-top: 4px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--ds-text-secondary);
+  font: inherit;
+  font-size: var(--text-sm);
+  cursor: pointer;
+}
+.sender-toggle:hover {
+  color: var(--ds-text-primary);
+}

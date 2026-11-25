@@ -1,6 +1,7 @@
 import {
   type ResponseStats,
   responseStats,
+  startsResponse,
   type TranscriptRecord,
 } from "../shared/transcript";
 
@@ -72,7 +73,7 @@ export function createResponseFooterIndex() {
     }
     for (const record of records) {
       if (record.kind !== "message") continue;
-      if (record.message.role === "user") {
+      if (startsResponse(record.message, turns.at(-1)?.message)) {
         finish();
         turns = [];
         start = turnIndex;

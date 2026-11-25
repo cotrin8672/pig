@@ -167,11 +167,11 @@ const send = {
 };
 const marketPackages: MarketPackage[] = [
   [
-    "pi-subagents",
-    "0.89.1",
-    "nicobailon",
+    "@ogulcancelik/pi-codex-subagents",
+    "0.3.5",
+    "ogulcancelik",
     4200,
-    "Foreground and background subagents with an API for other extensions.",
+    "Codex-shaped, session-scoped subagents for Pi.",
   ],
   [
     "pi-ask-user",

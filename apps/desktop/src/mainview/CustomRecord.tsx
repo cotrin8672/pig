@@ -6,14 +6,15 @@ import { CompactionRecord } from "./CompactionRenderer";
 import { customImageSources, customPresentation } from "./custom-data";
 import { ImageGallery } from "./ImageGallery";
 import { RecordData } from "./RecordData";
+import { InboundMessage } from "./SenderBubble";
 
 export function BuiltinCustomRecord({ data }: ChatRendererProps<"custom">) {
-  return (
-    <RecordData
-      record={data.raw as TranscriptRecord}
-      images={<ImageGallery sources={customImageSources(data.content)} />}
-    />
-  );
+  const record = data.raw as TranscriptRecord;
+  const images = <ImageGallery sources={customImageSources(data.content)} />;
+  // Extension messages reach the agent like a prompt; draw them as one.
+  if (record.kind === "message" && record.message.role === "custom")
+    return <InboundMessage record={record} images={images} />;
+  return <RecordData record={record} images={images} />;
 }
 
 /** Saved and live extension JSON use the same renderer contract. */

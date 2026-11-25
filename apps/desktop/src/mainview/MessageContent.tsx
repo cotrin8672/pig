@@ -467,7 +467,7 @@ export const UserMessage = memo(function UserMessage({
       ) : (
         attachments.body &&
         (scheduled ? (
-          <div className="user-bubble scheduled-bubble">
+          <div className="user-bubble sender-bubble">
             <ScheduledHead name={scheduled} />
             {attachments.body}
           </div>

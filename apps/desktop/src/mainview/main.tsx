@@ -1,6 +1,7 @@
 import { createRoot } from "react-dom/client";
 import {
   askUserRenderer,
+  codexAgentRenderer,
   schedulePromptRenderer,
   subagentRenderer,
 } from "./AgentToolRenderers";
@@ -28,6 +29,7 @@ registerBuiltinChatRenderers([
   applyPatchRenderer,
   askUserRenderer,
   subagentRenderer,
+  codexAgentRenderer,
   schedulePromptRenderer,
   scheduledPromptRenderer,
 ]);

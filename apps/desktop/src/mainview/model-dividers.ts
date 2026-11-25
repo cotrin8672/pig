@@ -1,5 +1,9 @@
 import type { ModelInfo } from "../shared/rpc-schema";
-import type { TranscriptRecord } from "../shared/transcript";
+import {
+  type Message,
+  startsResponse,
+  type TranscriptRecord,
+} from "../shared/transcript";
 
 type Model = Readonly<Pick<ModelInfo, "provider" | "id">>;
 
@@ -8,12 +12,18 @@ export function modelDividers(records: TranscriptRecord[]) {
   let previous: Model | undefined;
   let userId: string | undefined;
   let answered = false;
+  let last: Message | undefined;
   for (const record of records) {
     if (record.kind !== "message") continue;
     const { message } = record;
-    if (message.role === "user") {
-      // Hidden resume prompts are turn boundaries but cannot carry the divider.
-      userId = record.display === false ? undefined : record.id;
+    const before = last;
+    last = message;
+    if (startsResponse(message, before)) {
+      // Hidden resume prompts and extension messages are turn boundaries but cannot carry the divider.
+      userId =
+        message.role === "user" && record.display !== false
+          ? record.id
+          : undefined;
       answered = false;
     } else if (message.role === "assistant") {
       const { provider, model: id } = message;

@@ -183,3 +183,86 @@ test("fire markers claim only later prompts, once each and in marker order", () 
   ]);
   expect(scheduledUsers([records[0]])).toEqual(new Map());
 });
+
+test("pi-codex-subagents tools are one row each with child results as lanes", async () => {
+  const { CodexAgentRenderer } = await import("./AgentToolRenderers");
+  const row = (name: string, args: Record<string, unknown>, state: unknown) =>
+    renderToStaticMarkup(
+      <CodexAgentRenderer
+        DefaultRenderer={none}
+        data={{
+          call: { id: name, name, arguments: args },
+          live: false,
+          state: state as never,
+        }}
+      />,
+    );
+  const spawn = row(
+    "spawn_agent",
+    { task_name: "review", message: "Check the diff", agent_type: "reviewer" },
+    done("Spawned review.", { task_name: "review" }),
+  );
+  for (const text of [t.agentVerbs.spawn_agent, "@review", "reviewer"])
+    expect(spawn).toContain(text);
+  expect(spawn).toContain('class="tool-row done"');
+  const wait = row(
+    "wait_all_agents",
+    {},
+    done(
+      JSON.stringify({
+        message: "done",
+        responses: [
+          { agent_name: "a", status: "completed", finalResponse: "ok" },
+          { agent_name: "b", status: "failed", error: "boom" },
+        ],
+      }),
+    ),
+  );
+  expect(wait).toContain(t.allAgents);
+  expect(wait).toContain('class="agent-lanes"');
+  expect(wait).toContain('data-state="error"');
+  expect(wait).toContain("@b");
+});
+
+test("extension messages draw as a sender bubble, subagent results by agent name", async () => {
+  const { BuiltinCustomRecord } = await import("./CustomRecord");
+  const record = (customType: string, content: unknown, details?: unknown) =>
+    ({
+      id: customType,
+      parentId: null,
+      branchId: "b",
+      order: 0,
+      kind: "message",
+      message: {
+        role: "custom",
+        customType,
+        content,
+        display: true,
+        details,
+        timestamp: 0,
+      },
+    }) as TranscriptRecord;
+  const draw = (raw: TranscriptRecord) =>
+    renderToStaticMarkup(
+      <BuiltinCustomRecord
+        DefaultRenderer={none}
+        data={{ id: raw.id, customType: "", content: null, raw }}
+      />,
+    );
+  const completion = draw(
+    record(
+      "pi-codex-subagent-completion",
+      `<subagent_notification>\n${JSON.stringify({ agent_name: "review", status: "failed", final_response: "Found 2 bugs" })}\n</subagent_notification>`,
+      { agent_name: "review", status: "failed" },
+    ),
+  );
+  expect(completion).toContain('class="user-bubble sender-bubble"');
+  expect(completion).toContain("<strong>review</strong>");
+  expect(completion).toContain(t.statuses.failed);
+  expect(completion).toContain("Found 2 bugs");
+  expect(completion).not.toContain("subagent_notification");
+  expect(completion).not.toContain("custom-record");
+  const other = draw(record("supervisor_request", "Need a decision"));
+  expect(other).toContain("<strong>supervisor_request</strong>");
+  expect(other).toContain("Need a decision");
+});
