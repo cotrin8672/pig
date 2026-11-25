@@ -1,0 +1,156 @@
+.desktop-motion {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+}
+.desktop-motion-guide {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 20px;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 16px;
+  background: var(--ds-bg-primary);
+  border-bottom: 1px solid var(--ds-border-strong);
+}
+.desktop-motion-guide p,
+.desktop-motion-guide small {
+  margin: 2px 0 0;
+  color: var(--ds-text-secondary);
+  font-size: var(--text-sm);
+}
+.desktop-motion-guide small {
+  display: none;
+}
+.desktop-motion-stage {
+  position: relative;
+  min-width: 0;
+  container-type: size;
+}
+/* The guide sits above the window, outside the production viewport. */
+.desktop-motion-stage .main-viewport {
+  height: calc(100cqh - 16px);
+}
+@media (prefers-reduced-motion: reduce) {
+  .desktop-motion-guide small {
+    display: block;
+  }
+}
+
+/* Current leaves the shipped interactions untouched, including native details. */
+@media (prefers-reduced-motion: no-preference) {
+  .desktop-motion-stage[data-motion="glide"] {
+    --lab-time: var(--motion-duration-normal);
+    --lab-curve: var(--motion-ease-out);
+    --lab-reverse-curve: cubic-bezier(0.64, 0, 0.78, 0);
+    --lab-rise: 6px;
+    --lab-scale: 0.98;
+    --lab-lift: -2px;
+  }
+  .desktop-motion-stage[data-motion="spring"] {
+    --lab-time: var(--motion-duration-slow);
+    --lab-curve: cubic-bezier(0.2, 1.48, 0.38, 1);
+    --lab-reverse-curve: cubic-bezier(0.62, 0, 0.8, -0.48);
+    --lab-rise: 12px;
+    --lab-scale: 0.93;
+    --lab-lift: -4px;
+  }
+  .desktop-motion-stage:not([data-motion="current"]) {
+    /* Move the glyph, not the button hit area or its tooltip anchor. */
+    & .sidebar-footer :is(.sidebar-icon, .notification-bell) > svg {
+      transition: transform var(--lab-time) var(--lab-curve);
+    }
+    &
+      .sidebar-footer
+      :is(.sidebar-icon, .notification-bell):is(:hover, :focus-visible)
+      > svg {
+      transform: translateY(var(--lab-lift)) scale(1.12);
+    }
+    & .sidebar-footer :is(.sidebar-icon, .notification-bell):active > svg {
+      transform: scale(0.92);
+    }
+    & .model-panel {
+      transform-origin: bottom right;
+      --lab-offset: translateY(var(--lab-rise)) scale(var(--lab-scale));
+    }
+    & .content-page-shell {
+      --lab-offset: translateX(var(--lab-rise));
+    }
+    & .project-threads > .thread-row {
+      --lab-offset: translateY(calc(-1 * var(--lab-rise)));
+    }
+    & :is(.content-page-shell, .model-panel, .project-threads > .thread-row) {
+      animation: desktop-motion-shift var(--lab-time) var(--lab-curve);
+    }
+    & .project-threads > .thread-row {
+      animation-name: desktop-motion-row;
+    }
+    & .project-chevron {
+      transition: transform var(--lab-time) var(--lab-curve);
+    }
+    & .notification-panel {
+      transform-origin: bottom center;
+      --lab-offset: translateY(var(--lab-rise)) scale(var(--lab-scale));
+    }
+    & .notification-center[open] > .notification-panel {
+      animation: desktop-motion-shift var(--lab-time) var(--lab-curve);
+    }
+    & .notification-entry {
+      --row-delay: 0ms;
+      transition:
+        transform var(--lab-time) var(--lab-curve) var(--row-delay),
+        opacity var(--lab-time) var(--lab-curve) var(--row-delay);
+      &:nth-child(2) {
+        --row-delay: 24ms;
+      }
+      &:nth-child(n + 3) {
+        --row-delay: 48ms;
+      }
+    }
+    & .notification-center:not([open]) .notification-entry {
+      opacity: 0;
+      transform: translateY(var(--lab-rise));
+      transition-delay: calc(48ms - var(--row-delay));
+      transition-timing-function: var(--lab-reverse-curve);
+    }
+    & .notification-center::details-content {
+      transition: content-visibility calc(var(--lab-time) + 48ms) allow-discrete;
+    }
+    & .notification-center:not([open]) > .notification-panel {
+      animation: desktop-motion-gather var(--lab-time) var(--lab-reverse-curve)
+        48ms both;
+      /* biome-ignore lint/correctness/noUnknownProperty: Keep the fading details contents out of both pointer and keyboard navigation. */
+      interactivity: inert;
+    }
+    & .model-picker:has(> [data-lab-exit])::details-content {
+      content-visibility: visible;
+    }
+    & .content-page[data-lab-exit] {
+      z-index: 1;
+    }
+    & .main-viewport:has(> .content-page[data-lab-exit]) > .main-layer {
+      visibility: hidden;
+    }
+    & .model-picker[open] > [data-lab-exit],
+    & .project-threads:not([hidden]) + [data-lab-threads] {
+      display: none;
+    }
+  }
+}
+@keyframes desktop-motion-row {
+  from {
+    opacity: 0;
+    transform: var(--lab-offset);
+  }
+}
+@keyframes desktop-motion-shift {
+  from {
+    transform: var(--lab-offset);
+  }
+}
+@keyframes desktop-motion-gather {
+  to {
+    transform: var(--lab-offset);
+  }
+}

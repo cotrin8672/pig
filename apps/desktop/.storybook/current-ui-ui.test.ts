@@ -104,6 +104,107 @@ test("the actual App and its feature components render in isolated Storybook pre
             ),
           ),
         ).toEqual([]);
+        await navigate(
+          "prototypes-desktop-motion--playground",
+          "!!document.querySelector('.desktop-motion-stage .model-picker')",
+        );
+        const media = (value: string) =>
+          browser.command("Emulation.setEmulatedMedia", {
+            features: [{ name: "prefers-reduced-motion", value }],
+          });
+        await media("no-preference");
+        // Compare painted geometry at mirrored points in the two timelines.
+        async function trajectory(
+          trigger: string,
+          surface: string,
+          entering: boolean,
+        ) {
+          return browser.evaluate<number[][]>(`(async () => {
+            const d = selector => document.querySelector(selector);
+            d('${trigger}').click();
+            const end = performance.now() + 2200;
+            do {
+              await new Promise(requestAnimationFrame);
+              const node = d('${surface}');
+              const animation = node?.getAnimations().find(a =>
+                ['desktop-motion-shift','desktop-motion-gather'].includes(a.animationName));
+              if (!animation || !node.checkVisibility()) continue;
+              animation.pause();
+              const {duration,delay} = animation.effect.getTiming();
+              const samples = [0.02, 0.3, 0.6, 0.98].map(p => {
+                const forward = ${entering} || animation.playbackRate < 0;
+                animation.currentTime = delay + duration * (forward ? p : 1-p);
+                const {x,y,width} = node.getBoundingClientRect();
+                return [x,y,width,Number(getComputedStyle(node).opacity)];
+              });
+              animation.finish();
+              return samples;
+            } while (performance.now() < end);
+            throw Error('No visible transform on ${surface}');
+          })()`);
+        }
+        await browser.command("Animation.setPlaybackRate", {
+          playbackRate: 0.4,
+        });
+        for (const spring of [false, true]) {
+          if (spring)
+            await browser.evaluate(
+              "document.querySelector('.desktop-motion-guide button:last-child').click()",
+            );
+          for (const [trigger, panel, close] of [
+            [
+              ".sidebar-icon",
+              ".settings-page .content-page-shell",
+              ".back-button",
+            ],
+            [".notification-bell", ".notification-panel", ".notification-bell"],
+            [".model-picker summary", ".model-panel", ".model-picker summary"],
+          ]) {
+            const opening = await trajectory(trigger, panel, true);
+            // Let the staggered notification rows and native details settle.
+            if (panel === ".notification-panel") await Bun.sleep(950);
+            const closing = await trajectory(close, panel, false);
+            const axis = panel.includes("page") ? 0 : 2;
+            expect(
+              Math.abs(opening[0][axis] - opening[3][axis]),
+            ).toBeGreaterThan(3);
+            for (let i = 0; i < opening.length; i++) {
+              expect(opening[i][3]).toBe(1);
+              expect(closing[i][3]).toBe(1);
+              for (const k of [0, 1, 2])
+                expect(Math.abs(opening[i][k] - closing[i][k])).toBeLessThan(
+                  0.25,
+                );
+            }
+            if (spring)
+              expect(
+                (opening[2][axis] - opening[3][axis]) * (axis === 0 ? -1 : 1),
+              ).toBeGreaterThan(0.1);
+          }
+        }
+        await browser.command("Animation.setPlaybackRate", { playbackRate: 1 });
+        await media("reduce");
+        await browser.evaluate(
+          "document.querySelector('.model-picker summary').click()",
+        );
+        await waitFor("!!document.querySelector('.model-panel')");
+        const noPreviewMotion =
+          "!getComputedStyle(document.querySelector('.model-panel')).animationName.includes('desktop-motion')";
+        await waitFor(noPreviewMotion);
+        await browser.evaluate(
+          "document.querySelector('.model-picker summary').click()",
+        );
+        await waitFor("!document.querySelector('.model-panel')");
+        await media("no-preference");
+        await browser.evaluate(
+          "document.querySelector('.desktop-motion-guide button').click()",
+        );
+        await browser.evaluate(
+          "document.querySelector('.model-picker summary').click()",
+        );
+        await waitFor("!!document.querySelector('.model-panel')");
+        expect(await browser.evaluate(noPreviewMotion)).toBe(true);
+        await browser.command("Emulation.setEmulatedMedia", { features: [] });
         for (const scene of [
           "conversation",
           "running",
