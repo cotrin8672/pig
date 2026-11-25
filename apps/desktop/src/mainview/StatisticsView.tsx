@@ -7,7 +7,7 @@ import {
   tokenKinds,
 } from "../shared/statistics";
 import { ContentPage } from "./ContentPage";
-import { type TipPlacement, useFollowTip } from "./follow-tip";
+import { useFollowTip } from "./follow-tip";
 import { useT } from "./i18n";
 import "./statistics.css";
 
@@ -64,11 +64,7 @@ function Summary({ data }: { data: StatisticsData }) {
 function DailyChart({ data }: { data: StatisticsData }) {
   const t = useT().statisticsText;
   // Centred on the column, just inside its top.
-  const tip = useFollowTip<number>((box, size) => ({
-    left: box.left + box.width / 2 - size.width / 2,
-    top: box.top + 8,
-    side: "bottom",
-  }));
+  const tip = useFollowTip<number>("bottom");
   const { active, open, leave } = tip;
   const step = Math.max(1, Math.ceil(data.days.length / 14));
   const columns = data.days
@@ -490,19 +486,6 @@ type Slice = { id: string; label: string; value: number; color: string };
 
 const RING_R = 15.9155; // viewBox 42, circumference 100
 const RING_WIDTH = 3.2;
-// Above the hovered point (a slice's midpoint), like the shared Tooltip.
-const above = (box: DOMRect, size: DOMRect): TipPlacement =>
-  box.top - size.height - 8 < 8
-    ? {
-        left: box.left - size.width / 2,
-        top: box.bottom + 8,
-        side: "bottom",
-      }
-    : {
-        left: box.left - size.width / 2,
-        top: box.top - size.height - 8,
-        side: "top",
-      };
 
 /**
  * Donut with its legend and values next to it: no hover needed to read it.
@@ -528,7 +511,7 @@ function Donut({
   // A small gap separates slices like the 1px seams elsewhere in the UI.
   const gap = slices.filter((s) => s.value > 0).length > 1 ? 1 : 0;
   const ring = useRef<SVGSVGElement>(null);
-  const tip = useFollowTip<string>(above);
+  const tip = useFollowTip<string>("top");
   // Clockwise from 12 o'clock, in percent of the circumference.
   let start = 0;
   const arcs = slices.map((s) => {

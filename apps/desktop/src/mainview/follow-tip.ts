@@ -1,3 +1,4 @@
+import { computePosition, flip, offset, shift } from "@floating-ui/dom";
 import {
   useCallback,
   useEffect,
@@ -6,7 +7,6 @@ import {
   useRef,
   useState,
 } from "react";
-import type { TooltipSide } from "./Tooltip";
 
 /**
  * One hover popover per chart (docs/ui-guidelines.md「ツールチップ」): moving
@@ -16,15 +16,12 @@ import type { TooltipSide } from "./Tooltip";
  * A short close delay lets the pointer cross gaps and into the panel; Escape,
  * scrolling and resizing close it.
  */
-export type TipPlacement = { left: number; top: number; side: TooltipSide };
-type Place = (anchor: DOMRect, size: DOMRect) => TipPlacement;
-
-export function useFollowTip<K extends string | number>(place: Place) {
+export function useFollowTip<K extends string | number>(
+  side: "top" | "bottom",
+) {
   const id = useId();
   const panel = useRef<HTMLDivElement>(null);
   const anchor = useRef<() => DOMRect>(undefined);
-  const placeRef = useRef(place);
-  placeRef.current = place;
   const timer = useRef<ReturnType<typeof setTimeout>>(undefined);
   const [active, setActive] = useState<K | null>(null);
   const close = useCallback(() => {
@@ -61,12 +58,28 @@ export function useFollowTip<K extends string | number>(place: Place) {
     const target = anchor.current;
     if (active === null || !popup || !target) return;
     if (!popup.matches(":popover-open")) popup.showPopover();
-    const size = popup.getBoundingClientRect();
-    const { left, top, side } = placeRef.current(target(), size);
-    popup.style.left = `${Math.max(8, Math.min(left, innerWidth - size.width - 8))}px`;
-    popup.style.top = `${Math.max(8, Math.min(top, innerHeight - size.height - 8))}px`;
-    popup.dataset.side = side;
-  }, [active]);
+    const box = target();
+    // Both chart anchors are points: the column's top centre or a slice midpoint.
+    const point = new DOMRect(box.left + box.width / 2, box.top);
+    let current = true;
+    void computePosition({ getBoundingClientRect: () => point }, popup, {
+      strategy: "fixed",
+      placement: side,
+      middleware: [
+        offset(8),
+        side === "top" && flip({ padding: 8 }),
+        shift({ padding: 8, crossAxis: true }),
+      ],
+    }).then(({ x, y, placement }) => {
+      if (!current) return;
+      popup.style.left = `${x}px`;
+      popup.style.top = `${y}px`;
+      popup.dataset.side = placement;
+    });
+    return () => {
+      current = false;
+    };
+  }, [active, side]);
   return {
     active,
     open,

@@ -23,6 +23,7 @@
     "@earendil-works/pi-ai": "1.5.2",
     "@earendil-works/pi-coding-agent": "1.5.2",
     "@earendil-works/pi-tui": "1.5.2",
+    "@floating-ui/dom": "1.8.0",
     "@lobehub/icons": "6.15.0",
     "@material/material-color-utilities": "0.4.0",
     "@pig/chat-renderers": "workspace:*",

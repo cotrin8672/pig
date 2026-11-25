@@ -1,6 +1,12 @@
+import {
+  autoUpdate,
+  computePosition,
+  flip,
+  offset,
+  shift,
+} from "@floating-ui/dom";
 import { MessageSquareQuote } from "lucide-react";
 import {
-  type CSSProperties,
   type RefObject,
   useEffect,
   useLayoutEffect,
@@ -45,14 +51,12 @@ function responseSelection(root?: HTMLElement | null) {
   return { range: range.cloneRange(), quote };
 }
 
-type Target = { range: Range; quote: string; rect: DOMRect };
+type Target = { range: Range; quote: string };
 const measure = (range: Range) => {
   const rects = range.getClientRects();
   // Anchor on the first selected line, where the eye starts reading.
   return rects.length ? rects[0] : range.getBoundingClientRect();
 };
-const gap = 10;
-const margin = 8;
 
 /** Select text in an agent response, then attach a comment on it. */
 export function AnnotationPopover({
@@ -69,20 +73,51 @@ export function AnnotationPopover({
   const editingRef = useRef(false);
   editingRef.current = editing;
   const panel = useRef<HTMLDivElement>(null);
-  const [size, setSize] = useState({ width: 0, height: 0 });
   useLayoutEffect(() => {
     const element = panel.current;
-    if (!element) return;
-    const next = { width: element.offsetWidth, height: element.offsetHeight };
-    if (next.width !== size.width || next.height !== size.height) setSize(next);
-  });
+    if (!element || !target) return;
+    const start = target.range.startContainer;
+    const reference = {
+      contextElement:
+        (start instanceof Element ? start : start.parentElement) ?? undefined,
+      getBoundingClientRect: () => measure(target.range),
+    };
+    let revision = 0;
+    const stop = autoUpdate(reference, element, async () => {
+      const current = ++revision;
+      const { x, y, placement, middlewareData } = await computePosition(
+        reference,
+        element,
+        {
+          strategy: "fixed",
+          placement: "top",
+          middleware: [offset(10), flip({ padding: 8 }), shift({ padding: 8 })],
+        },
+      );
+      if (current !== revision) return;
+      Object.assign(element.style, {
+        left: `${x}px`,
+        top: `${y}px`,
+        visibility: "visible",
+      });
+      element.style.setProperty(
+        "--tail-x",
+        `clamp(16px, calc(50% - ${middlewareData.shift?.x ?? 0}px), calc(100% - 16px))`,
+      );
+      element.dataset.side = placement === "top" ? "above" : "below";
+    });
+    return () => {
+      revision++;
+      stop();
+    };
+  }, [target]);
 
   useEffect(() => {
     let selecting = false;
     const update = () => {
       if (editingRef.current || selecting) return;
       const found = responseSelection(selectionRoot?.current);
-      setTarget(found && { ...found, rect: measure(found.range) });
+      setTarget(found);
     };
     const startSelection = (event: PointerEvent) => {
       if (
@@ -111,15 +146,6 @@ export function AnnotationPopover({
       selecting = false;
       if (!editingRef.current) setTarget(undefined);
     };
-    // Follow the anchor when the thread scrolls or the window resizes.
-    const reposition = () =>
-      setTarget(
-        (current) =>
-          current && {
-            ...current,
-            rect: measure(current.range),
-          },
-      );
     // Pages cover the chat by making it inert without unmounting it; the
     // selection survives there, so drop the bubble instead of floating it
     // over the covering page.
@@ -139,8 +165,6 @@ export function AnnotationPopover({
     document.addEventListener("pointerup", finishSelection, true);
     document.addEventListener("pointercancel", cancelSelection, true);
     window.addEventListener("blur", cancelSelection);
-    window.addEventListener("scroll", reposition, true);
-    window.addEventListener("resize", reposition);
     return () => {
       covered.disconnect();
       document.removeEventListener("selectionchange", update);
@@ -148,8 +172,6 @@ export function AnnotationPopover({
       document.removeEventListener("pointerup", finishSelection, true);
       document.removeEventListener("pointercancel", cancelSelection, true);
       window.removeEventListener("blur", cancelSelection);
-      window.removeEventListener("scroll", reposition, true);
-      window.removeEventListener("resize", reposition);
     };
   }, [selectionRoot]);
 
@@ -189,29 +211,13 @@ export function AnnotationPopover({
   }
 
   if (!target) return null;
-  const { rect } = target;
-  // Sit above the selection, like a speech bubble; flip below only when it would clip.
-  const above = rect.top - gap - size.height >= margin;
-  const center = rect.left + rect.width / 2;
-  const left = Math.min(
-    Math.max(margin, center - size.width / 2),
-    window.innerWidth - size.width - margin,
-  );
-  const style: CSSProperties & Record<"--tail-x", string> = {
-    left,
-    ...(above
-      ? { bottom: window.innerHeight - rect.top + gap }
-      : { top: rect.bottom + gap }),
-    "--tail-x": `${Math.min(Math.max(16, center - left), size.width - 16)}px`,
-  };
   // Portaled: a filtered/transformed ancestor would otherwise re-anchor position: fixed.
   return createPortal(
     <div
       ref={panel}
       className="annotation-popover"
       data-editing={editing || undefined}
-      data-side={above ? "above" : "below"}
-      style={style}
+      style={{ visibility: "hidden" }}
     >
       {editing ? (
         <form
