@@ -26,6 +26,7 @@ test("every source test belongs to exactly one suite; packaging checks stay on t
   expect(integration).toContain("src/bun/app-update-windows.test.ts");
   expect(integration).toContain("src/bun/install-windows.test.ts");
   expect(ui).toContain("src/mainview/transcript-ui.test.ts");
+  expect(ui).toContain("src/mainview/widget-ui.test.ts");
   expect(ui).not.toContain("src/mainview/sdk-ui.test.ts");
 });
 

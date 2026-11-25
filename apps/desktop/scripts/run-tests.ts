@@ -82,6 +82,7 @@ const ui = [
   "markdown-blocks-ui",
   "file-drop-ui",
   "inactive-pane-composer-ui",
+  "widget-ui",
 ].map((name) => `src/mainview/${name}.test.ts`);
 
 export function testFiles(suite: TestSuite): string[] {
