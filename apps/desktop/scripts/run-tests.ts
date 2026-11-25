@@ -1,7 +1,9 @@
 import { existsSync } from "node:fs";
-import { availableParallelism } from "node:os";
-import { resolve } from "node:path";
+import { mkdtemp } from "node:fs/promises";
+import { availableParallelism, tmpdir } from "node:os";
+import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { removeFixtureDirectory, startFixtureBrowser } from "./ui-browser";
 
 export type TestSuite = "unit" | "integration" | "ui";
 const desktop = fileURLToPath(new URL("..", import.meta.url));
@@ -44,6 +46,7 @@ const integration = [
   "tauri-host",
 ].map((name) => `src/bun/${name}.test.ts`);
 const ui = [
+  "browser-context-ui",
   "mcp-apps-ui",
   "chat-history-import-ui",
   "statistics-ui",
@@ -120,8 +123,9 @@ export async function runTests(suite: TestSuite): Promise<number> {
     suite === "unit"
       ? unitTestWorkers(availableParallelism(), env.PIG_TEST_WORKERS)
       : undefined;
+  let browser: string | undefined;
   if (suite === "ui") {
-    const browser =
+    browser =
       env.PIG_UI_BROWSER ??
       "C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe";
     if (!existsSync(browser))
@@ -135,21 +139,55 @@ export async function runTests(suite: TestSuite): Promise<number> {
   console.log(
     `${suite}: ${files.length} test files${workers === undefined ? "" : `, ${workers} workers`}`,
   );
-  const child = Bun.spawn(
-    [
-      process.execPath,
-      "test",
-      ...(workers === undefined ? [] : [`--parallel=${workers}`]),
-      ...files,
-    ],
-    {
-      cwd: resolve(desktop, "../.."),
-      env,
-      stdout: "inherit",
-      stderr: "inherit",
-    },
-  );
-  return child.exited;
+  const spawnTests = () =>
+    Bun.spawn(
+      [
+        process.execPath,
+        "test",
+        ...(workers === undefined ? [] : [`--parallel=${workers}`]),
+        ...files,
+      ],
+      {
+        cwd: resolve(desktop, "../.."),
+        env,
+        stdout: "inherit",
+        stderr: "inherit",
+      },
+    );
+  if (browser === undefined) return spawnTests().exited;
+
+  const directory = await mkdtemp(join(tmpdir(), "pig-ui-suite-"));
+  let child: ReturnType<typeof spawnTests> | undefined;
+  let interrupted: number | undefined;
+  let code = 0;
+  const stop = (code: number) => {
+    interrupted ??= code;
+    child?.kill();
+  };
+  const interrupt = () => stop(130);
+  const terminate = () => stop(143);
+  process.on("SIGINT", interrupt);
+  process.on("SIGTERM", terminate);
+  try {
+    const instance = await startFixtureBrowser(browser, directory);
+    try {
+      if (interrupted === undefined) {
+        env.PIG_UI_BROWSER_ENDPOINT = instance.endpoint;
+        child = spawnTests();
+        code = await child.exited;
+      }
+    } finally {
+      await instance.close();
+    }
+  } finally {
+    try {
+      await removeFixtureDirectory(directory);
+    } finally {
+      process.off("SIGINT", interrupt);
+      process.off("SIGTERM", terminate);
+    }
+  }
+  return interrupted ?? code;
 }
 
 if (import.meta.main) {

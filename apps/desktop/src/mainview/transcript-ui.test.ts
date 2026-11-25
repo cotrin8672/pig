@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import { existsSync } from "node:fs";
-import { mkdtemp, readFile, realpath, rm } from "node:fs/promises";
+import { mkdtemp, realpath } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -10,6 +10,10 @@ import { build as buildStyles } from "vite";
 import { renderWorkerFixturePlugin } from "../../scripts/render-worker-fixture";
 import { syntaxFixture } from "../../scripts/syntax-fixture";
 import { titlebarChatFixture } from "../../scripts/titlebar-chat-fixture";
+import {
+  fixtureBrowser,
+  removeFixtureDirectory,
+} from "../../scripts/ui-browser";
 import {
   fixtureHelpers,
   fixtureImport,
@@ -1748,96 +1752,17 @@ test.skipIf(!existsSync(edge) && !process.env.PIG_REQUIRE_UI_TESTS)(
         html,
         '<!doctype html><meta charset="utf-8"><link rel="stylesheet" href="fixture.css"><div id="root"></div><script src="fixture.js"></script>',
       );
-      const child = Bun.spawn(
-        [
-          edge,
-          "--headless=new",
-          "--disable-gpu",
-          "--no-first-run",
-          "--no-default-browser-check",
-          "--disable-extensions",
-          "--disable-background-mode",
-          `--user-data-dir=${join(dir, "profile")}`,
-          "--remote-debugging-port=0",
-          "--disable-background-timer-throttling",
-          "--disable-renderer-backgrounding",
-          "--disable-backgrounding-occluded-windows",
-          "--force-device-scale-factor=1",
-          "--window-size=1100,800",
-          "about:blank",
-        ],
-        { stdout: "ignore", stderr: "pipe" },
-      );
-      // The scrollbar audit renders and screenshots 18 batches; a slow CI
-      // runner needs well over a minute, so keep the caps generous.
-      const timeout = setTimeout(() => child.kill(), 120_000);
-      const errors = new Response(child.stderr).text();
-      let socket: WebSocket | undefined;
-      try {
-        const portFile = join(dir, "profile", "DevToolsActivePort");
-        let port = "";
-        for (let i = 0; i < 400; i++) {
-          try {
-            const lines = (await readFile(portFile, "utf8")).split(/\r?\n/);
-            if (/^\d+$/.test(lines[0]) && lines[1]?.startsWith("/devtools/")) {
-              port = lines[0];
-              break;
-            }
-          } catch (error) {
-            // On Windows Edge may still hold the new port file exclusively.
-            const code = (error as NodeJS.ErrnoException).code;
-            if (code !== "ENOENT" && code !== "EBUSY") throw error;
-          }
-          await Bun.sleep(25);
-        }
-        if (!port) throw new Error("Edge did not publish its debugging port");
-        const target = (await (
-          await fetch(`http://127.0.0.1:${port}/json/new?about:blank`, {
-            method: "PUT",
-          })
-        ).json()) as { webSocketDebuggerUrl: string };
-        socket = new WebSocket(target.webSocketDebuggerUrl);
-        const connected = socket;
-        await new Promise<void>((resolve, reject) => {
-          connected.addEventListener("open", () => resolve(), { once: true });
-          connected.addEventListener("error", reject, { once: true });
-        });
-        let id = 0;
-        function command<T = unknown>(
-          method: string,
-          params: Record<string, unknown> = {},
-        ): Promise<T> {
-          return new Promise((resolve, reject) => {
-            const requestId = ++id;
-            const cleanup = () => {
-              connected.removeEventListener("message", receive);
-              connected.removeEventListener("close", closed);
-            };
-            const closed = () => {
-              cleanup();
-              reject(new Error("Fixture browser closed"));
-            };
-            const receive = (event: MessageEvent) => {
-              const reply = JSON.parse(String(event.data));
-              if (reply.id !== requestId) return;
-              cleanup();
-              if (reply.error) reject(new Error(reply.error.message));
-              else resolve(reply.result);
-            };
-            connected.addEventListener("message", receive);
-            connected.addEventListener("close", closed, { once: true });
-            connected.send(JSON.stringify({ id: requestId, method, params }));
-          });
-        }
-        // Edge's delayed 34px automation infobar must not resize the content
-        // viewport halfway through native input/geometry assertions.
-        await command("Emulation.setDeviceMetricsOverride", {
+      const browser = await fixtureBrowser(
+        edge,
+        dir,
+        pathToFileURL(html).href,
+        {
           width: 1100,
           height: 800,
-          deviceScaleFactor: 1,
-          mobile: false,
-        });
-        await command("Page.navigate", { url: pathToFileURL(html).href });
+        },
+      );
+      const { command } = browser;
+      try {
         type Report = { ok: boolean; metrics: { wheels: unknown[] } };
         type Evaluation = {
           result: {
@@ -1951,31 +1876,11 @@ test.skipIf(!existsSync(edge) && !process.env.PIG_REQUIRE_UI_TESTS)(
         );
         passed = true;
       } finally {
-        if (socket?.readyState === WebSocket.OPEN)
-          socket.send(JSON.stringify({ id: -1, method: "Browser.close" }));
-        else child.kill();
-        await child.exited;
-        clearTimeout(timeout);
-        socket?.close();
-        await errors;
+        await browser.close();
       }
     } finally {
-      if (passed) {
-        try {
-          await rm(dir, {
-            recursive: true,
-            force: true,
-            maxRetries: 10,
-            retryDelay: 100,
-          });
-        } catch (error) {
-          // Edge's Windows profile writers can outlive the browser process; don't mask UI results.
-          expect(["EBUSY", "ENOTEMPTY"], String(error)).toContain(
-            (error as NodeJS.ErrnoException).code ?? "",
-          );
-          console.warn("Windows still holds the temporary Edge profile:", dir);
-        }
-      } else console.error("Failed Edge fixture retained at", dir);
+      if (passed) await removeFixtureDirectory(dir);
+      else console.error("Failed Edge fixture retained at", dir);
     }
   },
   150_000,
