@@ -72,10 +72,12 @@ function useHighlightedLines(text: string, language?: string) {
   });
   useEffect(() => {
     const controller = new AbortController();
-    void highlightCode(text, language, controller.signal, saved).then((tokens) => {
-      if (!controller.signal.aborted && tokens)
-        startTransition(() => setResult({ text, language, tokens }));
-    });
+    void highlightCode(text, language, controller.signal, saved).then(
+      (tokens) => {
+        if (!controller.signal.aborted && tokens)
+          startTransition(() => setResult({ text, language, tokens }));
+      },
+    );
     return () => controller.abort();
   }, [text, language, saved]);
   // Prefer exact tokens; while loading, retain only text that is still unchanged.

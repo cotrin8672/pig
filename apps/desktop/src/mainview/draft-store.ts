@@ -198,8 +198,14 @@ export class DraftStore {
       equal(remote, flight.content);
     const same = equal(draft.content, remote);
     // A mirror may reach the host even when its ACK times out before a send.
-    const ownMirror = remote.mirrorTag === `${this.mirrorId}:${remote.revision}`;
-    if (own || ownMirror || same || (draft.dirty && consumes(remote, draft.revision))) {
+    const ownMirror =
+      remote.mirrorTag === `${this.mirrorId}:${remote.revision}`;
+    if (
+      own ||
+      ownMirror ||
+      same ||
+      (draft.dirty && consumes(remote, draft.revision))
+    ) {
       this.put(address, {
         ...draft,
         revision: remote.revision,
@@ -426,7 +432,9 @@ export class DraftStore {
             content: flight.content,
             ...(requestId
               ? { requestId, delivery }
-              : { mirrorTag: `${this.mirrorId}:${flight.expectedRevision + 1}` }),
+              : {
+                  mirrorTag: `${this.mirrorId}:${flight.expectedRevision + 1}`,
+                }),
           });
           let timer: ReturnType<typeof setTimeout> | undefined;
           // The matching host publication can acknowledge a mirror, not a send reservation.

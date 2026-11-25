@@ -28,7 +28,9 @@ import { SIDEBAR_WIDTH } from "../shared/desktop-state";
 import { createFinishedWorkIndex, groupBlocks } from "../shared/tool-view";
 import { ChatEmpty, ChatLayout } from "./ChatLayout";
 import { VirtualTurns } from "./VirtualTurns";
+
 declare const __VIRTUAL_TURNS__: boolean;
+
 import { ChatOpening, OpeningComposer, OpeningMessages } from "./ChatOpening";
 import { Compaction } from "./CompactionRenderer";
 import { Composer } from "./Composer";

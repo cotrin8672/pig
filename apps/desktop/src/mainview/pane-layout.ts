@@ -238,7 +238,12 @@ export function paneGeometry(tree: PaneNode) {
 
 /** Resolve against the unchanged workspace so preview boundaries never chase the pointer. */
 export function planPaneDrop(
-  tree: PaneNode, id: number, x: number, y: number, width: number, height: number,
+  tree: PaneNode,
+  id: number,
+  x: number,
+  y: number,
+  width: number,
+  height: number,
 ) {
   const hit = paneDropAt(tree, x, y);
   if (!hit) return;
@@ -247,9 +252,10 @@ export function planPaneDrop(
   for (const divider of paneGeometry(tree).dividers) {
     const { bounds: b, position } = divider;
     if (x < b.x || y < b.y || x > b.x + b.width || y > b.y + b.height) continue;
-    const d = divider.axis === "columns"
-      ? Math.abs(x - b.x - b.width * position) * width
-      : Math.abs(y - b.y - b.height * position) * height;
+    const d =
+      divider.axis === "columns"
+        ? Math.abs(x - b.x - b.width * position) * width
+        : Math.abs(y - b.y - b.height * position) * height;
     if (d <= distance) {
       nearest = divider;
       distance = d;
@@ -273,7 +279,11 @@ export function planPaneDrop(
   }
   // Mark the source first: removing it before insertion could collapse the divider path.
   const marked = replacePane(tree, id, -1);
-  return { side: "divider" as const, axis, tree: removePane(insert(marked, 0), -1)! };
+  return {
+    side: "divider" as const,
+    axis,
+    tree: removePane(insert(marked, 0), -1)!,
+  };
 }
 
 export function adjacentPane(

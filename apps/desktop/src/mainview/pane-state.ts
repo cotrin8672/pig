@@ -101,7 +101,8 @@ export function closePane(id = useStore.getState().activePane) {
 /** Move a pane to a side of another (center swaps); the moved pane keeps focus. */
 export function dropPane(id: number, result: PaneNode, original: PaneNode) {
   const state = useStore.getState();
-  if (state.page !== "chat" || !state.panes[id] || state.paneTree !== original) return;
+  if (state.page !== "chat" || !state.panes[id] || state.paneTree !== original)
+    return;
   useStore.setState({ paneTree: result });
   focusPane(id);
   focusEditor(id);

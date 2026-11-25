@@ -4,8 +4,8 @@ import { useT } from "./i18n";
 import {
   type PaneNode,
   type PaneRect,
-  planPaneDrop,
   paneGeometry,
+  planPaneDrop,
 } from "./pane-layout";
 import { Keycap } from "./primitives/Keycap";
 
@@ -95,9 +95,14 @@ export function usePaneDrag(
           onPointerUp(event: PointerEvent) {
             const box = workspace.current?.getBoundingClientRect();
             if (dragging && box && event.pointerId === dragging.pointerId) {
-              const drop = planPaneDrop(tree, dragging.id,
+              const drop = planPaneDrop(
+                tree,
+                dragging.id,
                 (event.clientX - box.left) / box.width,
-                (event.clientY - box.top) / box.height, box.width, box.height);
+                (event.clientY - box.top) / box.height,
+                box.width,
+                box.height,
+              );
               if (drop) onDrop(dragging.id, drop.tree, tree);
             }
             setDrag(null);
@@ -126,10 +131,12 @@ export function PaneDropOverlay({
   const hint = !drop
     ? t.paneDropPrompt
     : drop.side === "divider"
-      ? drop.axis === "columns" ? t.paneDropColumns : t.paneDropRows
-    : drop.side === "center"
-      ? t.paneDropSwap(label(drop.target).title)
-      : t.paneDropPlace(label(drop.target).title, drop.side);
+      ? drop.axis === "columns"
+        ? t.paneDropColumns
+        : t.paneDropRows
+      : drop.side === "center"
+        ? t.paneDropSwap(label(drop.target).title)
+        : t.paneDropPlace(label(drop.target).title, drop.side);
   return (
     <div className="pane-drop-layout" aria-hidden="true">
       {paneGeometry(result).panes.map(({ id, bounds }) => {
