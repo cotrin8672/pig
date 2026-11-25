@@ -2,7 +2,9 @@
 import { fixtureHelpers, fixtureImport, runUiFixture } from "./ui-fixture";
 
 for (const mode of ["current", "answer"]) {
-  await runUiFixture(`body-${mode}`, `
+  await runUiFixture(
+    `body-${mode}`,
+    `
     await import(${fixtureImport(new URL("../src/mainview/styles.css", import.meta.url))});
     const {createRoot}=await import(${fixtureImport(import.meta.resolve("react-dom/client"))});
     const {flushSync}=await import(${fixtureImport(import.meta.resolve("react-dom"))});
@@ -47,7 +49,8 @@ for (const mode of ["current", "answer"]) {
     window.__fixtureInput={method:"Input.dispatchKeyEvent",params:{type:"rawKeyDown",key:"c",code:"KeyC",windowsVirtualKeyCode:67,modifiers:2}};
     await until(()=>!window.__fixtureInput,"copy input");
     check(metrics.liveLink && metrics.finalLink && metrics.copySelection==="選んだ文章🍵" && [...metrics.liveQuote,...metrics.finalQuote].every(q=>q==="選んだ文章🍵"), "link/selection regression: "+JSON.stringify(metrics));
-    if(${mode==="answer"})check(metrics.partialMath,"incomplete display math must render");
+    if(${mode === "answer"})check(metrics.partialMath,"incomplete display math must render");
     root.unmount();
-  `);
+  `,
+  );
 }

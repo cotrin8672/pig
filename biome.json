@@ -10,6 +10,7 @@
       "!!**/artifacts",
       "!!apps/desktop/src-tauri/gen",
       "!!apps/desktop/src-tauri/target",
+      "!!examples/remote-pairing-poc/target",
       "!!pnpm-lock.yaml",
       "!!**/tokens.css"
     ]

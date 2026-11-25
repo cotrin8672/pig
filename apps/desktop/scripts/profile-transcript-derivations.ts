@@ -2,9 +2,9 @@
 import { fauxAssistantMessage } from "@earendil-works/pi-ai";
 import { isVisibleRecord } from "../src/mainview/custom-data";
 import { modelDividers } from "../src/mainview/model-dividers";
+import { createResponseFooterIndex } from "../src/mainview/response-footers";
 import { retriedAttempts } from "../src/mainview/retry-attempts";
 import { scheduledUsers } from "../src/mainview/scheduled-prompt-model";
-import { createResponseFooterIndex } from "../src/mainview/response-footers";
 import { transcriptRequestIds } from "../src/mainview/transcript-requests";
 import { createFinishedWorkIndex } from "../src/shared/tool-view";
 import type { TranscriptRecord } from "../src/shared/transcript";

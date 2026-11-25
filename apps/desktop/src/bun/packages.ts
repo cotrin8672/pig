@@ -117,13 +117,15 @@ async function search(query: string, size: number, from: number) {
     const data = object(await getJson(url));
     if (!Array.isArray(data.objects))
       throw new Error("Invalid npm search response");
-    const items = data.objects.map(mapSearchItem).filter(
-      (pkg) => pkg.name !== "@ogulcancelik/pi-codex-subagents",
-    );
+    const items = data.objects
+      .map(mapSearchItem)
+      .filter((pkg) => pkg.name !== "@ogulcancelik/pi-codex-subagents");
     return {
       items,
-      total: typeof data.total === "number"
-        ? Math.max(0, data.total - (data.objects.length - items.length)) : 0,
+      total:
+        typeof data.total === "number"
+          ? Math.max(0, data.total - (data.objects.length - items.length))
+          : 0,
     };
   } catch (error) {
     throw new Error(`Package search failed: ${String(error)}`, {

@@ -589,13 +589,16 @@ test("installed discovery is nonblocking and resource loads cannot overlap mutat
 test("replaced subagent is absent from supported and npm marketplace search", async () => {
   const name = "@ogulcancelik/pi-codex-subagents";
   const original = globalThis.fetch;
-  globalThis.fetch = (async () => Response.json({
-    total: 1, objects: [{ package: { name } }],
-  })) as unknown as typeof fetch;
+  globalThis.fetch = (async () =>
+    Response.json({
+      total: 1,
+      objects: [{ package: { name } }],
+    })) as unknown as typeof fetch;
   try {
     for (const supported of [false, true]) {
-      expect(await searchPackages({ query: name, supported, page: 0 }))
-        .toMatchObject({ items: [], total: 0 });
+      expect(
+        await searchPackages({ query: name, supported, page: 0 }),
+      ).toMatchObject({ items: [], total: 0 });
     }
   } finally {
     globalThis.fetch = original;
