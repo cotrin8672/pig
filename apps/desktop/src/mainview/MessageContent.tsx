@@ -392,7 +392,7 @@ export const UserMessage = memo(function UserMessage({
   const text = edit?.state === "sending" ? edit.text : original;
   // Editing touches only the body; annotation blocks ride along unchanged.
   const parsed = parseAnnotations(original);
-  const shown = parseAnnotations(text);
+  const shown = text === original ? parsed : parseAnnotations(text);
   const attachments = splitAttachmentPaths(shown.body);
   return (
     <div className="user-turn">
