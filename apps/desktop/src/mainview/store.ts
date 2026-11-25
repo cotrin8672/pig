@@ -238,15 +238,24 @@ export function connectNoticeHistory(
 export function receiveNoticeHistory(snapshot: NoticeHistorySnapshot) {
   if (snapshot.revision <= noticeRevision) return;
   noticeRevision = snapshot.revision;
+  // Mark notices for the chat on screen read before rendering, so the bell badge does not flash.
+  const viewed = snapshot.notices
+    .filter((notice) => !notice.read && viewingNotice(notice))
+    .map((notice) => notice.id);
+  const autoRead = new Set([...viewed, ...pendingAutoRead]);
+  const notices = snapshot.notices.map((notice) =>
+    !notice.read && autoRead.has(notice.id)
+      ? { ...notice, read: true }
+      : notice,
+  );
+  requestAutoRead(viewed);
   useStore.setState((state) => {
     const unread = new Set(
-      snapshot.notices
-        .filter((notice) => !notice.read)
-        .map((notice) => notice.id),
+      notices.filter((notice) => !notice.read).map((notice) => notice.id),
     );
     const previous = new Set(state.noticeHistory.map((notice) => notice.id));
     return {
-      noticeHistory: snapshot.notices,
+      noticeHistory: notices,
       notices: state.notices.filter(
         (notice) => unread.has(notice.id) || !previous.has(notice.id),
       ),
@@ -325,15 +334,7 @@ export function readViewedNotices(visible: boolean, focused: boolean) {
           !notice.read && !pendingAutoRead.has(notice.id) && viewed(notice),
       )
       .map((notice) => notice.id);
-    if (!ids.length) return;
-    for (const id of ids) pendingAutoRead.add(id);
-    void requestNoticeHistory({ type: "read", ids })
-      .then(receiveNoticeHistory, (error) =>
-        console.error("Cannot mark viewed notifications read:", error),
-      )
-      .finally(() => {
-        for (const id of ids) pendingAutoRead.delete(id);
-      });
+    requestAutoRead(ids);
     return;
   }
   if (
@@ -347,6 +348,18 @@ export function readViewedNotices(visible: boolean, focused: boolean) {
       !n.read && viewed(n) ? { ...n, read: true } : n,
     ),
   });
+}
+function requestAutoRead(ids: string[]) {
+  const pending = ids.filter((id) => !pendingAutoRead.has(id));
+  if (!pending.length || !requestNoticeHistory) return;
+  for (const id of pending) pendingAutoRead.add(id);
+  void requestNoticeHistory({ type: "read", ids: pending })
+    .then(receiveNoticeHistory, (error) =>
+      console.error("Cannot mark viewed notifications read:", error),
+    )
+    .finally(() => {
+      for (const id of pending) pendingAutoRead.delete(id);
+    });
 }
 function viewingNotice(notice: Notice) {
   return (
