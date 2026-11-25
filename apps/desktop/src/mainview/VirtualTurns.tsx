@@ -10,32 +10,30 @@ import {
 import type { ThreadView } from "./thread-scroll";
 
 export function VirtualTurns({
-  rows,
+  keys,
+  renderRow,
   thread,
   target,
   follow,
 }: {
-  rows: ReactElement[];
+  keys: string[];
+  renderRow: (index: number) => ReactElement;
   thread: RefObject<HTMLElement | null>;
   target?: string;
   follow?: Pick<ThreadView, "follow" | "reading">;
 }) {
   const [selection, pin] = useState<{ anchor: string; focus: string }>();
   const [extending, setExtending] = useState(false);
-  const key = (index: number) => String(rows[index].key);
-  const anchor = selection
-    ? rows.findIndex((r) => String(r.key) === selection.anchor)
-    : -1;
-  const focus = selection
-    ? rows.findIndex((r) => String(r.key) === selection.focus)
-    : -1;
+  const key = (index: number) => keys[index];
+  const anchor = selection ? keys.indexOf(selection.anchor) : -1;
+  const focus = selection ? keys.indexOf(selection.focus) : -1;
   // The parent attaches its thread ref after children's layout effects on mount.
   const [scrollElement, setScrollElement] = useState<HTMLElement | null>(null);
   useEffect(() => {
     setScrollElement(thread.current);
   }, [thread]);
   const list = useVirtualizer({
-    count: rows.length,
+    count: keys.length,
     getScrollElement: () => scrollElement,
     estimateSize: () => 160,
     getItemKey: key,
@@ -55,11 +53,16 @@ export function VirtualTurns({
         focus,
         extending ? visible[visible.length - 1] : anchor,
       );
-      const selected = Array.from(
-        { length: last - first + 1 },
-        (_, i) => first + i,
-      );
-      return [...new Set([...visible, ...selected])].sort((a, b) => a - b);
+      const result: number[] = [];
+      for (let i = first; i <= last && i < visible[0]; i++) result.push(i);
+      result.push(...visible);
+      for (
+        let i = Math.max(first, visible[visible.length - 1] + 1);
+        i <= last;
+        i++
+      )
+        result.push(i);
+      return result;
     },
   });
   list.shouldAdjustScrollPositionOnItemSizeChange = (item, _delta, instance) =>
@@ -103,9 +106,7 @@ export function VirtualTurns({
     };
     // Restore on attachment only, not on every streamed update.
   }, [scrollElement, list, follow]);
-  const targetIndex = target
-    ? rows.findIndex((row) => String(row.key) === target)
-    : -1;
+  const targetIndex = target ? keys.indexOf(target) : -1;
   useLayoutEffect(() => {
     if (targetIndex >= 0 && scrollElement)
       list.scrollToIndex(targetIndex, { align: "center" });
@@ -174,7 +175,7 @@ export function VirtualTurns({
             ref={list.measureElement}
             style={{ display: "flow-root" }}
           >
-            {rows[index]}
+            {renderRow(index)}
           </div>
         </Fragment>
       ))}

@@ -778,14 +778,39 @@ export const Chat = memo(function Chat({
       element.scrollTop = element.scrollHeight;
     }
   }, [transcript, notices, view, hiddenRecords]);
-  const renderTurns = (items: (React.ReactElement | null)[]) => {
-    const rows = items.filter((row) => row !== null);
+  const renderTurns = (
+    items: ReturnType<typeof interleaveExtensionNotices>,
+    renderRow: (
+      item: (typeof items)[number],
+      key: string,
+      toggle: boolean,
+    ) => React.ReactElement,
+  ) => {
+    const keys: string[] = [];
+    const toggles = new Set<number>();
+    const rows = items.filter((item) => {
+      if ("notice" in item) {
+        keys.push(item.notice.id);
+        return true;
+      }
+      const { record, index } = item;
+      if (index < hiddenRecords || !isVisibleRecord(record)) return false;
+      const range = work.get(index);
+      if (range && !renderedWork.has(range.key)) {
+        renderedWork.add(range.key);
+        toggles.add(keys.length);
+      } else if (range && !openWork[range.key] && index !== range.final)
+        return false;
+      keys.push(liveIds.get(record.id) ?? record.id);
+      return true;
+    });
+    const render = (i: number) => renderRow(rows[i], keys[i], toggles.has(i));
     if (
       rows.length <= 200 ||
       typeof __VIRTUAL_TURNS__ === "undefined" ||
       !__VIRTUAL_TURNS__
     )
-      return rows;
+      return keys.map((_, i) => render(i));
     const target =
       jump &&
       transcript.records.find((record) => record.entryId === jump.entryId)?.id;
@@ -793,7 +818,8 @@ export const Chat = memo(function Chat({
       <VirtualTurns
         follow={view}
         thread={thread}
-        rows={rows}
+        keys={keys}
+        renderRow={render}
         target={target ? (liveIds.get(target) ?? target) : undefined}
       />
     );
@@ -832,19 +858,17 @@ export const Chat = memo(function Chat({
             ? { ...transcript, records: transcript.records.slice(0, cut) }
             : transcript,
           notices ?? [],
-        ).map((item) => {
+        ),
+        (item, key, showToggle) => {
           if ("notice" in item)
             return (
               <ExtensionNoticeLine key={item.notice.id} notice={item.notice} />
             );
           const { record, index } = item;
-          if (index < hiddenRecords) return null;
-          const key = liveIds.get(record.id) ?? record.id;
           const divider = dividers.get(record.id);
-          if (!isVisibleRecord(record)) return null;
           const range = work.get(index);
           const folded = range !== undefined && !openWork[range.key];
-          const toggle = range && !renderedWork.has(range.key) && (
+          const toggle = range && showToggle && (
             <WorkToggle
               open={!folded}
               tools={range.tools}
@@ -859,9 +883,8 @@ export const Chat = memo(function Chat({
               }
             />
           );
-          if (range) renderedWork.add(range.key);
           if (folded && index !== range.final)
-            return toggle ? <Fragment key={key}>{toggle}</Fragment> : null;
+            return <Fragment key={key}>{toggle}</Fragment>;
           if (record.kind !== "message" || record.message.role === "custom")
             return (
               <Fragment key={key}>
@@ -977,7 +1000,7 @@ export const Chat = memo(function Chat({
               </SavedOutputContext.Provider>
             </div>
           );
-        }),
+        },
       )}
       {rewind && cut >= 0 && (
         <div className="response-turn">

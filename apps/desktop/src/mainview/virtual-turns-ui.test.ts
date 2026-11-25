@@ -24,11 +24,12 @@ test(
     const from=dir>0?40:120,to=dir>0?120:40;
     let expected;
     for(const virtual of [false,true]){
-      flushSync(()=>root.render(<div key={String(virtual)+dir} ref={thread} style={{height:240,overflow:"auto",userSelect:"text"}}>{virtual?<VirtualTurns thread={thread} rows={rows} target={String(from)}/>:rows}</div>));
+      const built=new Set();
+      flushSync(()=>root.render(<div key={String(virtual)+dir} ref={thread} style={{height:240,overflow:"auto",userSelect:"text"}}>{virtual?<VirtualTurns thread={thread} keys={rows.map(r=>String(r.key))} renderRow={i=>{built.add(i);return rows[i]}} target={String(from)}/>:rows}</div>));
       const row=i=>thread.current.querySelector('[data-row="'+i+'"]');
       await until(()=>row(from),"search must mount drag origin");
       row(from).scrollIntoView({block:"center"});await wait();
-      if(virtual)check(thread.current.querySelectorAll("[data-row]").length<40,"normal DOM must be bounded");
+      if(virtual)check(built.size<80 && thread.current.querySelectorAll("[data-row]").length<40,"both constructed rows and mounted DOM must be bounded");
       const point=(i,end)=>{const r=row(i).firstChild.getBoundingClientRect();return [end?r.right-1:r.left+1,r.top+r.height/2];};
       let [x,y]=point(from,dir<0);
       await input("mousePressed",x,y,{button:"left",buttons:1,clickCount:1});
@@ -55,7 +56,7 @@ test(
     }
   }
   const state={follow:false};
-  const render=(rows,target)=>flushSync(()=>root.render(<div key="history" ref={thread} style={{height:240,overflow:"auto"}}><VirtualTurns thread={thread} rows={rows} target={target} follow={state}/></div>));
+  const render=(rows,target)=>flushSync(()=>root.render(<div key="history" ref={thread} style={{height:240,overflow:"auto"}}><VirtualTurns thread={thread} keys={rows.map(r=>String(r.key))} renderRow={i=>rows[i]} target={target} follow={state}/></div>));
   render(rows,"500");await until(()=>thread.current.querySelector('[data-row="500"]'),"history search");await wait();
   const y=()=>thread.current.querySelector('[data-row="500"]').getBoundingClientRect().top;
   render(rows,undefined);
