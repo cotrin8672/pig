@@ -1,12 +1,50 @@
 import { describe, expect, test } from "bun:test";
 import {
   diffStats,
+  fileChanges,
   finishedWork,
   groupBlocks,
   resultText,
   shellOutcome,
 } from "./tool-view";
 import type { TranscriptRecord } from "./transcript";
+
+test("fileChanges sums successful edit, write and apply_patch per file", () => {
+  const call = (id: string, name: string, args: object) => ({
+    type: "toolCall",
+    id,
+    name,
+    arguments: args,
+  });
+  const result = (id: string, isError = false, details?: object) => ({
+    message: { role: "toolResult", toolCallId: id, isError, details },
+  });
+  const turns = [
+    { message: { role: "user", content: "go" } },
+    {
+      message: {
+        role: "assistant",
+        content: [
+          call("e", "edit", { path: "a.ts" }),
+          call("w", "write", { path: "b.ts", content: "1\n2" }),
+          call("p", "apply_patch", {
+            patch:
+              "*** Begin Patch\n*** Update File: a.ts\n@@\n-x\n+y\n*** End Patch",
+          }),
+          call("f", "edit", { path: "c.ts" }),
+        ],
+      },
+    },
+    result("e", false, { diff: "-1 a\n+1 b\n+2 c" }),
+    result("w"),
+    result("p"),
+    result("f", true, { diff: "+1 x" }),
+  ] as unknown as Parameters<typeof fileChanges>[0];
+  expect(fileChanges(turns)).toEqual([
+    { path: "a.ts", added: 3, removed: 2 },
+    { path: "b.ts", added: 2, removed: 0 },
+  ]);
+});
 
 let order = 0;
 const rec = (message: unknown): TranscriptRecord =>

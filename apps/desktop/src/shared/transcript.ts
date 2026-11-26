@@ -121,6 +121,8 @@ export interface ResponseStats {
   /** pi-ai's list-price estimate in USD; 0 when pricing is unknown. */
   cost: number;
   tokensPerSecond?: number;
+  /** Files changed by the response's tools; omitted when none. */
+  files?: { path: string; added: number; removed: number }[];
   model: string;
   text: string;
 }

@@ -1282,6 +1282,30 @@ details[open] > summary .tool-chevron,
 .response-meta {
   flex-wrap: wrap;
 }
+.response-delta {
+  display: inline-flex;
+  gap: 4px;
+  white-space: nowrap;
+}
+/* Paths take the free width and wrap; the counts stay on their line. */
+.tooltip:has(.response-delta) {
+  width: 320px;
+  max-width: calc(100vw - 12px);
+}
+/* No heading above the rows, so no divider either. */
+.tooltip:has(.response-delta) .tooltip-rows {
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+.tooltip:has(.response-delta) .tooltip-rows dt {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.tooltip:has(.response-delta) .tooltip-rows dd {
+  flex: none;
+}
 .response-actions {
   grid-column: 2;
   grid-row: 2;

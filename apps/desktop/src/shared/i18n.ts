@@ -738,6 +738,8 @@ export const en = {
   patchMoved: "Moved",
   patchDeleted: "Deleted",
   patchFiles: (count: number) => `${count} ${count === 1 ? "file" : "files"}`,
+  moreFiles: (count: number) =>
+    `${count} more ${count === 1 ? "file" : "files"}`,
   Explored: "Explored",
   "No output": "(no output)",
   editMenu: {
@@ -1717,6 +1719,7 @@ export const ja: Dictionary = {
   patchMoved: "移動",
   patchDeleted: "削除",
   patchFiles: (count) => `${count} ファイル`,
+  moreFiles: (count) => `ほか ${count} ファイル`,
   Explored: "探索",
   "No output": "（出力なし）",
   editMenu: {

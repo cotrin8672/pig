@@ -569,6 +569,21 @@ test("the actual App and its feature components render in isolated Storybook pre
           "document.querySelector('#app-sidebar .sidebar-icon').click()",
         );
         await waitFor("!!document.querySelector('.settings-page')");
+        await navigate(
+          "chat-activity-response-footer--files",
+          "document.querySelectorAll('.response-meta').length===3",
+        );
+        expect(
+          await browser.evaluate(
+            "[...document.querySelectorAll('.response-meta')].map(row=>row.querySelector('.response-delta')?.textContent ?? null)",
+          ),
+        ).toEqual(["+42−9", "+50−13", null]);
+        await browser.evaluate(
+          "document.querySelectorAll('.response-delta')[1].closest('.ui-chip').dispatchEvent(new PointerEvent('pointerover', {bubbles:true}))",
+        );
+        await waitFor(
+          "document.querySelectorAll('[role=tooltip]:popover-open .tooltip-rows dt').length===5",
+        );
         passed = true;
       } finally {
         await browser.close();

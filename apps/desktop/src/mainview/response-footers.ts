@@ -1,3 +1,4 @@
+import { fileChanges } from "../shared/tool-view";
 import {
   type ResponseStats,
   responseStats,
@@ -66,6 +67,10 @@ export function createResponseFooterIndex() {
       }
       const stats = responseStats(turns, last);
       if (!stats) return;
+      if (stats.tools) {
+        const files = fileChanges(turns.slice(stats.userIndex ?? 0, last + 1));
+        if (files.length) stats.files = files;
+      }
       const user =
         stats.userIndex === undefined ? undefined : turns[stats.userIndex];
       if (stats.userIndex !== undefined) stats.userIndex += start;

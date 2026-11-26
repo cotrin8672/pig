@@ -1,3 +1,4 @@
+import { parsePatch } from "./apply-patch";
 import {
   type Message,
   startsResponse,
@@ -49,6 +50,51 @@ export function diffStats(diff: string): { added: number; removed: number } {
     start = end + 1;
   }
   return { added, removed };
+}
+
+export type FileChange = { path: string; added: number; removed: number };
+
+/** Lines changed per file by the successful edit/write/apply_patch calls in `turns`. */
+export function fileChanges(
+  turns: readonly { message: Message }[],
+): FileChange[] {
+  const done = new Map<string, unknown>();
+  for (const { message } of turns)
+    if (message.role === "toolResult" && !message.isError)
+      done.set(message.toolCallId, message.details);
+  const files = new Map<string, FileChange>();
+  const add = (path: string, added: number, removed: number) => {
+    const file = files.get(path) ?? { path, added: 0, removed: 0 };
+    file.added += added;
+    file.removed += removed;
+    files.set(path, file);
+  };
+  for (const { message } of turns) {
+    if (message.role !== "assistant") continue;
+    for (const block of message.content) {
+      if (block.type !== "toolCall" || !done.has(block.id)) continue;
+      const args = (block.arguments ?? {}) as Record<string, unknown>;
+      const path = typeof args.path === "string" ? args.path : "";
+      if (block.name === "edit" && path) {
+        const diff = (done.get(block.id) as { diff?: unknown } | undefined)
+          ?.diff;
+        if (typeof diff === "string") {
+          const { added, removed } = diffStats(diff);
+          add(path, added, removed);
+        }
+      } else if (
+        block.name === "write" &&
+        path &&
+        typeof args.content === "string"
+      )
+        // shortcut: write has no diff, so overwritten lines are not counted as removed; needs the old file to fix.
+        add(path, args.content.split("\n").length, 0);
+      else if (block.name === "apply_patch" && typeof args.patch === "string")
+        for (const file of parsePatch(args.patch))
+          add(file.moveTo ?? file.path, file.added, file.removed);
+    }
+  }
+  return [...files.values()];
 }
 
 /**

@@ -7,7 +7,7 @@ import {
   Sparkles,
   Split,
 } from "lucide-react";
-import { memo, useState } from "react";
+import { memo, type ReactNode, useState } from "react";
 import { useShallow } from "zustand/react/shallow";
 import type { Message, ResponseStats } from "../shared/transcript";
 import { useT } from "./i18n";
@@ -39,6 +39,26 @@ export function usageTip(
     ]);
   if (stats.cost > 0)
     rows.push([t["API-equivalent cost"], `$${stats.cost.toFixed(4)}`]);
+  return { tier: "rich", label: "", rows };
+}
+
+type Files = NonNullable<ResponseStats["files"]>;
+
+function LineDelta({ added, removed }: { added: number; removed: number }) {
+  return (
+    <span className="response-delta">
+      <span className="tool-add">+{added}</span>
+      <span className="tool-del">−{removed}</span>
+    </span>
+  );
+}
+
+/** Per-file line counts for the changed-files chip's Tooltip. */
+export function filesTip(files: Files, t: T): TipContent {
+  const rows: [string, ReactNode][] = files
+    .slice(0, 4)
+    .map((file) => [file.path, <LineDelta key={file.path} {...file} />]);
+  if (files.length > 4) rows.push([t.moreFiles(files.length - 4), ""]);
   return { tier: "rich", label: "", rows };
 }
 
@@ -116,6 +136,21 @@ export const ResponseFooter = memo(function ResponseFooter({
               }).format(stats.totalTokens)}
           </Chip>
         )}
+        {stats.files?.length ? (
+          <Chip
+            tabIndex={0}
+            {...tooltip(() => ({
+              ...filesTip(stats.files ?? [], t),
+              side: "top",
+            }))}
+          >
+            {t.patchFiles(stats.files.length)} ·{" "}
+            <LineDelta
+              added={stats.files.reduce((sum, file) => sum + file.added, 0)}
+              removed={stats.files.reduce((sum, file) => sum + file.removed, 0)}
+            />
+          </Chip>
+        ) : null}
       </div>
       <div className="response-actions">
         <time dateTime={new Date(stats.endedAt).toISOString()}>
