@@ -52,7 +52,7 @@ import "./remote-pairing-story.css";
  */
 
 export const HOST_NAME = "自宅PC";
-const NEW_DEVICE = "Surface Laptop";
+export const NEW_DEVICE = "Surface Laptop";
 export const remote = (path: string) => `pig-remote://home/${path}`;
 export const HOST_CHATS = remote("general");
 const BASE = "C:/Users/gummy/ghq/github.com/cotrin8672";
@@ -128,7 +128,7 @@ export const sampleHome: Host = {
   projects: [hostProjects[0].cwd, hostProjects[1].cwd],
 };
 
-const INVITE =
+export const INVITE =
   "pig-pair:1:8f3c91a4e0b7d2654c19f83a7e20b4d1c58a9e3f27b604d1e8c3a5f7b290a91e:4d7e1b90c3a25f84e61d20b9a7c3f5821e4d9a6c0b7f382e5a1d9c4b6e80f213";
 const INVITE_SECONDS = 12 * 60 * 60;
 const DEMO_PAIR_MS = 2500;
@@ -501,7 +501,13 @@ export const hostSummary = (host: Host) =>
     ? `Project ${host.projects.length}件${host.chats ? "とチャット" : ""}を表示中`
     : "サイドバーには未追加";
 
-function CopyButton({ text, onCopy }: { text: string; onCopy: () => void }) {
+export function CopyButton({
+  text,
+  onCopy,
+}: {
+  text: string;
+  onCopy: () => void;
+}) {
   const [copied, setCopied] = useState(0);
   const [failed, setFailed] = useState(false);
   return (
@@ -802,28 +808,7 @@ function PairingSheets({ p }: { p: Pairing }) {
           )
         }
       >
-        <ol className="mac-steps">
-          <li>このコードをコピーして、追加するPCに渡す</li>
-          <li>追加するPCのpigで「Pairing → PCに接続…」に貼り付ける</li>
-        </ol>
-        <div className="mac-code-box">
-          <code className="mac-code">{INVITE}</code>
-          <div className="mac-code-footer">
-            <span className="mac-row-detail" role="timer">
-              残り {clock(p.left)} · 1回限り
-            </span>
-            <CopyButton text={INVITE} onCopy={p.copied} />
-          </div>
-        </div>
-        <div className="mac-status" role="status">
-          <SpinnerCheck done={p.paired} />
-          {p.paired
-            ? `${NEW_DEVICE} を追加しました`
-            : "追加するPCでの貼り付けを待っています…"}
-        </div>
-        <p className="mac-note">
-          追加したPCは、このPCのProjectとチャットを開き、このPCでモデルとツールを実行できます。
-        </p>
+        <InviteBody left={p.left} paired={p.paired} onCopy={p.copied} />
       </Sheet>
 
       <Sheet
@@ -841,53 +826,12 @@ function PairingSheets({ p }: { p: Pairing }) {
           ) : undefined
         }
       >
-        <ol className="mac-steps">
-          <li>接続先のPCのpigで「Pairing → PCを追加…」を押す</li>
-          <li>表示された招待コードをここに貼り付ける</li>
-        </ol>
-        <form
-          className="input-row"
-          onSubmit={(event) => {
-            event.preventDefault();
-            p.submitCode();
-          }}
-        >
-          <TextField
-            className="mac-code-input"
-            aria-label="招待コード"
-            placeholder="pig-pair:1:…"
-            autoComplete="off"
-            spellCheck={false}
-            value={p.code}
-            disabled={p.connect === "connecting" || p.connect === "connected"}
-            onChange={(event) => p.setCode(event.target.value)}
-          />
-          <Button
-            type="submit"
-            variant="primary"
-            disabled={
-              !p.code.trim() ||
-              p.connect === "connecting" ||
-              p.connect === "connected"
-            }
-          >
-            接続
-          </Button>
-        </form>
-        {p.connect === "error" && (
-          <div className="oauth-error" role="alert">
-            <CircleAlert size={16} aria-hidden="true" />
-            このコードは使用済みか期限切れです。接続先のPCで新しいコードを作ってください。
-          </div>
-        )}
-        {(p.connect === "connecting" || p.connect === "connected") && (
-          <div className="mac-status" role="status">
-            <SpinnerCheck done={p.connect === "connected"} />
-            {p.connect === "connected"
-              ? `${HOST_NAME} に接続しました。サイドバーに表示するProjectを選べます。`
-              : "接続しています…"}
-          </div>
-        )}
+        <ConnectBody
+          code={p.code}
+          connect={p.connect}
+          setCode={p.setCode}
+          submit={p.submitCode}
+        />
       </Sheet>
 
       <AddFromHost
@@ -897,6 +841,111 @@ function PairingSheets({ p }: { p: Pairing }) {
         onClose={() => p.setOpen(undefined)}
         onAdd={p.addToHost}
       />
+    </>
+  );
+}
+
+/** Body of the invite sheet: steps, the code, its expiry and the pairing state. */
+export function InviteBody({
+  left,
+  paired,
+  onCopy,
+}: {
+  left: number;
+  paired: boolean;
+  onCopy: () => void;
+}) {
+  return (
+    <>
+      <ol className="mac-steps">
+        <li>このコードをコピーして、追加するPCに渡す</li>
+        <li>追加するPCのpigで「Pairing → PCに接続…」に貼り付ける</li>
+      </ol>
+      <div className="mac-code-box">
+        <code className="mac-code">{INVITE}</code>
+        <div className="mac-code-footer">
+          <span className="mac-row-detail" role="timer">
+            残り {clock(left)} · 1回限り
+          </span>
+          <CopyButton text={INVITE} onCopy={onCopy} />
+        </div>
+      </div>
+      <div className="mac-status" role="status">
+        <SpinnerCheck done={paired} />
+        {paired
+          ? `${NEW_DEVICE} を追加しました`
+          : "追加するPCでの貼り付けを待っています…"}
+      </div>
+      <p className="mac-note">
+        追加したPCは、このPCのProjectとチャットを開き、このPCでモデルとツールを実行できます。
+      </p>
+    </>
+  );
+}
+
+export type ConnectState = "input" | "connecting" | "connected" | "error";
+/** Body of the connect sheet: steps, the code field and the connection state. */
+export function ConnectBody({
+  code,
+  connect,
+  setCode,
+  submit,
+}: {
+  code: string;
+  connect: ConnectState;
+  setCode: (value: string) => void;
+  submit: () => void;
+}) {
+  const p = { code, connect, setCode };
+  return (
+    <>
+      <ol className="mac-steps">
+        <li>接続先のPCのpigで「Pairing → PCを追加…」を押す</li>
+        <li>表示された招待コードをここに貼り付ける</li>
+      </ol>
+      <form
+        className="input-row"
+        onSubmit={(event) => {
+          event.preventDefault();
+          submit();
+        }}
+      >
+        <TextField
+          className="mac-code-input"
+          aria-label="招待コード"
+          placeholder="pig-pair:1:…"
+          autoComplete="off"
+          spellCheck={false}
+          value={p.code}
+          disabled={p.connect === "connecting" || p.connect === "connected"}
+          onChange={(event) => p.setCode(event.target.value)}
+        />
+        <Button
+          type="submit"
+          variant="primary"
+          disabled={
+            !p.code.trim() ||
+            p.connect === "connecting" ||
+            p.connect === "connected"
+          }
+        >
+          接続
+        </Button>
+      </form>
+      {p.connect === "error" && (
+        <div className="oauth-error" role="alert">
+          <CircleAlert size={16} aria-hidden="true" />
+          このコードは使用済みか期限切れです。接続先のPCで新しいコードを作ってください。
+        </div>
+      )}
+      {(p.connect === "connecting" || p.connect === "connected") && (
+        <div className="mac-status" role="status">
+          <SpinnerCheck done={p.connect === "connected"} />
+          {p.connect === "connected"
+            ? `${HOST_NAME} に接続しました。サイドバーに表示するProjectを選べます。`
+            : "接続しています…"}
+        </div>
+      )}
     </>
   );
 }

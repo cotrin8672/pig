@@ -3,8 +3,6 @@ import { useState } from "react";
 import { ChatEmpty, ChatLayout } from "../../mainview/ChatLayout";
 import { Composer } from "../../mainview/Composer";
 import { useStore } from "../../mainview/store";
-// The Storybook alias only rewrites "./rpc"; import the mock directly.
-import { rpc } from "../browser-rpc";
 import { installPreview, previewDefaults } from "../current-ui/fixtures";
 import { PreviewTheme } from "../current-ui/Previews";
 import {
@@ -57,9 +55,8 @@ function NewChat({ p }: { p: Pairing }) {
               value={target}
               onChange={setTarget}
               onConnect={p.openConnect}
-              onAddProject={(pc) =>
-                pc === "local" ? rpc.send.addProject() : p.setOpen("add")
-              }
+              // A local project opens the OS folder picker, which Storybook lacks.
+              onAddProject={(pc) => pc !== "local" && p.setOpen("add")}
             />
           }
         />
