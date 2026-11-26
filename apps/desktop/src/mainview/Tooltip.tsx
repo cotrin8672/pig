@@ -203,11 +203,17 @@ export function TooltipLayer({ children }: { children: ReactNode }) {
       if (anchor.current === el && !entry.isIntersecting) close();
     });
     visibility.observe(el);
+    // An anchor removed before its first intersection check may never be reported.
+    const removal = new MutationObserver(() => {
+      if (anchor.current === el && !el.isConnected) close();
+    });
+    removal.observe(document.body, { childList: true, subtree: true });
     document.addEventListener("keydown", dismiss);
     document.addEventListener("scroll", scroll, true);
     window.addEventListener("resize", close);
     return () => {
       visibility.disconnect();
+      removal.disconnect();
       if (described === null) el.removeAttribute("aria-describedby");
       else el.setAttribute("aria-describedby", described);
       document.removeEventListener("keydown", dismiss);
