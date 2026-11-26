@@ -255,7 +255,7 @@ export type PackageOpStatus = {
 export interface SlashCommand {
   name: string;
   description?: string;
-  category: "extension" | "skill" | "prompt";
+  category: "builtin" | "extension" | "skill" | "prompt";
 }
 
 import type { AppUpdateState } from "./app-update";
@@ -387,6 +387,11 @@ export type RPCSchema = {
         response: WireTranscript;
       };
       listSlashCommands: { params: SessionAddress; response: SlashCommand[] };
+      /** pi's `/compact [instructions]`; the SDK leaves built-in commands to its TUI. */
+      compactSession: {
+        params: SessionAddress & { instructions?: string };
+        response: void;
+      };
       completeSlashArguments: {
         params: SessionAddress & { name: string; argumentPrefix: string };
         response: { value: string; label: string; description?: string }[];

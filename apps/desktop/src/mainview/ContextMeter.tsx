@@ -15,9 +15,11 @@ export const contextTip = ({
 export function ContextMeter({
   summary,
   mode,
+  action,
 }: {
   summary: ContextSummary;
   mode: Settings["contextDisplay"];
+  action?: TipContent["action"];
 }) {
   const percent = summary.percent ?? (mode === "used" ? 0 : 100);
   const title = summary.title;
@@ -27,7 +29,7 @@ export function ContextMeter({
       className="context-indicator"
       role="img"
       aria-label={title}
-      {...tooltip({ ...contextTip(summary), side: "top" })}
+      {...tooltip({ ...contextTip(summary), action, side: "top" })}
     >
       <svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true">
         <circle

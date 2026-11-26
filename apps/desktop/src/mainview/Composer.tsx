@@ -4,6 +4,7 @@ import {
   FileText,
   Folder,
   Puzzle,
+  SquareSlash,
   X,
 } from "lucide-react";
 import {
@@ -58,6 +59,7 @@ import { isSendAdmitted } from "./send-controller";
 import { interruptedSession } from "./session-status";
 import {
   applySlashCompletion,
+  compactCommand,
   extensionCommand,
   matchesSlashCommand,
   type SlashArgument,
@@ -67,7 +69,12 @@ import { showError, showSessionReadError, useStore } from "./store";
 import { transcriptRequestIds } from "./transcript-requests";
 import "./composer.css";
 
-const categoryIcons = { extension: Puzzle, skill: BookOpen, prompt: FileText };
+const categoryIcons = {
+  builtin: SquareSlash,
+  extension: Puzzle,
+  skill: BookOpen,
+  prompt: FileText,
+};
 
 async function reloadAdapters() {
   const result = await rpc.request.reloadAdapterConfig();
@@ -396,6 +403,23 @@ export function Composer({
       stopping === key
     )
       return;
+    const compact =
+      !extensionSend &&
+      !images.length &&
+      !files.length &&
+      !annotations.length &&
+      !loading &&
+      compactCommand(expanded);
+    if (compact) {
+      // Like pi's TUI: the command leaves the editor and is not a chat message.
+      drafts.edit(address, () => emptyContent());
+      runCompaction(compact.instructions, () =>
+        drafts.edit(address, (content) =>
+          content.text ? content : { ...content, text: expanded },
+        ),
+      );
+      return;
+    }
     if (resume) {
       // Use the normal durable send path: receipt recovery, Stop and ordering
       // remain identical to a typed message, without replaying the original request.
@@ -413,6 +437,14 @@ export function Composer({
         resume,
       )
       .catch(showError);
+  }
+  function runCompaction(instructions?: string, onError?: () => void) {
+    void ensureSessionRuntime(slashAddress)
+      .then(() => rpc.request.compactSession({ ...slashAddress, instructions }))
+      .catch((error) => {
+        onError?.();
+        showError(error);
+      });
   }
   function attach(files: File[]) {
     // Capture the address, not whichever session happens to be active at FileReader completion.
@@ -878,7 +910,14 @@ export function Composer({
             <SessionIndicators address={address} />
           </div>
           <div className="composer-pickers">
-            <ContextIndicator usage={snapshot.contextUsage} />
+            <ContextIndicator
+              usage={snapshot.contextUsage}
+              action={{
+                label: t["Compact context"],
+                run: () => runCompaction(),
+                disabled: !canSend || !!transcript.compaction,
+              }}
+            />
             <ModelPicker snapshot={pickerSnapshot} />
           </div>
           <div className="send-controls">

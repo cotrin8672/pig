@@ -425,6 +425,8 @@ const hostRequests = {
   getSessionHistory: async (input) =>
     packTranscript(await sessionHost.getSessionHistory(input)),
   listSlashCommands: (input) => sessionHost.listSlashCommands(input),
+  compactSession: (input) =>
+    withRuntime(input, (value) => sessionHost.compact(value)),
   completeSlashArguments: (input) =>
     withRuntime(input, (value) => sessionHost.completeSlashArguments(value)),
   getPromptReceipt: (input) => sessionHost.getPromptReceipt(input),

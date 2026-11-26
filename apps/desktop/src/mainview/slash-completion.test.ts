@@ -1,6 +1,7 @@
 import { expect, test } from "bun:test";
 import {
   applySlashCompletion,
+  compactCommand,
   extensionCommand,
   matchesSlashCommand,
   slashContext,
@@ -34,6 +35,15 @@ test("only registered exact extension commands bypass model requirement", () => 
   expect(extensionCommand("/hello arg", commands)).toBe(true);
   expect(extensionCommand("/hello2", commands)).toBe(false);
   expect(extensionCommand("/skill", commands)).toBe(false);
+});
+
+test("/compact keeps multi-line instructions and ignores look-alike commands", () => {
+  expect(compactCommand("/compact")).toEqual({ instructions: undefined });
+  expect(compactCommand(" /compact  keep the API plan\nand tests ")).toEqual({
+    instructions: "keep the API plan\nand tests",
+  });
+  expect(compactCommand("/compaction")).toBeUndefined();
+  expect(compactCommand("please /compact")).toBeUndefined();
 });
 
 test("argument value replaces only the prefix, preserving trailing arguments", () => {

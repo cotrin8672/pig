@@ -32,6 +32,10 @@ export type TipContent = {
   /** Full monospace text (e.g. a clipped shell command), up to 8 lines. */
   code?: string;
   rows?: [string, ReactNode][];
+  /** One small command inside the surface. Makes this tooltip hoverable: it
+   * stays open while the pointer crosses the gap into it. Keep a keyboard
+   * route elsewhere, since the anchor itself need not be focusable. */
+  action?: { label: string; run: () => void; disabled?: boolean };
 };
 export type TooltipAnchor = TipContent & { side: TooltipSide };
 type Source = TooltipAnchor | (() => TooltipAnchor);
@@ -41,6 +45,8 @@ type Schedule = (el: HTMLElement, source: Source) => void;
 
 const OPEN_DELAY = 500;
 const WARM_FOR = 400;
+/** Time to cross the gap from an anchor into a hoverable tooltip. */
+const LEAVE_GRACE = 200;
 const GAP = 6;
 /** Long titles must not grow the tooltip into a wall of text. */
 export const TOOLTIP_TEXT_LIMIT = 80;
@@ -55,6 +61,7 @@ export const clipTooltipText = (text: string, limit = TOOLTIP_TEXT_LIMIT) => {
 const TooltipContext = createContext<{
   schedule: Schedule;
   close: () => void;
+  leave: () => void;
 } | null>(null);
 
 function Keys({ keys }: { keys?: string[] }) {
@@ -69,7 +76,7 @@ function Keys({ keys }: { keys?: string[] }) {
 }
 
 export function TooltipBody({ content }: { content: TipContent }) {
-  const { tier, label, keys, description, code, rows } = content;
+  const { tier, label, keys, description, code, rows, action } = content;
   if (tier === "label")
     return <span className="tooltip-label ui-tooltip-title">{label}</span>;
   if (tier === "shortcut")
@@ -99,6 +106,16 @@ export function TooltipBody({ content }: { content: TipContent }) {
           ))}
         </dl>
       )}
+      {action && (
+        <button
+          type="button"
+          className="tooltip-action"
+          disabled={action.disabled}
+          onClick={action.run}
+        >
+          {action.label}
+        </button>
+      )}
     </>
   );
 }
@@ -115,14 +132,23 @@ export function TooltipLayer({ children }: { children: ReactNode }) {
   const closedAt = useRef(0);
   const shown = useRef(0);
   const [tip, setTip] = useState<ShownTip>();
+  const interactive = useRef(false);
+  interactive.current = !!tip?.action;
   const close = useCallback(() => {
     clearTimeout(timer.current);
     if (anchor.current) closedAt.current = Date.now();
     anchor.current = null;
     setTip(undefined);
   }, []);
+  const leave = useCallback(() => {
+    if (!interactive.current) return close();
+    clearTimeout(timer.current);
+    timer.current = setTimeout(close, LEAVE_GRACE);
+  }, [close]);
   const schedule = useCallback<Schedule>((el, source) => {
     clearTimeout(timer.current);
+    // Back from a hoverable tooltip to its own anchor: keep it as it is.
+    if (anchor.current === el) return;
     // An open menu/popover already explains itself; don't cover it.
     if (el.matches('[aria-expanded="true"], details[open] > summary')) return;
     const show = () => {
@@ -183,7 +209,11 @@ export function TooltipLayer({ children }: { children: ReactNode }) {
       window.removeEventListener("resize", close);
     };
   }, [tip, close, id]);
-  const api = useMemo(() => ({ schedule, close }), [schedule, close]);
+  const api = useMemo(
+    () => ({ schedule, close, leave }),
+    [schedule, close, leave],
+  );
+  const action = tip?.action;
   return (
     <TooltipContext.Provider value={api}>
       {children}
@@ -191,12 +221,31 @@ export function TooltipLayer({ children }: { children: ReactNode }) {
         <div
           ref={panel}
           id={id}
-          role="tooltip"
+          // A tooltip may not hold controls; a hoverable one is a plain group.
+          role={action ? "group" : "tooltip"}
           popover="manual"
           className={`${tooltipClass(tip.tier)} ui-tooltip-follow`}
+          data-interactive={action ? "" : undefined}
+          onPointerEnter={() => clearTimeout(timer.current)}
+          onPointerLeave={action ? leave : undefined}
         >
           <div key={tip.shown} className="tooltip-content ui-tooltip-swap">
-            <TooltipBody content={tip} />
+            <TooltipBody
+              content={
+                action
+                  ? {
+                      ...tip,
+                      action: {
+                        ...action,
+                        run: () => {
+                          close();
+                          action.run();
+                        },
+                      },
+                    }
+                  : tip
+              }
+            />
           </div>
         </div>
       )}
@@ -217,7 +266,7 @@ export function useTooltip() {
           "data-tooltip-anchor": "",
           onPointerEnter: (event: PointerEvent<HTMLElement>) =>
             layer.schedule(event.currentTarget, source),
-          onPointerLeave: layer.close,
+          onPointerLeave: layer.leave,
           onPointerDown: layer.close,
           onFocus: (event: FocusEvent<HTMLElement>) => {
             if (event.currentTarget.matches(":focus-visible"))

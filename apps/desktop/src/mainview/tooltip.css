@@ -97,6 +97,22 @@
   white-space: nowrap;
   pointer-events: none;
 }
+/* A tooltip with an action keeps taking the pointer once it is reached. */
+.tooltip[data-interactive] {
+  pointer-events: auto;
+}
+.tooltip-action {
+  align-self: flex-end;
+  margin-top: 4px;
+  padding: 2px 8px;
+  border-radius: var(--radius-2xs);
+  background: var(--ds-bg-chip);
+  color: var(--ds-text-primary);
+  font-size: var(--text-xs);
+}
+.tooltip-action:hover:not(:disabled) {
+  background: var(--ds-bg-hover);
+}
 .tooltip-tier-detail,
 .tooltip-tier-rich {
   flex-direction: column;

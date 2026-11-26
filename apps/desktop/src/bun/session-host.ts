@@ -2229,14 +2229,24 @@ export class SessionHost {
         commands.push({ name, description, category });
       }
     };
+    // Extensions may override a built-in name, as in pi's TUI.
     for (const command of session.extensionRunner.getRegisteredCommands())
       add(command.invocationName, command.description, "extension");
+    add("compact", "Manually compact the session context", "builtin");
     if (session.settingsManager.getEnableSkillCommands())
       for (const skill of session.resourceLoader.getSkills().skills)
         add(`skill:${skill.name}`, skill.description, "skill");
     for (const template of session.promptTemplates)
       add(template.name, template.description, "prompt");
     return commands;
+  }
+  async compact(input: SessionAddress & { instructions?: string }) {
+    const { session } = required(this.current(input).runtime);
+    // The SDK aborts a running turn itself; Stop through the host first so
+    // pending sends and queued follow-ups are recovered like a normal Stop.
+    if (session.isStreaming) await this.abort(input);
+    this.current(input);
+    await session.compact(input.instructions);
   }
   async completeSlashArguments(
     input: SessionAddress & { name: string; argumentPrefix: string },

@@ -120,3 +120,51 @@ test.skipIf(!existsSync(fixtureEdge) && !process.env.PIG_REQUIRE_UI_TESTS)(
     ),
   60_000,
 );
+
+test.skipIf(!existsSync(fixtureEdge) && !process.env.PIG_REQUIRE_UI_TESTS)(
+  "a tooltip with an action stays open across the gap and runs it once",
+  () =>
+    runUiFixture(
+      "tooltip-action",
+      `
+    const {createRoot}=await import(${fixtureImport(import.meta.resolve("react-dom/client"))});
+    const {flushSync}=await import(${fixtureImport(import.meta.resolve("react-dom"))});
+    const {TooltipLayer,useTooltip}=await import(${local("./Tooltip.tsx")});
+    await import(${local("./styles.css")});
+    ${fixtureHelpers}
+    const pause=ms=>new Promise(r=>setTimeout(r,ms));
+    let runs=0;
+    function Fixture(){
+      const tooltip=useTooltip();
+      return <div style={{padding:120}}>
+        <span className="meter" style={{display:'inline-block',width:40,height:20}} {...tooltip({tier:'detail',side:'top',label:'Context 19% used',description:'186.1k / 1M',action:{label:'Compact context',run:()=>runs++}})}>19%</span>
+        <span className="plain" style={{display:'inline-block',width:40,height:20,marginLeft:80}} {...tooltip({tier:'label',side:'top',label:'Plain'})}>P</span>
+      </div>;
+    }
+    const root=createFixtureRoot(createRoot);
+    flushSync(()=>root.render(<TooltipLayer><Fixture/></TooltipLayer>));await wait();
+    const meter=document.querySelector('.meter'),plain=document.querySelector('.plain');
+    const move=(from,to)=>from.dispatchEvent(new PointerEvent('pointerout',{bubbles:true,relatedTarget:to}));
+    meter.dispatchEvent(new PointerEvent('pointerover',{bubbles:true,relatedTarget:document.body}));
+    await until(()=>document.querySelector('.tooltip-action'),'the action tooltip opens');
+    const panel=document.querySelector('.tooltip[data-interactive]');
+    check(panel&&panel.getAttribute('role')==='group'&&getComputedStyle(panel).pointerEvents==='auto','an action makes the surface a hoverable group');
+    move(meter,document.body);await pause(80);
+    check(panel.isConnected,'crossing the gap does not close it');
+    panel.dispatchEvent(new PointerEvent('pointerover',{bubbles:true,relatedTarget:document.body}));await pause(300);
+    check(panel.isConnected,'the pointer inside keeps it open');
+    panel.querySelector('.tooltip-action').click();await wait();
+    check(runs===1&&!document.querySelector('.tooltip'),'the action runs once and closes the tooltip');
+    meter.dispatchEvent(new PointerEvent('pointerover',{bubbles:true,relatedTarget:document.body}));
+    await until(()=>document.querySelector('.tooltip-action'),'the action tooltip reopens');
+    move(meter,document.body);await pause(300);
+    check(!document.querySelector('.tooltip'),'leaving without reaching it closes after the grace period');
+    plain.dispatchEvent(new PointerEvent('pointerover',{bubbles:true,relatedTarget:document.body}));
+    await until(()=>document.querySelector('[role="tooltip"]'),'a plain tooltip opens');
+    check(getComputedStyle(document.querySelector('[role="tooltip"]')).pointerEvents==='none','plain tooltips still ignore the pointer');
+    move(plain,document.body);await wait();
+    check(!document.querySelector('.tooltip'),'plain tooltips still close at once');
+  `,
+    ),
+  60_000,
+);
