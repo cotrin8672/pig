@@ -457,7 +457,6 @@ const hostRequests = {
   appearance: () => appearance,
   settings: () => settings,
   providerUsage: () => usageService.snapshot(),
-  statistics: ({ period }) => getStatistics(period),
   refreshProviderUsage: () => usageService.refresh(true),
   listFontFamilies,
   bootstrap: async () => {
@@ -695,6 +694,7 @@ const hostRequests = {
 } satisfies Omit<
   RequestHandlers,
   | "copyImage"
+  | "statistics"
   | "terminalCommand"
   | "importChatHistory"
   | "noticeHistory"
@@ -861,6 +861,19 @@ function createWindow() {
   const handlers: RpcHandlers<"bun"> = {
     requests: {
       ...hostRequests,
+      statistics: ({ period, requestId }) => {
+        if (
+          requestId !== undefined &&
+          (typeof requestId !== "string" || requestId.length > 128)
+        )
+          throw new Error("Invalid statistics request");
+        return getStatistics(
+          period,
+          requestId
+            ? (data) => hub.to(id, "statisticsProgress", { requestId, data })
+            : undefined,
+        );
+      },
       prompt: (input) =>
         withRuntime(input, (params) =>
           sessionHost.prompt(params, (admission) =>

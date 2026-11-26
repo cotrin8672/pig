@@ -37,11 +37,17 @@ export type StatisticsCommand =
   | { type: "batch"; events: StatisticEvent[]; dropped: number; id: number }
   | { type: "forget"; owner: string; id: number }
   | { type: "flush"; id: number }
-  | { type: "query"; period: StatisticsPeriod; id: number }
+  | {
+      type: "query";
+      period: StatisticsPeriod;
+      id: number;
+      progressive?: boolean;
+    }
   | { type: "close"; id: number };
 
 export type StatisticsReply =
   | { type: "ready" }
   | { type: "ack"; id: number }
   | { type: "snapshot"; id: number; data: StatisticsData }
+  | { type: "progress"; id: number; data: Partial<StatisticsData> }
   | { type: "error"; code: "storage" | "protocol" };

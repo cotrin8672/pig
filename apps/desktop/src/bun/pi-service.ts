@@ -22,6 +22,7 @@ import type {
   SessionAddress,
 } from "../shared/runtime-contract";
 import {
+  type StatisticsData,
   type StatisticsPeriod,
   validateStatisticsPeriod,
 } from "../shared/statistics";
@@ -252,9 +253,11 @@ const statistics = new StatisticsService(
   join(desktopConfigDir, "statistics.sqlite"),
 );
 const statisticsEnabled = process.env.PIG_STATISTICS !== "0";
-export async function getStatistics(period: StatisticsPeriod) {
-  const data = await statistics.snapshot(validateStatisticsPeriod(period));
-  data.coverage.collection = statisticsEnabled ? "active" : "disabled";
+export async function getStatistics(
+  period: StatisticsPeriod,
+  publish?: (data: Partial<StatisticsData>) => void,
+) {
+  validateStatisticsPeriod(period);
   const names = new Map(
     runtime
       .getAllModels()
@@ -263,8 +266,22 @@ export async function getStatistics(period: StatisticsPeriod) {
         model.name,
       ]),
   );
-  for (const model of data.models)
-    model.name = names.get(model.id) ?? model.name;
+  const decorate = (data: Partial<StatisticsData>) => {
+    if (data.coverage)
+      data.coverage.collection = statisticsEnabled ? "active" : "disabled";
+    for (const model of data.models ?? [])
+      model.name = names.get(model.id) ?? model.name;
+  };
+  const data = await statistics.snapshot(
+    period,
+    publish
+      ? (part) => {
+          decorate(part);
+          publish(part);
+        }
+      : undefined,
+  );
+  decorate(data);
   return data;
 }
 export const sessionHost = new SessionHost({

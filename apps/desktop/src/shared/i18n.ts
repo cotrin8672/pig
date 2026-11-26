@@ -88,6 +88,7 @@ export const en = {
       `Known usage only · ${unknown} incomplete usage records · ${dropped} dropped events. SDK-normalized usage may include unreported zero defaults. Auxiliary usage can be aggregated.`,
     disabled: "Collection disabled",
     partial: "Partial data",
+    costPartial: "partial",
     failed: "Could not load statistics",
     initialHint:
       "Latest initial normalized request in this period. Component tokens are character-based estimates; provider overhead is not included.",
@@ -1066,6 +1067,7 @@ export const ja: Dictionary = {
       `既知のUsageのみ・内訳不足 ${unknown}件・イベント欠損 ${dropped}件。SDKの0初期値は未報告と区別できない場合があります。補助処理のUsageは集約値を含みます。`,
     disabled: "収集停止中",
     partial: "一部未計測",
+    costPartial: "一部",
     failed: "統計を取得できませんでした",
     initialHint:
       "期間内の最新の初回送信（正規化後）。内訳は文字数ベースの推定で、Provider側の付加情報は含みません。",

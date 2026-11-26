@@ -46,7 +46,11 @@ import type {
 } from "./runtime-contract";
 import type { Settings, SettingsPatch } from "./settings";
 import type { RuntimeWireEvent } from "./snapshot-delta";
-import type { StatisticsData, StatisticsPeriod } from "./statistics";
+import type {
+  StatisticsData,
+  StatisticsPeriod,
+  StatisticsProgress,
+} from "./statistics";
 import type { TerminalClientCommand, TerminalHostEvent } from "./terminal-ui";
 import type { WireTranscript } from "./transcript-wire";
 
@@ -325,7 +329,7 @@ export type RPCSchema = {
       // biome-ignore lint/suspicious/noConfusingVoidType: Electrobun's parameterless RPC convention.
       providerUsage: { params: void; response: ProviderUsage[] };
       statistics: {
-        params: { period: StatisticsPeriod };
+        params: { period: StatisticsPeriod; requestId?: string };
         response: StatisticsData;
       };
       // biome-ignore lint/suspicious/noConfusingVoidType: Electrobun's parameterless RPC convention.
@@ -584,6 +588,7 @@ export type RPCSchema = {
         contextUsage?: ContextUsage | null;
       };
       loginFrame: LoginFrame;
+      statisticsProgress: StatisticsProgress;
       notification: NoticeRecord;
       noticeHistory: NoticeHistorySnapshot;
     };

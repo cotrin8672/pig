@@ -48,7 +48,7 @@ const meta = {
     docs: {
       description: {
         component:
-          "設定・Provider画面と共通のContentPageを使う本番のStatisticsViewをサンプルデータで表示。本文は利用可能な幅・高さに追従し、日別グラフの下にシェルコマンド別の成否を置く。期間タブは見出しと同じ行、円グラフは同じ直径・位置に揃える。Storybookの期間切替は表示のみ。",
+          "設定・Providerと共通幅の本番の統計画面。集計と日別推移、円グラフ、4種類を切り替えられる明細を表示する。Storybookの数値はサンプルで、期間切替は表示のみ。",
       },
     },
   },
@@ -66,6 +66,22 @@ export const Overview: Story = {
       <StatisticsScreen data={statisticsFixture} open />
     </PreviewTheme>
   ),
+};
+export const Compact: Story = {
+  name: "共通幅案：グラフと切り替え式の明細",
+  render: (args) => (
+    <PreviewTheme args={args}>
+      <StatisticsScreen data={statisticsFixture} open />
+    </PreviewTheme>
+  ),
+  parameters: {
+    docs: {
+      description: {
+        story:
+          "トークン推移の上に集計を置き、右側は円グラフに使う。API換算額は期間合計の表示例で、実際の請求額ではない。明細カードでは4種類の表を直接切り替える。",
+      },
+    },
+  },
 };
 export const SidebarEntry: Story = {
   name: "サイドバーの入口",

@@ -3,31 +3,15 @@ import type { StatisticsData, StatisticsPeriod } from "../shared/statistics";
 import { useT } from "./i18n";
 import { rpc } from "./rpc";
 import { StatisticsView } from "./StatisticsView";
+import { listenStatistics } from "./statistics-progress";
 import { showError } from "./store";
-
-const empty: StatisticsData = {
-  collectingSince: null,
-  days: [],
-  daily: {},
-  models: [],
-  tools: [],
-  commands: { rows: [], unclassified: 0, unmeasured: 0 },
-  initialContext: {
-    parts: [],
-    sections: [],
-    sources: [],
-    measuredTotal: null,
-    contextWindow: null,
-  },
-  coverage: { unknownUsage: 0, dropped: 0, collection: "active" },
-};
 
 /** Mounted only on the statistics page. Late period responses cannot replace newer data. */
 export function Statistics() {
   const t = useT().statisticsText;
   const [period, setPeriod] = useState<StatisticsPeriod>("7d");
   const [refresh, setRefresh] = useState(0);
-  const [data, setData] = useState(empty);
+  const [data, setData] = useState<Partial<StatisticsData>>({});
   const [busy, setBusy] = useState(true);
   const [failed, setFailed] = useState(false);
   // biome-ignore lint/correctness/useExhaustiveDependencies: manual refresh restarts this polling generation.
@@ -36,12 +20,18 @@ export function Statistics() {
     let running = false;
     let timer: ReturnType<typeof setTimeout>;
     let notified = false;
+    let unsubscribe: (() => void) | undefined;
     const load = async () => {
       if (running || disposed) return;
       running = true;
       setBusy(true);
+      setFailed(false);
+      const requestId = crypto.randomUUID();
+      unsubscribe = listenStatistics(requestId, (part) => {
+        if (!disposed) setData((prev) => ({ ...prev, ...part }));
+      });
       try {
-        const next = await rpc.request.statistics({ period });
+        const next = await rpc.request.statistics({ period, requestId });
         if (!disposed) {
           setData(next);
           setFailed(false);
@@ -54,6 +44,7 @@ export function Statistics() {
           notified = true;
         }
       } finally {
+        unsubscribe();
         running = false;
         if (!disposed) {
           setBusy(false);
@@ -71,6 +62,7 @@ export function Statistics() {
     window.addEventListener("focus", focus);
     return () => {
       disposed = true;
+      unsubscribe?.();
       clearTimeout(timer);
       window.removeEventListener("focus", focus);
     };
@@ -80,9 +72,12 @@ export function Statistics() {
       data={data}
       period={period}
       busy={busy}
+      failed={failed}
       onPeriod={(next) => {
         if (next !== period) {
-          setData(empty);
+          setData({});
+          setBusy(true);
+          setFailed(false);
           setPeriod(next);
         }
       }}
@@ -93,15 +88,15 @@ export function Statistics() {
         ) : (
           <span
             aria-description={t.coverage(
-              data.coverage.unknownUsage,
-              data.coverage.dropped,
+              data.coverage?.unknownUsage ?? 0,
+              data.coverage?.dropped ?? 0,
             )}
           >
-            {data.coverage.collection === "disabled"
+            {data.coverage?.collection === "disabled"
               ? t.disabled
               : busy && !data.collectingSince
                 ? t.loading
-                : data.coverage.unknownUsage || data.coverage.dropped
+                : data.coverage?.unknownUsage || data.coverage?.dropped
                   ? t.partial
                   : !data.collectingSince
                     ? t.noRecords

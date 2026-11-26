@@ -101,6 +101,40 @@ test("the actual App and its feature components render in isolated Storybook pre
           ),
         ).toEqual([]);
         await navigate(
+          "proposals-statistics--compact",
+          "document.querySelectorAll('.stats-panel h2 .stats-tabs button').length === 4",
+        );
+        for (const [index, detail] of [
+          "models",
+          "commands",
+          "tools",
+          "context",
+        ].entries()) {
+          await browser.evaluate(
+            `document.querySelectorAll('.stats-tabs button')[${index}].click()`,
+          );
+          await waitFor(
+            detail === "context"
+              ? "!!document.querySelector('table.stats-context')"
+              : `!!document.querySelector('.stats-${detail} table')`,
+          );
+          expect(
+            await browser.evaluate(`(() => {
+            const page = document.querySelector('.statistics-overview');
+            const card = page.querySelector('.stats-composition');
+            return page.querySelectorAll('table').length === 1
+              && !card.querySelector('figcaption span')
+              && [...card.querySelectorAll('.stats-donut-legend li')].every(row =>
+                card.getBoundingClientRect().bottom - row.getBoundingClientRect().bottom >= 11.5)
+              && page.querySelectorAll('.stats-summary dt').length === 5
+              && page.querySelector('.stats-summary').offsetWidth === page.querySelector('.stats-daily').offsetWidth
+              && page.scrollHeight === page.clientHeight
+              && page.scrollWidth === page.clientWidth;
+          })()`),
+            detail,
+          ).toBe(true);
+        }
+        await navigate(
           "settings-remote-pairing--table",
           "document.querySelectorAll('.pairing-table tbody tr').length === 3",
         );

@@ -71,6 +71,7 @@ import { SendController } from "./send-controller";
 import { lane } from "./session-lane";
 import { visibleCompletion } from "./session-read";
 import { createSnapshotRecovery } from "./snapshot-recovery";
+import { receiveStatisticsProgress } from "./statistics-progress";
 import {
   connectNoticeHistory,
   type OpeningTarget,
@@ -202,6 +203,7 @@ export const rpc = createRendererRpc({
     },
   },
   messages: {
+    statisticsProgress: receiveStatisticsProgress,
     chatHistoryFile: (event) => {
       if (useStore.getState().chatHistoryFile?.requestId !== event.requestId)
         return;
