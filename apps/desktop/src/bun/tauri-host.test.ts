@@ -63,11 +63,25 @@ test.skipIf(process.platform !== "win32")(
         child.stdin.write(`${JSON.stringify(packet)}\n`);
         child.stdin.flush();
       };
-      let id = "";
+      // Tauri owns the initial WebView and attaches it without a host create frame.
+      const id = "pig-initial";
       let publication = false;
       const replies: unknown[][] = [];
       const request = (seq: number, name: string, params?: unknown) =>
         writer(["packet", id, 1, ["request", seq, name, params]]);
+      writer([
+        "attach",
+        id,
+        1,
+        { handle: 1, maximized: false, minimized: false, focused: true },
+      ]);
+      writer(["packet", id, 0, ["request", 20, "bootstrap"]]);
+      request(21, "openSession", {
+        cwd,
+        id: "normal",
+        openId: "normal-open",
+        historyOnly: true,
+      });
       const reader = child.stdout
         .pipeThrough(new TextDecoderStream())
         .getReader();
@@ -83,22 +97,7 @@ test.skipIf(process.platform !== "win32")(
           end = buf.indexOf("\n");
           if (!line.startsWith("\x1e")) continue;
           const frame = JSON.parse(line.slice(1));
-          if (frame[0] === "create") {
-            id = frame[1];
-            writer([
-              "attach",
-              id,
-              1,
-              { handle: 1, maximized: false, minimized: false, focused: true },
-            ]);
-            writer(["packet", id, 0, ["request", 20, "bootstrap"]]);
-            request(21, "openSession", {
-              cwd,
-              id: "normal",
-              openId: "normal-open",
-              historyOnly: true,
-            });
-          } else if (frame[0] === "native") {
+          if (frame[0] === "native") {
             writer(["nativeResult", frame[1], true, null]);
           } else if (frame[0] === "packet" && frame[1] === id) {
             expect(frame[2]).toBe(1);
