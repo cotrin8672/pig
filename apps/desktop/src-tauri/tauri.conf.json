@@ -1,0 +1,14 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "pig",
+  "identifier": "dev.pig.tauri",
+  "build": { "frontendDist": "../build/tauri-webview" },
+  "app": {
+    "windows": [],
+    "security": {
+      "capabilities": ["desktop"],
+      "csp": "default-src 'self'; script-src 'self' blob: 'sha256-EdM0HEq6bw2k6XoHo496gygpzb8aSQgLkB4jcnfFgfw='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; font-src 'self' data:; worker-src 'self' blob:; connect-src 'self' ipc: http://ipc.localhost; frame-src about: http://pig-widget.localhost/frame; base-uri 'none'; object-src 'none'; form-action 'none'"
+    }
+  },
+  "bundle": { "active": false, "icon": ["../assets/icon.ico"] }
+}

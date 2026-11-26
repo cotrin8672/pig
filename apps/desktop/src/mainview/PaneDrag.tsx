@@ -2,13 +2,12 @@ import { GripVertical } from "lucide-react";
 import { type PointerEvent, type RefObject, useEffect, useState } from "react";
 import { useT } from "./i18n";
 import {
-  movePane,
-  type PaneDropSide,
   type PaneNode,
   type PaneRect,
-  paneDropAt,
   paneGeometry,
+  planPaneDrop,
 } from "./pane-layout";
+import { Keycap } from "./primitives/Keycap";
 
 export type PaneDrag = {
   id: number;
@@ -19,7 +18,7 @@ export type PaneDrag = {
   x: number;
   y: number;
   active: boolean;
-  drop?: { target: number; side: PaneDropSide };
+  drop?: ReturnType<typeof planPaneDrop>;
 };
 export type PaneLabel = { project: string; title: string };
 
@@ -34,7 +33,7 @@ export const paneRect = (bounds: PaneRect) => ({
 export function usePaneDrag(
   tree: PaneNode,
   workspace: RefObject<HTMLElement | null>,
-  onDrop: (id: number, target: number, side: PaneDropSide) => void,
+  onDrop: (id: number, result: PaneNode, original: PaneNode) => void,
 ) {
   const [drag, setDrag] = useState<PaneDrag | null>(null);
   const dragging = drag?.active ? drag : null;
@@ -57,17 +56,20 @@ export function usePaneDrag(
       Math.hypot(event.clientX - drag.startX, event.clientY - drag.startY) <= 4
     )
       return;
-    const drop = paneDropAt(
+    const drop = planPaneDrop(
       tree,
+      drag.id,
       (event.clientX - box.left) / box.width,
       (event.clientY - box.top) / box.height,
+      box.width,
+      box.height,
     );
     setDrag({
       ...drag,
       active: true,
       x: event.clientX - box.left,
       y: event.clientY - box.top,
-      drop: drop && drop.target !== drag.id ? drop : undefined,
+      drop,
     });
   }
 
@@ -90,9 +92,19 @@ export function usePaneDrag(
             });
           },
           onPointerMove: track,
-          onPointerUp() {
-            if (dragging?.drop)
-              onDrop(dragging.id, dragging.drop.target, dragging.drop.side);
+          onPointerUp(event: PointerEvent) {
+            const box = workspace.current?.getBoundingClientRect();
+            if (dragging && box && event.pointerId === dragging.pointerId) {
+              const drop = planPaneDrop(
+                tree,
+                dragging.id,
+                (event.clientX - box.left) / box.width,
+                (event.clientY - box.top) / box.height,
+                box.width,
+                box.height,
+              );
+              if (drop) onDrop(dragging.id, drop.tree, tree);
+            }
             setDrag(null);
           },
           onPointerCancel: () => setDrag(null),
@@ -115,12 +127,16 @@ export function PaneDropOverlay({
 }) {
   const t = useT();
   const { drop } = drag;
-  const result = drop ? movePane(tree, drag.id, drop.target, drop.side) : tree;
+  const result = drop?.tree ?? tree;
   const hint = !drop
     ? t.paneDropPrompt
-    : drop.side === "center"
-      ? t.paneDropSwap(label(drop.target).title)
-      : t.paneDropPlace(label(drop.target).title, drop.side);
+    : drop.side === "divider"
+      ? drop.axis === "columns"
+        ? t.paneDropColumns
+        : t.paneDropRows
+      : drop.side === "center"
+        ? t.paneDropSwap(label(drop.target).title)
+        : t.paneDropPlace(label(drop.target).title, drop.side);
   return (
     <div className="pane-drop-layout" aria-hidden="true">
       {paneGeometry(result).panes.map(({ id, bounds }) => {
@@ -130,7 +146,7 @@ export function PaneDropOverlay({
             key={id}
             className="pane-drop-slot"
             data-moving={id === drag.id}
-            data-target={id === drop?.target}
+            data-target={drop?.side !== "divider" && id === drop?.target}
             style={paneRect(bounds)}
           >
             <span className="pane-drop-slot-title">
@@ -145,7 +161,7 @@ export function PaneDropOverlay({
       <div className="pane-drag-ghost" style={{ left: drag.x, top: drag.y }}>
         <GripVertical size={12} aria-hidden="true" />
         {label(drag.id).title}
-        <kbd>Esc</kbd>
+        <Keycap>Esc</Keycap>
       </div>
     </div>
   );

@@ -1,0 +1,21 @@
+[package]
+name = "pig-pairing"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[dependencies]
+anyhow = "1"
+getrandom = { version = "0.4", features = ["std"] }
+hex = "0.4"
+iroh-base = { version = "1.5", features = ["key"] }
+rusqlite = { version = "0.37", features = ["bundled"] }
+sha2 = "0.10"
+
+[target.'cfg(windows)'.dependencies]
+tempfile = "3"
+windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_Security_Cryptography"] }
+zeroize = "1"
+
+[dev-dependencies]
+tempfile = "3"

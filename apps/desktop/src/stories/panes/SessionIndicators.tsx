@@ -19,6 +19,7 @@ import {
   useState,
 } from "react";
 import "../../mainview/panes.css";
+import { IndicatorDot } from "../../mainview/primitives/IndicatorDot";
 import {
   dotClass,
   headline,
@@ -51,9 +52,7 @@ const presentSections = (info: SessionInfo, keys = allSections) =>
   keys.filter((key) => sectionCount(info, key) > 0);
 
 function Dot({ state }: { state?: RunState }) {
-  return state ? (
-    <span className={`session-dot ${dotClass[state]}`} aria-hidden="true" />
-  ) : null;
+  return state ? <IndicatorDot state={dotClass[state]} /> : null;
 }
 
 /* ---------------- shared content ---------------- */

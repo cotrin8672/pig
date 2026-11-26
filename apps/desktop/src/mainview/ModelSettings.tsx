@@ -5,6 +5,10 @@ import { modelKey } from "../shared/models";
 import type { Effort, ModelInfo } from "../shared/rpc-schema";
 import { EffortSlider } from "./EffortSlider";
 import { useT } from "./i18n";
+import { Chip } from "./primitives/Chip";
+import { Select } from "./primitives/Select";
+import { Switch } from "./primitives/Switch";
+import { TextField } from "./primitives/TextField";
 import { refresh, rpc } from "./rpc";
 import { showError, useStore } from "./store";
 import { defaultEfforts, modelOverrides } from "./ui-mutations";
@@ -64,7 +68,7 @@ function TokenField({
           </button>
         ))}
       </div>
-      <input
+      <TextField
         key={value}
         type="number"
         min={1}
@@ -173,7 +177,7 @@ export function ModelSettings({ model }: { model: ModelInfo }) {
           {t.Alias}
           {override.name && <Reset onClick={() => save({ name: undefined })} />}
         </span>
-        <input
+        <TextField
           key={override.name}
           defaultValue={override.name}
           placeholder={model.id}
@@ -214,9 +218,9 @@ export function ModelSettings({ model }: { model: ModelInfo }) {
           </legend>
           <div className="model-setting-chips">
             {effortLevels.map((level) => (
-              <span className="provider-tag" key={level}>
+              <Chip variant="tag" key={level}>
                 {effortLabels[level]}
-              </span>
+              </Chip>
             ))}
           </div>
         </fieldset>
@@ -249,7 +253,7 @@ export function ModelSettings({ model }: { model: ModelInfo }) {
               <Reset onClick={() => save({ compat: undefined })} />
             )}
           </span>
-          <select
+          <Select
             value={adaptive ? "adaptive" : "standard"}
             onChange={(event) =>
               save({
@@ -261,7 +265,7 @@ export function ModelSettings({ model }: { model: ModelInfo }) {
           >
             <option value="standard">{t.Standard}</option>
             <option value="adaptive">{t.Adaptive}</option>
-          </select>
+          </Select>
         </label>
       )}
       <label className="provider-model-row model-setting-inline">
@@ -271,16 +275,12 @@ export function ModelSettings({ model }: { model: ModelInfo }) {
             <Reset onClick={() => save({ input: undefined })} />
           )}
         </span>
-        <input
-          type="checkbox"
-          role="switch"
+        <Switch
           checked={vision}
-          aria-checked={vision}
           onChange={(event) =>
             save({ input: event.target.checked ? ["text", "image"] : ["text"] })
           }
         />
-        <span className="model-switch" aria-hidden="true" />
       </label>
       {Object.keys(override).length > 0 && (
         <button

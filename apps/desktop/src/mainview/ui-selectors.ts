@@ -46,6 +46,7 @@ export function selectConversationView(s: State) {
       : undefined;
   return {
     openingView,
+    restoringChat: !!s.active && s.restoringChats.has(s.active),
     activeSnapshot: active,
     openingSnapshot: opening,
     generalCwd: s.bootstrap.generalCwd,
@@ -101,14 +102,25 @@ export function selectLiveSessions(s: State, cwd: string) {
   return rows;
 }
 
+// Refresh and delete replace each affected list; token updates don't.
+const listedProjectModified = new WeakMap<readonly SessionInfo[], number>();
+
 /** Latest chat time per project, listed or live, for ordering projects. */
 export function selectProjectModified(s: State) {
   const latest: Record<string, number> = {};
   const bump = (cwd: string, at: number) => {
     if (at > (latest[cwd] ?? 0)) latest[cwd] = at;
   };
-  for (const [cwd, sessions] of Object.entries(s.sessions))
-    for (const session of sessions ?? []) bump(cwd, session.modified);
+  for (const [cwd, sessions] of Object.entries(s.sessions)) {
+    if (!sessions) continue;
+    let modified = listedProjectModified.get(sessions);
+    if (modified === undefined) {
+      modified = 0;
+      for (const { modified: at } of sessions) if (at > modified) modified = at;
+      listedProjectModified.set(sessions, modified);
+    }
+    bump(cwd, modified);
+  }
   for (const snapshot of Object.values(s.snapshots))
     if (snapshot.ready !== false)
       bump(snapshot.info.cwd, snapshot.info.modified);

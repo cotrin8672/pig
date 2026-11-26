@@ -17,7 +17,17 @@ test("worker flushes batches; deletion orders against in-flight writes and late 
     for (let i = 0; i < 250; i++)
       service.record({ ...events[0], id: `event-${i}`, sequence: i + 1 });
     await service.flush();
-    expect((await service.snapshot("today")).collectingSince).not.toBeNull();
+    const received: string[] = [];
+    expect(
+      (
+        await service.snapshot("today", (part) =>
+          received.push(...Object.keys(part)),
+        )
+      ).collectingSince,
+    ).not.toBeNull();
+    expect(received).toContain("models");
+    expect(received).toContain("daily");
+    expect(received).toContain("commands");
     const db = new Database(file, { readonly: true });
     expect(db.query("SELECT count(*) AS n FROM events").get()).toEqual({
       n: 250,

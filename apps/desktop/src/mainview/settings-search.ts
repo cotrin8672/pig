@@ -44,6 +44,11 @@ export const settingTargets: {
   label: TextKey;
 }[] = [
   { id: "default-model", category: "general", label: "Default model" },
+  {
+    id: "session-title-model",
+    category: "general",
+    label: "sessionTitleModel",
+  },
   { id: "language", category: "general", label: "Language" },
   { id: "agent-shell", category: "general", label: "Agent shell" },
   { id: "block-images", category: "general", label: "Block images" },

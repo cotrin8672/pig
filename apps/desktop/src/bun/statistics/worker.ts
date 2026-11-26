@@ -21,7 +21,14 @@ port.onmessage = ({ data }) => {
       port.postMessage({
         type: "snapshot",
         id: data.id,
-        data: store.snapshot(data.period),
+        data: store.snapshot(
+          data.period,
+          undefined,
+          data.progressive
+            ? (part) =>
+                port.postMessage({ type: "progress", id: data.id, data: part })
+            : undefined,
+        ),
       });
       return;
     }

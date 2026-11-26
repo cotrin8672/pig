@@ -35,15 +35,11 @@ test("the actual App and its feature components render in isolated Storybook pre
       ["current-ui-screen--conversation", "Design System/Screens/App"],
       ["domain-sidebar--default", "Design System/Domain/Sidebar"],
       ["domain-chat-screen--default", "Design System/Domain/ChatScreen"],
-      ["domain-composer-ui--default", "Design System/Domain/ComposerUI"],
-      ["domain-composer-ui--model-picker", "Design System/Domain/ComposerUI"],
+      ["domain-composer-ui--default", "Design System/Domain/Composer"],
+      ["component-model-picker--default", "Design System/Domain/ModelPicker"],
       [
-        "domain-composer-ui--model-picker-narrow",
-        "Design System/Domain/ComposerUI",
-      ],
-      [
-        "domain-composer-ui--model-picker-small",
-        "Design System/Domain/ComposerUI",
+        "design-system-features-composer-submit--composer-actions",
+        "Design System/Domain/ComposerSubmit",
       ],
       ["domain-sidebar--notification-center", "Design System/Domain/Sidebar"],
       ["domain-chat-screen--session-panel", "Design System/Domain/ChatScreen"],
@@ -104,6 +100,224 @@ test("the actual App and its feature components render in isolated Storybook pre
             ),
           ),
         ).toEqual([]);
+        await navigate(
+          "proposals-statistics--compact",
+          "document.querySelectorAll('.stats-panel h2 .stats-tabs button').length === 4",
+        );
+        for (const [index, detail] of [
+          "models",
+          "commands",
+          "tools",
+          "context",
+        ].entries()) {
+          await browser.evaluate(
+            `document.querySelectorAll('.stats-tabs button')[${index}].click()`,
+          );
+          await waitFor(
+            detail === "context"
+              ? "!!document.querySelector('table.stats-context')"
+              : `!!document.querySelector('.stats-${detail} table')`,
+          );
+          expect(
+            await browser.evaluate(`(() => {
+            const page = document.querySelector('.statistics-overview');
+            const card = page.querySelector('.stats-composition');
+            return page.querySelectorAll('table').length === 1
+              && !card.querySelector('figcaption span')
+              && [...card.querySelectorAll('.stats-donut-legend li')].every(row =>
+                card.getBoundingClientRect().bottom - row.getBoundingClientRect().bottom >= 11.5)
+              && page.querySelectorAll('.stats-summary dt').length === 5
+              && page.querySelector('.stats-summary').offsetWidth === page.querySelector('.stats-daily').offsetWidth
+              && page.scrollHeight === page.clientHeight
+              && page.scrollWidth === page.clientWidth;
+          })()`),
+            detail,
+          ).toBe(true);
+        }
+        await navigate(
+          "settings-remote-pairing--table",
+          "document.querySelectorAll('.pairing-table tbody tr').length === 3",
+        );
+        expect(
+          await browser.evaluate(
+            "document.querySelectorAll('.pairing-table .thread-more').length",
+          ),
+        ).toBe(0);
+        const remove =
+          ".pairing-table .mac-remove[aria-description='研究室PC']";
+        await browser.evaluate(`document.querySelector("${remove}").click()`);
+        await waitFor(
+          `!!document.querySelector("${remove}.armed") && document.querySelectorAll('.pairing-table tbody tr').length === 3`,
+        );
+        await browser.evaluate(`document.querySelector("${remove}").click()`);
+        await waitFor(`!document.querySelector("${remove}")`);
+        await browser.evaluate(
+          "[...document.querySelectorAll('.table-toolbar button')].find(button => button.textContent === 'PCに接続…').click()",
+        );
+        const connect = "dialog[open][aria-labelledby]";
+        await waitFor(
+          `document.querySelectorAll('${connect} .mac-connect-segments span:not([data-current],[data-done])').length === 4`,
+        );
+        await browser.evaluate(
+          `document.querySelector('${connect} input').focus()`,
+        );
+        await browser.command("Input.insertText", { text: "demo" });
+        await browser.evaluate(
+          `document.querySelector('${connect} button[type=submit]').click()`,
+        );
+        await waitFor(
+          `!!document.querySelector('${connect} .mac-connect-segments [data-current=error]')`,
+        );
+        await browser.evaluate(`(() => {
+          const input = document.querySelector('${connect} input');
+          input.select();
+          input.focus();
+        })()`);
+        await browser.command("Input.insertText", { text: "pig-pair:1:demo" });
+        await browser.evaluate(
+          `document.querySelector('${connect} button[type=submit]').click()`,
+        );
+        await waitFor(
+          `document.querySelectorAll('${connect} .mac-connect-segments [data-done]').length === 4`,
+        );
+        await browser.command("Emulation.setDeviceMetricsOverride", {
+          width: 390,
+          height: 480,
+          deviceScaleFactor: 1,
+          mobile: false,
+        });
+        await navigate(
+          "settings-remote-pairing--invite-dialog",
+          "!!document.querySelector('dialog[open] .mac-invite-status')",
+        );
+        const fitsDialog = `(() => {
+          const panel = document.querySelector('dialog[open]');
+          const footer = panel.querySelector('.dialog-actions').getBoundingClientRect();
+          return panel.scrollHeight <= panel.clientHeight + 1 && panel.scrollWidth <= panel.clientWidth + 1
+            && footer.bottom <= innerHeight;
+        })()`;
+        expect(await browser.evaluate(fitsDialog), "invite fits").toBe(true);
+        const inviteStatus = "dialog[open] .mac-invite-status[role=status]";
+        expect(
+          await browser.evaluate(
+            `document.querySelector('${inviteStatus}').textContent`,
+          ),
+        ).toContain("招待の準備ができました");
+        await browser.evaluate(
+          "document.querySelector('dialog[open] [aria-label=\"招待コードをコピー\"]').click()",
+        );
+        await waitFor(
+          `document.querySelector('${inviteStatus}').textContent.includes('待っています')`,
+        );
+        await waitFor(
+          `document.querySelector('${inviteStatus}').textContent.includes('を追加しました') && !document.querySelector('dialog[open] .mac-invite-code-line code')`,
+        );
+        expect(
+          await browser.evaluate(fitsDialog),
+          "completed invite fits without scrolling",
+        ).toBe(true);
+        await browser.command("Emulation.clearDeviceMetricsOverride", {});
+        await navigate(
+          "prototypes-desktop-motion--playground",
+          "!!document.querySelector('.desktop-motion-stage .model-picker')",
+        );
+        const media = (value: string) =>
+          browser.command("Emulation.setEmulatedMedia", {
+            features: [{ name: "prefers-reduced-motion", value }],
+          });
+        await media("no-preference");
+        // Compare painted geometry at mirrored points in the two timelines.
+        async function trajectory(
+          trigger: string,
+          surface: string,
+          entering: boolean,
+        ) {
+          return browser.evaluate<number[][]>(`(async () => {
+            const d = selector => document.querySelector(selector);
+            d('${trigger}').click();
+            const end = performance.now() + 2200;
+            do {
+              await new Promise(requestAnimationFrame);
+              const node = d('${surface}');
+              const animation = node?.getAnimations().find(a =>
+                ['desktop-motion-shift','desktop-motion-gather'].includes(a.animationName));
+              if (!animation || !node.checkVisibility()) continue;
+              animation.pause();
+              const {duration,delay} = animation.effect.getTiming();
+              const samples = [0.02, 0.3, 0.6, 0.98].map(p => {
+                const forward = ${entering} || animation.playbackRate < 0;
+                animation.currentTime = delay + duration * (forward ? p : 1-p);
+                const {x,y,width} = node.getBoundingClientRect();
+                return [x,y,width,Number(getComputedStyle(node).opacity)];
+              });
+              animation.finish();
+              return samples;
+            } while (performance.now() < end);
+            throw Error('No visible transform on ${surface}');
+          })()`);
+        }
+        await browser.command("Animation.setPlaybackRate", {
+          playbackRate: 0.4,
+        });
+        for (const spring of [false, true]) {
+          if (spring)
+            await browser.evaluate(
+              "document.querySelector('.desktop-motion-guide button:last-child').click()",
+            );
+          for (const [trigger, panel, close] of [
+            [
+              ".sidebar-icon",
+              ".settings-page .content-page-shell",
+              ".back-button",
+            ],
+            [".notification-bell", ".notification-panel", ".notification-bell"],
+            [".model-picker summary", ".model-panel", ".model-picker summary"],
+          ]) {
+            const opening = await trajectory(trigger, panel, true);
+            // Let the staggered notification rows and native details settle.
+            if (panel === ".notification-panel") await Bun.sleep(950);
+            const closing = await trajectory(close, panel, false);
+            const axis = panel.includes("page") ? 0 : 2;
+            expect(
+              Math.abs(opening[0][axis] - opening[3][axis]),
+            ).toBeGreaterThan(3);
+            for (let i = 0; i < opening.length; i++) {
+              expect(opening[i][3]).toBe(1);
+              expect(closing[i][3]).toBe(1);
+              for (const k of [0, 1, 2])
+                expect(Math.abs(opening[i][k] - closing[i][k])).toBeLessThan(
+                  0.25,
+                );
+            }
+            if (spring)
+              expect(
+                (opening[2][axis] - opening[3][axis]) * (axis === 0 ? -1 : 1),
+              ).toBeGreaterThan(0.1);
+          }
+        }
+        await browser.command("Animation.setPlaybackRate", { playbackRate: 1 });
+        await media("reduce");
+        await browser.evaluate(
+          "document.querySelector('.model-picker summary').click()",
+        );
+        await waitFor("!!document.querySelector('.model-panel')");
+        const noPreviewMotion =
+          "!getComputedStyle(document.querySelector('.model-panel')).animationName.includes('desktop-motion')";
+        await waitFor(noPreviewMotion);
+        await browser.evaluate(
+          "document.querySelector('.model-picker summary').click()",
+        );
+        await waitFor("!document.querySelector('.model-panel')");
+        await media("no-preference");
+        await browser.evaluate(
+          "document.querySelector('.desktop-motion-guide button').click()",
+        );
+        await browser.evaluate(
+          "document.querySelector('.model-picker summary').click()",
+        );
+        await waitFor("!!document.querySelector('.model-panel')");
+        expect(await browser.evaluate(noPreviewMotion)).toBe(true);
+        await browser.command("Emulation.setEmulatedMedia", { features: [] });
         for (const scene of [
           "conversation",
           "running",
@@ -178,7 +392,16 @@ test("the actual App and its feature components render in isolated Storybook pre
           ],
           [
             "domain-composer-ui--default",
-            "!!document.querySelector('form.composer')",
+            `document.querySelectorAll('form.composer').length === 4 &&
+             [...document.querySelectorAll('.current-ui-composer-story-state')].every(section => {
+               const dock = section.querySelector('.composer-dock').getBoundingClientRect();
+               return dock.height > 0 && dock.top >= section.querySelector('h3').getBoundingClientRect().bottom
+                 && dock.bottom <= section.getBoundingClientRect().bottom + 1;
+             }) &&
+             !!document.querySelector('[aria-label="空入力・送信不可"] button[type=submit]:disabled') &&
+             !!document.querySelector('[aria-label="入力済み・送信可能"] button[type=submit]:enabled') &&
+             !!document.querySelector('[aria-label="応答中"] [aria-keyshortcuts=Escape]') &&
+             document.querySelector('[aria-label="キューあり"] .message-queue')?.textContent.includes('次にテスト結果を確認して')`,
           ],
         ]) {
           await navigate(id, ready);
@@ -213,7 +436,7 @@ test("the actual App and its feature components render in isolated Storybook pre
             ).toBe(false);
         }
         await navigate(
-          "domain-composer-ui--model-picker",
+          "component-model-picker--default",
           "!!document.querySelector('.current-ui-unit .model-picker')",
         );
         await browser.evaluate(
@@ -233,9 +456,13 @@ test("the actual App and its feature components render in isolated Storybook pre
           "document.querySelector('.picker-model-label').textContent==='GPT-6.1 Sol'",
         );
         for (const size of ["narrow", "small"]) {
-          await navigate(
-            `domain-composer-ui--model-picker-${size}`,
-            "!!document.querySelector('.model-source-rail')",
+          await browser.evaluate(`(() => {
+            const select = document.querySelector('.current-ui-unit select');
+            select.value = '${size === "small" ? 280 : 380}';
+            select.dispatchEvent(new Event('change', { bubbles: true }));
+          })()`);
+          await waitFor(
+            `document.querySelector('.pane-view')?.clientWidth === ${size === "small" ? 280 : 380} && !!document.querySelector('.model-source-rail')`,
           );
           expect(
             await browser.evaluate(`(() => {

@@ -1,0 +1,23 @@
+/* Storybook layout only; the menu and trigger styles ship with ActionsMenu. */
+.ds-menu-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-height: 30px;
+  padding: 0 4px 0 8px;
+  border-radius: var(--radius-xs);
+}
+.ds-menu-row:hover {
+  background: var(--ds-bg-hover);
+}
+.ds-menu-output {
+  display: block;
+  margin-top: 8px;
+  color: var(--ds-text-muted);
+  font-size: var(--text-sm);
+}
+.ds-menu-row:hover .thread-more,
+.ds-menu-row:focus-within .thread-more {
+  opacity: 1;
+}

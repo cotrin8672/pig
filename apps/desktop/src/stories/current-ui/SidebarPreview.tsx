@@ -13,9 +13,13 @@ import { useStore } from "../../mainview/store";
 /** App's sidebar is inline today: compose its real children without moving production code. */
 export default function SidebarPreview({
   extraIcon,
+  afterStatistics,
+  sessionsAfter,
   main,
 }: {
   extraIcon?: ReactNode;
+  afterStatistics?: ReactNode;
+  sessionsAfter?: ReactNode;
   main?: ReactNode;
 } = {}) {
   const t = useT();
@@ -30,7 +34,7 @@ export default function SidebarPreview({
             pig
           </strong>
         </header>
-        <SidebarSessions />
+        <SidebarSessions after={sessionsAfter} />
         <ProviderUsage />
         <div className="sidebar-footer">
           <button
@@ -81,6 +85,7 @@ export default function SidebarPreview({
               <ChartColumn size={16} aria-hidden="true" />
             </button>
           )}
+          {afterStatistics}
           <NotificationCenter />
         </div>
       </aside>

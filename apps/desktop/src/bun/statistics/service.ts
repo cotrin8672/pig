@@ -23,6 +23,7 @@ export class StatisticsService implements StatisticsSink {
     number,
     {
       resolve: (data?: StatisticsData) => void;
+      progress?: (data: Partial<StatisticsData>) => void;
       reject: () => void;
       timer: ReturnType<typeof setTimeout>;
     }
@@ -123,6 +124,10 @@ export class StatisticsService implements StatisticsSink {
       else {
         const pending = this.pending.get(data.id);
         if (!pending) return;
+        if (data.type === "progress") {
+          pending.progress?.(data.data);
+          return;
+        }
         clearTimeout(pending.timer);
         this.pending.delete(data.id);
         this.retryDelay = 1000;
@@ -187,7 +192,10 @@ export class StatisticsService implements StatisticsSink {
     });
   }
 
-  async snapshot(period: StatisticsPeriod): Promise<StatisticsData> {
+  async snapshot(
+    period: StatisticsPeriod,
+    progress?: (data: Partial<StatisticsData>) => void,
+  ): Promise<StatisticsData> {
     validateStatisticsPeriod(period);
     if (this.closing) throw new Error("Statistics closed");
     this.start();
@@ -199,6 +207,7 @@ export class StatisticsService implements StatisticsSink {
       const timer = setTimeout(() => this.fail("worker"), 10_000);
       this.pending.set(id, {
         timer,
+        progress,
         reject: () => reject(new Error("Statistics unavailable")),
         resolve: (data) =>
           data ? resolve(data) : reject(new Error("Statistics unavailable")),
@@ -206,6 +215,7 @@ export class StatisticsService implements StatisticsSink {
       try {
         this.worker?.postMessage({
           type: "query",
+          progressive: !!progress,
           period,
           id,
         } satisfies StatisticsCommand);

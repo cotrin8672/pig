@@ -1,0 +1,29 @@
+.pp-sp-gallery {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 28px 16px;
+  padding: 16px;
+}
+.pp-sp-gallery figure {
+  display: grid;
+  justify-items: center;
+  gap: 10px;
+  margin: 0;
+}
+.pp-sp-big {
+  display: inline-flex;
+  align-items: center;
+  height: 64px;
+  font-size: 56px;
+}
+.pp-sp-gallery figcaption {
+  display: grid;
+  justify-items: center;
+  gap: 2px;
+  color: var(--ds-text-muted);
+  font-size: var(--text-sm);
+}
+.pp-sp-gallery strong {
+  color: var(--ds-text-secondary);
+  font-weight: 600;
+}

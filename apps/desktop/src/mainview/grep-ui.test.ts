@@ -16,12 +16,16 @@ test("Grep in Edge: shared geometry, grouped output, disclosure, search and anno
     const {createRoot}=await import(${fixtureImport(import.meta.resolve("react-dom/client"))});
     const {flushSync}=await import(${fixtureImport(import.meta.resolve("react-dom"))});
     const {ToolBlock,ToolGroup}=await import(${source("./ToolBlock.tsx")});
-    const {DisclosureScope}=await import(${source("./LazyDetails.tsx")});
+    const {PiLensRenderer}=await import(${source("./PiLensRenderer.tsx")});
+    const {DisclosureScope}=await import(${source("./patterns/LazyDetails.tsx")});
     const {rememberAnnotationRange}=await import(${source("./annotation-highlights.ts")});
     const {installChatRenderers}=await import(${source("./chat-renderer-registry.ts")});
     const {grep,edit,ls}=${JSON.stringify({ grep, edit, ls })};
     const Grep=({data})=>h(ToolBlock,data);
     const result=text=>({...grep.tool,state:{status:'done',result:{content:[{type:'text',text}]}}});
+    const references=Array.from({length:18},(_,i)=>'src/session.ts:'+(i+1)+':1').join('\\n');
+    const lens={call:{id:'lens',name:'lsp_navigation',arguments:{operation:'references',path:'src/session.ts'}},
+      state:{status:'done',result:{content:[{type:'text',text:references}]}},live:false};
     await import(${source("./styles.css")});
     await import(${source("../stories/glass-stage.css")});
     ${fixtureHelpers}
@@ -32,17 +36,22 @@ test("Grep in Edge: shared geometry, grouped output, disclosure, search and anno
       h('div',{className:'transcript',style:{width:'100%',maxWidth:width,padding:24}},children)))));
     for(const [width,scale] of [[760,1],[360,1],[360,1.4]]){
       document.documentElement.style.setProperty('--font-scale',scale);
-      render([h(Grep,{key:'grep',data:grep.tool}),h(ToolBlock,{key:'edit',...edit.tool}),h(ToolBlock,{key:'ls',...ls.tool})],width);
+      render([h(Grep,{key:'grep',data:grep.tool}),h(ToolBlock,{key:'edit',...edit.tool}),
+        h(ToolBlock,{key:'ls',...ls.tool}),h(PiLensRenderer,{key:'lens',data:lens})],width);
       await wait();
       const rows=[...document.querySelectorAll('.tool-row')];
       rows[2].querySelector('summary').click();await wait();
-      const outputs=rows.map(row=>row.querySelector('.tool-body pre'));
+      const outputs=rows.map(row=>row.querySelector('.tool-body :is(pre,.lens-frame)'));
       const bounds=outputs.map(node=>node.getBoundingClientRect());
-      check(bounds.every(rect=>Math.abs(rect.left-bounds[0].left)<1&&Math.abs(rect.right-bounds[0].right)<1),'Grep/Edit/List output alignment');
+      check(bounds.every(rect=>Math.abs(rect.left-bounds[0].left)<1&&Math.abs(rect.right-bounds[0].right)<1),'Grep/Edit/List/pi-lens output alignment');
       check(rows.every(row=>Math.abs(row.querySelector('.tool-body').getBoundingClientRect().left-row.getBoundingClientRect().left-22)<1),'shared 22px body indent');
       const output=outputs[0],style=getComputedStyle(output);
       check(output.clientHeight<=8*parseFloat(style.lineHeight)+16+8+1,'eight-line preview scales with text');
       check(output.scrollHeight>output.clientHeight,'groups stay inside vertically scrollable output');
+      const graph=outputs[3],graphStyle=getComputedStyle(graph);
+      for(const prop of ['background-color','padding','border-radius','overflow','--scrollbar-inset','max-height'])
+        check(graphStyle.getPropertyValue(prop)===style.getPropertyValue(prop),'pi-lens shares the standard frame '+prop);
+      check(graph.scrollHeight>graph.clientHeight,'pi-lens contents scroll within the shared height');
       check(document.querySelectorAll('.tool-grep-file').length===4,'one group per file');
       check(document.querySelectorAll('.tool-grep-line').length===8,'all matching lines retained');
       check(document.querySelectorAll('.tool-grep-line mark').length===9,'highlight every occurrence');

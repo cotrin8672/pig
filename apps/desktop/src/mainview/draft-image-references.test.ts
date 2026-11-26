@@ -36,14 +36,14 @@ test("text mirrors with retained images have small requests, replies AND extensi
   expect(Buffer.byteLength(JSON.stringify(events))).toBeLessThan(5000);
   expect(store.read(address).content.images).toEqual([image]);
   expect(store.read(address).content.text).toBe("9");
-  expect(store.read(address).conflict).toBeUndefined();
+  expect(store.read(address).dirty).toBe(false);
   // Neither event nor returned objects can mutate the host's retained images.
   const read = bridge.read(address);
   read.images[0].image.data = "changed";
   expect(bridge.read(address).images).toEqual([image]);
 });
 
-test("a missing base never clears local images; an authoritative read preserves conflicts", () => {
+test("a missing base never clears local images; an authoritative read rebases local edits", () => {
   const store = new DraftStore();
   store.edit(address, (content) => ({
     ...content,
@@ -58,10 +58,11 @@ test("a missing base never clears local images; an authoritative read preserves 
   expect(store.read(address).content.text).toBe("local");
   store.receive(address, { ...compact, images: [image] });
   expect(store.read(address).content.text).toBe("local");
-  expect(store.read(address).conflict?.images).toEqual([image]);
+  expect(store.read(address).content.images).toEqual([image]);
+  expect(store.read(address).revision).toBe(2);
 });
 
-test("image references use acknowledged host bytes, not same-ID unsynced edits", () => {
+test("image references keep unsynced image edits with the same ID", async () => {
   const store = new DraftStore();
   store.receive(address, {
     text: "base",
@@ -81,7 +82,12 @@ test("image references use acknowledged host bytes, not same-ID unsynced edits",
     ),
   ).toBe(true);
   expect(store.read(address).content.images[0].image.data).toBe("local edit");
-  expect(store.read(address).conflict?.images).toEqual([image]);
+  expect(store.read(address).revision).toBe(2);
+  await store.flush(address, async (params) => {
+    expect(params.content.images[0].image.data).toBe("local edit");
+    expect(params.expectedRevision).toBe(2);
+    return { applied: true, draft: { ...params.content, revision: 3 } };
+  });
 });
 
 test("revision gaps and missing IDs request recovery; old/retired events cannot roll back drafts", () => {

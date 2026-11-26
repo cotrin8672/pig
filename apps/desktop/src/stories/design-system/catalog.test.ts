@@ -10,6 +10,22 @@ import { decisions, inventory, layers } from "./catalog";
 const directory = fileURLToPath(new URL(".", import.meta.url));
 const desktop = resolve(directory, "../../..");
 
+test("design system stories live under a layer and a named subject", () => {
+  for (const name of new Bun.Glob("src/stories/**/*.stories.tsx").scanSync(
+    desktop,
+  )) {
+    const source = readFileSync(resolve(desktop, name), "utf8");
+    for (const match of source.matchAll(/title:\s*"Design System\/([^"]+)"/g)) {
+      const [layer, subject] = match[1].split("/");
+      expect(
+        layers.some((entry) => entry.name === layer),
+        name,
+      ).toBe(true);
+      expect(subject, name).toBeTruthy();
+    }
+  }
+});
+
 test("the catalogue distinguishes existing code from proposals in every layer", () => {
   expect(new Set(layers.map((layer) => layer.name)).size).toBe(layers.length);
   expect(new Set(inventory.map((entry) => entry.name)).size).toBe(

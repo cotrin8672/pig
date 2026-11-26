@@ -1,5 +1,9 @@
 @import "tailwindcss";
 @import "./tokens.css";
+@import "./primitives/button.css";
+@import "./primitives/text-field.css";
+@import "./primitives/select.css";
+@import "./primitives/spinner.css";
 @import "./tooltip.css";
 
 * {
@@ -76,36 +80,6 @@ select {
   font: inherit;
   color: inherit;
 }
-button {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  border: 0;
-  border-radius: var(--radius-xs);
-  padding: 7px 10px;
-  background: transparent;
-  cursor: pointer;
-  transition: background var(--motion-duration-fast) var(--motion-ease-out);
-}
-button:hover {
-  background: var(--ds-bg-hover);
-}
-button.primary {
-  background: var(--ds-accent);
-  color: var(--ds-on-accent);
-  font-weight: var(--font-weight-medium);
-}
-button.primary:hover:not(:disabled) {
-  background: var(--ds-accent-hover);
-}
-button.secondary {
-  background: var(--ds-bg-chip);
-}
-button:disabled {
-  opacity: 0.4;
-  cursor: default;
-}
 /* Never the UA's black/white ring: any focusable gets the app ring. */
 :focus-visible,
 button:focus-visible,
@@ -163,6 +137,11 @@ h2 {
 }
 p {
   margin: 8px 0;
+}
+.running[role="status"] {
+  display: flex;
+  align-items: center;
+  gap: 0.25em;
 }
 .muted {
   color: var(--ds-text-muted);
@@ -232,6 +211,32 @@ p {
 }
 .sidebar-collapsed .sidebar {
   margin-left: calc(-1 * var(--ds-sidebar-width));
+  /* Peeking floats over the content, so it needs its own glass. */
+  z-index: 14;
+  background: var(--ds-bg-popover);
+  backdrop-filter: blur(var(--ds-popover-blur));
+  border-radius: 0 var(--radius-md) var(--radius-md) 0;
+  transition:
+    margin-left var(--motion-duration-normal) var(--motion-ease-out),
+    transform var(--motion-duration-normal) var(--motion-ease-out),
+    box-shadow var(--motion-duration-normal) var(--motion-ease-out);
+}
+/* Slides over the content without changing its layout width. */
+.app-shell[data-peek] .sidebar {
+  transform: translateX(var(--ds-sidebar-width));
+  box-shadow: var(--ds-shadow-dialog);
+}
+.app-shell[data-peek] .sidebar-toggle {
+  z-index: 15;
+}
+/* The gap left of the collapsed content is the reveal zone. */
+.sidebar-peek-zone {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  z-index: 13;
+  width: 8px;
 }
 /* Sits in the gap between the sidebar and the content, like a pane divider. */
 .sidebar-resizer {
@@ -327,6 +332,9 @@ p {
 .project-toggle svg {
   flex: none;
 }
+.project-chevron {
+  transition: transform var(--motion-duration-collapse) var(--motion-ease-out);
+}
 .project-toggle[aria-expanded="true"] .project-chevron,
 .project-renaming[data-expanded] .project-chevron {
   transform: rotate(90deg);
@@ -377,13 +385,27 @@ p {
 .project-heading:focus-within .project-actions {
   opacity: 1;
 }
-.sr-status {
-  position: absolute;
-  width: 1px;
-  height: 1px;
+/* Height moves through grid rows, so the heading stays put and later rows slide. */
+.sidebar-collapse {
+  display: grid;
+  grid-template-rows: 1fr;
+  transition: grid-template-rows var(--motion-duration-collapse)
+    var(--motion-ease-out);
+}
+.sidebar-collapse:is([data-motion="closing"], [data-motion="closed"]) {
+  grid-template-rows: 0fr;
+}
+.sidebar-collapse > * {
+  min-height: 0;
+}
+.sidebar-collapse:not([data-motion="open"]) > * {
   overflow: hidden;
-  clip-path: inset(50%);
-  white-space: nowrap;
+}
+@media (prefers-reduced-motion: reduce) {
+  .sidebar-collapse,
+  .project-chevron {
+    transition: none;
+  }
 }
 .project-threads {
   margin-left: 12px;
@@ -396,44 +418,6 @@ p {
   flex: none;
   display: inline-flex;
   justify-content: center;
-}
-.session-dot {
-  display: inline-block;
-  width: 6px;
-  height: 6px;
-  flex: none;
-  border-radius: var(--radius-round);
-  background: currentColor;
-  box-shadow: 0 0 6px 1px color-mix(in srgb, currentColor 25%, transparent);
-}
-/* Running matches the running terminal (`.tool-term.running`). */
-.session-dot.running {
-  color: var(--ds-accent);
-  box-shadow:
-    0 0 4px 1px color-mix(in srgb, var(--ds-accent) 40%, transparent),
-    0 0 12px 4px color-mix(in srgb, var(--ds-accent) 20%, transparent);
-  animation: session-dot-breathe 2.4s ease-in-out infinite;
-}
-/* Opacity only, on the dot itself: the glow fades with it on the compositor.
- * Animating box-shadow (or a pseudo-element) restyles every frame while running. */
-@keyframes session-dot-breathe {
-  50% {
-    opacity: 0.45;
-  }
-}
-@media (prefers-reduced-motion: reduce) {
-  .session-dot.running {
-    animation: none;
-  }
-}
-.session-dot.completed {
-  color: var(--ds-success);
-}
-.session-dot.waiting {
-  color: var(--ds-warning);
-}
-.session-dot.failed {
-  color: var(--ds-error);
 }
 .thread {
   display: block;
@@ -528,6 +512,7 @@ main > *,
 }
 @media (prefers-reduced-motion: reduce) {
   .sidebar,
+  .sidebar-collapsed .sidebar,
   .sidebar-toggle,
   .app-shell main,
   .main-clip {
@@ -652,6 +637,8 @@ main > *,
 }
 .thread-scroll {
   --scrollbar-inset: var(--radius-sm);
+  /* Transcript layers must stay below the jump button and composer dock. */
+  isolation: isolate;
   flex: 1;
   min-height: 0;
   overflow: auto;
@@ -772,7 +759,6 @@ pre {
 .prose .markdown-table-scroll {
   --scrollbar-inset: var(--radius-xs);
   max-width: 100%;
-  margin: 12px 0;
   overflow: auto;
   border: 1px solid var(--ds-border-strong);
   border-radius: var(--radius-xs);
@@ -987,7 +973,8 @@ details[open] > summary .tool-chevron,
   border-left: 2px solid #ffffff1c;
 }
 .tool-body pre,
-.tool-body .message-content.literal pre {
+.tool-body .message-content.literal pre,
+.lens-frame {
   --scrollbar-inset: var(--radius-xs);
   /* Eight lines, vertical padding and room for a horizontal scrollbar. */
   max-height: calc(8lh + 16px + var(--scrollbar-size));
@@ -998,6 +985,9 @@ details[open] > summary .tool-chevron,
   background: #0000003d;
   color: var(--ds-text-secondary);
   font-size: var(--text-sm);
+}
+.tool-body pre,
+.tool-body .message-content.literal pre {
   white-space: pre;
 }
 .tool-body > * + * {
@@ -1305,12 +1295,6 @@ details[open] > summary .tool-chevron,
 .response-footer.error .response-summary {
   color: var(--ds-error);
 }
-.response-meta .chip {
-  padding: 2px 8px;
-  border-radius: var(--radius-full);
-  background: var(--ds-bg-hover);
-  font-variant-numeric: tabular-nums;
-}
 .response-actions time {
   margin-right: 4px;
   font-variant-numeric: tabular-nums;
@@ -1351,15 +1335,15 @@ details[open] > summary .tool-chevron,
 }
 /* The glass lives on a layer, not on .composer: an ancestor with
    backdrop-filter becomes the backdrop root, and popovers inside the composer
-   (model picker, slash options) would no longer blur the chat behind them.
-   No blur on the composer itself: seeing the chat behind it matters. */
+   (model picker, slash options) would no longer blur the chat behind them. */
 .composer::before {
   content: "";
   position: absolute;
   inset: -1px; /* Covers the border box, as the composer background did. */
   z-index: -1;
   border-radius: inherit;
-  background: var(--ds-bg-popover);
+  background: var(--ds-bg-composer);
+  backdrop-filter: blur(var(--ds-popover-blur));
   /* Drawn here: this layer paints over the composer's own (transparent) border. */
   box-shadow: inset 0 0 0 1px var(--ds-border-strong);
   pointer-events: none;
@@ -1384,15 +1368,6 @@ details[open] > summary .tool-chevron,
   justify-content: flex-end;
   gap: 8px;
   padding-top: 2px;
-}
-select {
-  background: var(--ds-bg-elevated-opaque);
-  color: var(--ds-text-secondary);
-  border: 0;
-  border-radius: var(--radius-xs);
-  padding: 5px;
-  font-size: var(--text-md);
-  max-width: 75%;
 }
 .send-controls {
   display: flex;
@@ -1456,22 +1431,6 @@ select {
 .provider-groups:focus-within::-webkit-scrollbar-thumb,
 .provider-detail:focus-within::-webkit-scrollbar-thumb {
   background-color: #ffffff26;
-}
-.provider-search {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  height: 32px;
-  padding: 0 8px;
-  border: 1px solid #ffffff1a;
-  border-radius: 6px;
-  color: var(--ds-text-muted);
-}
-.provider-search button {
-  width: 22px;
-  height: 22px;
-  padding: 0;
-  flex: none;
 }
 .provider-filters {
   display: flex;
@@ -1549,27 +1508,12 @@ select {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.provider-tag {
-  flex: none;
-  padding: 1px 5px;
-  border-radius: 4px;
-  background: #ffffff0d;
-  color: var(--ds-text-muted);
-  font-size: 10px;
-}
-.provider-tag[data-kind="extension"] {
-  color: var(--ds-accent);
-}
 .provider-dot {
   width: 6px;
   height: 6px;
   flex: none;
   border-radius: 50%;
   background: var(--ds-success);
-}
-.provider-fallback-icon {
-  flex: none;
-  color: var(--ds-text-muted);
 }
 .provider-detail {
   display: flex;
@@ -1798,32 +1742,13 @@ select {
   display: flex;
   gap: 8px;
 }
-input:where(:not([type="range"], [type="checkbox"], [type="radio"])) {
-  flex: 1;
-  min-width: 0;
-  width: 100%;
-  background: var(--ds-field-inset-bg);
-  border: 1px solid var(--ds-border-strong);
-  border-radius: var(--radius-xs);
-  padding: 8px;
-}
-.spinner {
-  animation: spin 1100ms cubic-bezier(0.4, 0, 0.6, 1) infinite;
-}
-@keyframes spin {
-  to {
-    transform: rotate(360deg);
-  }
-}
 @media (max-width: 640px) {
   .app-shell {
     --ds-sidebar-width: 176px;
   }
 }
 @media (prefers-reduced-motion: reduce) {
-  button,
-  .model-switch,
-  .model-switch::after {
+  button {
     transition: none;
   }
   .spinner {
@@ -1921,22 +1846,6 @@ input:where(:not([type="range"], [type="checkbox"], [type="radio"])) {
   align-items: center;
   gap: 12px;
 }
-.segmented-control {
-  display: flex;
-  gap: 4px;
-  padding: 4px;
-  border-radius: var(--radius-sm);
-  background: var(--ds-field-inset-bg);
-}
-.segmented-control button {
-  font-size: var(--text-sm);
-  min-width: 64px;
-}
-.segmented-control button[aria-pressed="true"] {
-  background: var(--ds-bg-active);
-  color: var(--ds-accent);
-  box-shadow: var(--ds-elevation-stroke);
-}
 .manual-code {
   font-family: var(--font-mono);
 }
@@ -2019,34 +1928,11 @@ input:where(:not([type="range"], [type="checkbox"], [type="radio"])) {
   backdrop-filter: blur(var(--ds-popover-blur));
 }
 .model-search {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  height: 32px;
-  padding: 0 6px;
   margin-bottom: 4px;
   border-bottom: 1px solid #ffffff0c;
-  color: var(--ds-text-muted);
 }
-.model-search input:not([type="range"]) {
-  background: transparent;
-  border: 0;
-  padding: 0;
-  height: 28px;
+.model-search input {
   font-size: 12px;
-}
-.model-search button {
-  padding: 0;
-  width: 22px;
-  height: 24px;
-  flex: none;
-  color: var(--ds-text-muted);
-}
-.model-search button:hover {
-  color: var(--ds-text-primary);
-}
-.model-search button[aria-pressed="true"] {
-  color: var(--ds-accent);
 }
 .model-browser {
   /* Six 28px rows. */
@@ -2441,34 +2327,12 @@ input:where(:not([type="range"], [type="checkbox"], [type="radio"])) {
   margin-bottom: 4px;
 }
 .provider-model-search {
-  display: flex;
-  align-items: center;
-  gap: 6px;
   flex: 1;
-  min-width: 0;
-  color: var(--ds-text-muted);
-}
-.provider-model-search input:not([type="range"]) {
-  background: transparent;
-  border: 0;
   height: 26px;
   padding: 0;
+}
+.provider-model-search input {
   font-size: 11px;
-}
-.provider-model-search button {
-  padding: 0;
-  height: 22px;
-  width: 22px;
-  flex: none;
-}
-.provider-search input:not([type="range"]) {
-  flex: 1;
-  min-width: 0;
-  height: 30px;
-  padding: 0;
-  border: 0;
-  background: transparent;
-  font-size: 12px;
 }
 .provider-model-count {
   font-size: 10px;
@@ -2493,46 +2357,6 @@ input:where(:not([type="range"], [type="checkbox"], [type="radio"])) {
 }
 .provider-model-row:hover {
   background: var(--ds-bg-hover);
-}
-.provider-model-row input[type="checkbox"] {
-  position: absolute;
-  width: 14px;
-  height: 14px;
-  margin: 0;
-  padding: 0;
-  opacity: 0;
-  flex: none;
-  clip-path: inset(50%);
-}
-.model-switch {
-  position: relative;
-  width: 26px;
-  height: 15px;
-  flex: none;
-  border-radius: 999px;
-  background: #ffffff26;
-  transition: background var(--motion-duration-fast) var(--motion-ease-out);
-}
-.model-switch::after {
-  content: "";
-  position: absolute;
-  top: 2px;
-  left: 2px;
-  width: 11px;
-  height: 11px;
-  border-radius: 50%;
-  background: #fff;
-  transition: transform var(--motion-duration-fast) var(--motion-ease-out);
-}
-.provider-model-row input:checked + .model-switch,
-.model-switch[data-mixed] {
-  background: var(--ds-accent);
-}
-.provider-model-row input:checked + .model-switch::after {
-  transform: translateX(11px);
-}
-.model-switch[data-mixed]::after {
-  transform: translateX(5.5px);
 }
 .provider-model-row:has(input:focus-visible) {
   outline: 1px solid var(--ds-focus);
@@ -2615,7 +2439,7 @@ input:where(:not([type="range"], [type="checkbox"], [type="radio"])) {
   margin-bottom: 6px;
 }
 .model-setting input:not([type="checkbox"]),
-.model-setting select {
+.model-setting .ui-select select {
   height: 28px;
   font-size: 12px;
 }
@@ -2648,7 +2472,7 @@ input:where(:not([type="range"], [type="checkbox"], [type="radio"])) {
   justify-content: space-between;
   gap: 12px;
 }
-.model-setting-inline select {
+.model-setting-inline .ui-select {
   width: auto;
 }
 .model-setting-reset {
@@ -2686,11 +2510,6 @@ input:where(:not([type="range"], [type="checkbox"], [type="radio"])) {
     transition: none;
   }
 }
-.segmented-control {
-  border: 0;
-  margin: 0;
-  min-width: 0;
-}
 .context-indicator {
   display: inline-flex;
   align-items: center;
@@ -2721,13 +2540,6 @@ input:where(:not([type="range"], [type="checkbox"], [type="radio"])) {
 .thread-row:not(.active):hover {
   background: var(--ds-bg-hover);
 }
-.inline-rename {
-  min-width: 0;
-  width: 100%;
-  padding: 4px 6px;
-  font-size: var(--text-md);
-  line-height: var(--leading-row);
-}
 .thread-row .thread {
   display: flex;
   align-items: center;
@@ -2748,13 +2560,6 @@ input:where(:not([type="range"], [type="checkbox"], [type="radio"])) {
 }
 .thread .lucide-pin {
   flex: none;
-  color: var(--ds-text-muted);
-}
-.thread-more {
-  width: 24px;
-  height: 26px;
-  padding: 0;
-  opacity: 0;
   color: var(--ds-text-muted);
 }
 .thread-row:hover .thread-more,
@@ -2791,99 +2596,6 @@ input:where(:not([type="range"], [type="checkbox"], [type="radio"])) {
   font-size: 10px;
   color: var(--ds-text-muted);
 }
-.session-menu {
-  position: fixed;
-  inset: auto;
-  margin: 0;
-  width: 180px;
-  max-width: calc(100vw - 16px);
-  max-height: calc(100dvh - 16px);
-  padding: 4px;
-  border: 1px solid #ffffff16;
-  border-radius: 8px;
-  background: var(--ds-bg-elevated-opaque);
-  color: var(--ds-text-primary);
-  box-shadow: 0 8px 24px #0004;
-}
-.session-menu > button {
-  display: flex;
-  justify-content: flex-start;
-  width: 100%;
-  height: 28px;
-  padding: 0 8px;
-  gap: 8px;
-  border-radius: 5px;
-  font-size: 12px;
-  white-space: nowrap;
-}
-.session-menu > button > svg {
-  flex: none;
-  color: var(--ds-text-muted);
-}
-.session-menu > .session-menu-delete {
-  margin-top: 4px;
-  color: var(--ds-error);
-}
-/* Keep the menu separator outside the confirmation ring. */
-.session-menu > .session-menu-delete::after {
-  content: "";
-  position: absolute;
-  top: -4px;
-  left: 0;
-  right: 0;
-  height: 1px;
-  background: #ffffff0c;
-  pointer-events: none;
-}
-.session-menu > .session-menu-delete > svg {
-  color: inherit;
-}
-.session-menu button:active {
-  transform: none;
-}
-.session-dialog {
-  margin: auto;
-  width: min(340px, calc(100vw - 32px));
-  padding: 14px;
-  border: 1px solid #ffffff16;
-  border-radius: 10px;
-  color: var(--ds-text-primary);
-  background: var(--ds-bg-elevated-opaque);
-  box-shadow: 0 12px 36px #0004;
-}
-.session-dialog::backdrop {
-  background: #0005;
-}
-.session-dialog form {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-.session-dialog .dialog-heading h2 {
-  font-size: 13px;
-}
-.session-dialog p {
-  margin: 0;
-  font-size: 12px;
-}
-.session-dialog-name {
-  overflow-wrap: anywhere;
-  font-weight: 500;
-}
-.session-dialog .dialog-actions {
-  gap: 6px;
-}
-.session-dialog button {
-  font-size: 12px;
-}
-.danger-button {
-  background: color-mix(in srgb, var(--ds-error) 14%, transparent);
-  color: var(--ds-error);
-}
-.danger-button:hover {
-  background: color-mix(in srgb, var(--ds-error) 22%, transparent);
-}
-
 .message-content {
   min-width: 0;
   overflow-wrap: anywhere;
@@ -3380,87 +3092,4 @@ input:where(:not([type="range"], [type="checkbox"], [type="radio"])) {
   justify-content: flex-end;
   gap: 6px;
   margin-top: 10px;
-}
-
-/*
-  Two-press confirmation (ConfirmButton). The first press arms the button and a
-  ring counts down around it; a second press within 3s runs the action. Both
-  labels share one grid cell so the width never changes.
-*/
-@property --confirm-left {
-  syntax: "<percentage>";
-  inherits: false;
-  initial-value: 100%;
-}
-.confirm-button {
-  position: relative;
-}
-.confirm-label {
-  display: inline-grid;
-  align-items: center;
-  justify-items: center;
-}
-.confirm-idle,
-.confirm-armed {
-  grid-area: 1 / 1;
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  white-space: nowrap;
-  transition:
-    opacity var(--motion-duration-fast),
-    transform var(--motion-duration-fast) var(--motion-ease-out);
-}
-.confirm-armed,
-.confirm-button.armed .confirm-idle {
-  opacity: 0;
-  transform: translateY(4px);
-}
-.confirm-button.armed .confirm-armed {
-  opacity: 1;
-  transform: none;
-}
-.confirm-button.armed:not(.primary) {
-  background: color-mix(in srgb, currentColor 14%, transparent);
-}
-.confirm-button::before {
-  content: "";
-  position: absolute;
-  /* Straddle the fill edge so its antialiased corners cannot peek past the ring. */
-  inset: -1px;
-  box-sizing: border-box;
-  border: 2px solid var(--confirm-ring, currentColor);
-  border-radius: inherit;
-  mask: conic-gradient(#000 var(--confirm-left), transparent 0);
-  opacity: 0;
-  pointer-events: none;
-}
-.confirm-button.primary {
-  --confirm-ring: var(--ds-warning);
-}
-.confirm-button.armed::before {
-  opacity: 1;
-  animation: confirm-countdown 3s linear forwards;
-}
-@keyframes confirm-countdown {
-  to {
-    --confirm-left: 0%;
-  }
-}
-.confirm-status {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  overflow: hidden;
-  clip-path: inset(50%);
-  white-space: nowrap;
-}
-@media (prefers-reduced-motion: reduce) {
-  .confirm-idle,
-  .confirm-armed {
-    transition: none;
-  }
-  .confirm-button.armed::before {
-    animation: none;
-  }
 }

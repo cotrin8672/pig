@@ -1,0 +1,61 @@
+# Windows Tauri 版
+
+Tauri 2 / WebView2 で既存の React 画面を開き、別プロセスの Bun で既存の Pi SDK を動かす。
+会話、下書き、モデル、認証、拡張は従来の Bun ホストを使う。ウィンドウ、メニュー、
+ダイアログ等は Tauri 側が担当する。ホバー式タイトルバーと背景設定は共通 UI のまま。
+
+## 起動・ポータブルビルド
+
+開発やビルドには Windows WebView2、Rust の MSVC ツールチェーン、Visual Studio C++ Build
+Tools、Windows SDK と、開発用の Bun・Node・pnpm が必要。
+
+```powershell
+mise exec -- pnpm install --frozen-lockfile
+mise run dev
+mise exec -- pnpm --filter @pig/desktop tauri:package
+```
+
+ポータブル版は `apps/desktop/build/tauri-portable/pig.exe`。`host/` に Bun と Pi SDK が
+同梱されるため、フォルダーごと配置すれば WebView2 のある端末で起動できる。外部の `node` を
+直接呼ぶ拡張では、従来どおりその拡張用の Node が必要（mise で見つかる場合は補う）。
+新しい Tauri プロファイルの既定シェルは Windows 標準の PowerShell。
+
+デスクトップ設定は既定で Electrobun 版と同じ `~/.config/pig` を使う。通常起動では Pi CLI と同じ
+認証・設定・セッション保存先を使う。同じ会話を Electrobun 版と Tauri 版で同時に操作しない。
+`dev` の `pnpm dev` は Tauri。stable / nightly ともに Tauri で配布する。
+Electrobun の Scoop Nightly から初めて切り替えるときは、終了後に
+`scoop update pig-nightly --force --no-cache` を実行する。`pig-setup.exe` 版は設定の
+「nightly ビルドも更新対象に含める」で更新対象を選べる（初期値はオフ）。
+オフに戻してもダウングレードせず、現在より新しい stable を待つ。
+Scoop・開発・単体 ZIP 版はインストーラーによるアプリ内更新を行わない。
+
+## 検証
+
+```powershell
+mise exec -- pnpm --filter @pig/desktop tauri:smoke
+mise exec -- pnpm --filter @pig/desktop tauri:smoke:package
+```
+
+実際の WebView2 と React 画面を起動し、隔離したテストプロファイルとローカルの模擬モデルで、
+Pi への送信、返答のストリーム、保存・再表示、最大化／復元、正常終了を検査する。
+ポータブル版の検査では一式を作業ツリー外に移し、Node や Bun の開発 PATH を外す。
+正規のプロバイダーへのログイン、Snap Layouts・混在 DPI・タスクバー自動非表示・IME、
+透過の画素は別途実機で確認する。
+
+## IPC と iframe
+
+Rust が Bun を起動し、親子プロセス間のパイプで通信する。WebView2 に Bun の待ち受けポート、
+または Tauri の shell・filesystem 権限は公開しない。WebView2 の接続はウィンドウと
+ページ世代に紐づき、再読込前のフレームの応答は新しいページに届かない。
+
+IPCは1フレーム64 MiBまで。上限を超えるRPC応答は待ち時間切れではなくエラーを返す。
+上限を超える履歴の分割転送には未対応。ウィンドウのリサイズは未送信の最新値にまとめ、
+閉じる・終了の通知は画面からのIPCが混雑していても捨てない。
+
+VisualizeとMCP AppsのインラインJavaScriptは、親画面のスクリプト制限を緩めず、専用オリジンの
+`sandbox="allow-scripts"` フレームで動作する。CSPで外部スクリプト、fetch、フォーム、
+子フレームを許可せず、WebView2側でフレームの外部遷移も止める。
+MCP Appsは初期化・元のツール入力と結果の通知のみ対応する。アプリからのツール呼び出し、
+外部リンク、リソース操作、チャットへの送信や追加権限は許可しない。
+外部ファイルや未対応機能が必要なMCP Appsは動作しない場合がある。
+Electrobunでは静的表示のまま。

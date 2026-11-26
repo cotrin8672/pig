@@ -7,8 +7,9 @@ import {
   tokenKinds,
 } from "../shared/statistics";
 import { ContentPage } from "./ContentPage";
-import { type TipPlacement, useFollowTip } from "./follow-tip";
+import { useFollowTip } from "./follow-tip";
 import { useT } from "./i18n";
+import { SegmentedControl } from "./primitives/SegmentedControl";
 import "./statistics.css";
 
 function useKinds() {
@@ -29,46 +30,69 @@ const shortDay = (day: string) =>
     ? `${Number(day.slice(5, 7))}/${Number(day.slice(8, 10))}`
     : day;
 
-function Summary({ data }: { data: StatisticsData }) {
+function Placeholder({ failed = false }: { failed?: boolean }) {
   const t = useT().statisticsText;
-  const kinds = useKinds();
+  return failed ? (
+    <span className="muted" role="status" aria-label={t.failed}>
+      —
+    </span>
+  ) : (
+    <span className="stats-skeleton" role="status" aria-label={t.loading} />
+  );
+}
+
+function Summary({
+  data,
+  pending,
+  failed,
+}: {
+  data: StatisticsData;
+  pending: boolean;
+  failed: boolean;
+}) {
+  const labels = useT();
+  const t = labels.statisticsText;
   const all = { ...zero };
   for (const m of data.models)
-    for (const k of kinds) all[k.id] += m.tokens[k.id];
+    for (const k of tokenKinds) all[k] += m.tokens[k];
   const total = sum(all);
   const inputSide = all.input + all.cacheRead + all.cacheWrite;
   return (
     <dl className="stats-summary" data-ui-surface="card">
-      <div>
-        <dt>{t.total}</dt>
-        <dd>{tokens(total)}</dd>
-      </div>
-      {kinds.map((k) => (
-        <div key={k.id}>
-          <dt>{k.label}</dt>
-          <dd>
-            {tokens(all[k.id])}
-            <small>{pct(all[k.id], total)}</small>
-          </dd>
+      {[
+        [t.total, tokens(total)],
+        [t.input, tokens(all.input)],
+        [t.output, tokens(all.output)],
+        [t.cacheRate, pct(all.cacheRead, inputSide), t.cacheRateHint],
+        [
+          data.cost.usd !== null && data.cost.missing > 0
+            ? `${labels["API-equivalent cost"]} · ${t.costPartial}`
+            : labels["API-equivalent cost"],
+          data.cost.usd === null ? "—" : `$${data.cost.usd.toFixed(2)}`,
+        ],
+      ].map(([label, value, hint]) => (
+        <div key={label}>
+          <dt aria-description={hint}>{label}</dt>
+          <dd>{pending ? <Placeholder failed={failed} /> : value}</dd>
         </div>
       ))}
-      <div>
-        <dt aria-description={t.cacheRateHint}>{t.cacheRate}</dt>
-        <dd>{pct(all.cacheRead, inputSide)}</dd>
-      </div>
     </dl>
   );
 }
 
 /** Daily total tokens stacked by model; the model table is the legend. */
-function DailyChart({ data }: { data: StatisticsData }) {
+function DailyChart({
+  data,
+  pending,
+  failed,
+}: {
+  data: StatisticsData;
+  pending: boolean;
+  failed: boolean;
+}) {
   const t = useT().statisticsText;
-  // Centred on the column, just inside its top.
-  const tip = useFollowTip<number>((box, size) => ({
-    left: box.left + box.width / 2 - size.width / 2,
-    top: box.top + 8,
-    side: "bottom",
-  }));
+  // Keep neighboring narrow columns reachable while the tooltip is open.
+  const tip = useFollowTip<number>("top");
   const { active, open, leave } = tip;
   const step = Math.max(1, Math.ceil(data.days.length / 14));
   const columns = data.days
@@ -98,7 +122,11 @@ function DailyChart({ data }: { data: StatisticsData }) {
         {t.daily}
         {step > 1 && <span>{t.bucketDays(step)}</span>}
       </h2>
-      {max ? (
+      {pending ? (
+        <div className="stats-loading">
+          <Placeholder failed={failed} />
+        </div>
+      ) : max ? (
         <div className="stats-chart">
           <div className="stats-gridlines" aria-hidden="true">
             {[max, max / 2, 0].map((t) => (
@@ -175,58 +203,53 @@ function ModelTable({ data }: { data: StatisticsData }) {
   const t = useT().statisticsText;
   const kinds = useKinds();
   const total = data.models.reduce((n, m) => n + sum(m.tokens), 0);
-  return (
-    <section className="stats-panel stats-models" data-ui-surface="card">
-      <h2>{t.models}</h2>
-      {data.models.length ? (
-        <div className="stats-scroll">
-          <table className="stats-table">
-            <thead>
-              <tr>
-                <th scope="col">{t.models}</th>
-                {kinds.map((k) => (
-                  <th key={k.id} scope="col">
-                    {k.label}
-                  </th>
-                ))}
-                <th scope="col">{t.totalColumn}</th>
-                <th scope="col">{t.modelShare}</th>
-                <th scope="col" aria-description={t.speedHint}>
-                  token/s
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              {data.models.map((m, i) => (
-                <tr key={m.id}>
-                  <th scope="row" aria-description={m.id}>
-                    <span className="stats-swatch" data-model={i % 6} />
-                    {m.name}
-                  </th>
-                  {kinds.map((k) => (
-                    <td key={k.id}>{tokens(m.tokens[k.id])}</td>
-                  ))}
-                  <td className="strong">{tokens(sum(m.tokens))}</td>
-                  <td>{pct(sum(m.tokens), total)}</td>
-                  <td
-                    aria-description={t.speedSamples(
-                      m.measuredRequests,
-                      m.requests,
-                    )}
-                  >
-                    {m.tokensPerSecond === null
-                      ? "—"
-                      : Math.round(m.tokensPerSecond)}
-                  </td>
-                </tr>
+  return data.models.length ? (
+    <div className="stats-scroll">
+      <table className="stats-table">
+        <thead>
+          <tr>
+            <th scope="col">{t.models}</th>
+            {kinds.map((k) => (
+              <th key={k.id} scope="col">
+                {k.label}
+              </th>
+            ))}
+            <th scope="col">{t.totalColumn}</th>
+            <th scope="col">{t.modelShare}</th>
+            <th scope="col" aria-description={t.speedHint}>
+              token/s
+            </th>
+          </tr>
+        </thead>
+        <tbody>
+          {data.models.map((m, i) => (
+            <tr key={m.id}>
+              <th scope="row" aria-description={m.id}>
+                <span className="stats-swatch" data-model={i % 6} />
+                {m.name}
+              </th>
+              {kinds.map((k) => (
+                <td key={k.id}>{tokens(m.tokens[k.id])}</td>
               ))}
-            </tbody>
-          </table>
-        </div>
-      ) : (
-        <Empty />
-      )}
-    </section>
+              <td className="strong">{tokens(sum(m.tokens))}</td>
+              <td>{pct(sum(m.tokens), total)}</td>
+              <td
+                aria-description={t.speedSamples(
+                  m.measuredRequests,
+                  m.requests,
+                )}
+              >
+                {m.tokensPerSecond === null
+                  ? "—"
+                  : Math.round(m.tokensPerSecond)}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  ) : (
+    <Empty />
   );
 }
 
@@ -338,67 +361,122 @@ function ContextTable({ data }: { data: StatisticsData }) {
 /** Ranked by failures: repeated failing commands cost retries and output. */
 function CommandTable({ data }: { data: StatisticsData }) {
   const t = useT().statisticsText;
-  const { rows, unclassified, unmeasured } = data.commands;
-  return (
-    <section className="stats-panel stats-commands" data-ui-surface="card">
-      <h2>
-        {t.commands}
-        <span aria-description={t.commandCoverageHint}>
-          {t.commandCoverage(unclassified, unmeasured)}
-        </span>
-      </h2>
-      {rows.length ? (
-        <div className="stats-scroll">
-          <table className="stats-table">
-            <thead>
-              <tr>
-                <th scope="col">{t.command}</th>
-                <th scope="col">{t.runs}</th>
-                <th scope="col">{t.failures}</th>
-                <th scope="col" aria-description={t.commandSuccessHint}>
-                  {t.success}
+  const { rows } = data.commands;
+  return rows.length ? (
+    <div className="stats-scroll">
+      <table className="stats-table">
+        <thead>
+          <tr>
+            <th scope="col">{t.command}</th>
+            <th scope="col">{t.runs}</th>
+            <th scope="col">{t.failures}</th>
+            <th scope="col" aria-description={t.commandSuccessHint}>
+              {t.success}
+            </th>
+            <th scope="col" aria-description={t.unknownHint}>
+              {t.unknownOutcome}
+            </th>
+            <th scope="col" aria-description={t.sdkErrorsHint}>
+              {t.sdkErrors}
+            </th>
+            <th scope="col" aria-description={t.failureOutputHint}>
+              {t.failureOutput}
+            </th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((r) => {
+            const known = r.calls - r.unknown;
+            const ok = known - r.failures;
+            return (
+              <tr key={`${r.shell}:${r.command}`}>
+                <th scope="row">
+                  <code>{r.command}</code>
+                  <small className="stats-shell">{r.shell}</small>
                 </th>
-                <th scope="col" aria-description={t.unknownHint}>
-                  {t.unknownOutcome}
-                </th>
-                <th scope="col" aria-description={t.sdkErrorsHint}>
-                  {t.sdkErrors}
-                </th>
-                <th scope="col" aria-description={t.failureOutputHint}>
-                  {t.failureOutput}
-                </th>
+                <td>{r.calls.toLocaleString()}</td>
+                <td className={r.failures ? "strong" : ""}>
+                  {r.failures.toLocaleString()}
+                </td>
+                <td className={known && ok / known < 0.9 ? "warn" : ""}>
+                  {pct(ok, known)}
+                </td>
+                <td>{r.unknown.toLocaleString()}</td>
+                <td>{r.sdkErrors.toLocaleString()}</td>
+                <td>{r.failureBytes ? `${tokens(r.failureBytes)}B` : "—"}</td>
               </tr>
-            </thead>
-            <tbody>
-              {rows.map((r) => {
-                const known = r.calls - r.unknown;
-                const ok = known - r.failures;
-                return (
-                  <tr key={`${r.shell}:${r.command}`}>
-                    <th scope="row">
-                      <code>{r.command}</code>
-                      <small className="stats-shell">{r.shell}</small>
-                    </th>
-                    <td>{r.calls.toLocaleString()}</td>
-                    <td className={r.failures ? "strong" : ""}>
-                      {r.failures.toLocaleString()}
-                    </td>
-                    <td className={known && ok / known < 0.9 ? "warn" : ""}>
-                      {pct(ok, known)}
-                    </td>
-                    <td>{r.unknown.toLocaleString()}</td>
-                    <td>{r.sdkErrors.toLocaleString()}</td>
-                    <td>
-                      {r.failureBytes ? `${tokens(r.failureBytes)}B` : "—"}
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
+  ) : (
+    <Empty />
+  );
+}
+
+const detailTables = {
+  models: ModelTable,
+  commands: CommandTable,
+  tools: ToolTable,
+  contextBreakdown: ContextTable,
+};
+type Detail = keyof typeof detailTables;
+
+function StatisticsDetailPanel({
+  data,
+  parts,
+  failed,
+}: {
+  data: StatisticsData;
+  parts: Partial<StatisticsData>;
+  failed: boolean;
+}) {
+  const t = useT().statisticsText;
+  const views = ["models", "commands", "tools", "contextBreakdown"] as const;
+  const [view, setView] = useState<Detail>("models");
+  const ready =
+    parts[view === "contextBreakdown" ? "initialContext" : view] !== undefined;
+  const Table = detailTables[view];
+  return (
+    <section
+      className={`stats-panel stats-${view === "contextBreakdown" ? "tools" : view}`}
+      data-ui-surface="card"
+    >
+      <h2>
+        <SegmentedControl
+          className="stats-tabs"
+          aria-label={views.map((id) => t[id]).join(" / ")}
+          options={views.map((value) => ({ value, label: t[value] }))}
+          value={view}
+          onChange={setView}
+        />
+        {ready && view === "commands" && (
+          <span aria-description={t.commandCoverageHint}>
+            {t.commandCoverage(
+              data.commands.unclassified,
+              data.commands.unmeasured,
+            )}
+          </span>
+        )}
+        {ready && view === "tools" && (
+          <span>{t.calls(data.tools.reduce((n, t) => n + t.calls, 0))}</span>
+        )}
+        {ready && view === "contextBreakdown" && (
+          <span>{`${tokens(
+            [
+              ...data.initialContext.sections,
+              ...data.initialContext.sources,
+            ].reduce((n, s) => n + s.tokens, 0),
+          )} tokens`}</span>
+        )}
+      </h2>
+      {ready ? (
+        <Table data={data} />
       ) : (
-        <Empty />
+        <div className="stats-loading">
+          <Placeholder failed={failed} />
+        </div>
       )}
     </section>
   );
@@ -406,83 +484,51 @@ function CommandTable({ data }: { data: StatisticsData }) {
 
 function ToolTable({ data }: { data: StatisticsData }) {
   const t = useT().statisticsText;
-  const [view, setView] = useState<"tools" | "context">("tools");
   const calls = data.tools.reduce((n, t) => n + t.calls, 0);
-  return (
-    <section className="stats-panel stats-tools" data-ui-surface="card">
-      <h2>
-        <fieldset className="stats-periods stats-tabs">
-          {(["tools", "context"] as const).map((id) => (
-            <button
-              key={id}
-              type="button"
-              aria-pressed={view === id}
-              className={view === id ? "active" : ""}
-              onClick={() => setView(id)}
-            >
-              {id === "tools" ? t.tools : t.contextBreakdown}
-            </button>
-          ))}
-        </fieldset>
-        <span>
-          {view === "tools"
-            ? t.calls(calls)
-            : `${tokens(
-                [
-                  ...data.initialContext.sections,
-                  ...data.initialContext.sources,
-                ].reduce((n, s) => n + s.tokens, 0),
-              )} tokens`}
-        </span>
-      </h2>
-      {view === "context" ? (
-        <ContextTable data={data} />
-      ) : data.tools.length ? (
-        <div className="stats-scroll">
-          <table className="stats-table">
-            <thead>
-              <tr>
-                <th scope="col">{t.tools}</th>
-                <th scope="col">{t.share}</th>
-                <th scope="col">{t.failures}</th>
-                <th scope="col">{t.success}</th>
-                <th scope="col" aria-description={t.definitionHint}>
-                  {t.definition}
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              {[...data.tools]
-                .sort((a, b) => b.calls - a.calls)
-                .map((t) => {
-                  const rate = t.calls ? (t.calls - t.failures) / t.calls : 1;
-                  return (
-                    <tr key={t.tool}>
-                      <th scope="row">
-                        <code>{t.tool}</code>
-                      </th>
-                      <td aria-description={`${t.calls.toLocaleString()}`}>
-                        <Share part={t.calls} whole={calls} />
-                      </td>
-                      <td>{t.failures.toLocaleString()}</td>
-                      <td className={rate < 0.9 ? "warn" : ""}>
-                        {t.calls ? pct(t.calls - t.failures, t.calls) : "—"}
-                      </td>
-                      <td>
-                        {t.definitionTokens === null
-                          ? "—"
-                          : tokens(t.definitionTokens)}
-                      </td>
-                    </tr>
-                  );
-                })}
-            </tbody>
-          </table>
-        </div>
-      ) : (
-        <Empty />
-      )}
-    </section>
+  return data.tools.length ? (
+    <div className="stats-scroll">
+      <table className="stats-table">
+        <thead>
+          <tr>
+            <th scope="col">{t.tools}</th>
+            <th scope="col">{t.share}</th>
+            <th scope="col">{t.failures}</th>
+            <th scope="col">{t.success}</th>
+            <th scope="col" aria-description={t.definitionHint}>
+              {t.definition}
+            </th>
+          </tr>
+        </thead>
+        <tbody>
+          {[...data.tools]
+            .sort((a, b) => b.calls - a.calls)
+            .map((t) => {
+              const rate = t.calls ? (t.calls - t.failures) / t.calls : 1;
+              return (
+                <tr key={t.tool}>
+                  <th scope="row">
+                    <code>{t.tool}</code>
+                  </th>
+                  <td aria-description={`${t.calls.toLocaleString()}`}>
+                    <Share part={t.calls} whole={calls} />
+                  </td>
+                  <td>{t.failures.toLocaleString()}</td>
+                  <td className={rate < 0.9 ? "warn" : ""}>
+                    {t.calls ? pct(t.calls - t.failures, t.calls) : "—"}
+                  </td>
+                  <td>
+                    {t.definitionTokens === null
+                      ? "—"
+                      : tokens(t.definitionTokens)}
+                  </td>
+                </tr>
+              );
+            })}
+        </tbody>
+      </table>
+    </div>
+  ) : (
+    <Empty />
   );
 }
 
@@ -490,19 +536,6 @@ type Slice = { id: string; label: string; value: number; color: string };
 
 const RING_R = 15.9155; // viewBox 42, circumference 100
 const RING_WIDTH = 3.2;
-// Above the hovered point (a slice's midpoint), like the shared Tooltip.
-const above = (box: DOMRect, size: DOMRect): TipPlacement =>
-  box.top - size.height - 8 < 8
-    ? {
-        left: box.left - size.width / 2,
-        top: box.bottom + 8,
-        side: "bottom",
-      }
-    : {
-        left: box.left - size.width / 2,
-        top: box.top - size.height - 8,
-        side: "top",
-      };
 
 /**
  * Donut with its legend and values next to it: no hover needed to read it.
@@ -512,12 +545,16 @@ const above = (box: DOMRect, size: DOMRect): TipPlacement =>
 function Donut({
   title,
   note,
+  pending,
+  failed,
   slices,
   center,
   centerLabel,
 }: {
   title: string;
   note?: string;
+  pending: boolean;
+  failed: boolean;
   slices: Slice[];
   center: string;
   centerLabel: string;
@@ -528,7 +565,7 @@ function Donut({
   // A small gap separates slices like the 1px seams elsewhere in the UI.
   const gap = slices.filter((s) => s.value > 0).length > 1 ? 1 : 0;
   const ring = useRef<SVGSVGElement>(null);
-  const tip = useFollowTip<string>(above);
+  const tip = useFollowTip<string>("top");
   // Clockwise from 12 o'clock, in percent of the circumference.
   let start = 0;
   const arcs = slices.map((s) => {
@@ -576,11 +613,12 @@ function Donut({
   const shown = arcs.find((a) => a.slice.id === tip.active);
   return (
     <figure className="stats-donut">
-      <figcaption>
-        {title}
-        {note && <span>{note}</span>}
-      </figcaption>
-      {total ? (
+      <figcaption aria-description={note}>{title}</figcaption>
+      {pending ? (
+        <div className="stats-donut-ring">
+          <Placeholder failed={failed} />
+        </div>
+      ) : total ? (
         <div className="stats-donut-body">
           <div className="stats-donut-ring">
             <svg
@@ -655,7 +693,15 @@ function Donut({
   );
 }
 
-function Composition({ data }: { data: StatisticsData }) {
+function Composition({
+  data,
+  parts,
+  failed,
+}: {
+  data: StatisticsData;
+  parts: Partial<StatisticsData>;
+  failed: boolean;
+}) {
   const t = useT().statisticsText;
   const kinds = useKinds();
   const all = { ...zero };
@@ -671,6 +717,8 @@ function Composition({ data }: { data: StatisticsData }) {
     <section className="stats-panel stats-composition" data-ui-surface="card">
       <Donut
         title={t.mix}
+        pending={!parts.models}
+        failed={failed}
         note={partial ? t.knownTotals : t.average}
         center={divisor ? tokens(sum(all) / divisor) : "—"}
         centerLabel="tokens"
@@ -683,6 +731,8 @@ function Composition({ data }: { data: StatisticsData }) {
       />
       <Donut
         title={t.initial}
+        pending={!parts.initialContext}
+        failed={failed}
         note={context.parts.length ? t.estimated : t.unmeasured}
         center={initial ? tokens(initial) : "—"}
         centerLabel={
@@ -713,22 +763,41 @@ const Empty = () => (
   <p className="muted stats-empty">{useT().statisticsText.noRecords}</p>
 );
 
-/** One-screen overview: every section visible at once, no tabs. */
+const empty: StatisticsData = {
+  cost: { usd: null, missing: 0 },
+  collectingSince: null,
+  days: [],
+  daily: {},
+  models: [],
+  tools: [],
+  commands: { rows: [], unclassified: 0, unmeasured: 0 },
+  initialContext: {
+    parts: [],
+    sources: [],
+    sections: [],
+    measuredTotal: null,
+    contextWindow: null,
+  },
+  coverage: { unknownUsage: 0, dropped: 0, collection: "active" },
+};
 export function StatisticsView({
-  data,
+  data: parts,
   period,
   onPeriod,
   onRefresh,
   busy = false,
   status,
+  failed = false,
 }: {
-  data: StatisticsData;
+  data: Partial<StatisticsData>;
   period: Period;
   onPeriod: (period: Period) => void;
   onRefresh?: () => void;
   busy?: boolean;
   status?: ReactNode;
+  failed?: boolean;
 }) {
+  const data = { ...empty, ...parts };
   const t = useT();
   const text = t.statisticsText;
   const periods = ["today", "7d", "30d", "all"] as const;
@@ -739,19 +808,13 @@ export function StatisticsView({
       actions={
         <div className="stats-header">
           {status && <span className="muted">{status}</span>}
-          <fieldset className="stats-periods" aria-label={text.period}>
-            {periods.map((p) => (
-              <button
-                key={p}
-                type="button"
-                aria-pressed={period === p}
-                className={period === p ? "active" : ""}
-                onClick={() => onPeriod(p)}
-              >
-                {text[p]}
-              </button>
-            ))}
-          </fieldset>
+          <SegmentedControl
+            className="stats-periods"
+            aria-label={text.period}
+            options={periods.map((value) => ({ value, label: text[value] }))}
+            value={period}
+            onChange={onPeriod}
+          />
           {onRefresh && (
             <button
               type="button"
@@ -766,15 +829,15 @@ export function StatisticsView({
         </div>
       }
     >
-      <div className="statistics-page" aria-busy={busy}>
-        <Summary data={data} />
-        <DailyChart data={data} />
-        <CommandTable data={data} />
-        <div className="stats-side">
-          <ToolTable data={data} />
-          <Composition data={data} />
-        </div>
-        <ModelTable data={data} />
+      <div className="statistics-page">
+        <Summary data={data} pending={!parts.models} failed={failed} />
+        <DailyChart
+          data={data}
+          pending={!parts.daily || !parts.models}
+          failed={failed}
+        />
+        <Composition data={data} parts={parts} failed={failed} />
+        <StatisticsDetailPanel data={data} parts={parts} failed={failed} />
       </div>
     </ContentPage>
   );

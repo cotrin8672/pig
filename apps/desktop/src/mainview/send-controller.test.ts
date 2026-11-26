@@ -11,7 +11,11 @@ import type {
 } from "../shared/runtime-contract";
 import { emptyTranscript } from "../shared/transcript";
 import { DraftStore, emptyContent } from "./draft-store";
-import { isSendUnconfirmed, SendController } from "./send-controller";
+import {
+  isSendAdmitted,
+  isSendUnconfirmed,
+  SendController,
+} from "./send-controller";
 
 const address = { hostId: "h", sessionId: "opaque-sdk", epoch: 3 };
 const accepted: PromptAccepted = { disposition: "started" };
@@ -85,6 +89,8 @@ test("retry after a lost acceptance ACK executes SDK input only once", async () 
     },
   );
   await f.sends.send(address);
+  expect(rpcCalls).toBe(1);
+  await f.sends.lookup(address);
   await Bun.sleep(0);
   expect(rpcCalls).toBe(2);
   expect(sdkCalls).toBe(1);
@@ -382,7 +388,7 @@ test("host restart returns text and images to the composer without replaying acr
   expect(f.sends.retained()).toEqual([]);
   expect(f.drafts.read(address).content.text).toBe("new message");
 });
-test("receipt failures retry the same request three times then return all content once", async () => {
+test("repeated receipt failures allow three attempts with the same prompt, then return all content once", async () => {
   let calls = 0;
   const payloads: PromptParams[] = [];
   const f = fixture(
@@ -398,6 +404,7 @@ test("receipt failures retry the same request three times then return all conten
   await f.sends.send(address);
   expect(f.sends.read(address)?.state).toBe("checking");
   expect(f.sends.optimistic(address)).toHaveLength(1);
+  await f.sends.lookup(address);
   await f.sends.lookup(address);
   await f.sends.lookup(address);
   expect(f.sends.read(address)?.state).toBe("unknown");
@@ -712,10 +719,127 @@ test("a reconnect's accepted receipt cannot be undone by an already running rece
   expect(sends.read(address)?.state).toBe("accepted");
 });
 
-test("a hung lookup has a finite UI budget and only one underlying request; late acceptance is monotone", async () => {
+test("a lost receipt is queried again before retransmitting the prompt", async () => {
+  const drafts = new DraftStore();
+  drafts.edit(address, () => ({ ...emptyContent(), text: "sent once" }));
+  const lost = Promise.withResolvers<PromptReceipt>();
+  const callbacks: (() => void)[] = [];
+  const notices: string[] = [];
+  const keys: SendKey[] = [];
+  let prompts = 0;
+  const sends = new SendController(
+    drafts,
+    {
+      syncDraft,
+      prompt: async () => {
+        prompts++;
+        throw new Error("lost acceptance reply");
+      },
+      getPromptReceipt: async (key) => {
+        keys.push(key);
+        return keys.length === 1
+          ? lost.promise
+          : { ...key, state: "accepted", accepted, acceptedAt: 1 };
+      },
+    },
+    (callback) => callbacks.push(callback),
+    5,
+    undefined,
+    undefined,
+    (kind) => notices.push(kind),
+  );
+  await sends.send(address);
+  expect(keys).toHaveLength(1);
+  callbacks.shift()?.();
+  await Bun.sleep(0);
+  expect(keys).toEqual([keys[0], keys[0]]);
+  expect(prompts).toBe(1);
+  expect(notices).toEqual([]);
+  expect(sends.read(address)?.state).toBe("accepted");
+  expect(drafts.read(address).content).toEqual(emptyContent());
+});
+
+for (const evidence of ["event", "receipt", "reconnect"] as const) {
+  test(`host admission from ${evidence} survives repeated timeouts without restoring or replaying the send`, async () => {
+    const drafts = new DraftStore();
+    drafts.edit(address, () => ({ ...emptyContent(), text: "queued on host" }));
+    const begun = Promise.withResolvers<PromptParams>();
+    const response = Promise.withResolvers<PromptAccepted>();
+    const polls: (() => void)[] = [];
+    const notices: string[] = [];
+    let online = true;
+    let calls = 0;
+    const sends = new SendController(
+      drafts,
+      {
+        syncDraft,
+        prompt: (params) => {
+          calls++;
+          begun.resolve(params);
+          return response.promise;
+        },
+        getPromptReceipt: async (key) =>
+          online
+            ? { ...key, state: "pending", stage: "dispatched" }
+            : new Promise(() => {}),
+      },
+      (callback) => polls.push(callback),
+      5,
+      undefined,
+      undefined,
+      (kind) => notices.push(kind),
+    );
+    const sending = sends.send(address);
+    const { hostId, sessionId, epoch, requestId, draftRevision } =
+      await begun.promise;
+    const key = { hostId, sessionId, epoch, requestId };
+    if (evidence === "event") {
+      sends.receiveAdmission({ ...key, stage: "dispatched" });
+      sends.receiveAdmission({ ...key, stage: "queued" });
+    } else if (evidence === "reconnect") {
+      sends.restore([
+        {
+          receipt: { ...key, state: "pending", stage: "dispatched" },
+          draftRevision,
+          hash: "saved",
+          owner: { cwd: "/project", sessionFile: null, branchId: null },
+        },
+      ]);
+    } else {
+      // Let the dispatch leave the issue phase before polling the receipt.
+      await Bun.sleep(0);
+      await sends.lookup(address);
+    }
+    expect(sends.read(address)?.stage).toBe("dispatched");
+    expect(isSendAdmitted(sends.read(address))).toBe(true);
+    online = false;
+    response.reject(new Error("lost prompt result"));
+    await sending;
+    for (let i = 0; i < 5; i++) {
+      polls.shift()?.();
+      await sends.lookup(address);
+    }
+    expect(calls).toBe(1);
+    expect(notices).toEqual([]);
+    expect(drafts.read(address).content).toEqual(emptyContent());
+    expect(isSendAdmitted(sends.read(address))).toBe(true);
+    sends.restore([
+      {
+        receipt: { ...key, state: "accepted", accepted, acceptedAt: 1 },
+        draftRevision,
+        hash: "saved",
+        owner: { cwd: "/project", sessionFile: null, branchId: null },
+      },
+    ]);
+    expect(sends.read(address)?.state).toBe("accepted");
+  });
+}
+
+test("repeated receipt timeouts return the draft once and a late acceptance still settles it", async () => {
   const drafts = new DraftStore();
   drafts.edit(address, () => ({ ...emptyContent(), text: "one" }));
-  const receipt = Promise.withResolvers<PromptReceipt>();
+  const first = Promise.withResolvers<PromptReceipt>();
+  const later = Promise.withResolvers<PromptReceipt>();
   let calls = 0;
   const callbacks: (() => void)[] = [];
   let key: SendKey | undefined;
@@ -729,7 +853,7 @@ test("a hung lookup has a finite UI budget and only one underlying request; late
       getPromptReceipt: async (input) => {
         calls++;
         key = input;
-        return receipt.promise;
+        return calls === 1 ? first.promise : later.promise;
       },
     },
     (callback) => callbacks.push(callback),
@@ -737,13 +861,17 @@ test("a hung lookup has a finite UI budget and only one underlying request; late
   );
   await sends.send(address);
   expect(sends.read(address)?.state).toBe("checking");
-  callbacks.shift()?.();
-  callbacks.shift()?.();
+  for (let i = 0; i < 3; i++) {
+    callbacks.shift()?.();
+    await sends.lookup(address);
+  }
   expect(sends.read(address)?.state).toBe("unknown");
   expect(drafts.read(address).content.text).toBe("one");
+  expect(calls).toBe(4);
+  // Both callers share one fresh lookup; neither is stuck on the expired one.
   await Promise.all([sends.lookup(address), sends.lookup(address)]);
-  expect(calls).toBe(1);
-  receipt.resolve({
+  expect(calls).toBe(5);
+  first.resolve({
     ...(key as SendKey),
     state: "accepted",
     accepted,
@@ -810,10 +938,13 @@ test("an unverified CAS reservation never dispatches prompt", async () => {
   let reserved: SendKey | undefined,
     prompts = 0,
     lookups = 0;
+  const notices: string[] = [];
+  const cancelled = Promise.withResolvers<SendKey>();
   const sends = new SendController(
     drafts,
     {
       syncDraft: async (input) => {
+        if (!input.requestId) return syncDraft(input);
         reserved = { ...address, requestId: input.requestId as string };
         throw new Error("CAS applied; ACK dropped");
       },
@@ -826,18 +957,26 @@ test("an unverified CAS reservation never dispatches prompt", async () => {
         expect(key).toEqual(reserved as SendKey);
         return { ...key, state: "pending", stage: "prepared" };
       },
+      cancelPrompt: async (key) => cancelled.resolve(key),
     },
     () => {},
+    undefined,
+    undefined,
+    undefined,
+    (kind) => notices.push(kind),
   );
   await sends.send(address);
-  expect({ prompts, lookups }).toEqual({ prompts: 0, lookups: 2 });
-  expect(sends.read(address)?.state).toBe("unknown");
+  if (!reserved) throw new Error("missing reservation");
+  expect(await cancelled.promise).toEqual(reserved);
+  expect({ prompts, lookups }).toEqual({ prompts: 0, lookups: 1 });
+  expect(sends.read(address)?.state).toBe("rejected");
   expect(drafts.read(address).content.text).toBe("not dispatched");
+  expect(notices).toEqual([]);
   expect(sends.optimistic(address)).toEqual([]);
   expect(sends.retained()).toEqual([]);
 });
 
-for (const initial of ["saved", "missing", "late"]) {
+for (const initial of ["saved", "missing", "late", "offline"]) {
   test(`an unanswered CAS with a ${initial} reservation resumes under one ID`, async () => {
     const drafts = new DraftStore();
     drafts.edit(address, () => ({ ...emptyContent(), text: "send once" }));
@@ -858,15 +997,17 @@ for (const initial of ["saved", "missing", "late"]) {
           const applied = await syncDraft(input);
           return { ...applied, applied: initial !== "late" };
         },
-        getPromptReceipt: async (key) =>
-          saved
+        getPromptReceipt: async (key) => {
+          if (initial === "offline") throw new Error("Receipt unavailable");
+          return saved
             ? {
                 ...key,
                 state: "pending",
                 stage: "prepared",
                 draftRevision: saved.expectedRevision + 1,
               }
-            : { ...key, state: "unknown", reason: "not-found" },
+            : { ...key, state: "unknown", reason: "not-found" };
+        },
         prompt: async (input) => {
           prompts.push(input);
           return accepted;
@@ -896,6 +1037,41 @@ for (const initial of ["saved", "missing", "late"]) {
     expect(drafts.read(address).content).toEqual(emptyContent());
   });
 }
+
+test("unreachable draft reservation returns the input once without dispatching or reporting a timeout", async () => {
+  const drafts = new DraftStore();
+  const original = { ...emptyContent(), text: "preserve me" };
+  drafts.edit(address, () => original);
+  const cas: DraftSyncParams[] = [];
+  const errors: string[] = [];
+  let prompts = 0;
+  const sends = new SendController(
+    drafts,
+    {
+      syncDraft: (input) => {
+        if (!input.requestId) return syncDraft(input);
+        cas.push(input);
+        return new Promise(() => {});
+      },
+      prompt: async () => {
+        prompts++;
+        return accepted;
+      },
+      getPromptReceipt: () => new Promise(() => {}),
+    },
+    () => {},
+    5,
+    (error) => errors.push(error),
+  );
+  await sends.send(address);
+  expect(cas).toHaveLength(2);
+  expect(cas[1]).toEqual(cas[0]);
+  expect(prompts).toBe(0);
+  expect(sends.read(address)?.state).toBe("rejected");
+  expect(drafts.read(address).content.text).toBe(original.text);
+  expect(sends.pendingSteering(address, true)).toEqual([]);
+  expect(errors).toEqual([]);
+});
 
 test("checking an old unknown ID after a new send does not query or overwrite the current operation", async () => {
   const ids: string[] = [],

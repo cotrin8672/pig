@@ -2,13 +2,14 @@ import { mkdtemp, rm, stat, writeFile } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import type {
+  ActionKeymap,
   AdapterKeymap,
   PigConfig,
   SessionAdapter,
   ToolView,
 } from "../../../../packages/config/src/index";
 import { viewActions } from "../../../../packages/config/src/models";
-import { normalizeCombo } from "../shared/keymap";
+import { actionIds, normalizeCombo, normalizeSequence } from "../shared/keymap";
 
 const MAX_ADAPTERS = 128;
 const MAX_KEYMAPS = 512;
@@ -50,6 +51,7 @@ function validate(value: unknown): PigConfig {
     "apiVersion",
     "sessionAdapters",
     "toolViews",
+    "leader",
     "keymaps",
   ]);
   if (input.apiVersion !== 1) throw new Error("apiVersion must be exactly 1");
@@ -89,36 +91,84 @@ function validate(value: unknown): PigConfig {
       },
     );
   }
+  if (input.leader !== undefined) {
+    const leader = normalizeCombo(text(input.leader, "leader", 128));
+    if (!leader) throw new Error("leader is not a valid key combination");
+    config.leader = leader;
+  }
   if (input.keymaps !== undefined) {
-    const combos = new Set<string>();
+    const seen: (AdapterKeymap | ActionKeymap)[] = [];
     config.keymaps = array(input.keymaps, "keymaps", MAX_KEYMAPS).map(
       (value, index) => {
-        const name = `keymaps[${index}]`;
-        const binding = object(value, name, [
-          "keys",
-          "adapter",
-          "command",
-          "when",
-        ]);
-        const keys = normalizeCombo(text(binding.keys, `${name}.keys`, 128));
-        if (!keys)
-          throw new Error(`${name}.keys is not a valid key combination`);
-        const adapter = text(binding.adapter, `${name}.adapter`, 128);
-        const command = text(binding.command, `${name}.command`, 256);
-        if (!ids.has(adapter))
-          throw new Error(`${name} references unknown adapter: ${adapter}`);
-        const when = binding.when;
-        if (when !== "chat" && when !== "composer" && when !== "panel")
-          throw new Error(`${name}.when must be chat, composer, or panel`);
-        const identity = `${when}:${keys}`;
-        if (combos.has(identity))
-          throw new Error(`Duplicate keymap conflict: ${identity}`);
-        combos.add(identity);
-        return { keys, adapter, command, when } satisfies AdapterKeymap;
+        const keymap = validateKeymap(
+          value,
+          `keymaps[${index}]`,
+          ids,
+          config.leader,
+        );
+        for (const other of seen) {
+          if (other.when && keymap.when && other.when !== keymap.when) continue;
+          const identity = `${keymap.when ?? "any"}:${keymap.keys}`;
+          if (other.keys === keymap.keys)
+            throw new Error(`Duplicate keymap conflict: ${identity}`);
+          // A prefix would make the longer sequence unreachable.
+          if (
+            other.keys.startsWith(`${keymap.keys} `) ||
+            keymap.keys.startsWith(`${other.keys} `)
+          )
+            throw new Error(`Keymap prefix conflict: ${identity}`);
+        }
+        seen.push(keymap);
+        return keymap;
       },
     );
   }
   return config;
+}
+
+function validateKeymap(
+  value: unknown,
+  name: string,
+  adapters: ReadonlySet<string>,
+  leader: string | undefined,
+): AdapterKeymap | ActionKeymap {
+  const binding = object(value, name, [
+    "keys",
+    "adapter",
+    "command",
+    "action",
+    "when",
+  ]);
+  const raw = text(binding.keys, `${name}.keys`, 128);
+  if (!leader && /<leader>/i.test(raw))
+    throw new Error(`${name}.keys uses <leader> but leader is not set`);
+  const keys = normalizeSequence(raw, leader);
+  if (!keys) throw new Error(`${name}.keys is not a valid key combination`);
+  const when = binding.when;
+  if (
+    (when !== undefined || binding.action === undefined) &&
+    when !== "chat" &&
+    when !== "composer" &&
+    when !== "panel"
+  )
+    throw new Error(`${name}.when must be chat, composer, or panel`);
+  if (binding.action !== undefined) {
+    if (binding.adapter !== undefined || binding.command !== undefined)
+      throw new Error(`${name} must set either action or adapter`);
+    const action = text(binding.action, `${name}.action`, 128);
+    // Composer keys are handled by the editor itself, not app shortcuts.
+    if (
+      !(actionIds as string[]).includes(action) ||
+      action.startsWith("composer.")
+    )
+      throw new Error(`${name} references unknown action: ${action}`);
+    return when ? { keys, action, when } : { keys, action };
+  }
+  const adapter = text(binding.adapter, `${name}.adapter`, 128);
+  const command = text(binding.command, `${name}.command`, 256);
+  if (!adapters.has(adapter))
+    throw new Error(`${name} references unknown adapter: ${adapter}`);
+  return { keys, adapter, command, when } as AdapterKeymap;
 }
 
 /** Loads only the explicit user-global file. Config code is trusted host code, not sandboxed. */

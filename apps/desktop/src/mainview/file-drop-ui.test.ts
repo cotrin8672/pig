@@ -18,7 +18,9 @@ test.skipIf(!existsSync(fixtureEdge) && !process.env.PIG_REQUIRE_UI_TESTS)(
       const {createRoot}=await import(${fixtureImport(import.meta.resolve("react-dom/client"))});
       const {flushSync}=await import(${fixtureImport(import.meta.resolve("react-dom"))});
       const {ChatLayout}=await import(${local("./ChatLayout.tsx")});
+      const {ChatOpening}=await import(${local("./ChatOpening.tsx")});
       const {ComposerFrame}=await import(${local("./ComposerFrame.tsx")});
+      const {useStore}=await import(${local("./store.ts")});
       await import(${local("./styles.css")});
       await import(${local("./session-panel.css")});
       await import(${local("./composer.css")});
@@ -50,6 +52,22 @@ test.skipIf(!existsSync(fixtureEdge) && !process.env.PIG_REQUIRE_UI_TESTS)(
       target.dispatchEvent(new DragEvent('drop',{bubbles:true,cancelable:true,dataTransfer:data}));
       await until(()=>!document.querySelector('.file-drop-overlay'),'overlay disappears after the drop');
       check(dropped.join()==='sheet.xlsx,note.txt','every dropped file, not only images, must be attached: '+dropped.join());
+
+      const openId='file-drop-opening',opening={cwd:'fixture',draftId:openId};
+      window.__requests={storeAttachment:({name})=>'fixture/'+name};
+      flushSync(()=>useStore.setState({openId,openingTarget:opening,pendingOpens:{[openId]:opening}}));
+      flushSync(()=>root.render(<ChatOpening/>));
+      const textFile=new DataTransfer();
+      textFile.items.add(new File(['y'],'note.txt',{type:'text/plain'}));
+      document.querySelector('.transcript').dispatchEvent(new DragEvent('drop',{bubbles:true,cancelable:true,dataTransfer:textFile}));
+      await until(()=>document.querySelector('.composer-attachment.file'),'the opening composer shows the dropped file');
+      const send=document.querySelector('.send-button');
+      check(!send.disabled&&document.querySelector('textarea').value==='','a file alone enables send');
+      send.click();
+      const pending=useStore.getState().pendingOpens[openId].queued?.[0];
+      check(pending?.kind==='send'&&pending.content.text===''&&pending.content.files?.[0]?.path==='fixture/note.txt','a file alone is queued for the chat that is opening');
+      await wait();
+      check(!document.querySelector('.composer-attachment'),'the queued attachment leaves the draft');
       `,
     ),
   60_000,

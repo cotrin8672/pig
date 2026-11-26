@@ -54,7 +54,16 @@ test("model errors retry within budget, then stop, preserve queued input and all
       const faux = fauxProvider({ tokensPerSecond: Infinity, models: [{ id: "fixture" }] });
       const cwd = ${JSON.stringify(home)};
       await mkdir(join(cwd, ".pi/extensions"), { recursive: true });
-      await writeFile(join(cwd, ".pi/extensions/turn-probe.ts"), 'export default pi => pi.on("turn_start", () => { if (globalThis.__failExtension) throw new Error("hook failed"); });');
+      await writeFile(join(cwd, ".pi/extensions/turn-probe.ts"), [
+        'export default pi => {',
+        '  pi.on("turn_start", () => { if (globalThis.__failExtension) throw new Error("hook failed"); });',
+        '  pi.on("session_before_compact", async ({ reason, preparation }) => {',
+        '    if (reason !== "overflow" || !globalThis.__compactGate) return;',
+        '    await globalThis.__compactGate.promise;',
+        '    return { compaction: { summary: "Compacted earlier turns", firstKeptEntryId: preparation.firstKeptEntryId, tokensBefore: preparation.tokensBefore } };',
+        '  });',
+        '};',
+      ].join("\\n"));
       const outcomes = [], snapshots = [], notices = [];
       const track = createCompletionTracker();
       const host = new SessionHost({ modelInfo,
@@ -169,12 +178,58 @@ test("model errors retry within budget, then stop, preserve queued input and all
         level: "error",
         message: expect.stringContaining("failed in turn_start: hook failed"),
       }));
+
+      globalThis.__failExtension = false;
+      session.settingsManager.applyOverrides({ compaction: { enabled: true, keepRecentTokens: 1 } });
+      for (const retryFirst of [false, true]) {
+        const overflow = Promise.withResolvers(), compact = Promise.withResolvers();
+        globalThis.__compactGate = compact;
+        const eventStart = events.length, snapshotStart = snapshots.length;
+        let overflowing = false;
+        stopped = undefined;
+        faux.setResponses([
+          ...(retryFirst ? [fauxAssistantMessage([], { stopReason: "error", errorMessage: "fetch failed: ECONNRESET" })] : []),
+          async () => {
+            overflowing = true;
+            await overflow.promise;
+            return fauxAssistantMessage([], { stopReason: "error", errorMessage: "context_length_exceeded" });
+          },
+          fauxAssistantMessage("continued after compaction"),
+          fauxAssistantMessage("steering delivered"),
+        ]);
+        const original = input("original request before overflow", "overflow-" + retryFirst);
+        await host.prompt(original);
+        await wait(() => overflowing);
+        const steering = input("keep this sent input", "compact-steer-" + retryFirst);
+        expect(await host.prompt(steering)).toEqual({ disposition: "queued" });
+        overflow.resolve();
+        await wait(() => events.slice(eventStart).some(e => e.type === "compaction_start") || stopped);
+        expect(stopped).toBeUndefined();
+        expect(host.getSessionSnapshot(chat.address).transcript.compaction).toEqual({ reason: "overflow" });
+        expect(host.getPromptReceipt(steering)).toMatchObject({ state: "accepted" });
+        expect(session.pendingMessageCount).toBe(1);
+        compact.resolve();
+        await host.receipts.settled(chat.address);
+        await session.waitForIdle();
+        const after = host.getSessionSnapshot(chat.address);
+        expect(after.failure).toBeUndefined();
+        expect(after.transcript.records.filter(r => r.requestId === original.requestId && r.message?.role === "user")).toHaveLength(1);
+        expect(after.transcript.records.filter(r => r.requestId === steering.requestId).map(r => r.message?.role)).toEqual(["user"]);
+        expect(snapshots.slice(snapshotStart).some(s => s.transcript.records.some(r => r.requestId === steering.requestId && r.customType === "Cancelled queued prompt"))).toBe(false);
+        expect(outcomes.at(-1)).toBe("success");
+      }
       await host.dispose();
       await disposeSessions();
     `;
     const child = Bun.spawn([process.execPath, "--eval", script], {
       cwd: join(import.meta.dir, "../.."),
-      env: { ...process.env, HOME: home, USERPROFILE: home, PI_OFFLINE: "1" },
+      env: {
+        ...process.env,
+        HOME: home,
+        USERPROFILE: home,
+        PIG_DESKTOP_CONFIG_DIR: join(home, "config"),
+        PI_OFFLINE: "1",
+      },
       stdout: "pipe",
       stderr: "pipe",
     });

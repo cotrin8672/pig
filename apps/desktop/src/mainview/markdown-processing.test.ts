@@ -8,12 +8,38 @@ import remarkMath from "remark-math";
 import { normalizeMath } from "../shared/math";
 import { parseMarkdown } from "./markdown-engine";
 import {
+  appendOpenCodeFence,
   cachedMarkdown,
+  openCodeFence,
   plainMarkdown,
   prepareMarkdown,
   retainedMarkdown,
 } from "./markdown-processing";
 import { markdownUrl } from "./markdown-url";
+
+test("cached completed math matches uncached trees, including all source positions", () => {
+  const cache = new Map();
+  for (const text of [
+    "$x^2$ and $x^2$",
+    "日本語🍵\r\n\r\n$x^2$\r\n\r\n$$\r\nx^2\r\n$$",
+    "~~~math\nx^2\n~~~\n\n> $x^2$",
+    "$$\nx^2",
+    "$$\nx^2\n$$",
+    "$\\notARealCommand{x}$",
+    "[a][ref]\n\n$x^2$\n\n[ref]: javascript:bad",
+    "| A | B |\n|---|---|\n| $x^2$ | `x` |",
+    ...Array.from({ length: 36 }, (_, i) => `$x_${i}$`),
+  ]) {
+    const expected = parseMarkdown(text, true);
+    expect(parseMarkdown(text, true, cache)).toEqual(expected);
+    const hit = parseMarkdown(text, true, cache);
+    expect(hit).toEqual(expected);
+    expect(renderTree(hit.tree)).toBe(renderTree(expected.tree));
+  }
+  const many = Array.from({ length: 80 }, (_, i) => `$x_${i}$`).join("\n\n");
+  expect(parseMarkdown(many, true, cache)).toEqual(parseMarkdown(many, true));
+  expect(cache.size).toBe(32);
+});
 
 const renderTree = (tree: Root | undefined) => {
   if (!tree) throw new Error("Expected a parsed Markdown tree");
@@ -222,6 +248,73 @@ test("streaming and final Markdown caches never share an unfinished math renderi
   expect(renderTree(pending?.tree)).not.toContain('class="katex');
   expect(renderTree(final?.tree)).toBe(baseline(text));
 });
+test("streaming code fence appends match a full parse without modifying the prior tree", () => {
+  for (const [marker, language] of [
+    ["~~~", "ts"],
+    ["````", "Julia"],
+    ["```", ""],
+  ]) {
+    const initial =
+      "# Heading\n\n| A | B |\n| - | - |\n| 1 | 2 |\n\n" +
+      `${marker}${language}\nconst stable = 1`;
+    const tree = parseMarkdown(initial, true).tree;
+    const original = renderTree(tree);
+    let text = initial;
+    let fence = openCodeFence(text, tree);
+    expect(fence).toBeDefined();
+    for (const suffix of [
+      ";",
+      "\n",
+      "\tconst 日本語 = '🙂';\n\n",
+      "<em>& literal </em>\n",
+      `[link]: https://example.test\n    ${marker}`,
+    ]) {
+      text += suffix;
+      fence = appendOpenCodeFence(text, fence);
+      expect(renderTree(fence?.tree)).toBe(
+        renderTree(parseMarkdown(text, true).tree),
+      );
+      expect(fence?.tree.children[0]).toBe(tree.children[0]);
+    }
+    expect(renderTree(tree)).toBe(original);
+  }
+});
+
+test("the streaming fence shortcut rejects uncertain syntax and non-append changes", () => {
+  const seed = (source: string) =>
+    openCodeFence(source, parseMarkdown(source, true).tree);
+  const text = "[docs][ref]\n\n~~~~ts\nconst value = 1;\n   ~~~";
+  const fence = seed(text);
+  const withReference = `${text}~\n\n[ref]: https://example.test`;
+  expect(fence).toBeDefined();
+  for (const next of [
+    text.slice(0, -1),
+    text.replace("= 1", "= 2"),
+    `${text}~`,
+    withReference,
+    `${text}\n~~~~~   \t\n`,
+    `${text}\r\nmore`,
+    `${text}\0`,
+  ])
+    expect(appendOpenCodeFence(next, fence)).toBeUndefined();
+  expect(renderTree(parseMarkdown(withReference, true).tree)).toContain(
+    'href="https://example.test"',
+  );
+  for (const unsupported of [
+    "~~~ts\n",
+    "~~~ts\n\n",
+    "~~~ts\r\nvalue",
+    "~~~ts meta\nvalue",
+    "  ~~~ts\n  value",
+    "> ~~~ts\n> value",
+    "~~~ts\nvalue\n~~~",
+    "~~~mermaid\ngraph TD",
+    "~~~math\nx = y",
+    "~~~unknown\nvalue",
+  ])
+    expect(seed(unsupported)).toBeUndefined();
+});
+
 test("pending code-body updates preserve the pre/code tree and latest source, not a stale body", () => {
   const initial =
     "Before\n\n~~~ts\nconst stable = 1;\nconst growing\n~~~\n\nAfter";

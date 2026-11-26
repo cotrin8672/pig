@@ -4,15 +4,14 @@
 
 1. **Screens / App**: 全体画面のプレビュー
 2. **Domain / Sidebar・ChatScreen・ComposerUI**: 画面を構成する大枠。その配下に個別部品を置く
-3. **Patterns**: 設定の構成案、既存の操作メニュー・二度押し確認・名前変更
-4. **Primitives**: 既存CSSによる操作・入力の見本
+3. **Patterns**: `mainview/patterns/` の組み合わせ部品（SettingsCard・SettingsRow・ActionsMenu・ConfirmButton・InlineRename）
+4. **Primitives**: `mainview/primitives/` の最小部品を部品名ごとに展示
 5. **Foundations**: 既存の色・文字・半透明面、出力枠の構成案
-6. **Guide**: 分類、部品台帳、使い分け、レビュー条件
 
 ## 境界
 
-- この段階では本番UI、共通CSS、通信、設定保存を変更しない。
-- 本番部品はそのままimportして展示する。移動・置換・公開API化はしない。
+- 階層は `Design System / 粒度 / 部品・対象名`。ガイドや分類直下のまとめStoryは置かない。
+- 本番部品はそのままimportして展示する。サンプル操作を通信や設定保存につなげない。
 - 共通React部品が存在しないものは「既存CSS」または「構成案」と明記する。
 - 構成案のコードはこのディレクトリに閉じる。アプリからimportしない。
 - CSSは `.ds-review` 配下だけへ適用する。既存Storyの分類・見た目も変更しない。

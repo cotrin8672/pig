@@ -1,0 +1,76 @@
+/* New-chat target tray: the queue tray's surface (.message-queue) with two
+   shared pickers. Values follow the Snappy profile. */
+.chat-target {
+  --snappy-mid: 120ms;
+  --snappy-ease: var(--motion-ease-out);
+  --snappy-rise: 4px;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  min-width: 0;
+  padding: 4px 6px;
+  animation: snappy-rise var(--snappy-mid) var(--snappy-ease);
+}
+.chat-target-group {
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+.chat-target-sep {
+  width: 1px;
+  height: 14px;
+  margin: 0 2px;
+  background: var(--ds-border-strong);
+}
+.chat-target-label {
+  max-width: 200px;
+  color: var(--ds-text-primary);
+  font-weight: var(--font-weight-medium);
+}
+.chat-target-pc {
+  position: relative;
+  display: inline-flex;
+}
+/* The status sits on the icon's corner, like the sidebar's provider dot. */
+.chat-target-dot {
+  position: absolute;
+  right: -2px;
+  bottom: -2px;
+  width: 6px;
+  height: 6px;
+  border-radius: var(--radius-full);
+  background: var(--ds-text-faint);
+  box-shadow: 0 0 0 1.5px var(--ds-bg-primary);
+  &[data-online] {
+    background: var(--ds-success);
+  }
+}
+.chat-target-swap {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  animation: snappy-fade var(--snappy-mid) var(--snappy-ease);
+}
+/* Opens upward from the tray, aligned to its chip. */
+.chat-target .picker-panel {
+  right: auto;
+  left: 0;
+  width: 320px;
+}
+.chat-target-results {
+  max-height: 220px;
+}
+.chat-target-action {
+  margin-top: 4px;
+  border-top: 1px solid #ffffff0c;
+  border-radius: 0 0 5px 5px;
+  color: var(--ds-accent);
+}
+@media (prefers-reduced-motion: reduce) {
+  .chat-target,
+  .chat-target-swap {
+    animation: none;
+  }
+}

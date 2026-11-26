@@ -28,6 +28,7 @@ export interface SearchRoot {
 }
 
 const VERSION = 1;
+const DEFAULT_SEARCH_LIMIT = 50;
 /** Committed progress whose captured source has not yet been validated. */
 const UNVERIFIED = -2;
 const userMarker = Buffer.from('"role":"user"');
@@ -142,6 +143,11 @@ export class SearchIndex {
   private queued?: () => SearchRoot[] | Promise<SearchRoot[]>;
   private cwds = new Map<string, string>();
   private messageCount = 0;
+  private lastSearch?: {
+    query: string;
+    limit: number;
+    hits: ConversationHit[];
+  };
   private generation = 0;
   private forgotten?: Set<string>;
   private closed = false;
@@ -183,6 +189,7 @@ export class SearchIndex {
   }
 
   private loadCwds() {
+    const previous = this.cwds;
     this.cwds = new Map(
       (
         this.db
@@ -192,6 +199,18 @@ export class SearchIndex {
           .all() as { session: string; cwd: string }[]
       ).map((row) => [row.session, row.cwd]),
     );
+    if (this.lastSearch && !Bun.deepEquals(previous, this.cwds))
+      this.lastSearch = undefined;
+  }
+
+  private changeMessageCount(delta: number) {
+    if (delta === 0) return;
+    this.messageCount = Math.max(0, this.messageCount + delta);
+    this.lastSearch = undefined;
+  }
+
+  private removeCwd(sessionId: string) {
+    if (this.cwds.delete(sessionId)) this.lastSearch = undefined;
   }
 
   /** Coalesces overlapping refreshes into one follow-up run with the latest roots. */
@@ -242,8 +261,8 @@ export class SearchIndex {
       this.db.query("DELETE FROM files WHERE session = ?").run(sessionId);
       return Number(result.changes);
     })();
-    this.messageCount = Math.max(0, this.messageCount - removed);
-    this.cwds.delete(sessionId);
+    this.changeMessageCount(-removed);
+    this.removeCwd(sessionId);
   }
 
   private forgetFile(path: string) {
@@ -262,7 +281,7 @@ export class SearchIndex {
       this.db.query("DELETE FROM file_identity WHERE path = ?").run(path);
       return count;
     })();
-    this.messageCount = Math.max(0, this.messageCount - removed);
+    this.changeMessageCount(-removed);
   }
 
   private current(scan: Scan) {
@@ -374,7 +393,7 @@ export class SearchIndex {
         // searchable while its replacement is still being written.
         if (row) {
           this.forgetFile(path);
-          this.cwds.delete(row.session);
+          this.removeCwd(row.session);
         }
         return;
       }
@@ -491,7 +510,7 @@ export class SearchIndex {
             // I/O failure/cancellation cannot replay already committed entries.
             this.saveFile(path, session, owner, info, offset, tail);
           })();
-          this.messageCount += inserted;
+          this.changeMessageCount(inserted);
           await this.yieldControl();
         }
         pending = [];
@@ -612,12 +631,15 @@ export class SearchIndex {
       this.db.transaction(() =>
         this.saveFile(path, session, owner, info, offset, tail, true),
       )();
-      this.cwds.set(session, owner);
+      if (this.cwds.get(session) !== owner) {
+        this.cwds.set(session, owner);
+        this.lastSearch = undefined;
+      }
     } catch (error) {
       if (error instanceof IndexSourceChanged) {
         if (current()) {
           this.forgetFile(path);
-          this.cwds.delete(session);
+          this.removeCwd(session);
           return false;
         }
         return;
@@ -647,7 +669,7 @@ export class SearchIndex {
         if (!current()) return;
         if (!unchanged) {
           this.forgetFile(path);
-          this.cwds.delete(session);
+          this.removeCwd(session);
         } else if (captured) {
           this.db
             .query(
@@ -696,7 +718,9 @@ export class SearchIndex {
   }
 
   /** All terms must occur (case-insensitive substring); newest first. */
-  search(query: string, limit = 50): ConversationHit[] {
+  search(query: string, limit = DEFAULT_SEARCH_LIMIT): ConversationHit[] {
+    if (this.lastSearch?.query === query && this.lastSearch.limit === limit)
+      return this.lastSearch.hits.map((hit) => ({ ...hit }));
     const terms = searchTerms(query);
     if (!terms.some((term) => term.length >= 2)) return [];
     const candidate = selectiveSearchCandidate(
@@ -716,7 +740,7 @@ export class SearchIndex {
       role: "user" | "assistant";
       ts: number;
     }[];
-    return rows.flatMap((row) => {
+    const hits = rows.flatMap((row) => {
       const cwd = this.cwds.get(row.session);
       return cwd
         ? [
@@ -731,6 +755,13 @@ export class SearchIndex {
           ]
         : [];
     });
+    // Polling can continue while a refresh waits on I/O without changing hits.
+    if (hits.length > DEFAULT_SEARCH_LIMIT) {
+      this.lastSearch = undefined;
+      return hits;
+    }
+    this.lastSearch = { query, limit, hits };
+    return hits.map((hit) => ({ ...hit }));
   }
 
   close() {
@@ -738,6 +769,7 @@ export class SearchIndex {
     this.closed = true;
     this.generation++;
     this.queued = undefined;
+    this.lastSearch = undefined;
     this.db.close();
   }
 }

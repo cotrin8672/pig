@@ -10,6 +10,60 @@ import {
 const local = (path: string) => fixtureImport(new URL(path, import.meta.url));
 
 test.skipIf(!existsSync(fixtureEdge) && !process.env.PIG_REQUIRE_UI_TESTS)(
+  "an extension editor update does not interrupt typing or sending",
+  () =>
+    runUiFixture(
+      "composer-extension-update",
+      `
+      const {createRoot}=await import(${fixtureImport(import.meta.resolve("react-dom/client"))});
+      const {flushSync}=await import(${fixtureImport(import.meta.resolve("react-dom"))});
+      const {Composer}=await import(${local("./Composer.tsx")});
+      const {drafts,emptyContent}=await import(${local("./draft-store.ts")});
+      const {receiveExtension}=await import(${local("./runtime-events.ts")});
+      const {sends}=await import(${local("./rpc.ts")});
+      const {useStore}=await import(${local("./store.ts")});
+      const {hydrate}=await import(${local("../shared/transcript.ts")});
+      await import(${local("./styles.css")});
+      ${fixtureHelpers}
+      const root=createFixtureRoot(createRoot),sent=[];
+      const address={hostId:'fixture',sessionId:'extension-update',epoch:1};
+      const model={provider:'fixture',id:'model',name:'Fixture'};
+      const snapshot={address,snapshotSeq:1,info:{id:address.sessionId,cwd:'fixture',title:'Editor',modified:1},
+        model,effort:'off',effortLevels:[],transcript:hydrate([])};
+      let remote={...emptyContent(),text:'extension text',revision:1};
+      window.__requests={
+        listSlashCommands:()=>[],
+        syncDraft:params=>{
+          if(params.expectedRevision!==remote.revision)return {applied:false,draft:remote};
+          remote={...params.content,revision:remote.revision+1};
+          return {applied:true,draft:remote};
+        },
+        prompt:params=>{sent.push(params.text);return {disposition:'started'};},
+      };
+      flushSync(()=>useStore.setState(s=>({hostId:address.hostId,addresses:{[address.sessionId]:address},
+        bootstrap:{...s.bootstrap,models:[model],disabledModels:[]},settings:{...s.settings,language:'en'}})));
+      flushSync(()=>root.render(<Composer snapshot={snapshot}/>));await wait();
+      const editor=document.querySelector('.composer textarea');
+      flushSync(()=>drafts.edit(address,c=>({...c,text:'my draft'})));
+      editor.focus();editor.setSelectionRange(1,3);
+      flushSync(()=>receiveExtension({type:'draft',address,draft:remote}));
+      check(editor===document.activeElement&&editor.value==='my draft'&&editor.selectionStart===1&&editor.selectionEnd===3,
+        'extension updates must preserve input, focus and selection');
+      check(!document.querySelector('.draft-conflict,dialog[open]'),'no draft choice UI');
+      const submit=document.querySelector('.send-button');
+      check(!submit.disabled,'send must remain enabled');
+      submit.click();
+      await until(()=>sends.read(address)?.state==='accepted','send must finish');
+      check(sent.length===1&&sent[0]==='my draft','only the submitted text is sent');
+      check(!useStore.getState().noticeHistory.length,'no error notification');
+      root.unmount();
+      `,
+      { realRpc: true },
+    ),
+  60_000,
+);
+
+test.skipIf(!existsSync(fixtureEdge) && !process.env.PIG_REQUIRE_UI_TESTS)(
   "composer editing in Edge: undo/redo, recall, draft restoration, IME and pane isolation",
   () =>
     runUiFixture(

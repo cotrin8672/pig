@@ -1,5 +1,6 @@
 import type { AuthEvent, AuthPrompt } from "@earendil-works/pi-ai";
 import { create } from "zustand";
+import type { ActionKeymap } from "../../../../packages/config/src";
 import type { AppUpdateState } from "../shared/app-update";
 import { defaultAppearance } from "../shared/appearance";
 import type { ChatHistoryFileEvent } from "../shared/chat-history-import";
@@ -36,6 +37,7 @@ import type { Message } from "../shared/transcript";
 import type { ChatSnapshot } from "./chat-snapshot";
 import type { ExtensionNotice } from "./extension-notices";
 import type { PaneNode } from "./pane-layout";
+import { savePaneWorkspace } from "./pane-workspace-cache";
 import { isViewedNotice } from "./session-read";
 import { loadSidebarCache, saveSidebarCache } from "./sidebar-cache";
 
@@ -98,6 +100,7 @@ export const useStore = create<{
   paneTree: PaneNode;
   activePane: number;
   panes: Record<number, { sessionId?: string; openId?: string }>;
+  restoringChats: ReadonlySet<string>;
   page: "chat" | "providers" | "extensions" | "settings" | "statistics";
   searchOpen: boolean;
   settingsCategory: SettingsCategory;
@@ -136,12 +139,15 @@ export const useStore = create<{
   packageOps: Record<string, PackageOpStatus>;
   notices: (Notice & { id: string })[];
   noticeHistory: NoticeRecord[];
+  clearingNotices: boolean;
   login?: LoginState;
   providerSelection?: AccountTarget;
   /** Selected-view state only; pendingOpens tracks startup without locking navigation. */
   opening: boolean;
   appearance: Appearance;
   settings: Settings;
+  /** Extra built-in action keys from the user's TS config. */
+  actionKeymaps: ActionKeymap[];
   maximized: boolean;
   /** The sidebar shows the previous launch's list until bootstrap answers. */
   cachedSidebar: boolean;
@@ -167,6 +173,7 @@ export const useStore = create<{
   paneTree: { type: "pane", id: 1 },
   activePane: 1,
   panes: { 1: {} },
+  restoringChats: new Set(),
   addresses: {},
   pendingUI: [],
   terminals: {},
@@ -186,13 +193,23 @@ export const useStore = create<{
   deletingSessions: {},
   rewinds: {},
   noticeHistory: [],
+  clearingNotices: false,
   opening: false,
   pendingOpens: {},
   maximized: false,
   appearance: defaultAppearance,
   settings: defaultSettings,
+  actionKeymaps: [],
 }));
 useStore.subscribe((state, previous) => {
+  if (
+    state.initialized &&
+    previous.initialized &&
+    (state.paneTree !== previous.paneTree ||
+      state.activePane !== previous.activePane ||
+      state.panes !== previous.panes)
+  )
+    savePaneWorkspace(state);
   if (
     !state.initialized ||
     (state.sessions === previous.sessions &&
@@ -232,15 +249,24 @@ export function connectNoticeHistory(
 export function receiveNoticeHistory(snapshot: NoticeHistorySnapshot) {
   if (snapshot.revision <= noticeRevision) return;
   noticeRevision = snapshot.revision;
+  // Mark notices for the chat on screen read before rendering, so the bell badge does not flash.
+  const viewed = snapshot.notices
+    .filter((notice) => !notice.read && viewingNotice(notice))
+    .map((notice) => notice.id);
+  const autoRead = new Set([...viewed, ...pendingAutoRead]);
+  const notices = snapshot.notices.map((notice) =>
+    !notice.read && autoRead.has(notice.id)
+      ? { ...notice, read: true }
+      : notice,
+  );
+  requestAutoRead(viewed);
   useStore.setState((state) => {
     const unread = new Set(
-      snapshot.notices
-        .filter((notice) => !notice.read)
-        .map((notice) => notice.id),
+      notices.filter((notice) => !notice.read).map((notice) => notice.id),
     );
     const previous = new Set(state.noticeHistory.map((notice) => notice.id));
     return {
-      noticeHistory: snapshot.notices,
+      noticeHistory: notices,
       notices: state.notices.filter(
         (notice) => unread.has(notice.id) || !previous.has(notice.id),
       ),
@@ -281,15 +307,27 @@ export function markNoticeRead(id?: string) {
     ),
   }));
 }
-export function clearNotices() {
-  if (requestNoticeHistory) {
-    void requestNoticeHistory({ type: "clear" }).then(
-      receiveNoticeHistory,
-      notifyHistoryFailure,
-    );
+export async function clearNotices() {
+  if (!requestNoticeHistory) {
+    useStore.setState({ noticeHistory: [], notices: [] });
     return;
   }
-  useStore.setState({ noticeHistory: [], notices: [] });
+  const { clearingNotices, notices } = useStore.getState();
+  if (clearingNotices) return;
+  // Keep applying host updates while the list is hidden, so failure reveals the latest history.
+  useStore.setState({ clearingNotices: true });
+  try {
+    receiveNoticeHistory(await requestNoticeHistory({ type: "clear" }));
+    useStore.setState((state) => ({
+      notices: state.notices.filter(
+        (notice) => !notices.some(({ id }) => id === notice.id),
+      ),
+    }));
+  } catch (error) {
+    notifyHistoryFailure(error);
+  } finally {
+    useStore.setState({ clearingNotices: false });
+  }
 }
 export function dismissNotice(id: string) {
   useStore.setState((s) => ({
@@ -307,15 +345,7 @@ export function readViewedNotices(visible: boolean, focused: boolean) {
           !notice.read && !pendingAutoRead.has(notice.id) && viewed(notice),
       )
       .map((notice) => notice.id);
-    if (!ids.length) return;
-    for (const id of ids) pendingAutoRead.add(id);
-    void requestNoticeHistory({ type: "read", ids })
-      .then(receiveNoticeHistory, (error) =>
-        console.error("Cannot mark viewed notifications read:", error),
-      )
-      .finally(() => {
-        for (const id of ids) pendingAutoRead.delete(id);
-      });
+    requestAutoRead(ids);
     return;
   }
   if (
@@ -329,6 +359,18 @@ export function readViewedNotices(visible: boolean, focused: boolean) {
       !n.read && viewed(n) ? { ...n, read: true } : n,
     ),
   });
+}
+function requestAutoRead(ids: string[]) {
+  const pending = ids.filter((id) => !pendingAutoRead.has(id));
+  if (!pending.length || !requestNoticeHistory) return;
+  for (const id of pending) pendingAutoRead.add(id);
+  void requestNoticeHistory({ type: "read", ids: pending })
+    .then(receiveNoticeHistory, (error) =>
+      console.error("Cannot mark viewed notifications read:", error),
+    )
+    .finally(() => {
+      for (const id of pending) pendingAutoRead.delete(id);
+    });
 }
 function viewingNotice(notice: Notice) {
   return (

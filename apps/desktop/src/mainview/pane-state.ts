@@ -2,8 +2,7 @@ import { navigate } from "./navigation";
 import { openingDraftKey } from "./opening-sends";
 import {
   adjacentPane,
-  movePane,
-  type PaneDropSide,
+  type PaneNode,
   paneGeometry,
   removePane,
   type SplitAxis,
@@ -100,10 +99,11 @@ export function closePane(id = useStore.getState().activePane) {
 }
 
 /** Move a pane to a side of another (center swaps); the moved pane keeps focus. */
-export function dropPane(id: number, target: number, side: PaneDropSide) {
+export function dropPane(id: number, result: PaneNode, original: PaneNode) {
   const state = useStore.getState();
-  if (state.page !== "chat" || !state.panes[id] || !state.panes[target]) return;
-  useStore.setState({ paneTree: movePane(state.paneTree, id, target, side) });
+  if (state.page !== "chat" || !state.panes[id] || state.paneTree !== original)
+    return;
+  useStore.setState({ paneTree: result });
   focusPane(id);
   focusEditor(id);
 }

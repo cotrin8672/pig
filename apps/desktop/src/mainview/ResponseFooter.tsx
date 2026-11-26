@@ -11,6 +11,7 @@ import { memo, useState } from "react";
 import { useShallow } from "zustand/react/shallow";
 import type { Message, ResponseStats } from "../shared/transcript";
 import { useT } from "./i18n";
+import { Chip } from "./primitives/Chip";
 import { forkChat, regenerate } from "./rpc";
 import { showError, useStore } from "./store";
 import { type TipContent, useTooltip } from "./Tooltip";
@@ -94,10 +95,9 @@ export const ResponseFooter = memo(function ResponseFooter({
         {stats.tools > 0 && <span>· {t.toolCount(stats.tools)}</span>}
       </div>
       <div className="response-meta">
-        <span className="chip">{stats.model}</span>
+        <Chip>{stats.model}</Chip>
         {(stats.tokensPerSecond !== undefined || stats.totalTokens > 0) && (
-          <span
-            className="chip"
+          <Chip
             aria-description={t["Output speed · total tokens"]}
             {...tooltip(() => ({
               ...usageTip(stats, t, language),
@@ -114,7 +114,7 @@ export const ResponseFooter = memo(function ResponseFooter({
                 notation: "compact",
                 maximumFractionDigits: 1,
               }).format(stats.totalTokens)}
-          </span>
+          </Chip>
         )}
       </div>
       <div className="response-actions">

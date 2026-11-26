@@ -1,4 +1,5 @@
 // biome-ignore-all lint/suspicious/noArrayIndexKey: Questions and options keep their order.
+
 import { Check, MessageCircleQuestion } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import type { AskAnswer, AskQuestion } from "../shared/ask-user";
@@ -6,6 +7,8 @@ import type { UIReply, UIRequest } from "../shared/extension-ui";
 import type { SessionAddress } from "../shared/runtime-contract";
 import { sameAddress } from "./chat-snapshot";
 import { useT } from "./i18n";
+import { Button } from "./primitives/Button";
+import { TextField } from "./primitives/TextField";
 import { rpc } from "./rpc";
 import { SolidBlurFilter } from "./SolidBlurFilter";
 import { showError, useStore } from "./store";
@@ -188,7 +191,7 @@ export function AskForm({ request }: { request: Ask }) {
       {/* Text field and actions share one row. */}
       <div className="ask-panel-actions">
         {(free || request.allowComment) && (
-          <input
+          <TextField
             aria-label={free ? at.answer : at.comment}
             placeholder={free ? at.answer : at.comment}
             value={draft.text}
@@ -215,13 +218,13 @@ export function AskForm({ request }: { request: Ask }) {
             {t.Back}
           </button>
         )}
-        <button
+        <Button
           type="submit"
-          className="primary"
+          variant="primary"
           disabled={submitting || !answers[step]}
         >
           {complete ? t.Send : at.nextQuestion}
-        </button>
+        </Button>
       </div>
     </form>
   );

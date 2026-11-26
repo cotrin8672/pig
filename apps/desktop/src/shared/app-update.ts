@@ -6,7 +6,7 @@ export interface AppBuild {
 
 export interface AppUpdateState {
   version: string;
-  method: "scoop" | "portable" | "disabled";
+  method: "scoop" | "portable" | "installer" | "disabled";
   status:
     | "idle"
     | "checking"

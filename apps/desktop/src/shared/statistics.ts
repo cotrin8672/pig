@@ -49,6 +49,7 @@ export type InitialContext = {
   contextWindow: number | null;
 };
 export type StatisticsData = {
+  cost: { usd: number | null; missing: number };
   collectingSince: string | null;
   days: string[];
   daily: Record<string, TokenSplit[]>;
@@ -66,6 +67,11 @@ export type StatisticsData = {
     dropped: number;
     collection: "active" | "disabled";
   };
+};
+
+export type StatisticsProgress = {
+  requestId: string;
+  data: Partial<StatisticsData>;
 };
 
 export function validateStatisticsPeriod(value: unknown): StatisticsPeriod {

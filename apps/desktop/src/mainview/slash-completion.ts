@@ -38,6 +38,12 @@ export function extensionCommand(text: string, commands: SlashCommand[]) {
   );
 }
 
+/** `/compact [instructions]`, the pi built-in the desktop runs itself. */
+export function compactCommand(text: string) {
+  const match = /^\/compact(?:\s+([\s\S]*))?$/.exec(text.trim());
+  return match ? { instructions: match[1]?.trim() || undefined } : undefined;
+}
+
 export function matchesSlashCommand(command: SlashCommand, prefix: string) {
   const query = prefix.toLowerCase();
   return (

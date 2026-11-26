@@ -52,6 +52,30 @@ test("absent explicit config is empty, never discovers project files, and clears
   expect(loader.error).toBeUndefined();
 });
 
+test("expands <leader> sequences and accepts built-in action keys", async () => {
+  const { loader } =
+    await fixture(`export default { apiVersion: 1, leader: 'ctrl+space',
+    sessionAdapters: [${adapter}],
+    keymaps: [
+      { keys: '<Leader>p', action: 'search.open' },
+      { keys: '<leader> s v', action: 'pane.splitColumns', when: 'chat' },
+      { keys: 'ctrl+x ctrl+s', adapter: 'demo', command: 'run', when: 'composer' },
+    ] };`);
+  expect(await loader.reload()).toBe(true);
+  expect(loader.error).toBeUndefined();
+  expect(loader.config.leader).toBe("Ctrl+Space");
+  expect(loader.config.keymaps).toEqual([
+    { keys: "Ctrl+Space P", action: "search.open" },
+    { keys: "Ctrl+Space S V", action: "pane.splitColumns", when: "chat" },
+    {
+      keys: "Ctrl+X Ctrl+S",
+      adapter: "demo",
+      command: "run",
+      when: "composer",
+    },
+  ]);
+});
+
 test("bundles TypeScript, relative imports, and virtual @pig/config; reload sees nested edits", async () => {
   const source = `
     import { defineConfig, type PigConfig } from '@pig/config';
@@ -208,6 +232,31 @@ const invalid: [string, string, string][] = [
     ".when",
   ],
   [
+    "leader without definition",
+    "{ apiVersion: 1, keymaps: [{ keys: '<leader> p', action: 'search.open' }] }",
+    "leader is not set",
+  ],
+  [
+    "invalid leader",
+    "{ apiVersion: 1, leader: 'ctrl+ctrl' }",
+    "leader is not a valid",
+  ],
+  [
+    "unknown action",
+    "{ apiVersion: 1, keymaps: [{ keys: 'ctrl+j', action: 'composer.queue' }] }",
+    "unknown action",
+  ],
+  [
+    "action with adapter",
+    `{ apiVersion: 1, sessionAdapters: [${adapter}], keymaps: [{ keys: 'ctrl+j', action: 'search.open', adapter: 'demo', command: 'run' }] }`,
+    "either action or adapter",
+  ],
+  [
+    "sequence prefix",
+    `{ apiVersion: 1, sessionAdapters: [${adapter}], keymaps: [${binding}, { keys: 'ctrl+k p', action: 'search.open' }] }`,
+    "Keymap prefix conflict",
+  ],
+  [
     "empty command",
     `{ apiVersion: 1, sessionAdapters: [${adapter}], keymaps: [{...${binding}, command: ''}] }`,
     ".command",
@@ -253,5 +302,5 @@ test("clones all config containers while retaining functions and permits distinc
   expect(loader.config.sessionAdapters?.[0].id).toBe("demo");
   expect(loader.config.sessionAdapters?.[0].connect).toBe(connect);
   expect(loader.config.keymaps).toHaveLength(2);
-  expect(loader.config.keymaps?.[0].command).toBe("run");
+  expect(loader.config.keymaps?.[0]).toMatchObject({ command: "run" });
 });

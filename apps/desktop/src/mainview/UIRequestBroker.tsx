@@ -6,6 +6,7 @@ import { addressKey, sameAddress } from "./chat-snapshot";
 import { useT } from "./i18n";
 import { navigationRevision } from "./navigation";
 import { ProjectTrustPrompt } from "./ProjectTrustPrompt";
+import { TextField } from "./primitives/TextField";
 import { cancelOpening, rpc } from "./rpc";
 import {
   liveAddress,
@@ -305,7 +306,7 @@ function NativeRequest({
                   rows={12}
                 />
               ) : (
-                <input
+                <TextField
                   aria-label={request.title}
                   placeholder={request.placeholder}
                   value={value}

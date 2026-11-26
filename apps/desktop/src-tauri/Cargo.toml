@@ -1,0 +1,32 @@
+[workspace]
+members = ["pairing", "remote"]
+default-members = ["."]
+resolver = "2"
+
+[package]
+name = "pig-tauri-preview"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[build-dependencies]
+tauri-build = "2.7.6"
+
+[dependencies]
+tree-sitter-highlight = "0.25"
+tree-sitter-typescript = "0.23"
+tree-sitter-javascript = "0.23"
+arboard = { version = "3", default-features = false }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tauri = { version = "2.12.7", features = ["custom-protocol"] }
+tauri-plugin-dialog = "2"
+tauri-plugin-notification = "2"
+tauri-plugin-single-instance = "2"
+tauri-plugin-updater = "2"
+
+[target.'cfg(windows)'.dependencies]
+webview2-com = "0.39.1"
+
+[profile.dev]
+debug = 0

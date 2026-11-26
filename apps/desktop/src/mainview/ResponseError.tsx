@@ -4,8 +4,8 @@ import { useEffect, useState } from "react";
 import { responseErrorKind } from "../shared/response-error";
 import { ChatContent } from "./ChatContent";
 import { useT } from "./i18n";
-import { LazyDetails } from "./LazyDetails";
-import "./response-error.css";
+import { LazyDetails } from "./patterns/LazyDetails";
+import "./transcript-notices.css";
 
 export function BuiltinResponseError({ data }: ChatRendererProps<"error">) {
   const t = useT();

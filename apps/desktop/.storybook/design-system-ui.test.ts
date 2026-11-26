@@ -13,10 +13,34 @@ for (const viewport of [
       `
         const {createRoot}=await import(${fixtureImport(import.meta.resolve("react-dom/client"))});
         const {flushSync}=await import(${fixtureImport(import.meta.resolve("react-dom"))});
-        const guide=await import(${source("../src/stories/design-system/Guide.stories.tsx")});
         const foundations=await import(${source("../src/stories/design-system/Foundations.stories.tsx")});
-        const primitives=await import(${source("../src/stories/design-system/Primitives.stories.tsx")});
-        const patterns=await import(${source("../src/stories/design-system/Patterns.stories.tsx")});
+        const button=await import(${source("../src/stories/design-system/Button.stories.tsx")});
+        const {States:buttonStory}=button;
+        const buttonPage={render:()=> <buttonStory.render/>};
+        const iconButton=await import(${source("../src/stories/design-system/IconButton.stories.tsx")});
+        const spinner=await import(${source("../src/stories/design-system/Spinner.stories.tsx")});
+        const controls=[
+          (await import(${source("../src/stories/design-system/Switch.stories.tsx")})).States,
+          (await import(${source("../src/stories/design-system/Checkbox.stories.tsx")})).States,
+          (await import(${source("../src/stories/design-system/Select.stories.tsx")})).States,
+          (await import(${source("../src/stories/design-system/TextField.stories.tsx")})).States,
+        ];
+        const newStories=[
+          (await import(${source("../src/stories/design-system/SegmentedControl.stories.tsx")})).States,
+          (await import(${source("../src/stories/design-system/SearchField.stories.tsx")})).States,
+          (await import(${source("../src/stories/design-system/SettingsCard.stories.tsx")})).States,
+          (await import(${source("../src/stories/design-system/SettingsRow.stories.tsx")})).States,
+          (await import(${source("../src/stories/design-system/ActionsMenu.stories.tsx")})).States,
+          (await import(${source("../src/stories/design-system/InlineRename.stories.tsx")})).States,
+          (await import(${source("../src/stories/design-system/ConfirmButton.stories.tsx")})).Default,
+        ].map(story=>({...story,render:()=> <story.render/>}));
+        const providers=await import(${source("../src/stories/design-system/ProviderIcon.stories.tsx")});
+        const files=await import(${source("../src/stories/design-system/FileIcon.stories.tsx")});
+        const chip=await import(${source("../src/stories/design-system/Chip.stories.tsx")});
+        const dot=await import(${source("../src/stories/design-system/IndicatorDot.stories.tsx")});
+        const count=await import(${source("../src/stories/design-system/CountBadge.stories.tsx")});
+        const keycap=await import(${source("../src/stories/design-system/Keycap.stories.tsx")});
+        const patterns=await import(${source("../src/stories/design-system/patterns-ui-fixture.tsx")});
         const domain=await import(${source("../src/stories/design-system/Domain.stories.tsx")});
         await import(${source("../src/mainview/styles.css")});
         await import(${source("../src/stories/glass-stage.css")});
@@ -35,9 +59,10 @@ for (const viewport of [
           await wait();
         };
         const pages=[
-          guide.Start,guide.Classification,guide.SelectionGuide,guide.ReviewChecklist,
           foundations.ColorAndTypography,foundations.SurfacesAndOutput,
-          primitives.Actions,primitives.Inputs,patterns.Settings,patterns.Interactions,
+          buttonPage,iconButton.States,spinner.States,patterns.Settings,patterns.Interactions,
+          providers.Providers,files.FileTypes,...controls,
+          chip.States,dot.States,count.States,keycap.States,...newStories,
           domain.ComposerActions,domain.DomainBoundary,
         ];
         const canvas=document.createElement('canvas'),context=canvas.getContext('2d');
@@ -45,9 +70,25 @@ for (const viewport of [
           document.documentElement.style.setProperty('--font-scale',scale);
           for(const story of pages){
             await render(story);
-            const page=document.querySelector('.ds-review'),scroll=document.querySelector('.glass-scroll');
+            const page=document.querySelector('.ds-review,.ds-specimen'),scroll=document.querySelector('.glass-scroll');
             check(page&&page.querySelector('h1'),'page title');
-            check(page.textContent.includes('Storybookで方針を確認する段階'),'review-only notice');
+            const variants=page.querySelector('.ds-specimen-variants');
+            if(story===count.States)check([...variants.querySelectorAll('.notification-badge')].map(el=>el.textContent).join(',')==='1,99,99+','zero hidden; counts capped after 99');
+            if(story===dot.States)check(variants.querySelectorAll('span[aria-hidden="true"]').length===5,'labelled rows have decorative dots');
+            if(story===keycap.States){
+              check([...variants.querySelectorAll('kbd')].map(el=>el.textContent).join(',')==='K,Enter,Esc,←,↓','key names and arrows');
+              for(const key of page.querySelectorAll('kbd')){
+                const style=getComputedStyle(key),rect=key.getBoundingClientRect();
+                check(parseFloat(style.borderTopWidth)>=1 && style.backgroundColor!=='rgba(0, 0, 0, 0)','key face and outline visible without search palette CSS');
+                check(rect.width>=rect.height-1 && rect.height>=1.75*parseFloat(style.fontSize),'key face fits a single glyph at current text scale');
+              }
+            }
+            if([...controls,...newStories,providers.Providers,files.FileTypes,buttonPage,iconButton.States,spinner.States,chip.States,dot.States,count.States,keycap.States].includes(story)){
+              const stage=page.querySelector('.ds-specimen-stage').getBoundingClientRect();
+              check(stage.height>=180 && stage.bottom<=variants.getBoundingClientRect().top,'usage example precedes states');
+              check(!page.querySelector('.ds-review-boundary'),'no proposal notice on shipped components');
+              for(const cell of variants.querySelectorAll('figure'))check(cell.querySelector('figcaption')?.textContent&&cell.getBoundingClientRect().height>=80,'each variant has space and a caption');
+            }else check(page.textContent.includes('Storybookで方針を確認する段階'),'review-only notice');
             check(page.scrollWidth<=page.clientWidth+1,story.name+': catalogue horizontal overflow');
             check(scroll.scrollWidth<=scroll.clientWidth+1,story.name+': stage horizontal overflow');
             for(const field of page.querySelectorAll('.ds-review-setting > input:not([type="checkbox"])')){
@@ -76,8 +117,8 @@ for (const viewport of [
             }
           }
         }
-        await render(primitives.Actions);
-        const primary=document.querySelector('.ds-review-demo button.primary:not(:disabled)');
+        await render(buttonPage);
+        const primary=document.querySelector('.ds-specimen-example button.primary:not(:disabled)');
         primary.click();await wait();
         check(document.querySelector('output').textContent.includes('1'),'button changes only local counter');
         await render(patterns.Interactions);

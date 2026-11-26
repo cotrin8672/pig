@@ -22,33 +22,23 @@ Neither relocates the AppData profile or uses Scoop `persist`.
   `version: "nightly"` intentionally omits a hash: Scoop updates re-download the
   rolling ZIP without integrity checking. The release body includes the base
   version, UTC date and short commit SHA.
-- Stable keeps its Electrobun profile at `%LOCALAPPDATA%/dev.pig.desktop/stable`.
-  Tauri Nightly uses separate desktop settings under `%APPDATA%\dev.pig.tauri\pig`.
-  Pi credentials and sessions keep their existing locations. Quit before
-  switching/updating and use `scoop update pig-nightly --force --no-cache`
-  for the first update from Electrobun.
+- Both are built with `tauri:package` and share desktop settings in
+  `~/.config/pig` by default. Quit before switching/updating, and back up
+  settings before testing nightly. For the first Nightly update from
+  Electrobun, use `scoop update pig-nightly --force --no-cache`.
 
-For stable, Electrobun replaces `build/stable-win-x64/pig/` with a self-extracting
-bundle. Do **not** ZIP that folder or use the Setup ZIP for Scoop. The packaging
-script extracts `artifacts/stable-win-x64-pig.tar.zst`, which contains the
-original runnable folder, and zips its contents without a wrapping `pig/`:
+The packaging script preserves the existing shim target and keeps Tauri's host
+resources beside the executable. Do not package the NSIS installer for Scoop:
 
 ```text
 pig-windows-x64.zip
   bin/launcher.exe
-  bin/bun.exe (+ runtime DLLs and helpers)
-  Resources/app/ (+ bundled main process and webview)
-  Resources/version.json
-  Resources/build.json
-  Resources/main.js
-  Info.plist
+  bin/pig-remote.exe
+  bin/host/bin/bun.exe
+  bin/host/app/ (+ SDK and Bun host)
 ```
 
-Tauri Nightly keeps `bin/launcher.exe` so the current Scoop manifest also works
-after the update. The executable's `host/` directory and `pig-remote.exe` are
-alongside it under `bin/`. It does not ship the stable installer.
-
-No GitHub secrets beyond the built-in `GITHUB_TOKEN` are needed. The stable
+See the root README for installer signing secrets. The stable
 bucket commit needs write access to `main`; branch protection/rules can block
 it. If it fails, commit the version/URL and the published `.sha256` value
 manually, then push `main`. Do not copy a hash from an installer or local build.

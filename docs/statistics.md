@@ -88,6 +88,7 @@ forkの継承履歴は取り込まない。rewindで既に消費したtokenを�
 欠損はnullで保存する。SDKがゼロ初期値とProvider報告の0を区別しない場合は、
 `reportingCoverage=provider-report-presence-unknown`を残す。
 費用はProvider報告とcatalog推定を区別し、OAuth定額契約の実請求額とはみなさない。
+統計の「API換算」は選択期間に記録された `cost_total` のUSD小計。金額未記録のリクエストが混ざる場合は「一部」、記録額が1件もない場合は「—」とする。
 
 ## 障害と未対応範囲
 

@@ -4,6 +4,7 @@ import type {
   DraftSyncParams,
   DraftSyncResult,
   PromptAccepted,
+  PromptAdmission,
   PromptDelivery,
   PromptParams,
   PromptReceipt,
@@ -28,7 +29,6 @@ export type SendState = {
   content?: SendIntent["content"];
   owner?: SendIntent["owner"];
   disposition?: PromptAccepted["disposition"];
-  recoveryReason?: "prepared" | "lookup-timeout";
   recoveredQueue?: boolean;
   detached?: true;
   optimistic?: boolean;
@@ -48,6 +48,14 @@ export function isPendingSteer(state: SendState, running: boolean) {
 }
 export function isSendUnconfirmed(state: SendState | undefined) {
   return !!state && ["sending", "checking", "unknown"].includes(state.state);
+}
+export function isSendAdmitted(state: SendState | undefined) {
+  return (
+    !!state &&
+    isSendUnconfirmed(state) &&
+    !state.returned &&
+    (state.stage === "queued" || state.stage === "dispatched")
+  );
 }
 type Transport = {
   /** Runs before draft CAS/reservation; it never dispatches a prompt itself. */
@@ -74,6 +82,7 @@ export type Sequence = (
   step: () => unknown,
 ) => unknown;
 const cancelledError = "Send cancelled";
+class SendAcknowledgementTimeout extends Error {}
 /** Retries reuse the immutable request ID; the host ledger deduplicates dispatch. */
 export class SendController {
   private states = new Map<string, SendState>();
@@ -198,7 +207,12 @@ export class SendController {
   ) {
     if (!this.activeDraft(address)) return;
     try {
-      await this.drafts.flush(address, this.transport.syncDraft);
+      await this.drafts
+        .flush(address, this.transport.syncDraft)
+        .catch((error) => {
+          if (!this.activeDraft(address)) throw error;
+          return this.drafts.flush(address, this.transport.syncDraft);
+        });
       // Acknowledge only after saving, and never against a replaced owner.
       for (const key of keys) {
         if (!this.activeDraft(address)) return;
@@ -209,7 +223,11 @@ export class SendController {
         });
       }
     } catch (error) {
-      if (this.activeDraft(address)) this.rejected(String(error));
+      if (this.activeDraft(address)) {
+        if (error instanceof Error && /timed out|timeout/i.test(error.message))
+          console.warn("Cannot save send recovery:", error);
+        else this.rejected(String(error));
+      }
     }
   }
   /** Pending steering stays in the tray; returned input lives in the composer. */
@@ -222,6 +240,7 @@ export class SendController {
           address,
         ) &&
         !state.detached &&
+        !state.returned &&
         state.content &&
         (state.state === "unknown" ||
           (state.optimistic &&
@@ -448,13 +467,37 @@ export class SendController {
         !this.activeDraft(this.transfers.get(key)?.address ?? address)
       )
         return;
-      // Keep one hung receipt RPC, but still exhaust the bounded send retries.
-      if (this.lookups.has(key) && latest.recoveryReason === "lookup-timeout") {
-        this.retryOrReturn(address, latest);
-        return;
-      }
       void this.lookup(address, state.key);
     }, delay);
+  }
+  receiveAdmission(admission: PromptAdmission) {
+    const id = this.operationKey(admission);
+    const state = this.operations.get(id);
+    if (
+      !state ||
+      state.detached ||
+      state.returned ||
+      !isSendUnconfirmed(state) ||
+      state.stage === admission.stage ||
+      state.stage === "dispatched"
+    )
+      return;
+    this.dispatched.add(id);
+    this.retries.delete(id);
+    const transfer = this.transfers.get(id);
+    const address = transfer?.address ?? admission;
+    const next: SendState = {
+      ...state,
+      state: "checking",
+      stage: admission.stage,
+    };
+    if (transfer) transfer.state = next;
+    this.put(
+      address,
+      next,
+      this.read(address)?.key.requestId === admission.requestId,
+    );
+    this.poll(address, next);
   }
   restore(intents: SendIntent[]) {
     for (const intent of intents) {
@@ -465,6 +508,35 @@ export class SendController {
         this.dispatched.add(id);
       const existing = this.operations.get(id);
       if (existing?.detached) continue;
+      if (existing && intent.recovered && !existing.returned) {
+        // Another view already saved this request back to the draft.
+        const transfer = this.transfers.get(id);
+        const address = transfer?.address ?? receipt;
+        const returned: SendState = {
+          ...existing,
+          state:
+            existing.state === "accepted"
+              ? "accepted"
+              : receipt.state === "pending"
+                ? "unknown"
+                : receipt.state,
+          returned: true,
+          optimistic: false,
+          content: undefined,
+          recoveredQueue: false,
+          version: -1,
+        };
+        this.retries.delete(id);
+        if (this.issuing.has(id) && !this.dispatched.has(id))
+          this.cancelled.add(id);
+        if (transfer) transfer.state = returned;
+        this.put(
+          address,
+          returned,
+          this.read(address)?.key.requestId === receipt.requestId,
+        );
+        continue;
+      }
       if (existing?.returned) {
         if (receipt.state === "accepted" || receipt.state === "rejected")
           this.settle(receipt, existing, {
@@ -506,6 +578,14 @@ export class SendController {
           disposition: receipt.accepted.disposition,
         });
         if (!recoveredQueue) continue;
+      }
+      if (
+        existing &&
+        receipt.state === "pending" &&
+        (receipt.stage === "queued" || receipt.stage === "dispatched")
+      ) {
+        this.receiveAdmission({ ...receipt, stage: receipt.stage });
+        continue;
       }
       // A recovery read can contain the reservation from before the prompt RPC.
       if (this.issuing.has(id)) continue;
@@ -584,7 +664,7 @@ export class SendController {
     )
       return;
     // Capture and clear synchronously; a second click cannot send the same draft.
-    if (captured.retired || captured.conflict) {
+    if (captured.retired) {
       if (content)
         throw new Error(
           "The editor changed before sending; your message has been restored.",
@@ -634,24 +714,19 @@ export class SendController {
         this.settle(address, state, { state: "rejected", cancelled: true });
         return;
       }
-      if (this.drafts.read(address).conflict || !this.reserved.has(id)) {
-        this.settle(address, state, {
-          state: "rejected",
-          message: String(error),
-        });
-        return;
+      // An editor sync failure cannot have executed a prompt.
+      this.settle(address, state, {
+        state: "rejected",
+        message: String(error),
+        quiet: error instanceof SendAcknowledgementTimeout,
+      });
+      if (this.reserved.has(id)) {
+        // Save the restored draft before withdrawing a possibly committed CAS.
+        void this.drafts
+          .flush(address, this.transport.syncDraft)
+          .then(() => this.transport.cancelPrompt?.(state.key))
+          .catch(() => {});
       }
-      // A lost CAS ACK may already have reserved this ID on the host.
-      this.put(
-        address,
-        {
-          ...state,
-          state: "checking",
-          message: String(error),
-        },
-        this.read(address)?.key.requestId === state.key.requestId,
-      );
-      await this.lookup(address, state.key);
       return;
     } finally {
       this.issuing.delete(id);
@@ -666,19 +741,14 @@ export class SendController {
         disposition: result.disposition,
       });
     } catch {
-      if (
-        !isSendUnconfirmed(this.operations.get(id)) ||
-        this.operations.get(id)?.returned
-      )
-        return;
-      this.put(
-        address,
-        {
-          ...state,
-          state: "checking",
-        },
-        this.read(address)?.key.requestId === state.key.requestId,
-      );
+      const latest = this.operations.get(id);
+      if (!latest || !isSendUnconfirmed(latest) || latest.returned) return;
+      if (latest.state === "sending")
+        this.put(
+          address,
+          { ...latest, state: "checking" },
+          this.read(address)?.key.requestId === state.key.requestId,
+        );
       await this.lookup(address, state.key);
     }
   }
@@ -691,7 +761,12 @@ export class SendController {
         reply,
         new Promise<never>((_, reject) => {
           timer = setTimeout(
-            () => reject(new Error("Send acknowledgement timed out")),
+            () =>
+              reject(
+                new SendAcknowledgementTimeout(
+                  "Send acknowledgement timed out",
+                ),
+              ),
             this.lookupBudgetMs,
           );
         }),
@@ -709,9 +784,10 @@ export class SendController {
     const read = async () => {
       check();
       const receipt = await this.withReplyBudget(
-        this.transport.getPromptReceipt(key),
-      );
+        Promise.resolve().then(() => this.transport.getPromptReceipt(key)),
+      ).catch(() => undefined);
       check();
+      if (!receipt) return;
       if (!sameAddress(receipt, key) || receipt.requestId !== requestId)
         throw new Error("Receipt address mismatch");
       return receipt;
@@ -733,14 +809,18 @@ export class SendController {
       return await sync();
     } catch (error) {
       const receipt = await read();
-      const saved = prepared(receipt);
+      const saved = receipt && prepared(receipt);
       if (saved) return saved;
-      if (receipt.state !== "unknown" || receipt.reason !== "not-found")
+      if (
+        receipt &&
+        (receipt.state !== "unknown" || receipt.reason !== "not-found")
+      )
         throw error;
       // Same CAS revision and ID: at most one write can win, even if the first arrives late.
       const retried = await sync().catch(() => undefined);
       if (retried?.applied) return retried;
-      const recovered = prepared(await read()) ?? retried;
+      const later = await read();
+      const recovered = (later && prepared(later)) ?? retried;
       if (recovered) return recovered;
       throw error;
     }
@@ -811,7 +891,12 @@ export class SendController {
     check();
     this.dispatched.add(id);
     this.retries.set(id, { payload, attempts: 1 });
-    const response = this.transport.prompt(payload);
+    let response: Promise<PromptAccepted>;
+    try {
+      response = this.transport.prompt(payload);
+    } catch (error) {
+      response = Promise.reject(error);
+    }
     void response.catch(() => {});
     return { response };
   }
@@ -823,6 +908,7 @@ export class SendController {
       message?: string;
       disposition?: PromptAccepted["disposition"];
       cancelled?: true;
+      quiet?: boolean;
     },
     forwarded = false,
   ) {
@@ -837,6 +923,7 @@ export class SendController {
       return;
     if (previous?.state === "accepted" && result.state !== "accepted") return;
     this.retries.delete(id);
+    this.failures.delete(id);
     if (previous?.returned)
       state = {
         ...state,
@@ -850,6 +937,7 @@ export class SendController {
       result.state === "rejected" &&
       !forwarded &&
       !result.cancelled &&
+      !result.quiet &&
       !this.withdrawn.has(id)
     )
       this.rejected(result.message ?? "Send failed");
@@ -898,7 +986,8 @@ export class SendController {
       !latest ||
       !isSendUnconfirmed(latest) ||
       latest.detached ||
-      latest.returned
+      latest.returned ||
+      isSendAdmitted(latest)
     )
       return;
     const retry = this.retries.get(id);
@@ -929,7 +1018,6 @@ export class SendController {
           });
         })
         .catch(() => {});
-      this.poll(address, state);
       return;
     }
     this.returnUnknown(state);
@@ -995,15 +1083,7 @@ export class SendController {
       return Promise.resolve();
     const flight = this.lookups.get(id);
     if (flight) return flight;
-    let timer: ReturnType<typeof setTimeout>;
-    const update = (next: SendState) => {
-      if (isSendUnconfirmed(this.operations.get(id)))
-        this.put(
-          address,
-          next,
-          this.read(address)?.key.requestId === state.key.requestId,
-        );
-    };
+    let expired = false;
     const request = Promise.resolve()
       .then(() => this.transport.getPromptReceipt(state.key))
       .then((receipt) => {
@@ -1012,8 +1092,8 @@ export class SendController {
           receipt.requestId !== state.key.requestId
         )
           throw new Error("Receipt address mismatch");
-        if (!isSendUnconfirmed(this.operations.get(id))) return;
-        this.failures.delete(id);
+        const latest = this.operations.get(id);
+        if (!latest || latest.detached || !isSendUnconfirmed(latest)) return;
         if (receipt.state === "accepted") {
           this.settle(address, state, {
             state: "accepted",
@@ -1025,64 +1105,61 @@ export class SendController {
           this.settle(address, state, {
             state: "rejected",
             message: receipt.message,
+            cancelled: receipt.code === "CANCELLED" ? true : undefined,
           });
           return;
         }
-        // A late non-terminal reply must not put returned input back in the tray.
-        if (this.operations.get(id)?.returned) return;
-        if (receipt.state === "unknown") {
-          if (receipt.reason === "host-restarted") this.returnUnknown(state);
-          else this.retryOrReturn(address, state);
+        if (
+          receipt.state === "pending" &&
+          (receipt.stage === "queued" || receipt.stage === "dispatched")
+        ) {
+          if (!expired) this.failures.delete(id);
+          this.receiveAdmission({ ...receipt, stage: receipt.stage });
           return;
         }
-        if (receipt.stage === "prepared" && !this.dispatched.has(id)) {
-          this.returnUnknown({ ...state, recoveryReason: "prepared" });
+        // Only a terminal receipt is authoritative after the lookup expires.
+        if (expired || latest.returned) return;
+        this.failures.delete(id);
+        if (receipt.state === "unknown") {
+          if (receipt.reason === "host-restarted") this.returnUnknown(latest);
+          else this.retryOrReturn(address, latest);
           return;
         }
         if (receipt.stage === "prepared") {
-          this.retryOrReturn(address, state);
+          if (this.dispatched.has(id)) this.retryOrReturn(address, latest);
+          else this.returnUnknown(latest);
           return;
         }
-        update({
-          ...state,
-          state: state.state === "unknown" ? "unknown" : "checking",
-          stage: receipt.stage,
-        });
-      })
+        if (latest.state === "sending")
+          this.put(
+            address,
+            { ...latest, state: "checking" },
+            this.read(address)?.key.requestId === state.key.requestId,
+          );
+      });
+    const bounded = this.withReplyBudget(request)
       .catch(() => {
+        expired = true;
+        const latest = this.operations.get(id);
+        if (
+          !latest ||
+          latest.detached ||
+          latest.returned ||
+          !isSendUnconfirmed(latest)
+        )
+          return;
         const failures = (this.failures.get(id) ?? 0) + 1;
         this.failures.set(id, failures);
-        // An unreachable receipt service must not leave a send looking active forever.
-        if (state.returned) return;
-        this.retryOrReturn(address, {
-          ...state,
-          recoveryReason: "lookup-timeout",
-        });
+        // Retry the read once before retransmitting the prompt.
+        if (failures > 1 || latest.state === "unknown")
+          this.retryOrReturn(address, latest);
       })
       .finally(() => {
-        clearTimeout(timer);
         this.lookups.delete(id);
-        if (
-          ["sending", "checking"].includes(
-            this.operations.get(id)?.state ?? "",
-          ) &&
-          !this.operations.get(id)?.returned
-        )
-          this.poll(address, state);
+        const latest = this.operations.get(id);
+        if (latest?.state === "sending" || latest?.state === "checking")
+          this.poll(address, latest);
       });
-    const bounded = Promise.race([
-      request,
-      new Promise<void>((resolve) => {
-        timer = setTimeout(() => {
-          this.retryOrReturn(address, {
-            ...state,
-            recoveryReason: "lookup-timeout",
-          });
-          resolve();
-        }, this.lookupBudgetMs);
-      }),
-    ]);
-    // Keep the underlying flight registered after a timeout; never pile up hung RPCs.
     this.lookups.set(id, bounded);
     return bounded;
   }

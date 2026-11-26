@@ -1,4 +1,4 @@
-import { ChevronDown, RefreshCw, Search, X } from "lucide-react";
+import { ChevronDown, RefreshCw } from "lucide-react";
 import { useRef, useState } from "react";
 import {
   isModelEnabled,
@@ -7,7 +7,8 @@ import {
 } from "../shared/models";
 import { useT } from "./i18n";
 import { formatTokens, ModelSettings } from "./ModelSettings";
-import { useProviderName } from "./ProviderIcon";
+import { SearchField } from "./primitives/SearchField";
+import { Switch } from "./primitives/Switch";
 import { refresh, rpc } from "./rpc";
 import { showError, useStore } from "./store";
 import { modelVisibility } from "./ui-mutations";
@@ -20,8 +21,8 @@ export function ProviderModels({
   connected: boolean;
 }) {
   const t = useT();
-  const { models, disabledModels } = useStore((s) => s.bootstrap);
-  const name = useProviderName(provider);
+  const { models, disabledModels, providers } = useStore((s) => s.bootstrap);
+  const name = providers.find((p) => p.id === provider)?.name ?? provider;
   const [query, setQuery] = useState("");
   const [open, setOpen] = useState<string>();
   const [refreshing, setRefreshing] = useState(false);
@@ -136,24 +137,16 @@ export function ProviderModels({
       ) : (
         <>
           <div className="provider-model-toolbar">
-            <div className="provider-model-search">
-              <Search size={13} />
-              <input
-                aria-label={t.searchProviderModels(name)}
-                placeholder={t["Filter models"]}
-                value={query}
-                onChange={(event) => setQuery(event.target.value)}
-              />
-              {query && (
-                <button
-                  type="button"
-                  aria-label={t["Clear model filter"]}
-                  onClick={() => setQuery("")}
-                >
-                  <X size={12} />
-                </button>
-              )}
-            </div>
+            <SearchField
+              variant="inline"
+              className="provider-model-search"
+              aria-label={t.searchProviderModels(name)}
+              placeholder={t["Filter models"]}
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+              onClear={() => setQuery("")}
+              clearLabel={t["Clear model filter"]}
+            />
             <span className="provider-model-count">
               {query.trim()
                 ? t.modelCount(visible.length, true)
@@ -164,11 +157,9 @@ export function ProviderModels({
             <span className="provider-model-name">
               {query.trim() ? t["All matching models"] : t["All models"]}
             </span>
-            <input
-              type="checkbox"
-              role="switch"
+            <Switch
               checked={allVisibleEnabled}
-              aria-checked={partiallyEnabled ? "mixed" : allVisibleEnabled}
+              mixed={partiallyEnabled}
               disabled={!visible.length}
               onChange={(event) =>
                 void update(
@@ -176,11 +167,6 @@ export function ProviderModels({
                   event.target.checked,
                 )
               }
-            />
-            <span
-              className="model-switch"
-              data-mixed={partiallyEnabled || undefined}
-              aria-hidden="true"
             />
           </label>
           <div className="provider-model-list">
@@ -202,16 +188,12 @@ export function ProviderModels({
                             ` · ${formatTokens(model.maxTokens)}`}
                         </small>
                       )}
-                      <input
-                        type="checkbox"
-                        role="switch"
+                      <Switch
                         checked={isModelEnabled(model, disabledModels)}
-                        aria-checked={isModelEnabled(model, disabledModels)}
                         onChange={(event) =>
                           void update([model.id], event.target.checked)
                         }
                       />
-                      <span className="model-switch" aria-hidden="true" />
                     </label>
                     <button
                       type="button"

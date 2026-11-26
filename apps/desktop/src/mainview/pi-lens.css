@@ -1,18 +1,7 @@
-/*
-  pi-lens relation map. Shares the tool row, the 22px body indent and the
-  ~8-line preview that scrolls inside its frame; colours come from tokens only.
-*/
+/* The relation map uses the shared tool preview frame from styles.css. */
 .lens-frame {
   --lens-hue: var(--ds-syntax-type);
   --lens-line: color-mix(in srgb, currentColor 55%, transparent);
-  --scrollbar-inset: var(--radius-xs);
-  max-height: calc(8lh + 16px + var(--scrollbar-size));
-  padding: 8px 10px;
-  overflow: auto;
-  border-radius: var(--radius-xs);
-  background: #0000003d;
-  color: var(--ds-text-secondary);
-  font-size: var(--text-sm);
 }
 
 /* glyph colours: symbol kinds use the syntax palette, results their state */

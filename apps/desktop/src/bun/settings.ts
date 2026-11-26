@@ -15,14 +15,21 @@ function applyRuntimeSettings(file: string, settings: Settings) {
   return settings;
 }
 
-export async function loadSettings(file: string): Promise<Settings> {
+export async function loadSettings(
+  file: string,
+  defaultShell: Settings["shell"] = defaultSettings.shell,
+): Promise<Settings> {
   try {
     return applyRuntimeSettings(
       file,
-      validateSettings(JSON.parse(await readFile(file, "utf8"))),
+      validateSettings(JSON.parse(await readFile(file, "utf8")), defaultShell),
     );
   } catch {
-    return applyRuntimeSettings(file, { ...defaultSettings, keybindings: {} });
+    return applyRuntimeSettings(file, {
+      ...defaultSettings,
+      shell: defaultShell,
+      keybindings: {},
+    });
   }
 }
 export async function saveSettings(file: string, settings: Settings) {

@@ -9,6 +9,11 @@ import type { WidgetBlock } from "../shared/widget";
  */
 export const widgetScriptPolicy = { requested: false };
 
+// Only the Tauri Windows app serves the separate widget origin.
+export const tauriWidgets = () =>
+  location.origin === "http://tauri.localhost" ||
+  location.origin === "https://tauri.localhost";
+
 /** Script-capable origins a widget may load from (no network access otherwise). */
 const CDN =
   "https://cdnjs.cloudflare.com https://esm.sh https://cdn.jsdelivr.net https://unpkg.com";
@@ -89,11 +94,15 @@ const runtime = (id: string) =>
 /** The whole frame document; the fragment itself is inserted unchanged. */
 export function widgetDocument(
   block: WidgetBlock,
-  options: { scripts: boolean; theme: string },
+  options: { scripts: boolean; theme: string; isolated?: true },
 ) {
   const preview = block.origin === "mcp";
   const scripts = options.scripts && !preview;
-  return `<!doctype html><html><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="${csp(scripts, preview)}"><style>:root{font:14px/1.5 system-ui;${options.theme}}html,body{margin:0;background:transparent}body{color:var(--foreground);font-family:var(--font-sans,system-ui)${scripts ? ";overflow:hidden" : ""}}svg{max-width:100%;height:auto}${preview ? sharedScrollbarCss() : ""}</style>${scripts ? runtime(block.id) : ""}</head><body>${block.source}</body></html>`;
+  // The dedicated document already has a stricter response CSP and sandbox.
+  const policy = options.isolated
+    ? ""
+    : `<meta http-equiv="Content-Security-Policy" content="${csp(scripts, preview)}">`;
+  return `<!doctype html><html><head><meta charset="utf-8">${policy}<style>:root{font:14px/1.5 system-ui;${options.theme}}html,body{margin:0;background:transparent}body{color:var(--foreground);font-family:var(--font-sans,system-ui)${scripts ? ";overflow:hidden" : ""}}svg{max-width:100%;height:auto}${preview ? sharedScrollbarCss() : ""}</style>${scripts ? runtime(block.id) : ""}</head><body>${block.source}</body></html>`;
 }
 
 let isolation: Promise<boolean> | undefined;

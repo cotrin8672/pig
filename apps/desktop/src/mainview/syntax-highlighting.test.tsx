@@ -22,9 +22,14 @@ const sourceText = (tokens: Awaited<ReturnType<typeof highlightCode>>) =>
 test("language aliases and Windows/POSIX file names are explicit, not guessed from output", () => {
   expect(codeLanguage("TS")).toBe("typescript");
   expect(codeLanguage("bash")).toBe("shellscript");
+  expect(codeLanguage("JL")).toBe("julia");
+  expect(codeLanguage("kt")).toBe("kotlin");
+  expect(codeLanguage("kts")).toBe("kotlin");
   expect(languageFromPath("C:\\work\\Example.TSX")).toBe("tsx");
+  expect(languageFromPath("C:\\work\\model.JL")).toBe("julia");
   expect(languageFromPath("/work/Dockerfile.dev")).toBe("dockerfile");
   expect(languageFromPath("/work/.bashrc")).toBe("shellscript");
+  expect(languageFromPath("/work/build.gradle.kts")).toBe("kotlin");
   expect(languageFromPath("script.ps1")).toBe("powershell");
   for (const unknown of [
     undefined,

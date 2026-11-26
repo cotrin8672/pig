@@ -1,5 +1,6 @@
 import {
   memo,
+  type ReactNode,
   type RefObject,
   useEffect,
   useMemo,
@@ -7,10 +8,15 @@ import {
   useState,
 } from "react";
 import { WIDGET_MAX_BYTES, type WidgetBlock } from "../shared/widget";
+import {
+  InteractiveWidgetFrame,
+  type McpWidgetData,
+} from "./InteractiveWidgetFrame";
 import { useT } from "./i18n";
 import {
   measureFrame,
   SIZE_MESSAGE,
+  tauriWidgets,
   widgetDocument,
   widgetIsolation,
   widgetSandbox,
@@ -105,22 +111,31 @@ export const WidgetFrame = memo(function WidgetFrame({
   block,
   streaming = false,
   load,
+  mcp,
 }: {
   block: WidgetBlock;
   streaming?: boolean;
-  /** Lazy static source, acquired only while this frame owns a visible slot. */
-  load?: () => Promise<string | undefined>;
+  /** Lazy source, acquired only while this frame owns a visible slot. */
+  load?: (
+    interactive: boolean,
+  ) => Promise<{ html: string; interactive?: true } | undefined>;
+  mcp?: McpWidgetData;
 }) {
   const t = useT();
   const box = useRef<HTMLDivElement>(null);
   const frame = useRef<HTMLIFrameElement>(null);
   const mounted = useLiveSlot(box);
-  const scripts = useWidgetScripts(block.origin !== "mcp" && !load);
+  const [failedShell, setFailedShell] = useState(false);
+  const interactive = tauriWidgets() && !failedShell;
+  const scripts = useWidgetScripts(
+    !interactive && block.origin !== "mcp" && !load,
+  );
   const throttled = useThrottled(block, streaming);
   const [loaded, setLoaded] = useState<{
     id: string;
     loader: typeof load;
     source?: string;
+    interactive?: true;
     failed: boolean;
   }>();
   const [attempt, setAttempt] = useState(0);
@@ -135,16 +150,17 @@ export const WidgetFrame = memo(function WidgetFrame({
     void Promise.resolve()
       .then(() => {
         controller.signal.throwIfAborted();
-        return load();
+        return load(interactive);
       })
       .then(
-        (source) => {
+        (result) => {
           if (!controller.signal.aborted)
             setLoaded({
               id: block.id,
               loader: load,
-              source,
-              failed: source === undefined,
+              source: result?.html,
+              interactive: result?.interactive,
+              failed: result === undefined,
             });
         },
         () => {
@@ -153,7 +169,7 @@ export const WidgetFrame = memo(function WidgetFrame({
         },
       );
     return () => controller.abort();
-  }, [mounted, load, block.id, attempt]);
+  }, [mounted, load, block.id, attempt, interactive]);
   const shown = useMemo(
     () =>
       load
@@ -175,6 +191,9 @@ export const WidgetFrame = memo(function WidgetFrame({
   const failed =
     load && loaded?.id === block.id && loaded.loader === load && loaded.failed;
   const preview = block.origin === "mcp";
+  const isolated =
+    interactive &&
+    (load ? loaded?.interactive === true : shown.interactive && !streaming);
   const [height, setHeight] = useState(
     () => heights.get(block.id) ?? DEFAULT_HEIGHT,
   );
@@ -186,13 +205,22 @@ export const WidgetFrame = memo(function WidgetFrame({
   );
   const srcDoc = useMemo(
     () =>
-      mounted && available && !tooLarge
+      mounted && available && !tooLarge && (isolated || !loaded?.interactive)
         ? widgetDocument(shown, {
-            scripts,
+            scripts: isolated || scripts,
+            ...(isolated && { isolated: true }),
             theme: widgetTheme(getComputedStyle(document.documentElement)),
           })
         : "",
-    [mounted, available, tooLarge, shown, scripts],
+    [
+      mounted,
+      available,
+      tooLarge,
+      shown,
+      scripts,
+      isolated,
+      loaded?.interactive,
+    ],
   );
   const remember = (value: number) => {
     if (value <= 0) return;
@@ -227,6 +255,49 @@ export const WidgetFrame = memo(function WidgetFrame({
     if (measured !== undefined) remember(measured);
   };
 
+  let content: ReactNode;
+  if (tooLarge)
+    content = <p className="widget-frame-note">{t.widgetTooLarge}</p>;
+  else if (mounted) {
+    if (isolated && srcDoc)
+      content = (
+        <InteractiveWidgetFrame
+          key={shown.id}
+          html={srcDoc}
+          label={shown.title ?? t.Visualize}
+          onHeight={remember}
+          onUnavailable={() => setFailedShell(true)}
+          mcp={mcp}
+        />
+      );
+    else if (available && !loaded?.interactive)
+      content = (
+        // biome-ignore lint/a11y/useIframeTitle: named via aria-label; native title tooltips are banned (lint:ui).
+        <iframe
+          // Sandbox flags apply per navigation; a new frame avoids mixing them.
+          key={scripts ? "scripts" : "static"}
+          ref={frame}
+          aria-label={shown.title ?? t.Visualize}
+          sandbox={widgetSandbox(scripts)}
+          srcDoc={srcDoc}
+          onLoad={onLoad}
+        />
+      );
+    else
+      content = (
+        <p className="widget-frame-note">
+          {failed ? t.mcpAppUnavailable : t["Loading…"]}
+          {failed && (
+            <button
+              type="button"
+              onClick={() => setAttempt((value) => value + 1)}
+            >
+              {t.Retry}
+            </button>
+          )}
+        </p>
+      );
+  }
   return (
     <div
       ref={box}
@@ -234,35 +305,13 @@ export const WidgetFrame = memo(function WidgetFrame({
       style={tooLarge || preview ? undefined : { height }}
       data-widget-id={shown.id}
     >
-      {tooLarge ? (
-        <p className="widget-frame-note">{t.widgetTooLarge}</p>
-      ) : (
+      {content}
+      {preview &&
+        failedShell &&
         mounted &&
-        (available ? (
-          // biome-ignore lint/a11y/useIframeTitle: named via aria-label; native title tooltips are banned (lint:ui).
-          <iframe
-            // Sandbox flags apply per navigation; a new frame avoids mixing them.
-            key={scripts ? "scripts" : "static"}
-            ref={frame}
-            aria-label={shown.title ?? t.Visualize}
-            sandbox={widgetSandbox(scripts)}
-            srcDoc={srcDoc}
-            onLoad={onLoad}
-          />
-        ) : (
-          <p className="widget-frame-note">
-            {failed ? t.mcpAppUnavailable : t["Loading…"]}
-            {failed && (
-              <button
-                type="button"
-                onClick={() => setAttempt((value) => value + 1)}
-              >
-                {t.Retry}
-              </button>
-            )}
-          </p>
-        ))
-      )}
+        available &&
+        !tooLarge &&
+        !isolated && <span className="sr-only">{t.mcpAppStatic}</span>}
     </div>
   );
 });

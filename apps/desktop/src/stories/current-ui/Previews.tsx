@@ -1,16 +1,14 @@
-import { LoaderCircle } from "lucide-react";
 import { lazy, type ReactNode, Suspense, useLayoutEffect } from "react";
 import { applyThemeTokens } from "../../mainview/dynamic-theme";
 import { useStore } from "../../mainview/store";
 import type { PreviewArgs } from "./fixtures";
 import "./preview.css";
+import { Spinner } from "../../mainview/primitives/Spinner";
 
 // Story modules share this entry, but must not eagerly load each other's UI.
 export const DesktopPreview = lazy(() => import("./DesktopPreview"));
-export const ComposerUIPreview = lazy(() => import("./ComposerUIPreview"));
 export const ChatScreenPreview = lazy(() => import("./ChatScreenPreview"));
 export const SidebarPreview = lazy(() => import("./SidebarPreview"));
-export const ModelPickerPreview = lazy(() => import("./ModelPickerPreview"));
 export const NotificationPreview = lazy(() => import("./NotificationPreview"));
 export const ActivityPreview = lazy(() => import("./ActivityPreview"));
 
@@ -37,7 +35,7 @@ export function PreviewTheme({
           role="status"
           aria-label="プレビューを読み込み中"
         >
-          <LoaderCircle size={20} className="spinner" aria-hidden="true" />
+          <Spinner size={20} />
         </div>
       }
     >

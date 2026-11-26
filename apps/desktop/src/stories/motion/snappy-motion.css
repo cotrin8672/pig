@@ -1,0 +1,431 @@
+/* Snappy profile: instant response, 100–140ms motion, shorter exits, ease-out only. */
+.snappy-motion {
+  --snappy-fast: 100ms;
+  --snappy-open: 140ms;
+  --snappy-mid: 120ms;
+  --snappy-exit: 80ms;
+  --snappy-ease: var(--motion-ease-out);
+  --snappy-press: 0.97;
+  --snappy-push: 0.96;
+  --snappy-press-time: 150ms;
+  --snappy-lift: 1px;
+  --snappy-pop: 0.6;
+  --snappy-rise: 4px;
+  flex: 1;
+  min-width: 0;
+  overflow: auto;
+  padding: 24px;
+  color: var(--color-text-primary);
+
+  & > header {
+    margin-bottom: 16px;
+  }
+}
+
+.snappy-lead {
+  margin: 4px 0 0;
+  color: var(--color-text-secondary);
+}
+
+.snappy-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: 12px;
+}
+
+.snappy-card {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 14px;
+  border-radius: var(--radius-md);
+  background: var(--ds-tile);
+  box-shadow: inset 0 0 0 1px var(--ds-elevation-stroke);
+  & h3 {
+    margin: 0;
+    font-size: var(--text-sm);
+  }
+  & > p {
+    margin: 0;
+    font-size: var(--text-xs);
+    color: var(--color-text-muted);
+  }
+}
+
+.snappy-demo {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 8px;
+  margin-top: 8px;
+  min-height: 120px;
+}
+
+.snappy-column {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 100%;
+  & > button {
+    align-self: flex-start;
+  }
+}
+
+.snappy-inline {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.snappy-rows {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.snappy-indent {
+  padding-left: 20px;
+}
+
+.snappy-row {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 8px;
+  width: 100%;
+  padding: 6px 8px;
+  border-radius: var(--radius-2xs);
+  color: inherit;
+}
+
+/* Hover: background in instantly, out over 100ms. */
+.snappy-motion button {
+  transition: background var(--snappy-fast) var(--snappy-ease);
+  &:hover {
+    transition: background 0ms;
+  }
+}
+
+/* Press-in buttons (after envydesign's "Demo to try"): hover lifts 1px, pressing eases
+   down to 96% with a tighter shadow. will-change keeps the label rasterized once, so
+   scaling doesn't make glyphs twitch. */
+.snappy-motion :is(button.primary, button.secondary, .settings-icon-button) {
+  will-change: transform;
+  transition:
+    background var(--snappy-press-time) var(--snappy-ease),
+    transform var(--snappy-press-time) var(--snappy-ease),
+    box-shadow var(--snappy-press-time) var(--snappy-ease);
+  &:hover:not(:disabled) {
+    transform: translateY(calc(-1 * var(--snappy-lift)));
+  }
+  &:active:not(:disabled) {
+    transform: scale(var(--snappy-push));
+  }
+}
+.snappy-motion :is(button.primary, button.secondary) {
+  box-shadow: 0 2px 6px #0f173033;
+  &:hover:not(:disabled) {
+    box-shadow: 0 4px 10px #0f173040;
+  }
+  &:active:not(:disabled) {
+    box-shadow: 0 1px 2px #0f173033;
+  }
+}
+
+.snappy-chevron {
+  transition: transform var(--snappy-mid) var(--snappy-ease);
+  [aria-expanded="true"] > & {
+    transform: rotate(90deg);
+  }
+}
+
+/* Height animates via grid rows, so the header stays put and rows below slide. */
+.snappy-collapse {
+  display: grid;
+  grid-template-rows: 0fr;
+  transition: grid-template-rows var(--snappy-mid) var(--snappy-ease);
+  & > * {
+    overflow: hidden;
+    min-height: 0;
+  }
+  &[data-open] {
+    grid-template-rows: 1fr;
+  }
+}
+
+.snappy-muted {
+  color: var(--color-text-muted);
+}
+
+/* Always mounted so rapid toggles reverse from the current frame. */
+.snappy-anchor {
+  position: relative;
+}
+.snappy-popover {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  z-index: 1;
+  min-width: 160px;
+  padding: 4px;
+  border-radius: var(--radius-sm);
+  background: var(--ds-bg-popover);
+  backdrop-filter: blur(24px);
+  box-shadow: 0 8px 24px #0006;
+  transform-origin: top left;
+  opacity: 0;
+  transform: scale(var(--snappy-press))
+    translateY(calc(-1 * var(--snappy-rise)));
+  visibility: hidden;
+  transition:
+    opacity var(--snappy-exit) var(--snappy-ease),
+    transform 0ms var(--snappy-exit),
+    visibility 0ms var(--snappy-exit);
+  &[data-open] {
+    opacity: 1;
+    transform: none;
+    visibility: visible;
+    transition:
+      opacity var(--snappy-open) var(--snappy-ease),
+      transform var(--snappy-open) var(--snappy-ease),
+      visibility 0ms;
+  }
+}
+
+.snappy-page {
+  padding: 12px;
+  border-radius: var(--radius-xs);
+  background: var(--ds-tile);
+  animation: snappy-fade var(--snappy-fast) var(--snappy-ease);
+}
+
+/* One highlight layer slides to the pressed option; the per-button fill is removed. */
+.snappy-segments > .segmented-control {
+  position: relative;
+  isolation: isolate;
+  &::before {
+    content: "";
+    position: absolute;
+    z-index: -1;
+    top: 4px;
+    bottom: 4px;
+    left: var(--seg-x, 0);
+    width: var(--seg-w, 0);
+    border-radius: var(--radius-xs);
+    background: var(--ds-bg-active);
+    box-shadow: var(--ds-elevation-stroke);
+  }
+  &[data-slide]::before {
+    transition:
+      left var(--snappy-open) var(--snappy-ease),
+      width var(--snappy-open) var(--snappy-ease);
+  }
+  & > button[aria-pressed="true"] {
+    background: transparent;
+    box-shadow: none;
+    transition: color var(--snappy-open) var(--snappy-ease);
+  }
+}
+
+/* List rows sink slightly while held: instant in, 100ms back. */
+.snappy-motion .snappy-row {
+  transition:
+    background var(--snappy-fast) var(--snappy-ease),
+    transform var(--snappy-fast) var(--snappy-ease);
+  &:hover {
+    transition:
+      background 0ms,
+      transform var(--snappy-fast) var(--snappy-ease);
+  }
+  &:active {
+    transform: scale(var(--snappy-press));
+    transition: none;
+  }
+}
+
+/* The arc closes into a ring while still spinning, then the tick is drawn inside. */
+.snappy-spin-check {
+  flex: none;
+  fill: none;
+  stroke: var(--color-text-muted);
+  stroke-width: 1.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  transition: stroke var(--snappy-mid) var(--snappy-ease);
+  & .snappy-spin-arc {
+    transform-origin: center;
+    stroke-dasharray: 28 100;
+    animation: spin 900ms linear infinite;
+    transition: stroke-dasharray var(--snappy-open) var(--snappy-ease);
+  }
+  /* A fully hidden dash still paints its round cap as a dot, so hide it until drawn. */
+  & .snappy-spin-tick {
+    stroke-dasharray: 100;
+    stroke-dashoffset: 100;
+    opacity: 0;
+    transition:
+      stroke-dashoffset var(--snappy-open) var(--snappy-ease) var(--snappy-mid),
+      opacity 0ms var(--snappy-mid);
+  }
+  &[data-done] {
+    stroke: var(--color-success);
+    & .snappy-spin-arc {
+      stroke-dasharray: 100 0;
+    }
+    & .snappy-spin-tick {
+      stroke-dashoffset: 0;
+      opacity: 1;
+    }
+  }
+  &[data-settled] .snappy-spin-arc {
+    animation: none;
+  }
+}
+.snappy-tool-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 28px;
+  padding: 0 10px;
+  border-radius: var(--radius-xs);
+  background: var(--ds-tool-row-bg);
+  font-size: var(--text-xs);
+}
+
+.snappy-motion .model-switch,
+.snappy-motion .model-switch::after {
+  transition-duration: var(--snappy-fast);
+}
+
+.snappy-pop {
+  animation: snappy-pop var(--snappy-mid) var(--snappy-ease);
+}
+
+.snappy-messages {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6px;
+  min-height: 60px;
+  max-height: 120px;
+  margin: 0;
+  padding: 0;
+  overflow: auto;
+  list-style: none;
+}
+.snappy-message {
+  padding: 6px 10px;
+  border-radius: var(--radius-sm);
+  background: var(--ds-bg-chip);
+  animation: snappy-rise var(--snappy-mid) var(--snappy-ease);
+  & small {
+    margin-left: 8px;
+    color: var(--color-text-faint);
+  }
+}
+
+.snappy-compare {
+  display: grid;
+  grid-template-columns: auto 20px;
+  align-items: center;
+  gap: 6px 12px;
+  font-size: var(--text-xs);
+  color: var(--color-text-secondary);
+}
+.snappy-slot {
+  display: inline-flex;
+  height: 16px;
+  align-items: center;
+}
+/* Hidden for the first 400ms, so fast work never flashes a spinner. */
+.snappy-late {
+  display: inline-flex;
+  animation: snappy-fade var(--snappy-mid) var(--snappy-ease) 400ms both;
+}
+
+.snappy-working {
+  display: inline-flex;
+  align-self: flex-start;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--text-xs);
+  color: var(--color-text-muted);
+}
+
+/* Same place as the production queue: right above the composer input. */
+.snappy-queue {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0;
+  padding: 4px;
+  border-radius: var(--radius-xs);
+  background: var(--ds-tile);
+  list-style: none;
+}
+.snappy-queued {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 6px;
+  font-size: var(--text-xs);
+  animation: snappy-rise var(--snappy-mid) var(--snappy-ease);
+  &[data-mode="steer"] svg {
+    color: var(--color-accent);
+  }
+  &[data-mode="queue"] {
+    color: var(--color-text-secondary);
+  }
+}
+
+.snappy-stream-compare {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  & small {
+    color: var(--color-text-muted);
+  }
+}
+.snappy-stream {
+  min-height: 7.5em;
+  margin: 0;
+  font-size: var(--text-sm);
+}
+
+@keyframes snappy-fade {
+  from {
+    opacity: 0;
+  }
+}
+@keyframes snappy-pop {
+  from {
+    transform: scale(var(--snappy-pop));
+  }
+}
+@keyframes snappy-rise {
+  from {
+    opacity: 0;
+    transform: translateY(var(--snappy-rise));
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .snappy-motion {
+    --snappy-fast: 0ms;
+    --snappy-open: 0ms;
+    --snappy-exit: 0ms;
+    --snappy-mid: 0ms;
+    --snappy-press: 1;
+    --snappy-push: 1;
+    --snappy-press-time: 0ms;
+    --snappy-lift: 0px;
+    --snappy-pop: 1;
+    --snappy-rise: 0px;
+  }
+  .snappy-spin-check .snappy-spin-arc {
+    animation: none;
+  }
+}

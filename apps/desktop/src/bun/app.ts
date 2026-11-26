@@ -1,12 +1,8 @@
 import { stat } from "node:fs/promises";
 import { join, resolve } from "node:path";
-import Electrobun, {
-  BrowserView,
-  BrowserWindow,
-  Updater,
-  Utils,
-} from "electrobun/bun";
 import { accountSourceKey } from "../shared/account-models";
+import type { AppUpdateState } from "../shared/app-update";
+import type { RpcHandlers } from "../shared/desktop-rpc";
 import { dictionary } from "../shared/i18n";
 import { sanitizeOverride } from "../shared/model-overrides";
 import { isModelEnabled } from "../shared/models";
@@ -19,7 +15,6 @@ import { knownProject, withoutProject } from "../shared/projects";
 import type {
   InstalledPackage,
   PackageOpStatus,
-  RPCSchema,
   SessionTarget,
   Snapshot,
 } from "../shared/rpc-schema";
@@ -31,10 +26,8 @@ import { sessionIdFromLink } from "../shared/session-links";
 import { patchSettings } from "../shared/settings";
 import { AppUpdater } from "./app-update";
 import {
-  applyBackdrop,
   loadAppearance,
   saveAppearance,
-  setNativeEnvironment,
   validateAppearance,
 } from "./appearance";
 import { attachmentPreview, storeFile } from "./attachments";
@@ -48,17 +41,18 @@ import {
   generalCwd,
   prepareDesktopConfig,
 } from "./desktop-config";
+import { type DesktopWindow, desktopPlatform } from "./desktop-platform";
 import { DesktopStateStore } from "./desktop-state";
 import { flushDraftsBeforeClose } from "./draft-close";
 import { showEditMenu } from "./edit-menu";
 import { listFontFamilies } from "./fonts";
 import {
   copyImage,
-  initImageMenu,
   readClipboardImage,
   saveImage,
   showImageMenu,
 } from "./images";
+import { InstallerUpdater } from "./installer-updater";
 import { LocalChatHistory } from "./local-chat-history";
 import {
   cancelAllLogins,
@@ -70,6 +64,7 @@ import {
   resolveLogin,
   startLogin,
 } from "./login";
+import { addMiseNodeToPath } from "./mise-node-path";
 import { ModelPreferences } from "./model-preferences";
 import {
   readModelOverrides,
@@ -106,7 +101,6 @@ import {
   modelErrors,
   modelInfo,
   openSession,
-  promptSession,
   refreshModels,
   refreshProviderModels,
   refreshUserCatalog,
@@ -122,10 +116,15 @@ import {
 import { searchProjectPaths } from "./project-files";
 import { ProjectStore } from "./project-store";
 import { providerAccounts } from "./provider-accounts";
+import { remoteChat } from "./remote-chat";
 import { revealPath } from "./reveal-path";
 import { agentDir, agentDirSource } from "./runtime-profile";
 import { defaultSessionDir, SearchIndex } from "./search-index";
 import { sessionDirFor } from "./session-files";
+import {
+  readSessionTitleModel,
+  writeSessionTitleModel,
+} from "./session-title-model";
 import { loadSettings, saveSettings } from "./settings";
 import { TerminalRouter } from "./terminal-router";
 import {
@@ -136,11 +135,19 @@ import {
 import { discoverUsageTargets, receiveUsageObservation } from "./usage/host";
 import { setUsageObserver } from "./usage/observation";
 import { UsageService } from "./usage/service";
-import { hasHostKeyboardFocus } from "./window-focus";
 
-await prepareDesktopConfig(Utils.paths.userData);
+const platform = desktopPlatform();
+await Promise.all([
+  prepareDesktopConfig(platform.userData),
+  addMiseNodeToPath(),
+]);
 /** Every open window's UI; publications go to all of them. */
 const hub = new ClientHub(sessionHost.hostId);
+sessionHost.onConfigApplied = () => {
+  void sessionHost
+    .actionKeymaps()
+    .then((keymaps) => hub.broadcast("actionKeymaps", keymaps));
+};
 // Paths only (never values): GUI env can differ from the user's shell.
 console.info(`Pi agent directory: ${agentDir} (${agentDirSource})`);
 const chatRendererLoader = new ChatRendererLoader(
@@ -179,6 +186,10 @@ await Promise.all([
   projectStore.load(),
 ]);
 const validateScope = (cwd: string) => projectStore.validateScope(cwd);
+export const remoteRequest = remoteChat(sessionHost, () => [
+  generalCwd,
+  ...projectStore.value,
+]);
 const samePath = (a: string, b: string) =>
   process.platform === "win32"
     ? resolve(a).toLowerCase() === resolve(b).toLowerCase()
@@ -265,7 +276,7 @@ async function withRuntime<T extends SessionAddress, R>(
 const settingsFile = join(desktopConfigDir, "settings.json");
 const appearanceFile = join(desktopConfigDir, "appearance.json");
 let [settings, appearance] = await Promise.all([
-  loadSettings(settingsFile),
+  loadSettings(settingsFile, platform.defaultShell),
   loadAppearance(appearanceFile),
 ]);
 let settingsQueue = Promise.resolve();
@@ -278,7 +289,7 @@ function updateAppearance(value: unknown) {
       // Apply before persisting so a rejected backdrop is never saved at startup.
       if (next.backdrop !== appearance.backdrop)
         for (const target of windows.values())
-          applyBackdrop(target.window.ptr, next);
+          await target.window.applyBackdrop(next);
       await saveAppearance(appearanceFile, next);
       appearance = next;
       hub.broadcast("appearance", appearance);
@@ -308,9 +319,6 @@ function publishPackageOp(op: PackageOpStatus) {
           ),
   });
 }
-/** The window whose image context menu is open. */
-let imageMenuOwner: AppWindow | undefined;
-initImageMenu(report, () => imageMenuOwner?.window.ptr ?? null);
 const publishInstalledUpdate = (items: InstalledPackage[]) =>
   hub.broadcast("installed", items);
 function publishInstalled(items: InstalledPackage[]) {
@@ -335,19 +343,11 @@ const usageService = new UsageService(discoverUsageTargets, (entries) =>
   hub.broadcast("providerUsage", entries),
 );
 setUsageObserver((event) => receiveUsageObservation(usageService, event));
-type BunRequests = RPCSchema["bun"]["requests"];
-type RequestHandlers = {
-  [K in keyof BunRequests]: (
-    params: BunRequests[K]["params"],
-  ) => BunRequests[K]["response"] | Promise<BunRequests[K]["response"]>;
-};
-type BunMessages = RPCSchema["bun"]["messages"];
-type MessageHandlers = {
-  [K in keyof BunMessages]: (payload: BunMessages[K]) => void;
-};
+type RequestHandlers = RpcHandlers<"bun">["requests"];
+type MessageHandlers = RpcHandlers<"bun">["messages"];
 type AppWindow = {
   id: string;
-  window: BrowserWindow;
+  window: DesktopWindow;
   focused: boolean;
   usageActive: boolean;
   /** Root UI leases created by this window's current page. */
@@ -361,9 +361,7 @@ type AppWindow = {
 const windows = new Map<string, AppWindow>();
 /** Windows whose native WebView still exists (close events may arrive later). */
 const liveWindows = () =>
-  [...windows.values()].filter((target) =>
-    BrowserWindow.getById(target.window.id),
-  );
+  [...windows.values()].filter((target) => target.window.isAlive());
 const terminals = new TerminalRouter(
   {
     broadcast: (event) => hub.terminal(event),
@@ -376,9 +374,21 @@ const terminals = new TerminalRouter(
       type: "cancel",
     }),
 );
+async function settingsModelChoices() {
+  return (await availableModels()).filter((model) =>
+    isModelEnabled(model, modelPreferences.disabled),
+  );
+}
 /** Window-independent API: identical for every UI client. */
 const hostRequests = {
-  getAppUpdate: () => appUpdater.info(),
+  getAppUpdate: () =>
+    appUpdater?.info() ??
+    ({
+      version: platform.version,
+      method: "disabled",
+      status: "idle",
+      reason: "development",
+    } satisfies AppUpdateState),
   getPiData: () => piDataReport(),
   importLegacyAuth: async ({ file, providers }) => {
     if (
@@ -396,7 +406,6 @@ const hostRequests = {
   searchPackages: (input) => searchPackages(input),
   packagePreviews: (input) => packagePreviews(input),
   listInstalled: () => listInstalled(publishInstalledUpdate),
-  prompt: (input) => withRuntime(input, promptSession),
   getOpenState: async (input) => {
     const state = await sessionHost.readOpenState(input);
     return state.state === "ready"
@@ -406,12 +415,18 @@ const hostRequests = {
   cancelOpen: (input) => sessionHost.cancelOpen(input),
   getSessionSnapshot: async (input) =>
     fullSnapshot(await sessionHost.readSessionSnapshot(input)),
-  getMcpAppPreview: (input) => sessionHost.getMcpAppPreview(input),
+  getMcpAppPreview: (input) =>
+    sessionHost.getMcpAppPreview(
+      input,
+      platform.interactiveWidgets === true && input?.interactive === true,
+    ),
   wakeSession: async (input) =>
     fullSnapshot(await sessionHost.wakeSession(input)),
   getSessionHistory: async (input) =>
     packTranscript(await sessionHost.getSessionHistory(input)),
   listSlashCommands: (input) => sessionHost.listSlashCommands(input),
+  compactSession: (input) =>
+    withRuntime(input, (value) => sessionHost.compact(value)),
   completeSlashArguments: (input) =>
     withRuntime(input, (value) => sessionHost.completeSlashArguments(value)),
   getPromptReceipt: (input) => sessionHost.getPromptReceipt(input),
@@ -436,6 +451,7 @@ const hostRequests = {
   invokeSessionAction: (input) =>
     withRuntime(input, (value) => sessionHost.invokeSessionAction(value)),
   reloadAdapterConfig: () => sessionHost.reloadAdapterConfig(),
+  actionKeymaps: () => sessionHost.actionKeymaps(),
   readClipboardImage,
   attachmentPreview: ({ path }) => attachmentPreview(path),
   saveImage: ({ src }) => saveImage(src),
@@ -443,20 +459,24 @@ const hostRequests = {
   appearance: () => appearance,
   settings: () => settings,
   providerUsage: () => usageService.snapshot(),
-  statistics: ({ period }) => getStatistics(period),
   refreshProviderUsage: () => usageService.refresh(true),
   listFontFamilies,
   bootstrap: async () => {
     for (const message of modelErrors.splice(0)) report(message);
-    const [providers, models, utilities, modelOverrides] = await Promise.all([
-      listProviders(),
-      availableModels(),
-      utilityModels(),
-      readModelOverrides().catch((error) => {
-        report(error);
-        return {};
-      }),
-    ]);
+    const [providers, models, utilities, modelOverrides, sessionTitleModel] =
+      await Promise.all([
+        listProviders(),
+        availableModels(),
+        utilityModels(),
+        readModelOverrides().catch((error) => {
+          report(error);
+          return {};
+        }),
+        readSessionTitleModel().catch((error) => {
+          report(error);
+          return null;
+        }),
+      ]);
     const accountCatalogs = Object.fromEntries([
       ...providers.map(
         (provider) =>
@@ -504,6 +524,7 @@ const hostRequests = {
       ...utilities,
       models: allModels,
       accountCatalogs,
+      sessionTitleModel,
       defaultModel: (() => {
         try {
           return readDefaultModel();
@@ -591,7 +612,7 @@ const hostRequests = {
       input,
     ),
   openProjectFolder: (input) =>
-    Utils.openPath(knownProject(input?.cwd, projectStore.value)),
+    platform.openPath(knownProject(input?.cwd, projectStore.value)),
   createProviderAccount: ({ provider, label }) =>
     createProviderAccount(provider, label),
   renameDefaultProviderAccount: ({ provider, label }) => {
@@ -616,12 +637,9 @@ const hostRequests = {
   refreshProviderModels: ({ provider }) => refreshProviderModels(provider),
   setModel: (input) => withRuntime(input, setSessionModel),
   setDefaultModel: async ({ model }) =>
-    writeDefaultModel(
-      model,
-      (await availableModels()).filter((candidate) =>
-        isModelEnabled(candidate, modelPreferences.disabled),
-      ),
-    ),
+    writeDefaultModel(model, await settingsModelChoices()),
+  setSessionTitleModel: async ({ model }) =>
+    writeSessionTitleModel(model, await settingsModelChoices()),
   setModelEnabled: async ({ provider, id, enabled }) => {
     if (
       typeof enabled !== "boolean" ||
@@ -677,24 +695,32 @@ const hostRequests = {
   setEffort: (input) => withRuntime(input, setSessionEffort),
 } satisfies Omit<
   RequestHandlers,
-  "copyImage" | "terminalCommand" | "importChatHistory" | "noticeHistory"
+  | "copyImage"
+  | "statistics"
+  | "terminalCommand"
+  | "importChatHistory"
+  | "noticeHistory"
+  | "prompt"
 >;
 /** Window-independent messages. */
 const hostMessages = {
   checkAppUpdate: () => {
     clearTimeout(lazyUpdateCheck);
-    void appUpdater.check().catch(report);
+    void appUpdater?.check().catch(report);
   },
   installAppUpdate: () => {
-    void appUpdater.apply().catch(report);
+    void appUpdater?.apply().catch(report);
   },
   setSettings: (patch) => {
     settingsQueue = settingsQueue
       .then(async () => {
         const next = patchSettings(settings, patch);
         await saveSettings(settingsFile, next);
+        const channelChanged = next.includeNightly !== settings.includeNightly;
         settings = next;
         hub.broadcast("settings", settings);
+        if (channelChanged && appUpdater instanceof InstallerUpdater)
+          void appUpdater.check();
       })
       .catch((error) => {
         report(error);
@@ -705,13 +731,7 @@ const hostMessages = {
   // Windows folder dialogs can stall inside RPC requests (Electrobun #156).
   addProject: () => {
     void (async () => {
-      const folder = (
-        await Utils.openFileDialog({
-          canChooseFiles: false,
-          canChooseDirectory: true,
-          allowsMultipleSelection: false,
-        })
-      ).join(",");
+      const folder = await platform.choosePath("folder");
       if (folder && !projectStore.value.includes(folder)) {
         // Adding a folder does not grant trust or load its resources.
         // SessionHost asks through the app's UIRequestBroker on first open.
@@ -732,7 +752,7 @@ const hostMessages = {
         hub.broadcast("loginFrame", frame);
         if (frame.kind === "success") usageService.invalidate(provider);
       },
-      (url) => Utils.openExternal(url),
+      (url) => platform.openExternal(url),
       accountId,
       addAccount,
     ).catch(report);
@@ -740,10 +760,11 @@ const hostMessages = {
   resolveLogin: ({ loginId, value }) => resolveLogin(loginId, value),
   cancelLogin: ({ loginId }) => cancelLogin(loginId),
   openExternal: ({ url }) => {
-    if (/^https?:\/\//i.test(url)) Utils.openExternal(url);
+    if (typeof url === "string" && /^https?:\/\//i.test(url))
+      platform.openExternal(url);
   },
   revealPath: (input) => {
-    void revealPath(input, Utils, validateScope).catch(report);
+    void revealPath(input, platform, validateScope).catch(report);
   },
   installPackage: (input) => {
     void packageOperation(
@@ -797,8 +818,7 @@ const notifyCompletion = createCompletionNotifier({
     [...windows.values()].some(
       (target) => target.focused && !target.window.isMinimized(),
     ),
-  showSystemNotification: (body) =>
-    Utils.showNotification({ title: "pig", body }),
+  showSystemNotification: (body) => platform.showNotification(body),
 });
 configureSessionHost(
   {
@@ -817,24 +837,6 @@ configureSessionHost(
     write: (id, accounts) => desktopState.setSessionAccounts(id, accounts),
   },
 );
-let url = "views://mainview/index.html";
-if ((await Updater.localInfo.channel()) === "dev") {
-  setNativeEnvironment(
-    "WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS",
-    `${process.env.WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS ?? ""} --remote-debugging-port=9229`.trim(),
-  );
-  try {
-    await fetch("http://localhost:5173", {
-      method: "HEAD",
-      signal: AbortSignal.timeout(1000),
-    });
-    url = "http://localhost:5173";
-  } catch {
-    console.log("[view] Using bundled webview");
-  }
-}
-// Set both Win32 and Bun environments before WebView2 creates its first controller.
-setNativeEnvironment("WEBVIEW2_DEFAULT_BACKGROUND_COLOR", "00000000");
 const syncUsageActive = () =>
   usageService.setActive(
     [...windows.values()].some((target) => target.usageActive),
@@ -855,234 +857,225 @@ function releasePage(target: AppWindow) {
   }
 }
 function createWindow() {
-  const id = crypto.randomUUID();
+  const id = `pig-${crypto.randomUUID()}`;
   // Completed below; handlers only run once the window exists.
   const target = { id } as AppWindow;
-  const rpc = BrowserView.defineRPC<RPCSchema>({
-    maxRequestTime: 600_000,
-    handlers: {
-      requests: {
-        ...hostRequests,
-        noticeHistory: (input) =>
-          notificationHistory.request(input, (record) =>
-            hub.to(id, "notification", record),
-          ),
-        importChatHistory: async (input) => {
-          const scopes = new Set<string>();
-          const place = async (workspace?: string) => {
-            const cwd = await importScope(workspace);
-            scopes.add(cwd);
-            return cwd;
-          };
-          // Exports carry no folder, so they always go to general chat.
-          const result = await (target.localHistory.owns(input?.previewId)
-            ? target.localHistory.import({ ...input, cwd: place })
-            : target.historyImports.import({
-                ...input,
-                cwd: await place(),
-              }));
-          if (result.copied) {
-            refreshSearch();
-            for (const cwd of scopes) hub.broadcast("chatsImported", { cwd });
-          }
-          return result;
-        },
-        copyImage: ({ src }) => copyImage(src, target.window.ptr),
-        terminalCommand: (input) => {
-          if (terminals.accept(id, input)) sessionHost.terminalCommand(input);
-        },
+  const handlers: RpcHandlers<"bun"> = {
+    requests: {
+      ...hostRequests,
+      statistics: ({ period, requestId }) => {
+        if (
+          requestId !== undefined &&
+          (typeof requestId !== "string" || requestId.length > 128)
+        )
+          throw new Error("Invalid statistics request");
+        return getStatistics(
+          period,
+          requestId
+            ? (data) => hub.to(id, "statisticsProgress", { requestId, data })
+            : undefined,
+        );
       },
-      messages: {
-        ...hostMessages,
-        listChatHistory: ({ requestId, source }) => {
-          if (
-            typeof requestId !== "string" ||
-            requestId.length > 128 ||
-            (source !== "codex" && source !== "claude-code")
-          )
-            return;
-          target.historyRequest = requestId;
-          target.historyImports.clear();
-          void target.localHistory
-            .list(source)
-            .then((preview) => {
-              if (target.historyRequest === requestId)
-                hub.to(id, "chatHistoryFile", { requestId, preview });
-            })
-            .catch((error) => {
-              if (target.historyRequest === requestId)
-                hub.to(id, "chatHistoryFile", {
-                  requestId,
-                  error: String(error),
-                });
-            });
-        },
-        chooseChatHistory: ({ requestId }) => {
-          if (typeof requestId !== "string" || requestId.length > 128) return;
-          if (target.historyPickerOpen) {
-            hub.to(id, "chatHistoryFile", {
-              requestId,
-              error: "A file picker is already open.",
-            });
-            return;
-          }
-          target.historyPickerOpen = true;
-          target.historyRequest = requestId;
-          target.localHistory.clear();
-          const imports = target.historyImports;
-          void (async () => {
-            const files = await Utils.openFileDialog({
-              canChooseFiles: true,
-              canChooseDirectory: false,
-              allowsMultipleSelection: false,
-              allowedFileTypes: "json",
-            });
-            if (target.historyRequest !== requestId) return;
-            if (!files[0]) {
-              imports.clear();
-              hub.to(id, "chatHistoryFile", { requestId });
-              return;
-            }
-            const preview = await imports.prepare(files[0]);
-            if (target.historyRequest !== requestId) return;
-            hub.to(id, "chatHistoryFile", { requestId, preview });
-          })()
-            .catch((error) => {
+      prompt: (input) =>
+        withRuntime(input, (params) =>
+          sessionHost.prompt(params, (admission) =>
+            hub.to(id, "promptAdmitted", admission),
+          ),
+        ),
+      noticeHistory: (input) =>
+        notificationHistory.request(input, (record) =>
+          hub.to(id, "notification", record),
+        ),
+      importChatHistory: async (input) => {
+        const scopes = new Set<string>();
+        const place = async (workspace?: string) => {
+          const cwd = await importScope(workspace);
+          scopes.add(cwd);
+          return cwd;
+        };
+        // Exports carry no folder, so they always go to general chat.
+        const result = await (target.localHistory.owns(input?.previewId)
+          ? target.localHistory.import({ ...input, cwd: place })
+          : target.historyImports.import({
+              ...input,
+              cwd: await place(),
+            }));
+        if (result.copied) {
+          refreshSearch();
+          for (const cwd of scopes) hub.broadcast("chatsImported", { cwd });
+        }
+        return result;
+      },
+      copyImage: ({ src }) => copyImage(src, target.window.ptr),
+      terminalCommand: (input) => {
+        if (terminals.accept(id, input)) sessionHost.terminalCommand(input);
+      },
+    },
+    messages: {
+      ...hostMessages,
+      listChatHistory: ({ requestId, source }) => {
+        if (
+          typeof requestId !== "string" ||
+          requestId.length > 128 ||
+          (source !== "codex" && source !== "claude-code")
+        )
+          return;
+        target.historyRequest = requestId;
+        target.historyImports.clear();
+        void target.localHistory
+          .list(source)
+          .then((preview) => {
+            if (target.historyRequest === requestId)
+              hub.to(id, "chatHistoryFile", { requestId, preview });
+          })
+          .catch((error) => {
+            if (target.historyRequest === requestId)
               hub.to(id, "chatHistoryFile", {
                 requestId,
                 error: String(error),
               });
-            })
-            .finally(() => {
-              target.historyPickerOpen = false;
+          });
+      },
+      chooseChatHistory: ({ requestId }) => {
+        if (typeof requestId !== "string" || requestId.length > 128) return;
+        if (target.historyPickerOpen) {
+          hub.to(id, "chatHistoryFile", {
+            requestId,
+            error: "A file picker is already open.",
+          });
+          return;
+        }
+        target.historyPickerOpen = true;
+        target.historyRequest = requestId;
+        target.localHistory.clear();
+        const imports = target.historyImports;
+        void (async () => {
+          const file = await platform.choosePath("json");
+          if (target.historyRequest !== requestId) return;
+          if (!file) {
+            imports.clear();
+            hub.to(id, "chatHistoryFile", { requestId });
+            return;
+          }
+          const preview = await imports.prepare(file);
+          if (target.historyRequest !== requestId) return;
+          hub.to(id, "chatHistoryFile", { requestId, preview });
+        })()
+          .catch((error) => {
+            hub.to(id, "chatHistoryFile", {
+              requestId,
+              error: String(error),
             });
-        },
-        discardChatHistory: () => {
-          target.historyRequest = undefined;
-          target.historyImports.clear();
-          target.localHistory.clear();
-        },
-        usageActive: ({ active }) => {
-          if (typeof active !== "boolean") return;
-          target.usageActive = active;
-          syncUsageActive();
-        },
-        windowControl: (value) => {
-          // RPC input is untrusted even though the webview has a typed sender.
-          if (!value || typeof value !== "object") return;
-          switch (value.action) {
-            case "minimize":
-              target.window.minimize();
-              break;
-            case "toggleMaximize":
-              if (target.window.isMaximized()) target.window.unmaximize();
-              else target.window.maximize();
-              break;
-            case "close":
-              void confirmDraftsBeforeClose([target])
-                .then((close) => {
-                  if (close) target.window.close();
-                })
-                .catch(report);
-              break;
-          }
-        },
-        editMenu: (request) => {
-          const t = dictionary(settings.language);
-          try {
-            showEditMenu(request, t.editMenu, (command) =>
-              hub.to(id, "editMenuCommand", command),
-            );
-          } catch (error) {
-            report(error);
-          }
-        },
-        imageMenu: ({ src }) => {
-          imageMenuOwner = target;
-          const t = dictionary(settings.language);
-          showImageMenu(src, { copy: t["Copy image"], save: t["Save image"] });
-        },
-        connectUI: (input) => {
-          sessionHost.connectUI(input);
-          target.uiClients.add(input.clientId);
-        },
-        runtimeUsage: (input) => {
-          if (target.uiClients.has(input.clientId))
-            sessionHost.runtimeUsage(input);
-        },
-        disconnectUI: (input) => {
-          target.uiClients.delete(input?.clientId);
-          sessionHost.disconnectUI(input);
-        },
+          })
+          .finally(() => {
+            target.historyPickerOpen = false;
+          });
+      },
+      discardChatHistory: () => {
+        target.historyRequest = undefined;
+        target.historyImports.clear();
+        target.localHistory.clear();
+      },
+      usageActive: ({ active }) => {
+        if (typeof active !== "boolean") return;
+        target.usageActive = active;
+        syncUsageActive();
+      },
+      windowControl: (value) => {
+        // RPC input is untrusted even though the webview has a typed sender.
+        if (!value || typeof value !== "object") return;
+        switch (value.action) {
+          case "minimize":
+            target.window.minimize();
+            break;
+          case "toggleMaximize":
+            target.window.toggleMaximize();
+            break;
+          case "close":
+            requestWindowClose(target);
+            break;
+        }
+      },
+      editMenu: (request) => {
+        const t = dictionary(settings.language);
+        try {
+          showEditMenu(
+            request,
+            t.editMenu,
+            (command) => hub.to(id, "editMenuCommand", command),
+            report,
+          );
+        } catch (error) {
+          report(error);
+        }
+      },
+      imageMenu: ({ src }) => {
+        const t = dictionary(settings.language);
+        showImageMenu(
+          src,
+          { copy: t["Copy image"], save: t["Save image"] },
+          () => target.window.ptr,
+          report,
+        );
+      },
+      connectUI: (input) => {
+        sessionHost.connectUI(input);
+        target.uiClients.add(input.clientId);
+      },
+      runtimeUsage: (input) => {
+        if (target.uiClients.has(input.clientId))
+          sessionHost.runtimeUsage(input);
+      },
+      disconnectUI: (input) => {
+        target.uiClients.delete(input?.clientId);
+        sessionHost.disconnectUI(input);
       },
     },
-  });
-  const offset = 32 * (windows.size % 8);
-  const window: BrowserWindow = new BrowserWindow({
-    transparent: true,
-    title: "pig",
-    titleBarStyle: "hiddenInset",
-    url,
-    rpc,
-    frame: { x: 100 + offset, y: 80 + offset, width: 1280, height: 840 },
-  });
+  };
+  const window = platform.createWindow(id, 32 * (windows.size % 8), handlers);
   Object.assign(target, {
     window,
     focused: true,
     usageActive: false,
     uiClients: new Set<string>(),
-    flushDrafts: () => rpc.request.flushDrafts(),
+    flushDrafts: () => window.flushDrafts(),
     historyImports: new ChatHistoryImports(),
     localHistory: new LocalChatHistory(),
     historyPickerOpen: false,
   } satisfies Omit<AppWindow, "id">);
   for (const other of windows.values()) other.focused = false;
   windows.set(id, target);
-  hub.add(id, (name, payload) =>
-    (rpc.send as (name: string, payload: unknown) => void)(name, payload),
-  );
+  hub.add(id, window.send);
   window.on("focus", () => {
-    const wasFocused = target.focused;
     for (const other of windows.values()) other.focused = other === target;
-    if (process.platform !== "win32" || wasFocused) return;
-    // Wait for WM_ACTIVATE to finish. activate() also focuses the WebView2 controller.
-    setTimeout(() => {
-      if (
-        windows.get(id) === target &&
-        target.focused &&
-        hasHostKeyboardFocus(window.ptr)
-      )
-        window.activate();
-    }, 0);
   });
   window.on("blur", () => {
     target.focused = false;
   });
-  // Apply once on ready; Electrobun 2 owns initial client bounds and DPI-aware resizing.
+  // Apply once on ready. The platform owns sizing and DPI changes.
   let backdropApplied = false;
   window.on("resize", () => {
     hub.to(id, "windowState", { maximized: window.isMaximized() });
   });
   // Native navigation invalidates the old Root even if its cooperative unload
   // message is lost. Do not disconnect at dom-ready after the new Root connects.
-  window.webview.on("will-navigate", () => releasePage(target));
-  window.webview.on("dom-ready", () => {
+  window.on("navigate", () => releasePage(target));
+  window.on("ready", () => {
     hub.to(id, "windowState", { maximized: window.isMaximized() });
-    try {
-      if (!backdropApplied) {
-        applyBackdrop(window.ptr, appearance);
-        backdropApplied = true;
-      }
-    } catch (error) {
-      console.error("Cannot apply backdrop:", error);
-      publishNotice({ level: "error", message: String(error) }, id);
-    }
+    if (backdropApplied) return;
+    backdropApplied = true;
+    void Promise.resolve()
+      .then(() => window.applyBackdrop(appearance))
+      .catch((error) => {
+        console.error("Cannot apply backdrop:", error);
+        publishNotice({ level: "error", message: String(error) }, id);
+      });
   });
+  window.on("closeRequested", () => requestWindowClose(target));
   window.on("close", () => {
     releasePage(target);
     hub.remove(id);
     windows.delete(id);
-    if (imageMenuOwner === target) imageMenuOwner = undefined;
     // Closing the last window quits the app (Electrobun exitOnLastWindowClosed).
     if (!windows.size) dispose();
   });
@@ -1108,8 +1101,7 @@ function confirmDraftsBeforeClose(targets = liveWindows()) {
     async (error) => {
       report(error);
       const t = dictionary(settings.language);
-      const { response } = await Utils.showMessageBox({
-        type: "warning",
+      const response = await platform.showMessageBox({
         title: t.draftUnsavedTitle,
         message: t.draftCloseFailed,
         buttons: [t.draftRetry, t.cancel, t.draftCloseUnsaved],
@@ -1120,14 +1112,24 @@ function confirmDraftsBeforeClose(targets = liveWindows()) {
     },
   );
 }
-Electrobun.events.on("before-quit", (event) => {
+const closingWindows = new Set<string>();
+function requestWindowClose(target: AppWindow) {
+  if (closingWindows.has(target.id)) return;
+  closingWindows.add(target.id);
+  void confirmDraftsBeforeClose([target])
+    .then((close) => {
+      if (close) target.window.close();
+    })
+    .catch(report)
+    .finally(() => closingWindows.delete(target.id));
+}
+platform.onBeforeQuit(() => {
   // Even after the last WebView closes, await session shutdown and statistics flush.
   if (quitReady) {
     dispose();
-    return;
+    return true;
   }
-  event.response = { allow: false };
-  if (quitting) return;
+  if (quitting) return false;
   quitting = true;
   void confirmDraftsBeforeClose()
     .then(async (close) => {
@@ -1135,45 +1137,62 @@ Electrobun.events.on("before-quit", (event) => {
       await disposeSessions();
       await notificationHistory.settled();
       quitReady = true;
-      Utils.quit();
+      platform.quit();
     })
     .catch(report)
     .finally(() => {
       quitting = false;
     });
+  return false;
 });
 process.on("exit", dispose);
 
-const appUpdater = new AppUpdater(
-  process.execPath,
-  join(desktopConfigDir, "app-update-result.json"),
-  (state) => hub.broadcast("appUpdate", state),
-  async (handoff) => {
-    if (quitting) return false;
-    quitting = true;
-    try {
-      const t = dictionary(settings.language);
-      const { response } = await Utils.showMessageBox({
-        type: "warning",
-        title: t.appUpdateTitle,
-        message: t.appUpdateConfirm,
-        buttons: [t.cancel, t.appUpdateRestart],
-        defaultId: 0,
-        cancelId: 0,
-      });
-      if (response !== 1 || !(await confirmDraftsBeforeClose())) return false;
-      const commit = await handoff();
-      await disposeSessions();
-      await commit();
-      quitReady = true;
-      Utils.quit();
-      return true;
-    } finally {
-      quitting = false;
-    }
-  },
-);
+const shutdownForUpdate: ConstructorParameters<typeof AppUpdater>[3] = async (
+  handoff,
+) => {
+  if (quitting) return false;
+  quitting = true;
+  try {
+    const t = dictionary(settings.language);
+    const response = await platform.showMessageBox({
+      title: t.appUpdateTitle,
+      message: t.appUpdateConfirm,
+      buttons: [t.cancel, t.appUpdateRestart],
+      defaultId: 0,
+      cancelId: 0,
+    });
+    if (response !== 1 || !(await confirmDraftsBeforeClose())) return false;
+    const commit = await handoff();
+    await disposeSessions();
+    await commit();
+    quitReady = true;
+    platform.quit();
+    return true;
+  } finally {
+    quitting = false;
+  }
+};
+const notifyUpdate = (state: AppUpdateState) =>
+  hub.broadcast("appUpdate", state);
+const appUpdater = platform.installerUpdater
+  ? new InstallerUpdater(
+      platform.version,
+      platform.installerUpdater,
+      () => settings.includeNightly,
+      notifyUpdate,
+      shutdownForUpdate,
+    )
+  : platform.usesLegacyUpdater
+    ? new AppUpdater(
+        process.execPath,
+        join(desktopConfigDir, "app-update-result.json"),
+        notifyUpdate,
+        shutdownForUpdate,
+      )
+    : undefined;
 // Lazy: well after startup work settles, check once quietly; never on the startup path.
-const lazyUpdateCheck = setTimeout(() => {
-  void appUpdater.check({ background: true }).catch(console.warn);
-}, 30_000);
+const lazyUpdateCheck =
+  appUpdater &&
+  setTimeout(() => {
+    void appUpdater.check({ background: true }).catch(console.warn);
+  }, 30_000);

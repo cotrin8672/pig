@@ -4,8 +4,7 @@ import { writeFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 import { join } from "node:path";
 import { initSync, PhotonImage } from "@silvia-odwyer/photon";
-import { ContextMenu, Utils } from "electrobun/bun";
-import { handleEditMenuClick } from "./edit-menu";
+import { desktopPlatform } from "./desktop-platform";
 import {
   dibToBmp,
   readWindowsClipboardImage,
@@ -68,7 +67,7 @@ export async function copyImage(src: unknown, owner: Pointer | null = null) {
   const png = mimeType === "image/png" ? bytes : encodePng(bytes);
   if (process.platform === "win32")
     await writeWindowsClipboardImage(png, owner);
-  else Utils.clipboardWriteImage(png);
+  else desktopPlatform().clipboardWriteImage(png);
 }
 
 export async function readClipboardImage() {
@@ -80,7 +79,7 @@ export async function readClipboardImage() {
         ? image.bytes
         : encodePng(dibToBmp(image.bytes))
       : null;
-  } else bytes = Utils.clipboardReadImage();
+  } else bytes = desktopPlatform().clipboardReadImage();
   if (!bytes?.length) return null;
   if (bytes.length > 3.375 * 1024 * 1024)
     throw new Error("Each image must be at most 4.5 MiB of base64 data.");
@@ -89,36 +88,30 @@ export async function readClipboardImage() {
 
 export async function saveImage(src: unknown) {
   const { mimeType, bytes } = await loadImage(src);
+  const platform = desktopPlatform();
   const path = join(
-    Utils.paths.downloads,
+    platform.downloads,
     `pig-image-${Date.now()}.${imageExtension(mimeType)}`,
   );
   await writeFile(path, bytes, { flag: "wx" });
-  Utils.showItemInFolder(path);
+  platform.showItemInFolder(path);
   return path;
 }
 
-let menuImage: string | undefined;
-export function initImageMenu(
-  report: (error: unknown) => void,
-  owner: () => Pointer | null,
-) {
-  ContextMenu.on("context-menu-clicked", (event) => {
-    const { action } = (event as { data: { action: string } }).data;
-    const src = menuImage;
-    if (action === "image-copy") void copyImage(src, owner()).catch(report);
-    else if (action === "image-save") void saveImage(src).catch(report);
-    // Electrobun has one global click event for every context menu.
-    else handleEditMenuClick(action);
-  });
-}
 export function showImageMenu(
   src: string,
   labels: { copy: string; save: string },
+  owner: () => Pointer | null,
+  report: (error: unknown) => void,
 ) {
-  menuImage = src;
-  ContextMenu.showContextMenu([
-    { label: labels.copy, action: "image-copy" },
-    { label: labels.save, action: "image-save" },
-  ]);
+  desktopPlatform().showMenu(
+    [
+      { label: labels.copy, action: "image-copy" },
+      { label: labels.save, action: "image-save" },
+    ],
+    (action) => {
+      if (action === "image-copy") void copyImage(src, owner()).catch(report);
+      else if (action === "image-save") void saveImage(src).catch(report);
+    },
+  );
 }

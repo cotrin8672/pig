@@ -23,34 +23,6 @@
 .package-count[data-known="false"] {
   visibility: hidden;
 }
-.package-search {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 4px 12px;
-  background: var(--ds-field-inset-bg);
-  border-radius: var(--radius-xs);
-  box-shadow: var(--ds-elevation-stroke);
-  color: var(--ds-text-muted);
-}
-.package-search:focus-within {
-  outline: 1px solid var(--ds-focus);
-}
-/* Beat the global input field style so the search box keeps a single outline. */
-.package-search input:not([type="range"]),
-.package-search input:not([type="range"]):focus {
-  min-width: 0;
-  width: 100%;
-  background: transparent;
-  border: 0;
-  padding: 8px 0;
-}
-.package-search input:focus-visible {
-  outline: none;
-}
-.package-search input::placeholder {
-  color: var(--ds-placeholder-ink);
-}
 .package-results {
   min-height: 1lh;
   font-size: var(--text-sm);

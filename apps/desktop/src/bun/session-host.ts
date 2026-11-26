@@ -2,7 +2,10 @@ import "./runtime-profile";
 import { statSync } from "node:fs";
 import { unlink } from "node:fs/promises";
 import { join } from "node:path";
-import type { SessionActionRequest } from "../../../../packages/config/src";
+import type {
+  ActionKeymap,
+  SessionActionRequest,
+} from "../../../../packages/config/src";
 import { AdapterRuntime } from "./adapter-runtime";
 import { createAdapterSource } from "./adapter-source";
 import { ConfigLoader } from "./config-loader";
@@ -19,6 +22,7 @@ import {
   getSupportedThinkingLevels,
   type Model,
 } from "@earendil-works/pi-ai";
+import { isContextOverflow } from "@earendil-works/pi-ai/compat";
 import type {
   AgentSession,
   AgentSessionRuntime,
@@ -52,6 +56,7 @@ import type {
   DraftSyncParams,
   OpenSessionParams,
   OpenState,
+  PromptAdmission,
   PromptParams,
   PromptRecoveryAck,
   RuntimeEvent,
@@ -110,6 +115,7 @@ import { SessionDiagnosticStore } from "./session-diagnostics";
 import {
   listSessionFiles,
   readSessionFile,
+  readSessionFileForPaging,
   removeSessionFile,
   resolveSessionFile,
   sameSessionPath,
@@ -352,6 +358,8 @@ export class SessionHost {
   private readonly configReady: Promise<boolean>;
   private configReloading = false;
   private configReloadPending = false;
+  /** Called after a config reload replaces the active config. */
+  onConfigApplied?: () => void;
   constructor(private readonly options: Options) {
     this.usage = new RuntimeUsageTracker(options.idleNow);
     this.configLoader = new ConfigLoader(
@@ -720,7 +728,9 @@ export class SessionHost {
       const fresh = prepared?.fresh === history;
       if (!fresh) {
         const digest = sessionHistoryDigest(manager);
-        const prefixChanged = !unchangedHistoryPrefix(manager, history, digest);
+        const prefixChanged = !unchangedHistoryPrefix(manager, history, {
+          full: digest,
+        });
         if (prefixChanged) {
           if (
             this.drafts.hasContent(history.address) ||
@@ -957,6 +967,60 @@ export class SessionHost {
     void open.promise.catch(() => {});
     return open.promise;
   }
+  private async openHistoryOnly(open: Opening, id: string, file: string) {
+    const { input, controller } = open;
+    let history = this.histories.get(id);
+    let prepared:
+      | { manager: SDKSessionManager; fresh?: HistoryHandle }
+      | undefined;
+    if (!history) {
+      const reader = await readSessionFile(input.cwd, id, file);
+      controller.signal.throwIfAborted();
+      // A live open may have claimed the session while the file was being read.
+      const acquired = this.sessions.get(id);
+      if (acquired) {
+        const snapshot = this.snapshot(acquired);
+        open.state = { state: "ready", snapshot };
+        return snapshot;
+      }
+      prepared = { manager: reader };
+      history = this.histories.get(id);
+      if (!history) {
+        const accounts = validateSessionAccounts(
+          this.options.sessionAccounts?.read(id) ?? {},
+        );
+        history = {
+          address: this.address(id),
+          cwd: input.cwd,
+          file,
+          leaf: reader.getLeafId(),
+          digest: sessionHistoryDigest(reader),
+          entryCount: reader.getEntryCount(),
+          revision: crypto.randomUUID(),
+          seq: 0,
+          openId: input.openId,
+          info: sessionInfo(reader, input.cwd),
+          accounts,
+          accountHistory: reader
+            .getEntries()
+            .some(
+              (entry) =>
+                entry.type === "message" &&
+                (entry.message.role === "user" ||
+                  entry.message.role === "assistant"),
+            ),
+          selection: this.historySelection(reader, accounts),
+        };
+        this.histories.set(id, history);
+        prepared.fresh = history;
+      }
+    }
+    const snapshot = await this.historySnapshot(history, prepared);
+    controller.signal.throwIfAborted();
+    open.state = { state: "ready", snapshot };
+    this.options.emit({ type: "ready", openId: input.openId, snapshot });
+    return snapshot;
+  }
   private async open(open: Opening): Promise<Snapshot> {
     const timing = traceOpen(open.input.openId);
     let m: Managed | undefined;
@@ -1008,58 +1072,8 @@ export class SessionHost {
       const known = input.id && this.histories.get(input.id);
       if (known && known.cwd !== input.cwd)
         throw new Error("Session does not belong to this project");
-      if (input.historyOnly && input.id && file) {
-        let prepared:
-          | { manager: SDKSessionManager; fresh?: HistoryHandle }
-          | undefined;
-        let history = known || undefined;
-        if (!history) {
-          const reader = await readSessionFile(input.cwd, input.id, file);
-          prepared = { manager: reader };
-          controller.signal.throwIfAborted();
-          const acquired = this.sessions.get(input.id);
-          if (acquired) {
-            const snapshot = this.snapshot(acquired);
-            open.state = { state: "ready", snapshot };
-            return snapshot;
-          }
-          history = this.histories.get(input.id);
-          if (!history) {
-            const accounts = validateSessionAccounts(
-              this.options.sessionAccounts?.read(input.id) ?? {},
-            );
-            history = {
-              address: this.address(input.id),
-              cwd: input.cwd,
-              file,
-              leaf: reader.getLeafId(),
-              digest: sessionHistoryDigest(reader),
-              entryCount: reader.getEntryCount(),
-              revision: crypto.randomUUID(),
-              seq: 0,
-              openId: input.openId,
-              info: sessionInfo(reader, input.cwd),
-              accounts,
-              accountHistory: reader
-                .getEntries()
-                .some(
-                  (entry) =>
-                    entry.type === "message" &&
-                    (entry.message.role === "user" ||
-                      entry.message.role === "assistant"),
-                ),
-              selection: this.historySelection(reader, accounts),
-            };
-            this.histories.set(input.id, history);
-            prepared.fresh = history;
-          }
-        }
-        const snapshot = await this.historySnapshot(history, prepared);
-        controller.signal.throwIfAborted();
-        open.state = { state: "ready", snapshot };
-        this.options.emit({ type: "ready", openId: input.openId, snapshot });
-        return snapshot;
-      }
+      if (input.historyOnly && input.id && file)
+        return await this.openHistoryOnly(open, input.id, file);
       resuming = known || undefined;
       if (resuming && (!file || !sameSessionPath(file, resuming.file)))
         throw new Error("Session file changed while suspended");
@@ -1725,6 +1739,7 @@ export class SessionHost {
       }
     });
     let retrying = false;
+    let recoveringOverflow = false;
     const unsubscribe = session.subscribe((event) => {
       if (!current()) return;
       m.idleSince = undefined;
@@ -1751,23 +1766,27 @@ export class SessionHost {
           : undefined,
       );
       if (event.type === "auto_retry_start") retrying = true;
-      // The SDK retries transient errors up to its budget. A model error it
-      // will not retry stops the run synchronously, before queued input is
-      // delivered: agent_end for an unretried error, auto_retry_end once the
-      // budget is exhausted.
       const lastAssistant =
         event.type === "agent_end"
           ? [...event.messages]
               .reverse()
               .find((message) => message.role === "assistant")
           : undefined;
+      // SDK willRetry covers transport retries; overflow compaction happens after these events.
+      if (event.type === "agent_end")
+        recoveringOverflow =
+          lastAssistant?.role === "assistant" &&
+          lastAssistant.stopReason === "error" &&
+          session.settingsManager.getCompactionEnabled() &&
+          isContextOverflow(lastAssistant);
       const unrecovered =
-        (event.type === "agent_end" &&
+        !recoveringOverflow &&
+        ((event.type === "agent_end" &&
           lastAssistant?.role === "assistant" &&
           lastAssistant.stopReason === "error" &&
           !event.willRetry &&
           !retrying) ||
-        (event.type === "auto_retry_end" && !event.success);
+          (event.type === "auto_retry_end" && !event.success));
       if (event.type === "auto_retry_end" || event.type === "agent_settled")
         retrying = false;
       if (unrecovered && m.phase !== "closing" && !m.stopping)
@@ -1775,6 +1794,7 @@ export class SessionHost {
           console.error("Stop after model error failed", error),
         );
       if (event.type === "agent_settled") {
+        recoveringOverflow = false;
         for (const key of m.startedSends.splice(0)) {
           try {
             this.receipts.releasePayload(key);
@@ -1830,6 +1850,13 @@ export class SessionHost {
     );
     m.adapters.start();
   }
+  /** Config keys for built-in actions; they work without a session. */
+  async actionKeymaps(): Promise<ActionKeymap[]> {
+    await this.configReady;
+    return (this.configLoader.config.keymaps ?? []).filter(
+      (keymap): keymap is ActionKeymap => "action" in keymap,
+    );
+  }
   async invokeSessionAction(input: SessionAddress & SessionActionRequest) {
     if (this.configReloading) throw new Error("CONFIG_RELOAD_IN_PROGRESS");
     const m = this.current(input);
@@ -1869,6 +1896,7 @@ export class SessionHost {
         if (applied) this.attachAdapters(m);
         this.publish(m);
       }
+      if (applied) this.onConfigApplied?.();
       return { state: applied ? "applied" : "failed" };
     } finally {
       this.configReloading = false;
@@ -2072,9 +2100,10 @@ export class SessionHost {
   getSessionSnapshot(address: SessionAddress) {
     return this.snapshot(this.current(address, false));
   }
-  /** Sanitized static HTML for a live call, or null. Never wakes a suspended runtime. */
+  /** Only Tauri's isolated widget document may render the raw resource. */
   async getMcpAppPreview(
     input: SessionAddress & { appId: string; toolCallId: string },
+    interactive = false,
   ): Promise<McpAppPreviewResult> {
     try {
       if (
@@ -2085,11 +2114,12 @@ export class SessionHost {
       const m = this.current(input, false);
       const apps = m.mcpApps;
       if (!apps) return null;
-      const html = await apps.readStatic(
-        input.appId,
-        input.toolCallId,
-        AbortSignal.timeout(10_000),
-      );
+      const signal = AbortSignal.timeout(10_000);
+      if (interactive) {
+        const { html } = await this.readMcpAppResource(input, signal);
+        return { html, interactive: true };
+      }
+      const html = await apps.readStatic(input.appId, input.toolCallId, signal);
       return this.current(input, false) === m && m.mcpApps === apps
         ? { html }
         : null;
@@ -2098,7 +2128,7 @@ export class SessionHost {
       return null;
     }
   }
-  /** Internal raw resource boundary; never expose this HTML through RPC or render it unsanitized. */
+  /** Raw resource bound to the original tool call and live session epoch. */
   async readMcpAppResource(
     input: SessionAddress & { appId: string; toolCallId: string },
     signal: AbortSignal,
@@ -2141,9 +2171,14 @@ export class SessionHost {
       ]);
       let flight = this.historyPages.get(key);
       if (!flight) {
-        // Share only in-flight work. A later read must still detect rewrites.
+        // Share only in-flight work. Every later request revalidates the file.
         flight = (async () => {
-          const manager = await readSessionFile(owner.cwd, input.sessionId);
+          const prefixCount = owner.entryCount;
+          const { manager, prefixDigest } = await readSessionFileForPaging(
+            owner.cwd,
+            input.sessionId,
+            prefixCount,
+          );
           if (
             this.shuttingDown ||
             (this.histories.get(input.sessionId) ??
@@ -2154,7 +2189,10 @@ export class SessionHost {
             throw new Error("STALE_SESSION_ADDRESS");
           if (
             owner.revision !== input.revision ||
-            !unchangedHistoryPrefix(manager, owner)
+            !unchangedHistoryPrefix(manager, owner, {
+              sourcePrefix:
+                prefixCount === owner.entryCount ? prefixDigest : undefined,
+            })
           )
             throw new Error("STALE_HISTORY_CURSOR");
           const result = new SDKProjector(
@@ -2191,14 +2229,24 @@ export class SessionHost {
         commands.push({ name, description, category });
       }
     };
+    // Extensions may override a built-in name, as in pi's TUI.
     for (const command of session.extensionRunner.getRegisteredCommands())
       add(command.invocationName, command.description, "extension");
+    add("compact", "Manually compact the session context", "builtin");
     if (session.settingsManager.getEnableSkillCommands())
       for (const skill of session.resourceLoader.getSkills().skills)
         add(`skill:${skill.name}`, skill.description, "skill");
     for (const template of session.promptTemplates)
       add(template.name, template.description, "prompt");
     return commands;
+  }
+  async compact(input: SessionAddress & { instructions?: string }) {
+    const { session } = required(this.current(input).runtime);
+    // The SDK aborts a running turn itself; Stop through the host first so
+    // pending sends and queued follow-ups are recovered like a normal Stop.
+    if (session.isStreaming) await this.abort(input);
+    this.current(input);
+    await session.compact(input.instructions);
   }
   async completeSlashArguments(
     input: SessionAddress & { name: string; argumentPrefix: string },
@@ -2221,6 +2269,7 @@ export class SessionHost {
     const m = this.sessions.get(key.sessionId);
     if (
       intent &&
+      !key.requestId.startsWith("remote:") &&
       receipt.state === "rejected" &&
       receipt.code === "CANCELLED" &&
       m?.phase === "ready" &&
@@ -2293,7 +2342,11 @@ export class SessionHost {
       branchId: m.manager.getLeafId(),
     };
   }
-  prompt(params: PromptParams) {
+  prompt(
+    params: PromptParams,
+    onAdmitted?: (admission: PromptAdmission) => void,
+    independentDraft = false,
+  ) {
     // Ledger lookup remains usable across closed/old epochs; mutation never does.
     const m = this.current(params),
       session = required(m.runtime).session;
@@ -2302,6 +2355,7 @@ export class SessionHost {
     const reserved = this.receipts.has(params);
     if (
       !reserved &&
+      !independentDraft &&
       params.delivery === "followUp" &&
       this.drafts.read(params).revision !== params.draftRevision
     )
@@ -2354,6 +2408,7 @@ export class SessionHost {
           if (m.stopping) throw new Error("Session is stopping");
           if (
             !reserved &&
+            !independentDraft &&
             params.delivery !== "followUp" &&
             this.drafts.read(params).revision !== params.draftRevision
           )
@@ -2402,14 +2457,17 @@ export class SessionHost {
           }
         },
         (intent) =>
-          this.drafts.consume(params, params.draftRevision, (consumed) =>
-            this.recovery.intent(
-              intent,
-              consumed
-                ? { ...consumed, owner: this.draftOwner(consumed.address) }
-                : undefined,
-            ),
-          ),
+          independentDraft
+            ? this.recovery.intent(intent)
+            : this.drafts.consume(params, params.draftRevision, (consumed) =>
+                this.recovery.intent(
+                  intent,
+                  consumed
+                    ? { ...consumed, owner: this.draftOwner(consumed.address) }
+                    : undefined,
+                ),
+              ),
+        onAdmitted,
       )
       .finally(() => {
         if (m.admissionRequestId === params.requestId)

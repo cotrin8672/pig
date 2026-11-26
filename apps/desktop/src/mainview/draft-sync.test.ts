@@ -15,8 +15,11 @@ function fixture(events = true, mirrorBudgetMs?: number) {
   return { store, host };
 }
 
-test("a lost background draft ACK cannot block the next send", async () => {
-  const { store, host } = fixture(true, 20);
+test.each([
+  true,
+  false,
+])("a lost background draft ACK cannot block the next send (host echo: %s)", async (events) => {
+  const { store, host } = fixture(events, 20);
   store.edit(address, () => content("send despite lost ACK"));
   const started = Promise.withResolvers<void>();
   const background = store.flush(address, async (params) => {
@@ -24,7 +27,9 @@ test("a lost background draft ACK cannot block the next send", async () => {
     started.resolve();
     return new Promise(() => {});
   });
-  const timedOut = expect(background).rejects.toThrow("Draft sync timed out");
+  const mirrored = events
+    ? expect(background).resolves.toMatchObject({ dirty: false, revision: 1 })
+    : expect(background).rejects.toThrow("Draft sync timed out");
   await started.promise;
   const prompts: PromptParams[] = [];
   const sends = new SendController(
@@ -45,10 +50,33 @@ test("a lost background draft ACK cannot block the next send", async () => {
     () => {},
   );
   await sends.send(address);
-  await timedOut;
+  await mirrored;
   expect(prompts.map(({ text }) => text)).toEqual(["send despite lost ACK"]);
   expect(sends.read(address)?.state).toBe("accepted");
 }, 1_000);
+
+test("a timed-out mirror of partial input cannot repopulate the composer during send", async () => {
+  const { store, host } = fixture(false, 10);
+  store.edit(address, () => content("part"));
+  await expect(
+    store.flush(address, async (params) => {
+      host.sync(params);
+      return new Promise(() => {});
+    }),
+  ).rejects.toThrow("Draft sync timed out");
+  store.edit(address, () => content("partial input completed"));
+  const sent = store.read(address);
+  store.clearForSend(address, sent.version);
+  const reserved = await store.flush(
+    address,
+    async (params) => host.sync(params),
+    sent,
+    "send-id",
+  );
+  host.consume(address, reserved.revision, () => {});
+  store.receive(address, host.read(address));
+  expect(store.read(address).content.text).toBe("");
+});
 
 test.each([
   { text: "", events: true },
@@ -81,7 +109,6 @@ test.each([
   host.consume(address, sent.revision, () => {});
   deliver.resolve();
   await background;
-  expect(store.read(address).conflict).toBeUndefined();
   expect(store.read(address).content.text).toBe(text);
   expect(store.read(address).dirty).toBe(false);
   expect(host.read(address).text).toBe(text);
@@ -163,7 +190,6 @@ test("identical rejected content across multiple revisions does not conflict wit
     return host.sync(params);
   });
   expect(calls).toBe(2);
-  expect(store.read(address).conflict).toBeUndefined();
   expect(store.read(address).content.text).toBe("latest input");
   expect(store.read(address).dirty).toBe(false);
   expect(host.read(address).text).toBe("latest input");
@@ -181,27 +207,22 @@ test("identical remote content is acknowledged even across multiple revisions", 
   });
   expect(calls).toBe(1);
   expect(store.read(address).dirty).toBe(false);
-  expect(store.read(address).conflict).toBeUndefined();
   expect(store.read(address).revision).toBe(2);
 });
 
-test("a real extension edit during recovery remains a conflict and is never overwritten", async () => {
-  const { store, host } = fixture();
-  store.edit(address, () => content("sent"));
-  const sent = await store.flush(address, async (params) => host.sync(params));
+test("an extension edit discovered by a rejected mirror CAS is retried silently", async () => {
+  const { store, host } = fixture(false);
   store.edit(address, () => content("local"));
+  host.setText(address, "extension");
   let calls = 0;
-  await expect(
-    store.flush(address, async (params) => {
-      if (++calls === 1) host.consume(address, sent.revision, () => {});
-      else host.setText(address, "extension");
-      return host.sync(params);
-    }),
-  ).rejects.toThrow("conflict");
+  await store.flush(address, async (params) => {
+    calls++;
+    return host.sync(params);
+  });
   expect(calls).toBe(2);
   expect(store.read(address).content.text).toBe("local");
-  expect(store.read(address).conflict?.text).toBe("extension");
-  expect(host.read(address).text).toBe("extension");
+  expect(store.read(address).dirty).toBe(false);
+  expect(host.read(address).text).toBe("local");
 });
 
 test("safe retries are bounded and do not claim a still-dirty draft was saved", async () => {
@@ -218,36 +239,50 @@ test("safe retries are bounded and do not claim a still-dirty draft was saved", 
   expect(calls).toBe(2);
   expect(store.read(address).content.text).toBe("newer 2");
   expect(store.read(address).dirty).toBe(true);
-  expect(store.read(address).conflict).toBeUndefined();
 });
 
-test("a stale send rejection cannot overwrite a newer explicitly chosen extension draft", async () => {
+test("a send rebases on a newer extension revision without sending or clearing its text", async () => {
   const { store, host } = fixture(false);
-  host.setText(address, "previous send");
-  store.receive(address, host.read(address));
   store.edit(address, () => content("send me"));
-  const captured = store.read(address);
-  store.clearForSend(address, captured.version);
-  let calls = 0;
-  await expect(
-    store.flush(
-      address,
-      async (params) => {
-        calls++;
-        host.consume(address, params.expectedRevision, () => {});
-        const rejected = host.sync(params);
-        host.setText(address, "extension");
-        store.receive(address, host.read(address));
-        store.resolve(address, "extension");
-        return rejected;
+  const inputs: DraftSyncParams[] = [];
+  const prompts: string[] = [];
+  const errors: string[] = [];
+  const sends = new SendController(
+    store,
+    {
+      syncDraft: async (params) => {
+        inputs.push(params);
+        if (inputs.length === 1) {
+          host.setText(address, "earlier extension text");
+          const rejected = host.sync(params);
+          host.setText(address, "extension");
+          store.receive(address, host.read(address));
+          return rejected;
+        }
+        return host.sync(params);
       },
-      captured,
-      "send-id",
-    ),
-  ).rejects.toThrow("conflict");
-  expect(calls).toBe(1);
+      prompt: async (params) => {
+        prompts.push(params.text);
+        host.consume(address, params.draftRevision, () => {});
+        store.receive(address, host.read(address));
+        return { disposition: "started" };
+      },
+      getPromptReceipt: async (key) => ({ ...key, state: "pending" }),
+    },
+    () => {},
+    undefined,
+    (error) => errors.push(error),
+  );
+  await sends.send(address);
+  expect(inputs.map(({ expectedRevision }) => expectedRevision)).toEqual([
+    0, 2,
+  ]);
+  expect(inputs[1].requestId).toBe(inputs[0].requestId);
+  expect(prompts).toEqual(["send me"]);
+  expect(errors).toEqual([]);
+  expect(sends.read(address)?.state).toBe("accepted");
   expect(store.read(address).content.text).toBe("extension");
-  expect(store.read(address).conflict).toBeUndefined();
+  await store.flush(address, async (params) => host.sync(params));
   expect(host.read(address).text).toBe("extension");
 });
 
@@ -299,5 +334,4 @@ test.each([
   expect(prompts[0].draftRevision).toBe(3);
   expect(sends.read(address)?.state).toBe("accepted");
   expect(store.read(address).content.text).toBe("next draft");
-  expect(store.read(address).conflict).toBeUndefined();
 });

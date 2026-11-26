@@ -1,0 +1,63 @@
+button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border: 0;
+  border-radius: var(--radius-xs);
+  padding: 7px 10px;
+  background: transparent;
+  cursor: pointer;
+  transition: background var(--motion-duration-fast) var(--motion-ease-out);
+}
+button:hover {
+  background: var(--ds-bg-hover);
+}
+button.primary {
+  background: var(--ds-accent);
+  color: var(--ds-on-accent);
+  font-weight: var(--font-weight-medium);
+}
+button.primary:hover:not(:disabled) {
+  background: var(--ds-accent-hover);
+}
+button.secondary {
+  background: var(--ds-bg-chip);
+}
+button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+/* Press-in: hover lifts 1px, pressing sinks to 96% with a tighter shadow.
+   will-change rasterizes the label once so glyphs don't twitch while scaling. */
+button:is(.primary, .secondary),
+.settings-icon-button {
+  will-change: transform;
+  transition:
+    background var(--motion-duration-fast) var(--motion-ease-out),
+    transform var(--motion-duration-fast) var(--motion-ease-out),
+    box-shadow var(--motion-duration-fast) var(--motion-ease-out);
+}
+button:is(.primary, .secondary, .settings-icon-button):hover:not(:disabled) {
+  transform: translateY(-1px);
+}
+button:is(.primary, .secondary, .settings-icon-button):active:not(:disabled) {
+  transform: scale(var(--motion-press-scale));
+}
+button:is(.primary, .secondary) {
+  box-shadow: 0 2px 6px #0f173033;
+}
+button:is(.primary, .secondary):hover:not(:disabled) {
+  box-shadow: 0 4px 10px #0f173040;
+}
+button:is(.primary, .secondary):active:not(:disabled) {
+  box-shadow: 0 1px 2px #0f173033;
+}
+@media (prefers-reduced-motion: reduce) {
+  button:is(.primary, .secondary, .settings-icon-button):is(
+      :hover,
+      :active
+    ):not(:disabled) {
+    transform: none;
+  }
+}

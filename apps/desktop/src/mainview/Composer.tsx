@@ -3,11 +3,12 @@ import {
   ClipboardPaste,
   FileText,
   Folder,
-  LoaderCircle,
   Puzzle,
+  SquareSlash,
   X,
 } from "lucide-react";
 import {
+  type ReactNode,
   type RefObject,
   useEffect,
   useId,
@@ -34,6 +35,7 @@ import { AnnotationPopover } from "./AnnotationPopover";
 import { AskUserPanel } from "./AskUserPanel";
 import { rememberAnnotationRange } from "./annotation-highlights";
 import { imageTypes, maxImageBase64 } from "./attachment-reads";
+import { ComposerAttachments } from "./ComposerAttachments";
 import { ComposerEditor, insertEditorNewline } from "./ComposerEditor";
 import { ComposerFrame } from "./ComposerFrame";
 import { ComposerSubmit } from "./ComposerSubmit";
@@ -43,19 +45,21 @@ import { attachmentReads } from "./composer-attachments";
 import { composerHistory } from "./composer-input-history";
 import { createDraftMirror } from "./draft-mirror";
 import { drafts, emptyContent, expandedDraft } from "./draft-store";
-import { fileIcon } from "./file-icon";
-import { ImagePreview } from "./ImageGallery";
 import { useT } from "./i18n";
 import { MessageQueue } from "./MessageQueue";
 import { ModelPicker } from "./ModelPicker";
 import { applyMention, mentionContext } from "./mention-completion";
 import { createModelPickerSelector } from "./model-picker-view";
+import { FileIcon } from "./primitives/FileIcon";
+import { Spinner } from "./primitives/Spinner";
 import { ensureSessionRuntime, rpc, sends } from "./rpc";
 import { SessionIndicators } from "./SessionIndicators";
 import { SessionPanel } from "./SessionPanel";
+import { isSendAdmitted } from "./send-controller";
 import { interruptedSession } from "./session-status";
 import {
   applySlashCompletion,
+  compactCommand,
   extensionCommand,
   matchesSlashCommand,
   type SlashArgument,
@@ -65,7 +69,12 @@ import { showError, showSessionReadError, useStore } from "./store";
 import { transcriptRequestIds } from "./transcript-requests";
 import "./composer.css";
 
-const categoryIcons = { extension: Puzzle, skill: BookOpen, prompt: FileText };
+const categoryIcons = {
+  builtin: SquareSlash,
+  extension: Puzzle,
+  skill: BookOpen,
+  prompt: FileText,
+};
 
 async function reloadAdapters() {
   const result = await rpc.request.reloadAdapterConfig();
@@ -78,9 +87,12 @@ async function reloadAdapters() {
 export function Composer({
   snapshot,
   annotationRoot,
+  above,
 }: {
   snapshot: Snapshot;
   annotationRoot?: RefObject<HTMLElement | null>;
+  /** A tray resting on the composer, e.g. where a new chat runs. */
+  above?: ReactNode;
 }) {
   const t = useT();
   const selectPicker = useMemo(createModelPickerSelector, []);
@@ -115,11 +127,6 @@ export function Composer({
   const previews = loads.filter((load) => load.preview);
   const { text, images, pastes, files = [], annotations = [] } = draft.content;
   const shownPastes = pastes.filter((paste) => text.includes(paste.marker));
-  const imageSources = useMemo(
-    () =>
-      images.map(({ image }) => `data:${image.mimeType};base64,${image.data}`),
-    [images],
-  );
   const [stopping, setStopping] = useState<string>();
   function stop() {
     if (stopping === key) return;
@@ -134,15 +141,17 @@ export function Composer({
   const nextPaste = useRef(1);
   const expanded = useMemo(() => expandedDraft(draft.content), [draft.content]);
   useSyncExternalStore(sends.subscribe, sends.getTick);
+  const admitted = isSendAdmitted(sendState);
   // Queued steering is already accepted; do not wait for it to enter history.
   const waiting =
-    sendState?.state === "sending" ||
-    sendState?.state === "checking" ||
+    (!admitted &&
+      (sendState?.state === "sending" || sendState?.state === "checking")) ||
     sends
       .optimistic(address)
       .some(
         (send) =>
           send.state !== "unknown" &&
+          !isSendAdmitted(send) &&
           send.disposition !== "queued" &&
           !transcriptRequestIds(transcript.records).has(send.key.requestId),
       );
@@ -361,18 +370,29 @@ export function Composer({
   useEffect(
     () => () => {
       const latest = drafts.read(slashAddress);
-      if (latest.dirty && !latest.conflict && !latest.retired)
-        void drafts.flush(slashAddress, mirror, latest).catch(showError);
+      if (latest.dirty && !latest.retired)
+        void drafts.flush(slashAddress, mirror, latest).catch(console.warn);
     },
     [slashAddress, mirror],
   );
   // Background mirror is not the command barrier: send still awaits the ordered CAS queue.
   useEffect(() => {
-    if (!draft.dirty || draft.conflict || draft.retired) return;
-    const timer = setTimeout(() => {
-      void drafts.flush(slashAddress, mirror).catch(showError);
-    }, 120);
-    return () => clearTimeout(timer);
+    if (!draft.dirty || draft.retired) return;
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout>;
+    const flush = (retry: boolean) => {
+      void drafts.flush(slashAddress, mirror).catch((error) => {
+        if (cancelled || !drafts.read(slashAddress).dirty) return;
+        // Retry outside the send lane; the next flush picks up the latest edit.
+        if (retry) timer = setTimeout(() => flush(false), 500);
+        else showError(error);
+      });
+    };
+    timer = setTimeout(() => flush(true), 120);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
   }, [slashAddress, draft, mirror]);
   function send(delivery: PromptDelivery = "steer") {
     const loading = attachmentReads.pending(address) > 0;
@@ -380,10 +400,26 @@ export function Composer({
     if (
       (!hasContent && !resume) ||
       (!canSend && !extensionSend) ||
-      draft.conflict ||
       stopping === key
     )
       return;
+    const compact =
+      !extensionSend &&
+      !images.length &&
+      !files.length &&
+      !annotations.length &&
+      !loading &&
+      compactCommand(expanded);
+    if (compact) {
+      // Like pi's TUI: the command leaves the editor and is not a chat message.
+      drafts.edit(address, () => emptyContent());
+      runCompaction(compact.instructions, () =>
+        drafts.edit(address, (content) =>
+          content.text ? content : { ...content, text: expanded },
+        ),
+      );
+      return;
+    }
     if (resume) {
       // Use the normal durable send path: receipt recovery, Stop and ordering
       // remain identical to a typed message, without replaying the original request.
@@ -401,6 +437,14 @@ export function Composer({
         resume,
       )
       .catch(showError);
+  }
+  function runCompaction(instructions?: string, onError?: () => void) {
+    void ensureSessionRuntime(slashAddress)
+      .then(() => rpc.request.compactSession({ ...slashAddress, instructions }))
+      .catch((error) => {
+        onError?.();
+        showError(error);
+      });
   }
   function attach(files: File[]) {
     // Capture the address, not whichever session happens to be active at FileReader completion.
@@ -449,6 +493,7 @@ export function Composer({
           }}
         />
       )}
+      {above}
       <MessageQueue
         steering={sends
           .pendingSteering(address, transcript.running)
@@ -502,30 +547,6 @@ export function Composer({
           else if (!sends.queued(address).length) textareaRef.current?.focus();
         }}
       />
-      {draft.conflict && (
-        <section className="draft-conflict" role="alert">
-          <p>
-            An extension changed this editor while you were typing. Both drafts
-            were retained.
-          </p>
-          <details>
-            <summary>Extension draft</summary>
-            <pre>{draft.conflict.text}</pre>
-          </details>
-          <button
-            type="button"
-            onClick={() => drafts.resolve(address, "local")}
-          >
-            Keep my draft
-          </button>
-          <button
-            type="button"
-            onClick={() => drafts.resolve(address, "extension")}
-          >
-            Use extension draft
-          </button>
-        </section>
-      )}
       <form
         className="composer"
         onSubmit={(event) => {
@@ -590,54 +611,22 @@ export function Composer({
                 </div>
               );
             })}
-            {images.map(({ id }, index) => (
-              <div className="composer-attachment" key={id}>
-                <ImagePreview
-                  sources={imageSources}
-                  index={index}
-                  alt={t.imageN(index + 1, images.length)}
-                />
-                <button
-                  type="button"
-                  className="composer-attachment-remove"
-                  aria-label={`${t["Remove attachment"]}: ${t.imageN(index + 1, images.length)}`}
-                  onClick={() =>
-                    drafts.edit(address, (content) => ({
-                      ...content,
-                      images: content.images.filter((item) => item.id !== id),
-                    }))
-                  }
-                >
-                  <X size={14} />
-                </button>
-              </div>
-            ))}
-            {files.map(({ id, name, path }) => {
-              const Icon = fileIcon(name);
-              return (
-                <div
-                  className="composer-attachment file"
-                  key={id}
-                  aria-description={path}
-                >
-                  <Icon size={28} aria-hidden />
-                  <span>{name}</span>
-                  <button
-                    type="button"
-                    className="composer-attachment-remove"
-                    aria-label={`${t["Remove attachment"]}: ${name}`}
-                    onClick={() =>
-                      drafts.edit(address, (content) => ({
-                        ...content,
-                        files: content.files?.filter((item) => item.id !== id),
-                      }))
-                    }
-                  >
-                    <X size={14} />
-                  </button>
-                </div>
-              );
-            })}
+            <ComposerAttachments
+              images={images}
+              files={files}
+              onRemoveImage={(id) =>
+                drafts.edit(address, (content) => ({
+                  ...content,
+                  images: content.images.filter((item) => item.id !== id),
+                }))
+              }
+              onRemoveFile={(id) =>
+                drafts.edit(address, (content) => ({
+                  ...content,
+                  files: content.files?.filter((item) => item.id !== id),
+                }))
+              }
+            />
             {previews.map((load) => (
               <div
                 className={`composer-attachment pending ${load.kind === "file" ? "file" : ""}`}
@@ -645,7 +634,7 @@ export function Composer({
                 aria-description={load.name}
                 aria-busy="true"
               >
-                <LoaderCircle size={22} className="spinner" aria-hidden />
+                <Spinner size={22} />
                 <span>{load.name}</span>
                 <button
                   type="button"
@@ -687,10 +676,10 @@ export function Composer({
                 {option.category &&
                   (() => {
                     const Icon =
-                      option.category === "file"
-                        ? fileIcon(option.value)
-                        : option.category === "folder"
-                          ? Folder
+                      option.category === "folder"
+                        ? Folder
+                        : option.category === "file"
+                          ? null
                           : categoryIcons[option.category];
                     return (
                       <span
@@ -698,7 +687,11 @@ export function Composer({
                         className="slash-category"
                         aria-label={t[option.category]}
                       >
-                        <Icon size={14} aria-hidden="true" />
+                        {Icon ? (
+                          <Icon size={14} aria-hidden="true" />
+                        ) : (
+                          <FileIcon name={option.value} size={14} />
+                        )}
                       </span>
                     );
                   })()}
@@ -877,7 +870,7 @@ export function Composer({
               !event.ctrlKey &&
               !event.metaKey &&
               !event.altKey &&
-              (transcript.running || waiting)
+              (transcript.running || waiting || admitted)
             ) {
               event.preventDefault();
               stop();
@@ -917,21 +910,26 @@ export function Composer({
             <SessionIndicators address={address} />
           </div>
           <div className="composer-pickers">
-            <ContextIndicator usage={snapshot.contextUsage} />
+            <ContextIndicator
+              usage={snapshot.contextUsage}
+              action={{
+                label: t["Compact context"],
+                run: () => runCompaction(),
+                disabled: !canSend || !!transcript.compaction,
+              }}
+            />
             <ModelPicker snapshot={pickerSnapshot} />
           </div>
           <div className="send-controls">
             <ComposerSubmit
-              busy={transcript.running}
+              busy={transcript.running || admitted}
               waiting={waiting}
               stopping={stopping === key}
               resumable={resumable}
               hasContent={hasContent}
               onStop={stop}
               disabled={
-                (!hasContent && !resumable) ||
-                (!canSend && !extensionSend) ||
-                !!draft.conflict
+                (!hasContent && !resumable) || (!canSend && !extensionSend)
               }
             />
           </div>

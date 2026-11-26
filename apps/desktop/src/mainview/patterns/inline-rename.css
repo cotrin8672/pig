@@ -1,0 +1,7 @@
+.inline-rename {
+  min-width: 0;
+  width: 100%;
+  padding: 4px 6px;
+  font-size: var(--text-md);
+  line-height: var(--leading-row);
+}

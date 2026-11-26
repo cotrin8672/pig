@@ -1,5 +1,6 @@
 import type { AuthEvent, AuthPrompt } from "@earendil-works/pi-ai";
 import type {
+  ActionKeymap,
   SessionActionRequest,
   SessionUIState,
 } from "../../../../packages/config/src";
@@ -32,6 +33,7 @@ import type {
   OpenSessionParams,
   OpenState,
   PromptAccepted,
+  PromptAdmission,
   PromptParams,
   PromptReceipt,
   PromptRecoveryAck,
@@ -44,7 +46,11 @@ import type {
 } from "./runtime-contract";
 import type { Settings, SettingsPatch } from "./settings";
 import type { RuntimeWireEvent } from "./snapshot-delta";
-import type { StatisticsData, StatisticsPeriod } from "./statistics";
+import type {
+  StatisticsData,
+  StatisticsPeriod,
+  StatisticsProgress,
+} from "./statistics";
 import type { TerminalClientCommand, TerminalHostEvent } from "./terminal-ui";
 import type { WireTranscript } from "./transcript-wire";
 
@@ -193,6 +199,8 @@ export interface Bootstrap {
   accountCatalogs?: Record<string, ModelInfo[]>;
   /** Global pi default; existing chats retain their saved model. */
   defaultModel?: DefaultModel;
+  /** Archimedes' raw reference in the shared Pi settings. */
+  sessionTitleModel?: string | null;
   imageModels: UtilityModelInfo[];
   classificationModels: UtilityModelInfo[];
   classificationProviders: string[];
@@ -247,7 +255,7 @@ export type PackageOpStatus = {
 export interface SlashCommand {
   name: string;
   description?: string;
-  category: "extension" | "skill" | "prompt";
+  category: "builtin" | "extension" | "skill" | "prompt";
 }
 
 import type { AppUpdateState } from "./app-update";
@@ -286,6 +294,8 @@ export type RPCSchema = {
         params: void;
         response: { state: "pending" | "applied" | "failed" };
       };
+      // biome-ignore lint/suspicious/noConfusingVoidType: Electrobun's parameterless RPC convention.
+      actionKeymaps: { params: void; response: ActionKeymap[] };
       heartbeatUI: {
         params: { clientId: string; usage?: RuntimeUsage };
         response: { connected: boolean };
@@ -319,7 +329,7 @@ export type RPCSchema = {
       // biome-ignore lint/suspicious/noConfusingVoidType: Electrobun's parameterless RPC convention.
       providerUsage: { params: void; response: ProviderUsage[] };
       statistics: {
-        params: { period: StatisticsPeriod };
+        params: { period: StatisticsPeriod; requestId?: string };
         response: StatisticsData;
       };
       // biome-ignore lint/suspicious/noConfusingVoidType: Electrobun's parameterless RPC convention.
@@ -365,7 +375,11 @@ export type RPCSchema = {
       cancelOpen: { params: { openId: string }; response: void };
       getSessionSnapshot: { params: SessionAddress; response: Snapshot };
       getMcpAppPreview: {
-        params: SessionAddress & { appId: string; toolCallId: string };
+        params: SessionAddress & {
+          appId: string;
+          toolCallId: string;
+          interactive?: true;
+        };
         response: McpAppPreviewResult;
       };
       getSessionHistory: {
@@ -373,6 +387,11 @@ export type RPCSchema = {
         response: WireTranscript;
       };
       listSlashCommands: { params: SessionAddress; response: SlashCommand[] };
+      /** pi's `/compact [instructions]`; the SDK leaves built-in commands to its TUI. */
+      compactSession: {
+        params: SessionAddress & { instructions?: string };
+        response: void;
+      };
       completeSlashArguments: {
         params: SessionAddress & { name: string; argumentPrefix: string };
         response: { value: string; label: string; description?: string }[];
@@ -469,6 +488,10 @@ export type RPCSchema = {
         params: { model: DefaultModel };
         response: DefaultModel;
       };
+      setSessionTitleModel: {
+        params: { model: DefaultModel };
+        response: string | null;
+      };
       setModelEnabled: {
         params: { provider: string; id: string; enabled: boolean };
         response: string[];
@@ -554,11 +577,13 @@ export type RPCSchema = {
       terminalEvent: RuntimePublication<TerminalHostEvent>;
       packageOp: PackageOpStatus;
       installed: InstalledPackage[];
+      promptAdmitted: PromptAdmission;
       sessionEvent: WireEvent;
       projects: string[];
       desktopState: DesktopState;
       appearance: Appearance;
       settings: Settings;
+      actionKeymaps: ActionKeymap[];
       providerUsage: ProviderUsage[];
       windowState: { maximized: boolean };
       editMenuCommand: EditMenuCommand;
@@ -568,6 +593,7 @@ export type RPCSchema = {
         contextUsage?: ContextUsage | null;
       };
       loginFrame: LoginFrame;
+      statisticsProgress: StatisticsProgress;
       notification: NoticeRecord;
       noticeHistory: NoticeHistorySnapshot;
     };

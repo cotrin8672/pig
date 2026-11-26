@@ -28,6 +28,7 @@ test("statistics aggregates known tokens, exact time boundaries, tool outcomes a
       at,
       type: "model_end",
       data: {
+        costTotal: id === "first" ? 0.75 : id === "second" ? 0 : null,
         timestamp: at,
         provider: "test",
         model: "one",
@@ -82,7 +83,16 @@ test("statistics aggregates known tokens, exact time boundaries, tool outcomes a
         },
       },
     ]);
-    const snapshot = store.snapshot("today", now);
+    const parts: string[][] = [];
+    const snapshot = store.snapshot("today", now, (part) =>
+      parts.push(Object.keys(part)),
+    );
+    expect(parts).toEqual([
+      ["models", "cost", "collectingSince", "coverage"],
+      ["days", "daily"],
+      ["commands"],
+    ]);
+    expect(snapshot.cost).toEqual({ usd: 0.75, missing: 2 });
     expect(snapshot.days).toHaveLength(1);
     expect(snapshot.models).toHaveLength(1);
     expect(snapshot.models[0]).toMatchObject({
@@ -133,6 +143,10 @@ test("statistics aggregates known tokens, exact time boundaries, tool outcomes a
       "Invalid statistics period",
     );
     store.forget(event.owner);
+    expect(store.snapshot("today", now).cost).toEqual({
+      usd: null,
+      missing: 0,
+    });
     expect(store.snapshot("today", now).models).toHaveLength(0);
     expect(store.snapshot("today", now).initialContext.parts).toHaveLength(0);
   } finally {

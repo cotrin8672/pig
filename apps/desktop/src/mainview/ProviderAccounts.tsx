@@ -13,11 +13,12 @@ import {
 } from "../shared/account-models";
 import type { AccountTarget } from "../shared/provider-accounts";
 import type { ProviderInfo } from "../shared/rpc-schema";
-import { ActionsMenu } from "./ActionsMenu";
-import { ConfirmButton } from "./ConfirmButton";
-import { InlineRename } from "./InlineRename";
 import { useT } from "./i18n";
-import { ProviderIcon } from "./ProviderIcon";
+import { ActionsMenu } from "./patterns/ActionsMenu";
+import { ConfirmButton } from "./patterns/ConfirmButton";
+import { InlineRename } from "./patterns/InlineRename";
+import { Chip } from "./primitives/Chip";
+import { ProviderIcon } from "./primitives/ProviderIcon";
 import { startProviderLogin } from "./provider-login";
 import { refresh, rpc } from "./rpc";
 import { showError, useStore } from "./store";
@@ -181,12 +182,10 @@ export function ProviderAccounts({
             {!child && <ProviderIcon provider={p.id} size={16} />}
             <span className="provider-row-name">{account.label}</span>
             {child && !account.accountId && (
-              <small className="provider-tag">{t.standardAccount}</small>
+              <Chip variant="tag">{t.standardAccount}</Chip>
             )}
             {!child && p.extension && (
-              <small className="provider-tag" data-kind="extension">
-                {t.Extension}
-              </small>
+              <Chip variant="accent-tag">{t.Extension}</Chip>
             )}
           </button>
         )}

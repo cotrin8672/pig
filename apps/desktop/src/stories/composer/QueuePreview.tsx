@@ -1,10 +1,11 @@
-import { ArrowUp, LoaderCircle } from "lucide-react";
+import { ArrowUp } from "lucide-react";
 import { useRef, useState } from "react";
 import { MessageQueue } from "../../mainview/MessageQueue";
 import { unfoldPastes } from "../../shared/paste";
 import type { DraftContent } from "../../shared/runtime-contract";
 import "../../mainview/composer.css";
 import "./queue.css";
+import { Spinner } from "../../mainview/primitives/Spinner";
 
 type Item = { id: string; content: DraftContent };
 export type QueueArgs = {
@@ -124,7 +125,7 @@ export function QueuePreview({ count, steering, sending }: QueueArgs) {
   return (
     <div className="queue-preview">
       <div className="queue-preview-response">
-        <LoaderCircle size={12} className="spinner" aria-hidden="true" />
+        <Spinner size={12} />
         テストを実行しています…
         <button
           type="button"

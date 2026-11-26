@@ -1,0 +1,172 @@
+/* Left-edge turn index over the thread; stays under the composer dock.
+   Hidden until the pointer nears the edge: the wide strip is the reveal zone. */
+.turn-rail {
+  position: absolute;
+  left: 0;
+  top: 24px;
+  bottom: calc(var(--composer-height, 140px) + 24px);
+  z-index: 8;
+  width: 48px;
+  display: flex;
+  align-items: center;
+}
+/* Fixed-height window; long sessions scroll by wheel inside it. An edge
+   with more ticks beyond it fades out. */
+.turn-rail-ticks {
+  --fade-top: 0px;
+  --fade-bottom: 0px;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  max-height: min(100%, 360px);
+  overflow: hidden auto;
+  overscroll-behavior: contain;
+  mask-image: linear-gradient(
+    to bottom,
+    #0000 0,
+    #000 var(--fade-top),
+    #000 calc(100% - var(--fade-bottom)),
+    #0000 100%
+  );
+}
+/* The fade mask already shows there is more; keep the shared track, hide the thumb. */
+.turn-rail-ticks::-webkit-scrollbar-thumb {
+  background: transparent;
+}
+.turn-rail-ticks[data-more-top] {
+  --fade-top: 48px;
+}
+.turn-rail-ticks[data-more-bottom] {
+  --fade-bottom: 48px;
+}
+/* The hit area stays full width. */
+.turn-rail-tick {
+  flex: none;
+  height: 10px;
+  padding: 0 0 0 13px;
+  border: 0;
+  background: none;
+  display: flex;
+  align-items: center;
+  cursor: pointer;
+}
+/* Hidden: collapsed to a dot-length and faded; leaving hides all at once.
+   `--swell` (0–1, set from the pointer) lengthens and lightens the mound. */
+.turn-rail-tick::before {
+  content: "";
+  width: calc(8px + var(--swell, 0) * 18px);
+  height: 2px;
+  border-radius: var(--radius-full);
+  background: color-mix(
+    in srgb,
+    var(--ds-text-secondary) calc(var(--swell, 0) * 70%),
+    var(--ds-text-faint)
+  );
+  opacity: 0;
+  transform: translateX(-6px) scaleX(0.4);
+  transform-origin: left center;
+  transition:
+    width 160ms var(--motion-ease-out),
+    opacity var(--motion-duration-fast) var(--motion-ease-out),
+    transform var(--motion-duration-fast) var(--motion-ease-out),
+    background-color var(--motion-duration-fast) var(--motion-ease-out);
+}
+/* Reveal as a top-down wave, capped so long sessions still appear quickly. */
+.turn-rail:is(:hover, :focus-within) .turn-rail-tick::before {
+  opacity: 0.55;
+  transform: none;
+  transition-delay:
+    0ms, min(calc(var(--i) * 6ms), 120ms), min(calc(var(--i) * 6ms), 120ms), 0ms;
+}
+/* Current reading position: a slightly brighter grey, never white. */
+.turn-rail:is(:hover, :focus-within) .turn-rail-tick[data-active]::before {
+  opacity: 0.9;
+}
+/* Only the hovered turn is white. */
+.turn-rail:is(:hover, :focus-within)
+.turn-rail-tick:is([data-open], :focus-visible)::before {
+  opacity: 1;
+  background: #fff;
+  transition-delay: 0ms;
+}
+.turn-rail-tick:is(:hover, :focus-visible) {
+  outline: none;
+  background: none;
+}
+
+/* Transparent padding bridges the gap so the pointer can reach the card. */
+.turn-rail-card-anchor {
+  position: absolute;
+  left: 100%;
+  padding-left: 6px;
+  translate: 0 -50%;
+  transition: top 140ms var(--motion-ease-out);
+}
+.turn-rail-card {
+  width: min(340px, 60vw);
+  padding: 10px 12px;
+  border-radius: var(--radius-md);
+}
+.turn-rail-card-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.turn-rail-card-title {
+  flex: 1;
+  display: block;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--ds-text-primary);
+  font: inherit;
+  font-size: var(--text-md);
+  font-weight: var(--font-weight-semibold);
+  text-align: left;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: pointer;
+}
+.turn-rail-branch {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-2xs);
+  background: none;
+  color: var(--ds-text-muted);
+  cursor: pointer;
+}
+.turn-rail-branch:hover:not(:disabled) {
+  background: var(--ds-bg-hover);
+  color: var(--ds-text-primary);
+}
+.turn-rail-card-preview {
+  margin: 4px 0 0;
+  color: var(--ds-text-muted);
+  font-size: var(--text-sm-plus);
+  line-height: var(--leading-relaxed);
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  overflow: hidden;
+}
+.turn-rail-card-meta {
+  display: block;
+  margin-top: 6px;
+  color: var(--ds-text-faint);
+  font-size: var(--text-xs);
+}
+@media (prefers-reduced-motion: reduce) {
+  .turn-rail-tick::before,
+  .turn-rail:is(:hover, :focus-within) .turn-rail-tick::before,
+  .turn-rail-card-anchor {
+    transition: none;
+  }
+}

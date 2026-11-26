@@ -1,5 +1,6 @@
-import { ArrowUp, LoaderCircle, Play, Square } from "lucide-react";
+import { ArrowUp, Play, Square } from "lucide-react";
 import { useT } from "./i18n";
+import { Spinner } from "./primitives/Spinner";
 
 /**
  * One action slot: Send, Resume after interruption, pending spinner, or Stop.
@@ -47,7 +48,7 @@ export function ComposerSubmit({
         aria-busy="true"
         disabled
       >
-        <LoaderCircle size={17} className="spinner" aria-hidden="true" />
+        <Spinner size={17} />
       </button>
     );
   if (!busy || hasContent) return send;

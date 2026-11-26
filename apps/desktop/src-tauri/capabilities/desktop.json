@@ -1,0 +1,14 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "desktop",
+  "description": "Local pig chat windows. No filesystem, dialog, or shell commands in WebView2.",
+  "webviews": ["pig-*"],
+  "permissions": [
+    "allow-pig-connect",
+    "allow-pig-highlight-ts",
+    "allow-pig-packet",
+    "allow-pig-smoke-done",
+    "allow-preview-ipc-ping",
+    "core:window:allow-start-dragging"
+  ]
+}

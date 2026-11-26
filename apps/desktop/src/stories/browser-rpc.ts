@@ -1,5 +1,5 @@
 import { selectPaneSession } from "../mainview/pane-selection";
-import type { SendController } from "../mainview/send-controller";
+import type { SendController, SendState } from "../mainview/send-controller";
 import { showNotice, useStore } from "../mainview/store";
 import { safeTerminalURL } from "../mainview/terminal-ui";
 import type {
@@ -78,13 +78,23 @@ export function updateUiPreferences(patch: Record<string, unknown>) {
       },
     }));
 }
+let queuedPreview: SendState | undefined;
+export function setQueuedPreview(item?: SendState) {
+  queuedPreview = item;
+}
 export const sends = {
   subscribe: () => () => {},
   getTick: () => 0,
   read: () => undefined,
   optimistic: () => [],
   pendingSteering: () => [],
-  queued: () => [],
+  queued: (address: SessionAddress) =>
+    queuedPreview &&
+    queuedPreview.key.hostId === address.hostId &&
+    queuedPreview.key.sessionId === address.sessionId &&
+    queuedPreview.key.epoch === address.epoch
+      ? [queuedPreview]
+      : [],
   lookup: unavailable,
   send: unavailable,
   stop: unavailable,
@@ -167,11 +177,11 @@ const send = {
 };
 const marketPackages: MarketPackage[] = [
   [
-    "pi-subagents",
-    "0.89.1",
-    "nicobailon",
+    "@ogulcancelik/pi-codex-subagents",
+    "0.3.5",
+    "ogulcancelik",
     4200,
-    "Foreground and background subagents with an API for other extensions.",
+    "Codex-shaped, session-scoped subagents for Pi.",
   ],
   [
     "pi-ask-user",
@@ -186,6 +196,13 @@ const marketPackages: MarketPackage[] = [
     "tintinweb",
     1800,
     "Schedule one-shot and recurring prompts into the chat.",
+  ],
+  [
+    "@pi-archimedes/session-name",
+    "2.15.0",
+    "archimedes-codes",
+    0,
+    "Auto-generate session names after the first exchange.",
   ],
   [
     "pi-mcp-adapter",

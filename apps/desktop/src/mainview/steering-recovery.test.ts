@@ -141,6 +141,20 @@ test.each([
   expect(f.acknowledged).toMatchObject([key]);
 });
 
+test("a host-confirmed recovery removes an existing steering row without restoring its draft again", () => {
+  const f = fixture();
+  f.sends.restore([intent]);
+  expect(f.sends.pendingSteering(address, true)).toHaveLength(1);
+  f.drafts.receive(address, { ...content, revision: 2 });
+  f.sends.restore([{ ...intent, recovered: true }]);
+  f.sends.restore([intent]);
+  f.sends.reconcile(snapshot());
+  expect(f.sends.pendingSteering(address, true)).toEqual([]);
+  expect(f.sends.optimistic(address)).toEqual([]);
+  expect(f.drafts.read(address).content).toEqual(content);
+  expect(f.notices).toEqual([]);
+});
+
 test("several cancelled inputs keep send order ahead of the newer draft", () => {
   const f = fixture();
   f.sends.restore([
@@ -229,6 +243,20 @@ test("unknown input can follow an explicit transfer without acknowledging across
   expect(f.notices).toEqual(["unknown"]);
 });
 
+test("a timed-out save of recovered steering is retried before acknowledgement", async () => {
+  let attempts = 0;
+  const f = fixture(async () => {
+    if (++attempts === 1) throw new Error("Draft sync timed out");
+  });
+  f.sends.restore([intent]);
+  f.sends.reconcile(snapshot());
+  await Bun.sleep(0);
+  expect(attempts).toBe(2);
+  expect(f.drafts.read(address).content.text).toBe("first");
+  expect(f.acknowledged).toMatchObject([key]);
+  expect(f.errors).toEqual([]);
+});
+
 test("failed draft persistence retains recovery data and reports the error without acknowledging", async () => {
   const f = fixture(async () => {
     throw new Error("disk unavailable");
@@ -276,7 +304,7 @@ test("restored unknown input returns to the composer once; late acceptance canno
   expect(f.drafts.read(address).content).toEqual(emptyContent());
 });
 
-test("a hung status lookup notifies once and keeps unconfirmed content without piling up RPCs", async () => {
+test("compaction and a lost status reply do not return admitted steering to the draft", async () => {
   const f = fixture();
   let calls = 0;
   f.transport.getPromptReceipt = () => {
@@ -289,13 +317,23 @@ test("a hung status lookup notifies once and keeps unconfirmed content without p
       receipt: { ...key, state: "pending", stage: "dispatched" },
     },
   ]);
-  await f.sends.lookup(address, key);
-  await f.sends.lookup(address, key);
+  const current = snapshot([]);
+  f.sends.reconcile({
+    ...current,
+    transcript: {
+      ...current.transcript,
+      running: true,
+      compaction: { reason: "overflow" },
+    },
+  });
+  await Promise.all([
+    f.sends.lookup(address, key),
+    f.sends.lookup(address, key),
+  ]);
   expect(calls).toBe(1);
-  expect(f.notices).toEqual(["unknown"]);
-  expect(f.sends.pendingSteering(address, false)).toEqual([]);
-  expect(f.drafts.read(address).content.text).toBe("first");
-  expect(f.drafts.read(address).content.images).toEqual(content.images);
+  expect(f.notices).toEqual([]);
+  expect(f.sends.pendingSteering(address, true)).toMatchObject([{ content }]);
+  expect(f.drafts.read(address).content).toEqual(emptyContent());
 });
 
 test("unknown recovery is acknowledged only after saving and is not duplicated on reload", async () => {

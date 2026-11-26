@@ -62,6 +62,38 @@ export function normalizeCombo(combo: string): string | null {
     key,
   ].join("+");
 }
+/** Normalizes "<leader> p" / "Ctrl+X Ctrl+S" into space-joined combos; null if invalid. */
+export function normalizeSequence(
+  keys: string,
+  leader?: string,
+): string | null {
+  const combos = keys
+    .replace(/<leader>/gi, " <leader> ")
+    .trim()
+    // "Ctrl + K" stays one combo; only spaces not touching "+" separate keys.
+    .split(/(?<!\+)\s+(?!\+)/)
+    .map((part) =>
+      /^<leader>$/i.test(part) ? (leader ?? null) : normalizeCombo(part),
+    );
+  return combos.every((combo) => combo !== null) ? combos.join(" ") : null;
+}
+/** Keys that type text, so an always-on sequence must not start with them in inputs. */
+export function isTypingCombo(combo: string) {
+  return /^(Shift\+)?(.|Space|Plus)$/.test(combo);
+}
+export const sequenceTimeoutMs = 1000;
+/** One keypress of sequence matching; `pending` is the keys typed so far. */
+export function sequenceStep(
+  pending: string,
+  combo: string,
+  sequences: readonly string[],
+): { match: string } | { pending: string } | null {
+  const keys = pending ? `${pending} ${combo}` : combo;
+  if (sequences.includes(keys)) return { match: keys };
+  if (sequences.some((sequence) => sequence.startsWith(`${keys} `)))
+    return { pending: keys };
+  return null;
+}
 export type KeyEvent = Pick<
   KeyboardEvent,
   "key" | "ctrlKey" | "altKey" | "shiftKey" | "metaKey"
@@ -99,7 +131,7 @@ export function composerAction(event: KeyEvent, overrides: KeyOverrides) {
 }
 
 export function resolveBindings(overrides: KeyOverrides) {
-  // Future bun-side TS config (Neovim-like): defaults → TS config → UI overrides.
+  // UI overrides replace defaults; TS config `keymaps` add keys on top (see shortcuts.ts).
   return { ...defaultBindings, ...overrides } as Record<
     ActionId,
     string | null

@@ -27,6 +27,9 @@ test("import provenance stays out of the chat while extension data keeps its fal
     data: { source: "chatgpt" },
   };
   expect(isVisibleRecord(record)).toBe(false);
+  expect(isVisibleRecord({ ...record, customType: "pig-subagent-state" })).toBe(
+    false,
+  );
   expect(isVisibleRecord({ ...record, customType: "extension.data" })).toBe(
     true,
   );

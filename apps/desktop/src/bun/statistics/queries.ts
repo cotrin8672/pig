@@ -49,6 +49,8 @@ type UsageRow = {
   speed: number | null;
   measured: number;
   unknown: number;
+  cost: number | null;
+  missing_cost: number;
 };
 const modelId = (r: Pick<UsageRow, "provider" | "model" | "purpose">) =>
   JSON.stringify([r.provider, r.model, r.model ? null : r.purpose]);
@@ -58,6 +60,7 @@ export function queryStatistics(
   db: Database,
   period: StatisticsPeriod,
   now = Date.now(),
+  publish?: (data: Partial<StatisticsData>) => void,
 ): StatisticsData {
   const range = statisticsRange(period, now);
   const bounds = db.query("SELECT min(at) AS first FROM events").get() as {
@@ -79,6 +82,7 @@ export function queryStatistics(
     SELECT provider, model, CASE WHEN model IS NULL THEN purpose ELSE '' END AS purpose,
       sum(input) AS input, sum(output) AS output, sum(cache_read) AS cache_read,
       sum(cache_write) AS cache_write, count(*) AS requests,
+      sum(cost_total) AS cost, count(*) - count(cost_total) AS missing_cost,
       avg(CASE WHEN purpose = 'conversation' AND duration_ms > 0 AND output IS NOT NULL
         AND json_extract(data, '$.stopReason') IN ('stop', 'length', 'toolUse')
         THEN output * 1000.0 / duration_ms END) AS speed,
@@ -103,6 +107,26 @@ export function queryStatistics(
     tokensPerSecond: r.speed,
     measuredRequests: r.measured,
   }));
+  const cost: StatisticsData["cost"] = { usd: null, missing: 0 };
+  for (const row of rows) {
+    if (row.cost !== null) cost.usd = (cost.usd ?? 0) + row.cost;
+    cost.missing += row.missing_cost;
+  }
+  const dropped = db
+    .query("SELECT value FROM collection_state WHERE key = 'dropped'")
+    .get() as { value: number } | null;
+  const usage = {
+    models,
+    cost,
+    collectingSince:
+      bounds.first === null ? null : dayKey(new Date(bounds.first)),
+    coverage: {
+      unknownUsage: rows.reduce((n, r) => n + r.unknown, 0),
+      dropped: dropped?.value ?? 0,
+      collection: "active" as const,
+    },
+  };
+  publish?.(usage);
   const daily = Object.fromEntries(models.map((m) => [m.id, days.map(zero)]));
   const buckets = db
     .query(`
@@ -123,6 +147,7 @@ export function queryStatistics(
         cacheWrite: b.cache_write ?? 0,
       };
   }
+  publish?.({ days, daily });
   const toolRows = db
     .query(`
     SELECT json_extract(data, '$.tool') AS tool, count(*) AS calls,
@@ -181,6 +206,7 @@ export function queryStatistics(
       b.failureBytes - a.failureBytes ||
       b.calls - a.calls,
   );
+  publish?.({ commands });
   const contextRow = db
     .query(`
     SELECT data FROM events WHERE type = 'initial_context' AND at >= ? AND at < ? ORDER BY at DESC LIMIT 1
@@ -271,15 +297,10 @@ export function queryStatistics(
   }
   for (const group of sources.values())
     group.tools.sort((a, b) => b.tokens - a.tokens);
-  const dropped = db
-    .query("SELECT value FROM collection_state WHERE key = 'dropped'")
-    .get() as { value: number } | null;
   return {
-    collectingSince:
-      bounds.first === null ? null : dayKey(new Date(bounds.first)),
+    ...usage,
     days,
     daily,
-    models,
     tools,
     commands,
     initialContext: {
@@ -288,11 +309,6 @@ export function queryStatistics(
       sources: [...sources.values()].sort((a, b) => b.tokens - a.tokens),
       measuredTotal: null,
       contextWindow: context?.contextWindow ?? null,
-    },
-    coverage: {
-      unknownUsage: rows.reduce((n, r) => n + r.unknown, 0),
-      dropped: dropped?.value ?? 0,
-      collection: "active",
     },
   };
 }

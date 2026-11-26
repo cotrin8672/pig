@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
 import type { PiDataReport } from "../shared/pi-data";
 import { useT } from "./i18n";
+import { SettingsCard } from "./patterns/SettingsCard";
+import { SettingsRow } from "./patterns/SettingsRow";
 import { rpc } from "./rpc";
 import { showError } from "./store";
 
@@ -20,16 +22,15 @@ export function PiDataSettings() {
   return (
     <>
       <h3 className="settings-group-title">{t.piDataTitle}</h3>
-      <div className="settings-card" data-setting="pi-data">
+      <SettingsCard data-setting="pi-data">
         {rows.map(([label, value]) => (
-          <div key={label} className="settings-row">
-            <div className="settings-label">{label}</div>
+          <SettingsRow key={label} label={label}>
             <code className="settings-path" aria-description={value}>
               {value}
             </code>
-          </div>
+          </SettingsRow>
         ))}
-      </div>
+      </SettingsCard>
       {report.authState !== "ok" && report.authState !== "missing" && (
         <p className="settings-hint error" role="alert">
           auth.json: {t.piDataState(report.authState)}

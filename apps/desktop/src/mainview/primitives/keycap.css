@@ -1,0 +1,18 @@
+.ui-keycap {
+  box-sizing: border-box;
+  display: inline-grid;
+  place-items: center;
+  flex: none;
+  min-height: 1.8em;
+  min-width: 1.8em;
+  padding: 0 0.45em;
+  border: 1px solid var(--ds-border-strong);
+  border-bottom-width: 2px;
+  border-radius: var(--radius-3xs);
+  background: var(--ds-bg-active);
+  color: var(--ds-text-primary);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  line-height: 1.25;
+  white-space: nowrap;
+}

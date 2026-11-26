@@ -1,0 +1,98 @@
+/* Zero specificity: the caller's placement class sets the width. */
+:where(.ui-select) {
+  position: relative;
+  width: 168px;
+  max-width: 100%;
+  min-width: 0;
+}
+.ui-select select {
+  appearance: none;
+  display: flex;
+  align-items: center;
+  width: 100%;
+  height: 34px;
+  padding: 0 32px 0 12px;
+  border: 0;
+  border-radius: var(--radius-xs);
+  background: var(--ds-field-inset-bg);
+  box-shadow: var(--ds-elevation-stroke);
+  color: var(--ds-text-primary);
+  font: inherit;
+  cursor: pointer;
+  /* Long option labels must not wrap or widen the field. */
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ui-select select,
+.ui-select select::picker(select) {
+  appearance: base-select;
+}
+/* Our chevron replaces the built-in icon. */
+.ui-select select::picker-icon {
+  display: none;
+}
+.ui-select select::picker(select) {
+  margin-top: 4px;
+  padding: 4px;
+  border: 1px solid #ffffff14;
+  border-radius: 10px;
+  background: var(--ds-bg-popover);
+  backdrop-filter: blur(var(--ds-popover-blur));
+  box-shadow: 0 8px 24px #0003;
+  color: var(--ds-text-primary);
+  /* Same open/close motion as ActionsMenu: fade + scale in, shorter fade out. */
+  opacity: 0;
+  transform: scale(var(--motion-popover-scale));
+  transform-origin: top;
+  transition:
+    opacity var(--motion-duration-exit) var(--motion-ease-out),
+    transform 0ms var(--motion-duration-exit),
+    display var(--motion-duration-exit) allow-discrete,
+    overlay var(--motion-duration-exit) allow-discrete;
+}
+.ui-select select:open::picker(select) {
+  opacity: 1;
+  transform: none;
+  transition:
+    opacity var(--motion-duration-popover) var(--motion-ease-out),
+    transform var(--motion-duration-popover) var(--motion-ease-out),
+    display var(--motion-duration-popover) allow-discrete,
+    overlay var(--motion-duration-popover) allow-discrete;
+}
+@starting-style {
+  .ui-select select:open::picker(select) {
+    opacity: 0;
+    transform: scale(var(--motion-popover-scale));
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .ui-select select::picker(select),
+  .ui-select select:open::picker(select) {
+    transition: none;
+  }
+}
+.ui-select option {
+  padding: 6px 10px;
+  border-radius: var(--radius-xs);
+}
+.ui-select option:hover,
+.ui-select option:focus-visible {
+  outline: none;
+  background: var(--ds-bg-hover);
+}
+.ui-select select:focus-visible {
+  outline-offset: 0;
+}
+.ui-select > svg {
+  position: absolute;
+  top: 50%;
+  right: 12px;
+  translate: 0 -50%;
+  pointer-events: none;
+  color: var(--ds-text-muted);
+}
+.ui-select select:disabled {
+  cursor: default;
+  opacity: 0.5;
+}

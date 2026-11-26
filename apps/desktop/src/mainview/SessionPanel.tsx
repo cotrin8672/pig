@@ -35,6 +35,7 @@ import type {
 } from "../../../../packages/config/src";
 import { useT } from "./i18n";
 import { Markdown } from "./MessageContent";
+import { TextField } from "./primitives/TextField";
 import {
   type DockRun,
   type DockTab,
@@ -56,6 +57,7 @@ import {
   timingLabel,
 } from "./session-panel-model";
 import { isInlineResultVisible } from "./session-read";
+import { useComposerPopover } from "./useComposerPopover";
 import "./session-indicators.css";
 import "./session-panel.css";
 
@@ -207,7 +209,7 @@ function ActionForm({
             {field.multiline ? (
               <textarea {...props} rows={3} />
             ) : (
-              <input {...props} type="text" />
+              <TextField {...props} />
             )}
           </div>
         );
@@ -789,16 +791,6 @@ const tabIcons: Record<DockTab, LucideIcon> = {
   info: Info,
 };
 
-/** Places the panel above the composer with matching left/right edges. */
-function place(popup: HTMLElement, trigger: HTMLElement) {
-  const composer = trigger.closest(".composer") ?? trigger;
-  const rect = composer.getBoundingClientRect();
-  popup.style.left = `${rect.left}px`;
-  popup.style.width = `${rect.width}px`;
-  popup.style.bottom = `${innerHeight - rect.top + 8}px`;
-  popup.style.maxHeight = `${Math.max(120, Math.min(420, rect.top - 16))}px`;
-}
-
 /**
  * Session activity (todos, subagents/background runs, scheduled prompts and
  * other adapter views) as counters in the composer toolbar. Contents open in
@@ -814,12 +806,6 @@ export function SessionPanel({
   initialTab,
 }: SessionPanelProps) {
   const t = useT();
-  const id = useId();
-  const panel = useRef<HTMLDivElement>(null);
-  const buttons = useRef<Partial<Record<DockTab, HTMLButtonElement | null>>>(
-    {},
-  );
-  const [open, setOpen] = useState<DockTab | null>(initialTab ?? null);
   const [reloading, setReloading] = useState(false);
   const reloadPending = useRef(false);
   const [reloadError, setReloadError] = useState<string>();
@@ -865,7 +851,7 @@ export function SessionPanel({
     ...(scheduleCount ? ["schedule" as const] : []),
     ...(others.length || problems.length ? ["info" as const] : []),
   ];
-  const shown = open && tabs.includes(open) ? open : null;
+  const { shown, trigger, panel } = useComposerPopover(tabs, 420, initialTab);
   const expiry = nextDockExpiry(observed, allRuns, now);
   useEffect(() => {
     const delay =
@@ -878,33 +864,6 @@ export function SessionPanel({
     const timer = setTimeout(tick, delay);
     return () => clearTimeout(timer);
   }, [shown, activeRuns.length, expiry, now]);
-  useEffect(() => {
-    // The open section emptied out (e.g. the last run expired).
-    if (open && !shown && panel.current?.matches(":popover-open"))
-      panel.current.hidePopover();
-  }, [open, shown]);
-  useEffect(() => {
-    const popup = panel.current;
-    const trigger = open && buttons.current[open];
-    if (!popup || !trigger) return;
-    const composer = trigger.closest(".composer");
-    const update = () => place(popup, trigger);
-    // Pane dividers resize the composer without a window resize.
-    const observer = new ResizeObserver(update);
-    if (composer) observer.observe(composer);
-    window.addEventListener("resize", update);
-    return () => {
-      observer.disconnect();
-      window.removeEventListener("resize", update);
-    };
-  }, [open]);
-  // biome-ignore lint/correctness/useExhaustiveDependencies: Only the initial section opens itself.
-  useEffect(() => {
-    const trigger = initialTab && buttons.current[initialTab];
-    if (!trigger || !panel.current) return;
-    place(panel.current, trigger);
-    panel.current.showPopover();
-  }, []);
   async function reload() {
     if (reloadPending.current) return;
     reloadPending.current = true;
@@ -935,6 +894,9 @@ export function SessionPanel({
     schedule: t.dockSchedules,
     info: problems.length ? t.dockProblem : t.dockInfo,
   };
+  const icon = (tab: DockTab) =>
+    tab === "info" && problems.length ? TriangleAlert : tabIcons[tab];
+  const ActiveIcon = shown ? icon(shown) : null;
   const chipLabel = (tab: DockTab) =>
     tab === "todo"
       ? `${t.dockProgress}: ${t.dockTodoProgress(progress.completed, progress.total - progress.cancelled)}`
@@ -950,15 +912,12 @@ export function SessionPanel({
   return (
     <div className="session-activity">
       {tabs.map((tab) => {
-        const Glyph =
-          tab === "info" && problems.length ? TriangleAlert : tabIcons[tab];
+        const Glyph = icon(tab);
         return (
           <button
+            {...trigger(tab)}
             type="button"
             key={tab}
-            ref={(element) => {
-              buttons.current[tab] = element;
-            }}
             className="session-indicator"
             data-tab={tab}
             data-warning={tab === "info" && problems.length > 0}
@@ -966,21 +925,7 @@ export function SessionPanel({
               (tab === "tasks" && running > 0) ||
               (tab === "todo" && progress.activeCount > 0)
             }
-            popoverTarget={`${id}-panel`}
-            popoverTargetAction="show"
-            aria-expanded={shown === tab}
-            aria-controls={`${id}-panel`}
             aria-label={chipLabel(tab)}
-            onClick={(event) => {
-              if (shown === tab) {
-                // Cancels the native show so the same counter closes the panel.
-                event.preventDefault();
-                panel.current?.hidePopover();
-                return;
-              }
-              if (panel.current) place(panel.current, event.currentTarget);
-              setOpen(tab);
-            }}
           >
             <Glyph size={13} aria-hidden="true" />
             <span>{counts[tab]}</span>
@@ -988,29 +933,15 @@ export function SessionPanel({
         );
       })}
       <div
-        ref={panel}
-        id={`${id}-panel`}
-        popover="auto"
+        {...panel}
         className="session-indicator-panel session-panel"
         role="dialog"
         aria-label={shown ? tabLabels[shown] : t.dockTitle}
-        // biome-ignore lint/a11y/noNoninteractiveTabindex: Keyboard users need to scroll long activity lists.
-        tabIndex={0}
-        onToggle={(event) => {
-          if ((event.nativeEvent as ToggleEvent).newState === "closed")
-            setOpen(null);
-        }}
       >
         {shown && (
           <section>
             <h3>
-              {(() => {
-                const Glyph =
-                  shown === "info" && problems.length
-                    ? TriangleAlert
-                    : tabIcons[shown];
-                return <Glyph size={13} aria-hidden="true" />;
-              })()}
+              {ActiveIcon && <ActiveIcon size={13} aria-hidden="true" />}
               {tabLabels[shown]}
               {shown === "todo" && progress.current && (
                 <em className="session-panel-current">{progress.current}</em>
@@ -1034,7 +965,7 @@ export function SessionPanel({
                     now={now}
                     onDismiss={() => {
                       setVisibility(dismissDockRun(observed, item.key));
-                      panel.current?.focus();
+                      panel.ref.current?.focus();
                     }}
                   />
                 ))}

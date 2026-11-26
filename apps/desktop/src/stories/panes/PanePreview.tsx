@@ -21,6 +21,7 @@ import {
 import { useRef, useState } from "react";
 import appIcon from "../../../assets/icon.svg";
 import { ProviderUsageView } from "../../mainview/ProviderUsageView";
+import { IndicatorDot } from "../../mainview/primitives/IndicatorDot";
 import "../../mainview/notifications.css";
 import { usageFixtures, usageFixtureTime } from "../providers/usage-fixtures";
 import "./panes.css";
@@ -357,12 +358,9 @@ export function PanePreview({
                     {session.title}
                   </span>
                   {session.status && (
-                    <span
-                      className={`session-dot ${session.status}`}
-                      role="img"
-                      aria-label={
-                        session.status === "running" ? "実行中" : "完了"
-                      }
+                    <IndicatorDot
+                      state={session.status}
+                      label={session.status === "running" ? "実行中" : "完了"}
                     />
                   )}
                 </button>

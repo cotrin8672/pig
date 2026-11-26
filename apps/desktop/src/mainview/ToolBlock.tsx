@@ -7,7 +7,6 @@ import {
   FileText,
   Folder,
   Layers,
-  LoaderCircle,
   Pencil,
   Plug,
   Search,
@@ -50,13 +49,15 @@ import {
   TerminalOutput,
 } from "./HighlightedCode";
 import { useT } from "./i18n";
-import { DisclosureContext, DisclosureScope } from "./LazyDetails";
 import { McpAppContext, McpAppPreview } from "./McpAppPreview";
 import { Markdown, MessageContent, ToolResultContent } from "./MessageContent";
+import { DisclosureContext, DisclosureScope } from "./patterns/LazyDetails";
+import { Spinner } from "./primitives/Spinner";
 import { SyntaxRangesContext } from "./SyntaxText";
 import { languageFromPath, terminalText } from "./syntax-highlighting";
 import { type TooltipAnchor, useTooltip } from "./Tooltip";
 import { WidgetFrame } from "./WidgetFrame";
+import { tauriWidgets } from "./widget-frame";
 
 type ToolState = Transcript["tools"][string] | undefined;
 type Tone = "running" | "done" | "error";
@@ -184,7 +185,7 @@ function Row({
           </code>
           <span className="tool-meta">
             {status === "running" ? (
-              <LoaderCircle size={12} className="spinner" />
+              <Spinner size={12} />
             ) : status === "error" ? (
               <span className="tool-failed">{t.Failed}</span>
             ) : (
@@ -486,10 +487,12 @@ const ICON = 14;
 
 function McpToolPreview({
   appRef,
-  toolCallId,
+  call,
+  result,
 }: {
   appRef: McpAppRef;
-  toolCallId: string;
+  call: ChatRenderData["tool"]["call"];
+  result: unknown;
 }) {
   const address = useContext(McpAppContext);
   const t = useT();
@@ -500,14 +503,17 @@ function McpToolPreview({
         defaultOpen
         icon={<Shapes size={ICON} />}
         verb="MCP App"
-        target={[t.mcpAppStatic, appRef.title].filter(Boolean).join(" · ")}
+        target={[!tauriWidgets() && t.mcpAppStatic, appRef.title]
+          .filter(Boolean)
+          .join(" · ")}
         state={undefined}
         status="done"
       >
         <McpAppPreview
           address={address}
           appRef={appRef}
-          toolCallId={toolCallId}
+          toolCallId={call.id}
+          data={{ args: call.arguments, result }}
         />
       </Row>
     </DisclosureScope>
@@ -537,7 +543,9 @@ export const ToolBlock = memo(function ToolBlock(data: ChatRenderData["tool"]) {
               contentKey={data.call.id}
               builtin={BuiltinTool}
             />
-            {app && <McpToolPreview appRef={app} toolCallId={data.call.id} />}
+            {app && (
+              <McpToolPreview appRef={app} call={data.call} result={result} />
+            )}
           </DisclosureScope>
         </SavedOutputContext.Provider>
       </SyntaxRangesContext.Provider>
@@ -739,7 +747,7 @@ export const ToolGroup = memo(
               )}
             </span>
             <span className="tool-meta">
-              {running && <LoaderCircle size={12} className="spinner" />}
+              {running && <Spinner size={12} />}
               {!running && failed && (
                 <span className="tool-failed">{t.Failed}</span>
               )}

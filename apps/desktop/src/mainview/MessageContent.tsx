@@ -1,5 +1,6 @@
 import type { ImageContent, TextContent } from "@earendil-works/pi-ai";
 import type { ChatRendererProps } from "@pig/chat-renderers";
+import { math } from "@streamdown/math";
 import type { Root } from "hast";
 import { Check, Copy, Pencil } from "lucide-react";
 import {
@@ -19,6 +20,8 @@ import {
 import ReactMarkdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import remarkMath from "remark-math";
+import { createSmoothStream } from "smooth-stream-text";
+import { Streamdown } from "streamdown";
 import { parseAnnotations, withAnnotations } from "../shared/annotations";
 import { splitAttachmentPaths } from "../shared/attachments";
 import { isFileLink } from "../shared/file-links";
@@ -34,11 +37,17 @@ import { dataText } from "./custom-data";
 import { CodeText } from "./HighlightedCode";
 import { ImageGallery } from "./ImageGallery";
 import { useT } from "./i18n";
-import { MarkdownBlockquote, MarkdownPre } from "./MarkdownBlocks";
+import {
+  MarkdownBlockquote,
+  MarkdownPre,
+  MarkdownTable,
+} from "./MarkdownBlocks";
 import { markdownExtensions } from "./markdown-extensions";
 import {
+  appendOpenCodeFence,
   browserMarkdown,
   cachedMarkdown,
+  openCodeFence,
   plainMarkdown,
   prepareMarkdown,
   retainedMarkdown,
@@ -46,6 +55,7 @@ import {
 import { markdownUrl } from "./markdown-url";
 import { editKey, messageEdits } from "./message-edits";
 import { positionedKatex } from "./positioned-katex";
+import { Button } from "./primitives/Button";
 import { openChatLink, regenerate, rpc } from "./rpc";
 import { ScheduledHead } from "./ScheduledPrompt";
 import { SentAttachments } from "./SentAttachments";
@@ -130,11 +140,7 @@ function linkTip(
 export const markdownComponents: Components = {
   pre: MarkdownPre,
   blockquote: MarkdownBlockquote,
-  table: ({ children }) => (
-    <div className="markdown-table-scroll">
-      <table>{children}</table>
-    </div>
-  ),
+  table: MarkdownTable,
   code: function MarkdownCode({ className, children }) {
     const linked = useContext(InsideMarkdownLink);
     const t = useT();
@@ -225,6 +231,104 @@ export const markdownComponents: Components = {
     ) : null,
 };
 
+const answerPlugins = { math };
+const answerComponents = {
+  ...markdownComponents,
+  strong: ({ children }: React.ComponentProps<"strong">) => (
+    <strong>{children}</strong>
+  ),
+};
+const answerExtensions = (
+  streaming: boolean,
+): NonNullable<React.ComponentProps<typeof Streamdown>["rehypePlugins"]> => [
+  [markdownExtensions, { streaming }],
+];
+const liveExtensions = answerExtensions(true);
+const finalExtensions = answerExtensions(false);
+
+const motionQuery = "(prefers-reduced-motion: reduce)";
+const skipMotion = () => true;
+const reducedMotion = () =>
+  globalThis.matchMedia?.(motionQuery).matches ?? true;
+function watchMotion(notify: () => void) {
+  const query = globalThis.matchMedia?.(motionQuery);
+  query?.addEventListener("change", notify);
+  return () => query?.removeEventListener("change", notify);
+}
+const ignoreMotion = () => () => {};
+
+function StreamdownBody({ data: { text } }: ChatRendererProps<"markdown">) {
+  const live = useContext(MarkdownStreaming);
+  const reduced = useSyncExternalStore(
+    live ? watchMotion : ignoreMotion,
+    live ? reducedMotion : skipMotion,
+    skipMotion,
+  );
+  const smooth = live && !reduced;
+  const [shown, setShown] = useState(text);
+  const pacer = useRef<ReturnType<typeof createSmoothStream> | null>(null);
+  useLayoutEffect(() => {
+    if (!smooth) return;
+    const stream = createSmoothStream({
+      targetLatencyMs: 90,
+      settleMs: 90,
+      idleGraceMs: 50,
+      boundary: "char",
+    });
+    pacer.current = stream;
+    const unsubscribe = stream.subscribe((state) => setShown(state.text));
+    return () => {
+      pacer.current = null;
+      unsubscribe();
+      stream.destroy();
+    };
+  }, [smooth]);
+  useLayoutEffect(() => {
+    if (!smooth) return;
+    const stream = pacer.current;
+    if (!stream) return;
+    const previous = stream.getState();
+    const added = text.length - previous.source.length;
+    if (
+      !previous.source ||
+      text.length > 8192 ||
+      added > 1024 ||
+      !text.startsWith(previous.source) ||
+      (previous.text === previous.source && added < 24)
+    )
+      stream.reset(text);
+    else stream.setSource(text);
+  }, [text, smooth]);
+  return (
+    <Streamdown
+      mode="streaming"
+      isAnimating={live}
+      parseIncompleteMarkdown={live}
+      plugins={answerPlugins}
+      components={answerComponents}
+      rehypePlugins={live ? liveExtensions : finalExtensions}
+      skipHtml
+      urlTransform={markdownUrl}
+    >
+      {normalizeMath(smooth && text.startsWith(shown) ? shown : text)}
+    </Streamdown>
+  );
+}
+
+export const AnswerMarkdown = memo(function AnswerMarkdown({
+  text,
+  streaming = false,
+}: {
+  text: string;
+  streaming?: boolean;
+}) {
+  return (
+    <MarkdownStreaming.Provider value={streaming}>
+      <ChatContent kind="markdown" data={{ text }} builtin={StreamdownBody} />
+    </MarkdownStreaming.Provider>
+  );
+});
+
 // Reuse post-processing only for the same parsed tree in this mounted instance.
 // No shared JSX/DOM cache: child state, context and renderer changes still apply.
 const MarkdownTree = memo(function MarkdownTree({ tree }: { tree: Root }) {
@@ -256,8 +360,28 @@ export function BuiltinMarkdown({
   });
   const [error, setError] = useState<unknown>();
   const committed = useRef<{ text: string; tree: Root } | undefined>(undefined);
+  const fence = useRef<ReturnType<typeof openCodeFence>>(undefined);
+  const exact =
+    plain ??
+    cachedMarkdown(source, streaming)?.tree ??
+    (result?.text === source && result.streaming === streaming
+      ? result.tree
+      : undefined);
+  const appended = useMemo(
+    () =>
+      browserMarkdown() && streaming && !exact
+        ? appendOpenCodeFence(source, fence.current)
+        : undefined,
+    [source, streaming, exact],
+  );
+  useLayoutEffect(() => {
+    // Only full parses carry reliable source offsets for the fallback view.
+    if (exact) committed.current = { text: source, tree: exact };
+    fence.current =
+      streaming && exact ? openCodeFence(source, exact) : appended;
+  }, [source, streaming, exact, appended]);
   useEffect(() => {
-    if (!browserMarkdown() || plain) return;
+    if (!browserMarkdown() || plain || appended) return;
     const controller = new AbortController();
     void prepareMarkdown(source, controller.signal, streaming).then(
       (parsed) => {
@@ -271,21 +395,13 @@ export function BuiltinMarkdown({
       },
     );
     return () => controller.abort();
-  }, [source, plain, streaming]);
-  const exact =
-    plain ??
-    cachedMarkdown(source, streaming)?.tree ??
-    (result?.text === source && result.streaming === streaming
-      ? result.tree
-      : undefined);
-  useLayoutEffect(() => {
-    if (exact) committed.current = { text: source, tree: exact };
-  }, [source, exact]);
+  }, [source, plain, streaming, appended]);
   if (error) throw error;
-  if (exact)
+  const tree = exact ?? appended?.tree;
+  if (tree)
     return (
       <Fragment key="markdown-body">
-        <MarkdownTree tree={exact} />
+        <MarkdownTree tree={tree} />
       </Fragment>
     );
   if (browserMarkdown()) {
@@ -377,7 +493,7 @@ export const UserMessage = memo(function UserMessage({
   const text = edit?.state === "sending" ? edit.text : original;
   // Editing touches only the body; annotation blocks ride along unchanged.
   const parsed = parseAnnotations(original);
-  const shown = parseAnnotations(text);
+  const shown = text === original ? parsed : parseAnnotations(text);
   const attachments = splitAttachmentPaths(shown.body);
   return (
     <div className="user-turn">
@@ -440,19 +556,19 @@ export const UserMessage = memo(function UserMessage({
             >
               {t.Cancel}
             </button>
-            <button
+            <Button
               type="submit"
-              className="primary"
+              variant="primary"
               disabled={disabled || (!draft.trim() && !sources.length)}
             >
               {t["Save and resend"]}
-            </button>
+            </Button>
           </div>
         </form>
       ) : (
         attachments.body &&
         (scheduled ? (
-          <div className="user-bubble scheduled-bubble">
+          <div className="user-bubble sender-bubble">
             <ScheduledHead name={scheduled} />
             {attachments.body}
           </div>

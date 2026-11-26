@@ -53,8 +53,8 @@ jobs:
           esac
           publish=true
           if [[ "$GITHUB_EVENT_NAME" == schedule ]]; then
-            published=$(gh release view nightly --json body,assets --jq 'select(any(.assets[]; .name == "pig-windows-x64.zip") and any(.assets[]; .name == "pig-windows-x64.zip.sha256")) | .body' 2>/dev/null || true)
-            if [[ "$published" == *"from commit $sha."* && "$published" == *"Built with Tauri."* ]]; then publish=false; fi
+            published=$(gh release view nightly --json body,assets --jq 'select(any(.assets[]; .name == "pig-setup.exe") and any(.assets[]; .name == "pig-windows-x64.zip.sha256")) | .body' 2>/dev/null || true)
+            if [[ "$published" == *"from commit $sha."* ]]; then publish=false; fi
           fi
           echo "sha=$sha" >> "$GITHUB_OUTPUT"
           echo "publish=$publish" >> "$GITHUB_OUTPUT"
@@ -62,7 +62,7 @@ jobs:
     needs: changes
     if: needs.changes.outputs.publish == 'true'
     runs-on: windows-latest
-    timeout-minutes: 30
+    timeout-minutes: 90
     permissions:
       contents: write
     defaults:
@@ -98,7 +98,6 @@ jobs:
           if [[ "$GITHUB_EVENT_NAME" == push && "$GITHUB_REF" == refs/tags/v* ]]; then
             [[ "$GITHUB_REF_NAME" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo 'Use a stable vX.Y.Z tag'; exit 1; }
             [[ "$GITHUB_REF_NAME" == "v$version" ]] || { echo 'Tag must match apps/desktop/package.json'; exit 1; }
-            bun -e 'import config from "./apps/desktop/electrobun.config.ts"; if (config.app.version !== process.env.GITHUB_REF_NAME.slice(1)) throw new Error("Tag must match electrobun.config.ts");'
             echo "tag=$GITHUB_REF_NAME" >> "$GITHUB_OUTPUT"
             echo "version=$version" >> "$GITHUB_OUTPUT"
           else
@@ -116,19 +115,7 @@ jobs:
       - run: pnpm lint
       - run: pnpm typecheck:tsgo
       - run: pnpm test
-      - name: Build Electrobun stable app
-        if: steps.release.outputs.tag != 'nightly'
-        env:
-          PIG_RELEASE_CHANNEL: stable
-          PIG_RELEASE_VERSION: ${{ steps.release.outputs.version }}
-          PIG_RELEASE_COMMIT: ${{ steps.release.outputs.sha }}
-        timeout-minutes: 20
-        run: |
-          set -euo pipefail
-          pnpm --filter @pig/desktop exec vite build
-          pnpm --filter @pig/desktop exec electrobun build --env=stable
-      - name: Build Tauri Nightly app
-        if: steps.release.outputs.tag == 'nightly'
+      - name: Build Tauri portable app
         env:
           PIG_RELEASE_VERSION: ${{ steps.release.outputs.version }}
         timeout-minutes: 20
@@ -138,21 +125,41 @@ jobs:
           pnpm --filter @pig/desktop tauri:package
       - name: Package ZIP and checksum
         shell: pwsh
+        run: ./.github/scripts/package.ps1 -OutputDirectory $env:RELEASE_DIR
+      - name: Build signed Tauri installer
+        if: github.event_name != 'workflow_dispatch' || !inputs.build_only
+        working-directory: apps/desktop
         env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          UPDATER_PUBLIC_KEY: ${{ vars.TAURI_SIGNING_PUBLIC_KEY }}
           RELEASE_TAG: ${{ steps.release.outputs.tag }}
+          RELEASE_LABEL: ${{ steps.release.outputs.version }}
         run: |
-          if ($env:RELEASE_TAG -eq 'nightly') {
-            ./.github/scripts/package.ps1 -OutputDirectory $env:RELEASE_DIR -TauriNightly
-          } else {
-            ./.github/scripts/package.ps1 -OutputDirectory $env:RELEASE_DIR
-          }
+          set -euo pipefail
+          : "${UPDATER_PUBLIC_KEY:?Missing updater public key}" "${TAURI_SIGNING_PRIVATE_KEY:?Missing updater signing key}"
+          # One monotonically increasing Windows-compatible version across both channels.
+          export PIG_INSTALLER_VERSION="1.$((GITHUB_RUN_NUMBER / 65535)).$((GITHUB_RUN_NUMBER % 65535))"
+          jq -n --arg v "$PIG_INSTALLER_VERSION" --arg key "$UPDATER_PUBLIC_KEY" '{
+            version:$v, bundle:{active:true, targets:["nsis"], createUpdaterArtifacts:true,
+            resources:{"../build/tauri-portable/host/":"host/","../build/tauri-portable/pig-remote.exe":"pig-remote.exe"}},
+            plugins:{updater:{pubkey:$key,windows:{installMode:"passive"}}}
+          }' > src-tauri/installer.json
+          pnpm dlx @tauri-apps/cli@2.12.6 build --config src-tauri/installer.json --bundles nsis
+          files=(src-tauri/target/release/bundle/nsis/*-setup.exe)
+          [[ ${#files[@]} == 1 && -s "${files[0]}.sig" ]]
+          cp "${files[0]}" "$RELEASE_DIR/pig-setup.exe"
+          jq -n --arg v "$PIG_INSTALLER_VERSION" --arg label "$RELEASE_LABEL" \
+            --arg sig "$(cat "${files[0]}.sig")" --arg url "https://github.com/$GH_REPO/releases/download/$RELEASE_TAG/pig-setup.exe" \
+            '{version:$v,notes:$label,platforms:{"windows-x86_64":{signature:$sig,url:$url}}}' > "$RELEASE_DIR/update.json"
       - uses: actions/upload-artifact@v4
         with:
           name: windows-x64-${{ needs.changes.outputs.sha }}
           path: |
             ${{ env.RELEASE_DIR }}/pig-windows-x64.zip
             ${{ env.RELEASE_DIR }}/pig-windows-x64.zip.sha256
-            ${{ steps.release.outputs.tag != 'nightly' && format('{0}/install.ps1', env.RELEASE_DIR) || '' }}
+            ${{ env.RELEASE_DIR }}/pig-setup.exe
+            ${{ env.RELEASE_DIR }}/update.json
           if-no-files-found: error
           compression-level: 0
           retention-days: 7
@@ -165,19 +172,32 @@ jobs:
         run: |
           set -euo pipefail
           if [[ "$TAG" == nightly ]]; then
-            notes="Nightly $VERSION from commit $SHA. Built with Tauri. Unsigned Windows x64 portable build; requires WebView2. To switch from Electrobun, close pig and run scoop update pig-nightly --force --no-cache. Tauri keeps desktop settings separate; Pi credentials and sessions are unchanged."
+            notes="Nightly $VERSION from commit $SHA. Built with Tauri. Requires WebView2. Use pig-setup.exe for in-app updates. Desktop settings and chat history are shared with Electrobun by default."
             if ! gh release view nightly >/dev/null 2>&1; then
               gh release create nightly --target "$SHA" --prerelease --latest=false --title 'pig nightly' --notes 'Nightly publication in progress.'
             fi
-            gh release upload nightly "$RELEASE_DIR/pig-windows-x64.zip" "$RELEASE_DIR/pig-windows-x64.zip.sha256" --clobber
+            gh release upload nightly "$RELEASE_DIR/pig-windows-x64.zip" "$RELEASE_DIR/pig-windows-x64.zip.sha256" "$RELEASE_DIR/pig-setup.exe" --clobber
             gh api --method PATCH "repos/$GH_REPO/git/refs/tags/nightly" -f sha="$SHA" -F force=true
             # The skip marker is written last so interrupted uploads are retried.
-            gh release edit nightly --prerelease --latest=false --title 'pig nightly' --notes "$notes"
           else
             gh release create "$TAG" --verify-tag --latest --title "pig $VERSION" \
-              --notes "Unsigned Windows x64 portable build; requires WebView2. Install with Scoop or run: irm https://github.com/cotrin8672/pig/releases/latest/download/install.ps1 | iex" \
-              "$RELEASE_DIR/pig-windows-x64.zip" "$RELEASE_DIR/pig-windows-x64.zip.sha256" "$RELEASE_DIR/install.ps1"
+              --notes "Tauri for Windows x64; requires WebView2. Use pig-setup.exe for in-app updates, or install the portable build via Scoop." \
+              "$RELEASE_DIR/pig-windows-x64.zip" "$RELEASE_DIR/pig-windows-x64.zip.sha256" "$RELEASE_DIR/pig-setup.exe"
           fi
+          if ! gh release view tauri-updates >/dev/null 2>&1; then
+            gh release create tauri-updates --target "$SHA" --prerelease --latest=false --title 'Tauri update feeds' --notes 'Manifests for the installer edition.'
+          fi
+          cd "$RELEASE_DIR"
+          cp update.json inclusive.json
+          feeds=(inclusive.json)
+          if [[ "$TAG" != nightly ]]; then
+            cp update.json stable.json; feeds+=(stable.json)
+          elif [[ $(gh release view tauri-updates --json assets --jq '[.assets[] | select(.name=="stable.json")] | length') == 0 ]]; then
+            # No Tauri stable yet: valid manifest older than every installer.
+            jq '.version="0.0.0"' update.json > stable.json; feeds+=(stable.json)
+          fi
+          gh release upload tauri-updates "${feeds[@]}" --clobber
+          if [[ "$TAG" == nightly ]]; then gh release edit nightly --prerelease --latest=false --title 'pig nightly' --notes "$notes"; fi
       # checkver/autoupdate are metadata, not a scheduler. Commit the actual
       # published hash so ordinary 'scoop update' works without Excavator.
       - name: Update stable Scoop manifest on main

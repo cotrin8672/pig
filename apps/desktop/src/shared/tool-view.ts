@@ -1,4 +1,8 @@
-import type { TranscriptRecord } from "./transcript";
+import {
+  type Message,
+  startsResponse,
+  type TranscriptRecord,
+} from "./transcript";
 
 /** Pure helpers for rendering SDK tool calls in the transcript. */
 
@@ -82,6 +86,18 @@ export interface WorkRange {
 const role = (record: TranscriptRecord) =>
   record.kind === "message" ? record.message.role : undefined;
 
+function startsAt(records: readonly TranscriptRecord[], index: number) {
+  const record = records[index];
+  if (record.kind !== "message") return false;
+  if (record.message.role !== "custom") return record.message.role === "user";
+  let previous: Message | undefined;
+  for (let i = index - 1; i >= 0 && !previous; i--) {
+    const before = records[i];
+    if (before.kind === "message") previous = before.message;
+  }
+  return startsResponse(record.message, previous);
+}
+
 /**
  * Maps every record index of a finished response that has intermediate work
  * (tool calls, thinking, earlier steps) to that response, so the UI can fold
@@ -142,7 +158,7 @@ export function finishedWork(
   };
   let start = from;
   for (let index = from; index < records.length; index++) {
-    if (role(records[index]) !== "user") continue;
+    if (!startsAt(records, index)) continue;
     if (index > start) close(start, index - 1);
     start = index + 1;
   }
@@ -180,7 +196,7 @@ export function createFinishedWorkIndex(
       return ranges;
     // A new user can finish the preceding response; restart at its user boundary.
     let from = shared;
-    while (from > 0 && role(records[from - 1]) !== "user") from--;
+    while (from > 0 && !startsAt(records, from - 1)) from--;
     const suffix = finishedWork(records, running, visible, from);
     // A streaming answer recomputes its live range on every delta; keep the map when it is unchanged.
     let old = 0;

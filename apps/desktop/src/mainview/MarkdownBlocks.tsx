@@ -90,8 +90,11 @@ function CodeBlock({
           )}
         </span>
         <CopyButton
-          text={() =>
-            mermaid ?? pre.current?.textContent?.replace(/\n$/, "") ?? ""
+          label={t["Copy code block"]}
+          copy={() =>
+            navigator.clipboard.writeText(
+              mermaid ?? pre.current?.textContent?.replace(/\n$/, "") ?? "",
+            )
           }
         />
       </div>
@@ -104,7 +107,72 @@ function CodeBlock({
   );
 }
 
-function CopyButton({ text }: { text: () => string }) {
+const escapeHtml = (text: string) =>
+  text.replace(
+    /[&<>"]/g,
+    (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c] ?? c,
+  );
+
+/** First row is the header (GFM tables always have one). */
+export function tableToMarkdown(rows: string[][]): string {
+  const cell = (text: string) =>
+    text
+      .replace(/\\/g, "\\\\")
+      .replace(/\|/g, "\\|")
+      .replace(/\s*\n\s*/g, " ");
+  const line = (row: string[]) => `| ${row.map(cell).join(" | ")} |`;
+  const [head = [], ...body] = rows;
+  return [line(head), line(head.map(() => "---")), ...body.map(line)].join(
+    "\n",
+  );
+}
+
+/** Bare table so spreadsheets and documents paste cells without app styling. */
+export function tableToHtml(rows: string[][]): string {
+  const [head = [], ...body] = rows;
+  const row = (cells: string[], tag: string) =>
+    `<tr>${cells.map((c) => `<${tag}>${escapeHtml(c)}</${tag}>`).join("")}</tr>`;
+  return `<table><thead>${row(head, "th")}</thead><tbody>${body
+    .map((r) => row(r, "td"))
+    .join("")}</tbody></table>`;
+}
+
+/** GFM table with a hover copy button: HTML for spreadsheets, Markdown as text. */
+export function MarkdownTable({ children }: ComponentProps<"table">) {
+  const t = useT();
+  const table = useRef<HTMLTableElement>(null);
+  return (
+    <div className="markdown-table">
+      <div className="markdown-table-scroll">
+        <table ref={table}>{children}</table>
+      </div>
+      <CopyButton
+        label={t["Copy table"]}
+        copy={() => {
+          const rows = Array.from(table.current?.rows ?? [], (r) =>
+            Array.from(r.cells, (c) => c.textContent?.trim() ?? ""),
+          );
+          return navigator.clipboard.write([
+            new ClipboardItem({
+              "text/html": new Blob([tableToHtml(rows)], { type: "text/html" }),
+              "text/plain": new Blob([tableToMarkdown(rows)], {
+                type: "text/plain",
+              }),
+            }),
+          ]);
+        }}
+      />
+    </div>
+  );
+}
+
+function CopyButton({
+  label,
+  copy,
+}: {
+  label: string;
+  copy: () => Promise<void>;
+}) {
   const t = useT();
   const [copied, setCopied] = useState(false);
   useEffect(() => {
@@ -116,10 +184,10 @@ function CopyButton({ text }: { text: () => string }) {
     <button
       type="button"
       className="markdown-code-copy"
-      aria-label={copied ? t.Copied : t["Copy code block"]}
+      aria-label={copied ? t.Copied : label}
       onClick={async () => {
         try {
-          await navigator.clipboard.writeText(text());
+          await copy();
           setCopied(true);
         } catch (error) {
           showError(error);

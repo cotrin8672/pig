@@ -40,6 +40,9 @@ importers:
       '@earendil-works/pi-tui':
         specifier: 1.5.2
         version: 1.5.2
+      '@floating-ui/dom':
+        specifier: 1.8.0
+        version: 1.8.0
       '@lobehub/icons':
         specifier: 6.15.0
         version: 6.15.0(@lobehub/ui@6.15.2)(lucide-react@0.468.0(react@19.3.1))(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
@@ -52,6 +55,15 @@ importers:
       '@silvia-odwyer/photon':
         specifier: 0.3.3
         version: 0.3.3
+      '@streamdown/math':
+        specifier: 1.0.4
+        version: 1.0.4(react@19.3.1)
+      '@tanstack/react-virtual':
+        specifier: ^3.14.28
+        version: 3.14.28(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
+      '@tauri-apps/api':
+        specifier: 2.12.5
+        version: 2.12.5
       '@xterm/addon-fit':
         specifier: 0.10.0
         version: 0.10.0(@xterm/xterm@5.5.0)
@@ -112,6 +124,12 @@ importers:
       shiki:
         specifier: 4.6.0
         version: 4.6.0
+      smooth-stream-text:
+        specifier: 0.2.2
+        version: 0.2.2(react@19.3.1)
+      streamdown:
+        specifier: 2.8.1
+        version: 2.8.1(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
       zustand:
         specifier: ^5.0.0
         version: 5.1.0(@types/react@19.3.0)(react@19.3.1)(use-sync-external-store@1.7.0(react@19.3.1))
@@ -137,6 +155,9 @@ importers:
       '@vitejs/plugin-react':
         specifier: ^4.3.0
         version: 4.7.0(vite@6.4.5(@types/node@26.6.6)(jiti@2.7.0)(lightningcss@1.33.0)(yaml@2.9.0))
+      babel-plugin-react-compiler:
+        specifier: 1.0.0
+        version: 1.0.0
       storybook:
         specifier: ^9.1.21
         version: 9.1.21(@testing-library/dom@10.4.2)(vite@6.4.5(@types/node@26.6.6)(jiti@2.7.0)(lightningcss@1.33.0)(yaml@2.9.0))
@@ -1368,6 +1389,11 @@ packages:
       typescript:
         optional: true
 
+  '@streamdown/math@1.0.4':
+    resolution: {integrity: sha512-+gdewMT9ZewPsGlIaS7EKCMkLe2UZXaYgXbGpofwoHl3wDVR0KIrF1BxX0mcC/pyU7sYXi1S9NxP/tawhV6XwA==}
+    peerDependencies:
+      react: ^18.0.0 || ^19.0.0
+
   '@stylexjs/stylex@0.19.1':
     resolution: {integrity: sha512-JwNFm0MOYPqi+M4Ax5Un4ZxfZp4HEAX2sAWetZ88KALFcv1eEiHNJs75oO3V3U7RVWnzfkiM8i9eBowC3hqgUw==}
 
@@ -1484,8 +1510,8 @@ packages:
     peerDependencies:
       react: '>=18'
 
-  '@tanstack/react-virtual@3.14.26':
-    resolution: {integrity: sha512-HUDlfsrYH6ko5xH56L62Mcl/uzT+AGVNMHFuDNqDJMdZWc1AQa2oeVKNUvZ/RWBZQ4TYtyQerFrNvLnp39h65A==}
+  '@tanstack/react-virtual@3.14.28':
+    resolution: {integrity: sha512-zoM4eddIVUsOsunOe26ur+h6YJQbvdzU10a2tKzIovThu5P4SvEyQ+cRx0mbeKfgnR0Mz7KR/NwrZ3GzVnUF/g==}
     peerDependencies:
       react: ^16.8.0 || ^17.0.0 || ^18.0.0 || ^19.0.0
       react-dom: ^16.8.0 || ^17.0.0 || ^18.0.0 || ^19.0.0
@@ -1497,8 +1523,11 @@ packages:
     resolution: {integrity: sha512-zQvlxSNi2qGM3L4jh85Z6hqMfdIR5qOfD9KHOU32nuKFJGN0RlJ7UvV1lsPb1fPVhpFYI0VP3jJGxLdLDpTKjQ==}
     engines: {node: '>=20'}
 
-  '@tanstack/virtual-core@3.19.11':
-    resolution: {integrity: sha512-/5iHb0RHBvj8Di59FDs4ESNm45jls33aZAi4zccVXZjc/6ZvwQP6nzEYeT6weXjTf9E6/vrp2JhYWRyO+ZP13A==}
+  '@tanstack/virtual-core@3.19.13':
+    resolution: {integrity: sha512-CyCvMm7m5JuvPW6eMPZkZBZk6diySrlUQNNRpQPiEnh2vakyghx82Hw3wW2THFUsl6xJ6uM4lSUaiA2T0oYW8w==}
+
+  '@tauri-apps/api@2.12.5':
+    resolution: {integrity: sha512-G9QIMt5fzED+aS4QhVK3w1HWLKpLIwH/MnpCr9z1ugGEHnS2ORmqrLkc0uALOjRK4qXJy+4Yiw8LDl/KicC1Hg==}
 
   '@testing-library/dom@10.4.2':
     resolution: {integrity: sha512-yzr2S9HyAIdhz2/6qHgbs665Q7PKVcDF05vsOlHPxG1mo36gKVesdYVeDLnXgfjJ03CrKRk08knc6+E/9m8v2Q==}
@@ -1809,6 +1838,9 @@ packages:
   babel-plugin-macros@3.1.0:
     resolution: {integrity: sha512-Cg7TFGpIr01vOQNODXOOaGz2NpCU5gl8x1qJFbb6hbZxR7XrcE2vtbAsTAbJ7/xwJtUuJEw8K8Zr/AE0LHlesg==}
     engines: {node: '>=10', npm: '>=6'}
+
+  babel-plugin-react-compiler@1.0.0:
+    resolution: {integrity: sha512-Ixm8tFfoKKIPYdCCKYTsqv+Fd4IJ0DQqMyEimo+pxUOMUR9cVPlwTrFt9Avu+3cb6Zp3mAzl+t1MrG2fxxKsxw==}
 
   bail@2.0.2:
     resolution: {integrity: sha512-0xO6mYd7JB2YesxDKplafRpsiOzPt9V02ddPCLbY1xYGPOX24NTyN50qnUxgCPcSoYMhKpAuBTjQoRZCAkUDRw==}
@@ -2810,6 +2842,11 @@ packages:
     engines: {node: '>= 20'}
     hasBin: true
 
+  marked@18.3.0:
+    resolution: {integrity: sha512-ed8zmPXlBb3UfGXN5iHMQyMhFpdqLgoV5umUXx/Q1R+FW3q8VpqpyoKUwlENL9appo2UMvNLURDVaT3AMOryGA==}
+    engines: {node: '>= 20'}
+    hasBin: true
+
   mdast-util-find-and-replace@3.0.4:
     resolution: {integrity: sha512-z4B5c6jrnJ1ltOQemhWYPBSAo6y42Z8Gt2yEgfgNTMcLSU59B8bfj8Z8AnAlJrBGLnqkdAUZ7jdDEqQw3KuipQ==}
 
@@ -3339,6 +3376,9 @@ packages:
   rehype-github-alerts@4.2.0:
     resolution: {integrity: sha512-6di6kEu9WUHKLKrkKG2xX6AOuaCMGghg0Wq7MEuM/jBYUPVIq6PJpMe00dxMfU+/YSBtDXhffpDimgDi+BObIQ==}
 
+  rehype-harden@1.1.9:
+    resolution: {integrity: sha512-MdIR9vx9nPo7dTRC2DLb8Ywdx2oDcIuLAFKGA5CmTidkuxli55iRjfMvXL/Lqw7cRG4qMQj441AXxJ5Yw9nC9w==}
+
   rehype-katex@7.0.1:
     resolution: {integrity: sha512-OiM2wrZ/wuhKkigASodFoo8wimG3H12LWQaH8qSPVJn9apWKFSH3YOCtbKpBorTVw/eI7cuT21XBbvwEswbIOA==}
 
@@ -3382,8 +3422,8 @@ packages:
   remark-stringify@11.0.0:
     resolution: {integrity: sha512-1OSmLd3awB/t8qdoEOMazZkNsfVTeY4fTsgzcQFdXNq8ToTN4ZGwrMnlda4K6smTFKD+GRV6O48i6Z4iKgPPpw==}
 
-  remend@1.4.0:
-    resolution: {integrity: sha512-mHiYhhwphs1IgIZmkToKLwJn0U99IjPXuutkA2acrNcG0vlEq2G4TGnd2eT0saIHwh2KjaCpvleHcsd5SAz96A==}
+  remend@1.5.1:
+    resolution: {integrity: sha512-Mvum2BFoAlLukpqIb5bCzzvjdNQk4w9OasdKEUuVkXTEPlWpiN3pRCbbSgOXWZIxbQFB16YL/s4D7PMnQ3oU5Q==}
 
   reselect@5.3.0:
     resolution: {integrity: sha512-XGoLeRAVzUTcJ1qkxPQhDJyIZ5d6zzZD9nT7AEZOaaU9UbWclhycElmhO+VD5bFeLuzhPBaOV2oXC8uG35ZSpg==}
@@ -3460,6 +3500,18 @@ packages:
     resolution: {integrity: sha512-bzyZ1e88w9O1iNJbKnOlvYTrWPDl46O1bG0D3XInv+9tkPrxrN8jUUTiFlDkkmKWgn1M6CfIA13SuGqOa9Korw==}
     engines: {node: '>=14'}
 
+  smooth-stream-text@0.2.2:
+    resolution: {integrity: sha512-KX1zAJaHEDbWYj5X5jp1vpRik4RJ3C6SjL2t3pAK2ueyc1S1QgedEj0dzKJ4CbIXNse3PNQ5pFWnF2HqMzlRSA==}
+    engines: {node: '>=18'}
+    peerDependencies:
+      react: '>=18'
+      vue: '>=3.2.0'
+    peerDependenciesMeta:
+      react:
+        optional: true
+      vue:
+        optional: true
+
   source-map-js@1.2.2:
     resolution: {integrity: sha512-KGj/8Y43x35aZVDtt+J4mK1hoLGHULMYfSkODJNQjNDC3oW1PqPoxMwo0pLUsWM/UEGzON/NxeHywEfNXNP3Vw==}
     engines: {node: '>=0.10.0'}
@@ -3494,6 +3546,12 @@ packages:
     peerDependenciesMeta:
       prettier:
         optional: true
+
+  streamdown@2.8.1:
+    resolution: {integrity: sha512-upkaPZx6gZpQcZWKQdDU/AJxqlMNWykDCwZqr0H8iGk2u/qGgwZoZxAIrSKz/E2wYW2+6XxiTkv+kRPDn7AoHw==}
+    peerDependencies:
+      react: ^18.0.0 || ^19.0.0
+      react-dom: ^18.0.0 || ^19.0.0
 
   string-width@4.2.3:
     resolution: {integrity: sha512-wKyQRQpjJ0sIp62ErSZdGsjMJWsap5oRNihHhu6G7JVO/9jIB6UyevL+tXuOqrng8j/cxKTWyWUwvSTriiZz/g==}
@@ -3547,6 +3605,9 @@ packages:
   supports-preserve-symlinks-flag@1.0.0:
     resolution: {integrity: sha512-ot0WnXS9fgdkgIcePe6RHNk1WA8+muPa6cSjeR3V8K27q9BB1rTE3R1p7Hv0z1ZyAc8s6Vvv8DIyWf681MAt0w==}
     engines: {node: '>= 0.4'}
+
+  tailwind-merge@3.7.1:
+    resolution: {integrity: sha512-v7y4BV4FUlO8exj/4M5UXKeoowDiuugVUg3tkMNIyOUCOHy5xp8+5aWQeXCtZ2491sUV1YPsVeM9EveZ6/xuZQ==}
 
   tailwindcss@4.3.5:
     resolution: {integrity: sha512-FcQk9BuffmEHJP2G0XmB2SplU1aLTI7j07Kunk+U74Ny+XiWOtzXz9aujFZ/avntw1e2cOv/3PkgzflQ7gX2vQ==}
@@ -4588,13 +4649,13 @@ snapshots:
       hast-util-to-jsx-runtime: 2.3.7
       html-url-attributes: 3.0.1
       katex: 0.18.10
-      marked: 18.0.11
+      marked: 18.3.0
       react: 19.3.1
       react-dom: 19.3.1(react@19.3.1)
       react-markdown: 10.1.0(@types/react@19.3.0)(react@19.3.1)
       remark-parse: 11.0.0
       remark-rehype: 11.1.2
-      remend: 1.4.0
+      remend: 1.5.1
       unified: 11.0.5
       unist-util-visit: 5.2.0
       vfile: 6.0.3
@@ -4623,7 +4684,7 @@ snapshots:
       '@stylexjs/stylex': 0.19.1
       '@tanstack/form-core': 1.33.5
       '@tanstack/react-table': 9.3.1(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
-      '@tanstack/react-virtual': 3.14.26(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
+      '@tanstack/react-virtual': 3.14.28(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
       boring-avatars: 2.0.4(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
       chroma-js: 3.2.0
       clsx: 2.1.1
@@ -5173,6 +5234,15 @@ snapshots:
     optionalDependencies:
       typescript: 5.9.3
 
+  '@streamdown/math@1.0.4(react@19.3.1)':
+    dependencies:
+      katex: 0.16.47
+      react: 19.3.1
+      rehype-katex: 7.0.1
+      remark-math: 6.0.0
+    transitivePeerDependencies:
+      - supports-color
+
   '@stylexjs/stylex@0.19.1':
     dependencies:
       css-mediaquery: 0.1.2
@@ -5272,9 +5342,9 @@ snapshots:
     transitivePeerDependencies:
       - react-dom
 
-  '@tanstack/react-virtual@3.14.26(react-dom@19.3.1(react@19.3.1))(react@19.3.1)':
+  '@tanstack/react-virtual@3.14.28(react-dom@19.3.1(react@19.3.1))(react@19.3.1)':
     dependencies:
-      '@tanstack/virtual-core': 3.19.11
+      '@tanstack/virtual-core': 3.19.13
       react: 19.3.1
       react-dom: 19.3.1(react@19.3.1)
 
@@ -5284,7 +5354,9 @@ snapshots:
     dependencies:
       '@tanstack/store': 0.11.2
 
-  '@tanstack/virtual-core@3.19.11': {}
+  '@tanstack/virtual-core@3.19.13': {}
+
+  '@tauri-apps/api@2.12.5': {}
 
   '@testing-library/dom@10.4.2':
     dependencies:
@@ -5620,6 +5692,10 @@ snapshots:
       '@babel/runtime': 7.29.13
       cosmiconfig: 7.1.0
       resolve: 1.22.14
+
+  babel-plugin-react-compiler@1.0.0:
+    dependencies:
+      '@babel/types': 7.29.11
 
   bail@2.0.2: {}
 
@@ -6699,6 +6775,8 @@ snapshots:
 
   marked@18.0.11: {}
 
+  marked@18.3.0: {}
+
   mdast-util-find-and-replace@3.0.4:
     dependencies:
       '@types/mdast': 4.0.4
@@ -7565,6 +7643,10 @@ snapshots:
       hast-util-is-element: 3.0.0
       unist-util-visit: 5.2.0
 
+  rehype-harden@1.1.9:
+    dependencies:
+      unist-util-visit: 5.2.0
+
   rehype-katex@7.0.1:
     dependencies:
       '@types/hast': 3.0.5
@@ -7661,7 +7743,7 @@ snapshots:
       mdast-util-to-markdown: 2.2.3
       unified: 11.0.5
 
-  remend@1.4.0: {}
+  remend@1.5.1: {}
 
   reselect@5.3.0: {}
 
@@ -7759,6 +7841,10 @@ snapshots:
 
   signal-exit@4.1.0: {}
 
+  smooth-stream-text@0.2.2(react@19.3.1):
+    optionalDependencies:
+      react: 19.3.1
+
   source-map-js@1.2.2: {}
 
   source-map@0.5.7: {}
@@ -7799,6 +7885,29 @@ snapshots:
       - supports-color
       - utf-8-validate
       - vite
+
+  streamdown@2.8.1(react-dom@19.3.1(react@19.3.1))(react@19.3.1):
+    dependencies:
+      clsx: 2.1.1
+      decode-named-character-reference: 1.3.0
+      hast-util-to-jsx-runtime: 2.3.7
+      html-url-attributes: 3.0.1
+      marked: 18.3.0
+      react: 19.3.1
+      react-dom: 19.3.1(react@19.3.1)
+      rehype-harden: 1.1.9
+      rehype-raw: 7.0.0
+      rehype-sanitize: 6.0.0
+      remark-gfm: 4.0.1
+      remark-parse: 11.0.0
+      remark-rehype: 11.1.2
+      remend: 1.5.1
+      tailwind-merge: 3.7.1
+      unified: 11.0.5
+      unist-util-visit: 5.2.0
+      unist-util-visit-parents: 6.1.0
+    transitivePeerDependencies:
+      - supports-color
 
   string-width@4.2.3:
     dependencies:
@@ -7852,6 +7961,8 @@ snapshots:
   stylis@4.4.0: {}
 
   supports-preserve-symlinks-flag@1.0.0: {}
+
+  tailwind-merge@3.7.1: {}
 
   tailwindcss@4.3.5: {}
 

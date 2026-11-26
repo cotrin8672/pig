@@ -180,7 +180,13 @@ export class StatisticsStore {
   close() {
     this.db.close();
   }
-  snapshot(period: StatisticsPeriod, now?: number) {
-    return this.db.transaction(() => queryStatistics(this.db, period, now))();
+  snapshot(
+    period: StatisticsPeriod,
+    now?: number,
+    publish?: Parameters<typeof queryStatistics>[3],
+  ) {
+    return this.db.transaction(() =>
+      queryStatistics(this.db, period, now, publish),
+    )();
   }
 }

@@ -10,8 +10,11 @@ import type {
   SourceEvent,
 } from "../../../../packages/config/src";
 import { validateView } from "../../../../packages/config/src/validate";
+import { CODEX_SUBAGENT_COMPLETION } from "../shared/supported-extensions";
 import {
+  connectCodexSubagents,
   connectNicoSubagents,
+  connectPigSubagents,
   connectSchedulePrompt,
   holdsLiveWork,
 } from "./supported-adapters";
@@ -74,6 +77,90 @@ const state = (views: Map<string, SessionView>) => ({
   commands: [],
   keymaps: [],
   diagnostics: [],
+});
+
+test("pi-subagent requests parent snapshots on attach and change, ignoring obsolete replies", async () => {
+  const source = "/node_modules/pi-subagent/index.ts";
+  const f = fakeContext("project", [
+    { name: "agents", invocationName: "agents", source },
+  ]);
+  const replies: Array<(rows: unknown) => void> = [];
+  const adapter = connectPigSubagents({
+    emit(channel, data) {
+      expect(channel).toBe("pig:subagents:snapshot");
+      const req = data as { parentId: string; reply(rows: unknown): void };
+      expect(req.parentId).toBe("s1");
+      replies.push(req.reply);
+    },
+  });
+  const dispose = adapter.connect(f.ctx);
+  const row = {
+    agent_id: "worker",
+    run_id: "first",
+    task_name: "Review",
+    status: "starting",
+  };
+  const changed = () => f.emit("pig:subagents:changed", { parentId: "s1" });
+  const pinned = () =>
+    holdsLiveWork({
+      ...state(f.views),
+      views: state(f.views).views.map((v) => ({ ...v, adapterId: adapter.id })),
+    });
+  replies[0]([row]);
+  expect(pinned()).toBe(true);
+  f.emit("pig:subagents:changed", { parentId: "other" });
+  expect(replies).toHaveLength(1);
+  changed();
+  replies[1]([{ ...row, status: "running", child_session_id: "child" }]);
+  expect(pinned()).toBe(true);
+  replies[0]([]);
+  expect(f.views.get("subagents")).toMatchObject({
+    runs: [
+      {
+        id: "first",
+        agentId: "worker",
+        title: "Review",
+        session: { kind: "session", id: "child" },
+        state: { phase: "running" },
+      },
+    ],
+    actions: [{ command: "peek" }],
+  });
+  await f.registered.get("peek")?.();
+  expect(f.invoked).toEqual([{ name: "agents", source }]);
+  for (const [status, outcome] of [
+    ["completed", "success"],
+    ["failed", "error"],
+    ["interrupted", "interrupted"],
+  ]) {
+    changed();
+    replies.at(-1)?.([
+      {
+        ...row,
+        status,
+        ...(status === "completed"
+          ? { final_response: "result" }
+          : { error: "result" }),
+      },
+    ]);
+    expect(pinned()).toBe(false);
+    expect(f.views.get("subagents")).toMatchObject({
+      runs: [
+        { state: { phase: "finished", outcome }, output: { text: "result" } },
+      ],
+    });
+  }
+  if (typeof dispose !== "function") throw Error("missing cleanup");
+  dispose();
+  replies.at(-1)?.([row]);
+  expect(pinned()).toBe(false);
+  const count = replies.length;
+  changed();
+  expect(replies).toHaveLength(count);
+  adapter.connect(f.ctx);
+  expect(replies).toHaveLength(count + 1);
+  replies.at(-1)?.([]);
+  expect(f.views.size).toBe(0);
 });
 
 const subagentCommand = {
@@ -205,6 +292,117 @@ test("unrelated packages do not activate the subagents adapter", () => {
   expect(connectNicoSubagents({ emit() {} }).connect(f.ctx)).toBeUndefined();
   expect(f.bus.size).toBe(0);
   expect(f.views.size).toBe(0);
+});
+
+const codexCommand = {
+  name: "subagents",
+  invocationName: "subagents",
+  source: "C:\\x\\node_modules\\@ogulcancelik\\pi-codex-subagents\\index.ts",
+};
+
+function codexFixture() {
+  const f = fakeContext("C:\\p", [codexCommand]);
+  const dispose = connectCodexSubagents().connect(f.ctx);
+  return {
+    ...f,
+    dispose,
+    start: (
+      toolName: string,
+      toolCallId: string,
+      args: Record<string, unknown>,
+    ) => f.event({ type: "tool_execution_start", toolName, toolCallId, args }),
+    end: (
+      toolName: string,
+      toolCallId: string,
+      details: Record<string, unknown> = {},
+      content: unknown[] = [],
+      isError = false,
+    ) =>
+      f.event({
+        type: "tool_execution_end",
+        toolName,
+        toolCallId,
+        result: { details, content },
+        isError,
+      }),
+    runs: () => {
+      const view = f.views.get("codex-subagents");
+      return view?.kind === "agents" ? view.runs : [];
+    },
+  };
+}
+
+test("Codex publishes session-local agents before spawn returns and settles each one", () => {
+  const f = codexFixture();
+  const other = codexFixture();
+  expect(f.runs()).toEqual([]);
+  f.start("spawn_agent", "call-a", { task_name: "scout/tests" });
+  expect(f.runs()).toMatchObject([
+    { id: "call-a", title: "scout/tests", state: { phase: "queued" } },
+  ]);
+  expect(other.runs()).toEqual([]);
+  expect(holdsLiveWork(state(f.views))).toBe(true);
+  f.end("spawn_agent", "call-a", { task_name: "/scout/tests" });
+  f.start("spawn_agent", "call-b", { task_name: "invalid" });
+  expect(f.runs().map(({ state }) => state.phase)).toEqual([
+    "queued",
+    "running",
+  ]);
+  f.end("spawn_agent", "call-b", {}, [], true);
+  expect(f.runs().map(({ title }) => title)).toEqual(["scout/tests"]);
+  f.event({
+    type: "message_start",
+    message: {
+      role: "custom",
+      customType: CODEX_SUBAGENT_COMPLETION,
+      details: { agent_name: "/scout/tests", status: "completed" },
+    },
+  });
+  expect(f.runs()[0]?.state).toEqual({ phase: "finished", outcome: "success" });
+  expect(holdsLiveWork(state(f.views))).toBe(false);
+  if (typeof f.dispose === "function") f.dispose();
+  f.start("spawn_agent", "after", { task_name: "ignored" });
+  expect(f.runs()).toHaveLength(1);
+});
+
+test("Codex waits and interrupts clear only their own runs, even if wait output is truncated", () => {
+  const f = codexFixture();
+  for (const name of ["review", "scout", "tests"]) {
+    f.start("spawn_agent", name, { task_name: name });
+    f.end("spawn_agent", name);
+  }
+  f.start("wait_all_agents", "all", { targets: ["review"] });
+  f.end("wait_all_agents", "all", {
+    message: "All target agents reached final status.",
+    truncated: true,
+  });
+  f.start("wait_agent", "one", { targets: ["scout"] });
+  f.end("wait_agent", "one", { message: "Wait completed: /scout failed." });
+  expect(f.runs().map(({ state }) => state)).toEqual([
+    { phase: "running" },
+    { phase: "finished", outcome: "error" },
+    { phase: "finished", outcome: "unknown" },
+  ]);
+  f.start("interrupt_agent", "stop", { target: "/tests" });
+  f.end("interrupt_agent", "stop", { previous_status: "running" });
+  expect(holdsLiveWork(state(f.views))).toBe(false);
+  f.start("send_message", "follow-up", { target: "scout" });
+  expect(f.runs()[0]).toMatchObject({
+    id: "follow-up",
+    state: { phase: "queued" },
+  });
+  f.end("send_message", "follow-up", { target: "scout", delivery: "prompt" });
+  f.start("wait_all_agents", "done", {});
+  f.end("wait_all_agents", "done", {}, [
+    {
+      type: "text",
+      text: JSON.stringify({
+        responses: [{ agent_name: "/scout", status: "completed" }],
+      }),
+    },
+  ]);
+  expect(f.runs()[0]?.state).toEqual({ phase: "finished", outcome: "success" });
+  expect(holdsLiveWork(state(f.views))).toBe(false);
 });
 
 test("scheduled prompts show only this session's and shared jobs", () => {

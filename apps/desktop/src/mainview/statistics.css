@@ -1,21 +1,20 @@
 /* Statistics overview: one screen, dense, shared UI tokens. */
 .statistics-overview .content-page-shell {
   display: grid;
-  grid-template-columns: minmax(0, 3fr) minmax(280px, 2fr);
-  grid-template-rows: auto auto minmax(140px, 1fr) minmax(150px, 1fr) auto;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-rows: auto auto minmax(160px, 0.8fr) minmax(140px, 1fr);
   grid-template-areas:
     "header header"
-    "summary summary"
-    "daily side"
-    "commands side"
-    "models side";
+    "summary composition"
+    "daily composition"
+    "detail detail";
   gap: 8px;
-  max-width: none;
   height: 100%;
   container-type: size;
 }
 .statistics-overview .content-page-header {
   grid-area: header;
+  margin-bottom: 8px;
 }
 .statistics-page {
   /* Categorical pastels: distinct hues, softened fills, no status-colour semantics. */
@@ -70,25 +69,13 @@
   height: 26px;
 }
 .stats-periods {
-  display: inline-flex;
-  gap: 2px;
-  margin: 0 0 0 auto;
-  padding: 2px;
-  border: 0;
-  border-radius: var(--radius-xs);
-  background: var(--ds-tile);
-  box-shadow: var(--ds-elevation-stroke);
+  margin-left: auto;
 }
-.stats-periods button {
+.segmented-control:is(.stats-periods, .stats-tabs) button {
+  min-width: 0;
   height: 22px;
   padding: 0 9px;
-  border-radius: 6px;
-  color: var(--ds-text-secondary);
   font-size: var(--text-xs);
-}
-.stats-periods button.active {
-  background: var(--ds-bg-active);
-  color: var(--ds-text-primary);
 }
 
 /* Panels: translucent tiles with a compact title row. */
@@ -130,12 +117,12 @@
 .stats-summary {
   grid-area: summary;
   display: grid;
-  grid-template-columns: repeat(6, minmax(0, 1fr));
+  grid-template-columns: repeat(5, minmax(0, 1fr));
   margin: 0;
 }
 .stats-summary > div {
   min-width: 0;
-  padding: 8px 12px;
+  padding: 8px;
 }
 .stats-summary > div + div {
   border-left: 1px solid var(--ds-border-strong);
@@ -148,6 +135,9 @@
   white-space: nowrap;
 }
 .stats-summary dd {
+  display: flex;
+  align-items: center;
+  height: 1lh;
   margin: 0;
   font-size: var(--text-lg);
   font-weight: var(--font-weight-semibold);
@@ -281,20 +271,12 @@
 }
 
 /* Compact tables. */
-.stats-side {
-  grid-area: side;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  min-height: 0;
-}
-/* Fixed height: switching to the context breakdown must not move the donuts. */
 .stats-tools {
-  flex: 0 1 55%;
   container-type: inline-size;
 }
-.stats-tools h2 {
+.stats-panel h2:has(.stats-tabs) {
   align-items: center;
+  flex-wrap: wrap;
 }
 .stats-tools h2 > span {
   min-width: 0;
@@ -362,13 +344,15 @@
   }
 }
 .stats-composition {
+  grid-area: composition;
   display: grid;
   flex: 1;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  grid-template-rows: auto minmax(72px, 1fr) auto;
+  font-size: var(--text-4xs);
+  grid-template-rows: max-content minmax(112px, 1fr) calc(7lh + 12px);
   row-gap: 8px;
   min-height: min-content;
-  padding: 8px 0;
+  padding: 12px 0;
 }
 /* The same pastel palette is shared by bars, donut slices and their legends. */
 [data-slice="kind-output"] {
@@ -473,6 +457,7 @@
 }
 .stats-donut-legend {
   display: grid;
+  align-content: start;
   gap: 2px;
   margin: 0;
   padding: 0;
@@ -511,8 +496,10 @@
   color: var(--ds-text-muted);
   font-size: inherit;
 }
-.stats-commands {
-  grid-area: commands;
+.stats-commands,
+.stats-models,
+.stats-tools {
+  grid-area: detail;
   min-height: 0;
 }
 .stats-shell {
@@ -520,9 +507,33 @@
   color: var(--ds-text-muted);
   font-size: var(--text-4xs);
 }
-.stats-models {
-  grid-area: models;
-  max-height: min(28cqh, 220px);
+.stats-skeleton {
+  display: inline-block;
+  width: min(5ch, 85%);
+  height: 0.8em;
+  border-radius: var(--radius-xs);
+  background: var(--ds-bg-chip);
+}
+.stats-loading {
+  padding: 12px;
+  display: grid;
+  gap: 8px;
+}
+.stats-loading .stats-skeleton {
+  width: 75%;
+  height: 1lh;
+  box-shadow:
+    0 1.6lh var(--ds-bg-chip),
+    0 3.2lh var(--ds-bg-chip);
+}
+.stats-donut-ring > .stats-skeleton {
+  position: static;
+  width: auto;
+  height: min(100%, 168px);
+  aspect-ratio: 1;
+  border-radius: 50%;
+  background: none;
+  border: 8px solid var(--ds-bg-chip);
 }
 .stats-scroll {
   --scrollbar-inset: var(--radius-sm);
@@ -617,22 +628,15 @@
 /* Narrow panes: stack, the page may scroll as a last resort. */
 @container (max-width: 760px) {
   .statistics-overview .content-page-shell {
-    grid-template-columns: minmax(0, 1fr) auto;
-    grid-template-rows:
-      max-content max-content 200px 240px max-content
-      minmax(min-content, 1fr);
-    grid-template-areas:
-      "header header"
-      "summary summary"
-      "daily daily"
-      "commands commands"
-      "models models"
-      "side side";
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto auto minmax(144px, 1fr) minmax(min-content, 1fr) minmax(
+        140px,
+        1fr
+      );
+    grid-template-areas: "header" "summary" "daily" "composition" "detail";
   }
-  .stats-tools {
-    flex: none;
-    height: 320px;
-  }
+}
+@container (max-width: 480px) {
   .stats-summary {
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }

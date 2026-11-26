@@ -1,31 +1,4 @@
-/* Scheduled prompts (pi-schedule-prompt): a tinted user bubble that names its job. */
-.user-bubble.scheduled-bubble {
-  display: grid;
-  gap: 4px;
-  border: 1px solid color-mix(in srgb, var(--ds-info) 45%, transparent);
-  background: color-mix(in srgb, var(--ds-info) 26%, var(--ds-bg-tertiary));
-}
-.scheduled-head {
-  display: flex;
-  align-items: center;
-  gap: 5px;
-  min-width: 0;
-  color: var(--ds-info);
-  font-size: var(--text-xs);
-  white-space: nowrap;
-}
-.scheduled-head strong {
-  overflow: hidden;
-  color: var(--ds-text-primary);
-  font-weight: var(--font-weight-medium);
-  text-overflow: ellipsis;
-}
-.scheduled-session {
-  color: var(--ds-text-muted);
-}
-.scheduled-session::before {
-  content: "· ";
-}
+/* Scheduled prompts (pi-schedule-prompt): the bubble is a sender bubble; separate-session results draw here. */
 .scheduled-result {
   display: grid;
   gap: 4px;

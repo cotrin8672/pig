@@ -97,6 +97,22 @@
   white-space: nowrap;
   pointer-events: none;
 }
+/* A tooltip with an action keeps taking the pointer once it is reached. */
+.tooltip[data-interactive] {
+  pointer-events: auto;
+}
+.tooltip-action {
+  align-self: flex-end;
+  margin-top: 4px;
+  padding: 2px 8px;
+  border-radius: var(--radius-2xs);
+  background: var(--ds-bg-chip);
+  color: var(--ds-text-primary);
+  font-size: var(--text-xs);
+}
+.tooltip-action:hover:not(:disabled) {
+  background: var(--ds-bg-hover);
+}
 .tooltip-tier-detail,
 .tooltip-tier-rich {
   flex-direction: column;
@@ -189,16 +205,7 @@
   gap: 3px;
 }
 .tooltip-keys kbd {
-  min-width: 18px;
-  padding: 0 5px;
-  border: 1px solid var(--ds-border-strong);
-  border-radius: var(--radius-3xs);
-  background: var(--ds-tile);
-  color: var(--ds-text-muted);
-  font-family: var(--font-mono);
   font-size: var(--text-3xs);
-  line-height: 16px;
-  text-align: center;
 }
 
 /* Hover targets show the arrow, not the text I-beam; zero specificity keeps button/link pointers. */

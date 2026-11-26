@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import type { AgentSession } from "@earendil-works/pi-coding-agent";
 import type {
   PromptAccepted,
+  PromptAdmission,
   PromptDelivery,
   PromptParams,
   PromptReceipt,
@@ -359,6 +360,7 @@ export class SendReceipts {
     ) => Promise<{ text: string; images?: PromptParams["images"] }>,
     onError: (error: unknown) => void,
     onAccepted?: (intent: SendIntent) => void,
+    onAdmitted?: (admission: PromptAdmission) => void,
   ): Promise<PromptAccepted> {
     let record: RecordState;
     try {
@@ -366,8 +368,19 @@ export class SendReceipts {
     } catch (error) {
       return Promise.reject(error);
     }
-    if (record.scheduled || record.receipt.state !== "pending")
+    const publishAdmission = () => {
+      const receipt = record.receipt;
+      if (
+        receipt.state === "pending" &&
+        (receipt.stage === "queued" || receipt.stage === "dispatched")
+      )
+        onAdmitted?.({ ...receipt, stage: receipt.stage });
+    };
+    if (record.scheduled || record.receipt.state !== "pending") {
+      // A retry may be on a page that missed the original admission event.
+      publishAdmission();
       return record.promise;
+    }
     record.scheduled = true;
     // A follow-up promoted before its prompt arrived is sent as steering.
     const queued = record.delivery === "followUp";
@@ -492,6 +505,8 @@ export class SendReceipts {
     })();
     this.active.set(task, address);
     void task.finally(() => this.active.delete(task));
+    // Report durable host admission without waiting for SDK preflight.
+    publishAdmission();
     return record.promise;
   }
   /** Resolves when every prompt already dispatched for this owner is accepted or rejected. */

@@ -29,12 +29,15 @@ test.skipIf(!existsSync(fixtureEdge) && !process.env.PIG_REQUIRE_UI_TESTS)(
       const text=value=>({type:'text',text:value});
       const log=Array.from({length:40},(_,i)=>'Full output line '+i).join('\\n');
       const call={type:'toolCall',id:'tool',name:'bash',arguments:{command:'echo fixture'}};
+      const finalContent=[text('Final answer')];
+      let finalGroupingReads=0;
+      Object.defineProperty(finalContent,'forEach',{get(){finalGroupingReads++;return Array.prototype.forEach;}});
       const live=assistant('live',8,[text('Live answer')]);delete live.entryId;
       let current={address:{hostId:'work',sessionId:'chat',epoch:1},snapshotSeq:1,
         info:{id:'chat',cwd:'fixture',title:'Work fixture',modified:1},effort:'off',effortLevels:[],
         transcript:{history:{revision:'branch',before:'u1'},records:[user('u1',3),assistant('step',4,[text('Checking file'),call]),
           record('result',5,{role:'toolResult',toolCallId:'tool',toolName:'bash',content:[text(log)],isError:false,timestamp:5}),
-          assistant('final',6,[text('Final answer')]),user('u2',7),live],
+          assistant('final',6,finalContent),user('u2',7),live],
           tools:{tool:{status:'done',result:{content:[text(log)]}}},running:true,current:'live',liveToEntry:{}}};
       let replyHistory;
       const historyGate=new Promise(resolve=>{replyHistory=resolve;});
@@ -56,6 +59,8 @@ test.skipIf(!existsSync(fixtureEdge) && !process.env.PIG_REQUIRE_UI_TESTS)(
       output.scrollTop=80;const top=output.scrollTop;
       const range=document.createRange();range.selectNodeContents(output);const selection=getSelection();selection.removeAllRanges();selection.addRange(range);
       const selected=selection.toString();check(top>0&&selected===log,'tool fixture must scroll and remain completely selectable');
+      check(finalGroupingReads>0,'grouping probe must detect the first render of the saved answer');
+      finalGroupingReads=0;
       const publish=next=>{current=newerSnapshot(current,next);flushSync(()=>useStore.setState({snapshots:{chat:current}}));};
       for(let i=0;i<8;i++){
         const next=structuredClone(current);next.snapshotSeq++;
@@ -64,6 +69,8 @@ test.skipIf(!existsSync(fixtureEdge) && !process.env.PIG_REQUIRE_UI_TESTS)(
         check(document.querySelector('.tool-term-output')===output&&output.scrollTop===top&&selection.toString()===selected,'live updates must preserve expanded work, scroll and selection');
         check(final().querySelector('.response-footer')===footer&&footer.textContent===footerText,'completed footer statistics must remain unchanged');
       }
+      check(finalGroupingReads===0,'live updates must not regroup unchanged saved answer blocks');
+      await until(()=>document.querySelector('[data-record-id="live"]').textContent.includes(' token'.repeat(8)),'the live answer still displays every token');
       selection.removeAllRanges();
       await click(document.querySelector('.work-toggle'));
       check(!document.querySelector('[data-record-id="step"]'),'closing work must still remove its intermediate rows');

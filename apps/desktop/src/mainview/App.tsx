@@ -1,16 +1,10 @@
-import type { ToolCall } from "@earendil-works/pi-ai";
+import type { AssistantMessage, ToolCall } from "@earendil-works/pi-ai";
 import {
   ChartColumn,
-  Check,
-  CircleAlert,
-  Copy,
-  ExternalLink,
-  LoaderCircle,
   PanelLeft,
   Puzzle,
   Settings2,
   Settings as SettingsIcon,
-  X,
 } from "lucide-react";
 import {
   Fragment,
@@ -28,6 +22,10 @@ import appIcon from "../../assets/icon.svg";
 import { SIDEBAR_WIDTH } from "../shared/desktop-state";
 import { createFinishedWorkIndex, groupBlocks } from "../shared/tool-view";
 import { ChatEmpty, ChatLayout } from "./ChatLayout";
+import { VirtualTurns } from "./VirtualTurns";
+
+declare const __VIRTUAL_TURNS__: boolean;
+
 import { ChatOpening, OpeningComposer, OpeningMessages } from "./ChatOpening";
 import { Compaction } from "./CompactionRenderer";
 import { Composer } from "./Composer";
@@ -43,12 +41,13 @@ import {
 } from "./extension-notices";
 import { fontFamilyValue } from "./font-family";
 import { SavedOutputContext } from "./HighlightedCode";
-import { getT, useT } from "./i18n";
-import { DisclosureScope, LazyDetails } from "./LazyDetails";
-import { Markdown, MarkdownCwd, UserMessage } from "./MessageContent";
+import { useT } from "./i18n";
+import { AnswerMarkdown, MarkdownCwd, UserMessage } from "./MessageContent";
 import { modelDividers } from "./model-dividers";
 import { NotificationCenter } from "./NotificationCenter";
+import { OAuthLoginDialog } from "./OAuthLoginDialog";
 import { OptimisticMessages } from "./OptimisticMessages";
+import { DisclosureScope, LazyDetails } from "./patterns/LazyDetails";
 import "./model-dividers.css";
 import { initEditMenu } from "./edit-menu";
 import { MainViewport } from "./MainViewport";
@@ -56,10 +55,10 @@ import { McpAppScope } from "./McpAppPreview";
 import { Notifications } from "./Notifications";
 import { initNavigation, navigate } from "./navigation";
 import { PaneWorkspace } from "./PaneWorkspace";
-import { ProviderIcon } from "./ProviderIcon";
 import { Providers } from "./Providers";
 import { ProviderUsage } from "./ProviderUsage";
 import { createPane } from "./pane-state";
+import { ProviderIcon } from "./primitives/ProviderIcon";
 import { ResponseError, RetryNotice } from "./ResponseError";
 import { ResponseFooter } from "./ResponseFooter";
 import { RunningIndicator } from "./RunningIndicator";
@@ -83,9 +82,10 @@ import { Statistics } from "./Statistics";
 import { scheduledUsers } from "./scheduled-prompt-model";
 import { revealTarget } from "./search-target";
 import { initShortcuts } from "./shortcuts";
-import { type LoginState, showError, showNotice, useStore } from "./store";
+import { showError, showNotice, useStore } from "./store";
 import { ThinkingBlock, ToolBlock, ToolGroup, WorkToggle } from "./ToolBlock";
 import { TooltipLayer, useTooltip } from "./Tooltip";
+import { TurnRail } from "./TurnRail";
 import {
   captureThreadAnchor,
   restoreThreadAnchor,
@@ -135,6 +135,11 @@ export function App() {
     };
   }, [fontFamily, codeFontFamily]);
   const [sidebarOpen, setSidebarOpen] = useState(true);
+  // Collapsed sidebar slides over the content while the pointer rests on the
+  // left edge, like the turn rail; it never resizes the conversation.
+  const [peek, setPeek] = useState(false);
+  const peekTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
+  useEffect(() => () => clearTimeout(peekTimer.current), []);
   const savedSidebarWidth = useStore(
     (s) => s.bootstrap.desktop.sidebarWidth ?? SIDEBAR_WIDTH.default,
   );
@@ -194,7 +199,7 @@ export function App() {
     <button
       type="button"
       className={
-        sidebarOpen
+        sidebarOpen || peek
           ? "sidebar-toggle electrobun-webkit-app-region-no-drag"
           : undefined
       }
@@ -203,7 +208,10 @@ export function App() {
       aria-controls="app-sidebar"
       hidden={!state.sidebarReady}
       style={liveSidebar}
-      onClick={() => setSidebarOpen((open) => !open)}
+      onClick={() => {
+        setSidebarOpen((open) => !open);
+        setPeek(false);
+      }}
     >
       <PanelLeft size={16} aria-hidden="true" />
     </button>
@@ -213,6 +221,7 @@ export function App() {
       {/* biome-ignore lint/a11y/noStaticElementInteractions: Native drag handles; maximize is also available as a keyboard-accessible button. */}
       <div
         className={`app-shell${sidebarOpen ? "" : " sidebar-collapsed"}`}
+        data-peek={(!sidebarOpen && peek) || undefined}
         data-backdrop={state.backdrop}
         onMouseDown={(event) => {
           // Do not start a second native move while double-clicking a drag handle.
@@ -231,12 +240,31 @@ export function App() {
         }
       >
         <DynamicTheme />
-        {sidebarOpen && sidebarToggle}
+        {(sidebarOpen || peek) && sidebarToggle}
+        {!sidebarOpen && state.sidebarReady && (
+          <div
+            className="sidebar-peek-zone"
+            aria-hidden="true"
+            onPointerEnter={() => {
+              clearTimeout(peekTimer.current);
+              // A short rest, so reaching for the window edge does not open it.
+              peekTimer.current = setTimeout(() => setPeek(true), 150);
+            }}
+            onPointerLeave={() => clearTimeout(peekTimer.current)}
+          />
+        )}
         <aside
           id="app-sidebar"
           className="sidebar"
-          inert={!sidebarOpen}
+          inert={!sidebarOpen && !peek}
           style={liveSidebar}
+          onPointerLeave={(event) => {
+            // Keep it while a row menu is open or a name is being edited.
+            if (
+              !event.currentTarget.querySelector(":popover-open, input:focus")
+            )
+              setPeek(false);
+          }}
         >
           <header className="electrobun-webkit-app-region-drag">
             <strong className="sidebar-brand">
@@ -322,7 +350,7 @@ export function App() {
           onSplit={createPane}
           splitDisabled={!state.initialized || state.page !== "chat"}
         >
-          {!sidebarOpen && (
+          {!sidebarOpen && !peek && (
             <div className="window-controls window-sidebar-controls electrobun-webkit-app-region-no-drag">
               {sidebarToggle}
             </div>
@@ -425,268 +453,113 @@ function SidebarPage({ page }: { page: string }) {
 }
 
 function ConversationWorkspace({ active: shown }: { active: boolean }) {
+  const t = useT();
   const {
     activeSnapshot: active,
     openingSnapshot,
     openingView,
+    restoringChat,
     generalCwd,
   } = useStore(useShallow(selectConversationView));
-  const idle = shown && !openingView && !active;
+  const idle = shown && !openingView && !restoringChat && !active;
   // With no chat shown, the workspace is simply a new local draft. Drafts do
   // not start an SDK session until the first send, so this is free.
   useLayoutEffect(() => {
     if (idle && generalCwd) void openChat(generalCwd, undefined, false);
   }, [idle, generalCwd]);
+  const snapshot = openingView ? openingSnapshot : active;
   return (
     <PaneWorkspace renderChat={renderPaneChat}>
-      {openingView ? (
-        openingSnapshot ? (
-          <Chat key={chatViewKey(openingSnapshot)} snapshot={openingSnapshot} />
-        ) : (
-          <ChatOpening />
-        )
-      ) : active ? (
-        <Chat key={chatViewKey(active)} snapshot={active} />
+      {snapshot ? (
+        renderPaneChat(snapshot)
+      ) : openingView ? (
+        <ChatOpening />
+      ) : restoringChat ? (
+        <p className="muted" role="status">
+          {t["Opening chat…"]}
+        </p>
       ) : null}
     </PaneWorkspace>
   );
 }
 
-function OAuthLoginDialog({ login }: { login: LoginState }) {
-  const t = useT();
-  const dialog = useRef<HTMLDialogElement>(null);
-  const input = useRef<HTMLInputElement>(null);
-  const [value, setValue] = useState("");
-  const [copied, setCopied] = useState<string>();
-  const [copyError, setCopyError] = useState<string>();
-  const { prompt, authUrl, deviceCode, event } = login;
-  const name = useStore((state) => {
-    const provider = state.bootstrap.providers.find(
-      (p) => p.id === login.provider,
-    );
-    if (!provider) return login.provider;
-    if (login.addAccount) return provider.name;
-    return login.accountId
-      ? (provider.accounts?.find((account) => account.id === login.accountId)
-          ?.label ?? provider.name)
-      : (provider.accountLabel ?? provider.name);
-  });
-  useEffect(() => {
-    dialog.current?.show();
-  }, []);
-  useEffect(() => {
-    if (prompt) {
-      setValue("");
-      if (prompt.type === "select")
-        dialog.current
-          ?.querySelector<HTMLButtonElement>(".oauth-option")
-          ?.focus();
-      else input.current?.focus();
-    }
-  }, [prompt]);
-  function cancel() {
-    rpc.send.cancelLogin({ loginId: login.loginId });
-    useStore.setState({ login: undefined });
+const noTools: ChatSnapshot["transcript"]["tools"] = {};
+
+function runningTurnKey({ info, transcript }: ChatSnapshot) {
+  for (let i = transcript.records.length - 1; i >= 0; i--) {
+    const record = transcript.records[i];
+    if (record.kind === "message" && record.message.role === "user")
+      return `${info.id}:${record.message.timestamp}`;
   }
-  function answer(answer: string) {
-    rpc.send.resolveLogin({ loginId: login.loginId, value: answer });
-    useStore.setState({ login: { ...login, prompt: undefined } });
-  }
-  async function copy(text: string) {
-    const t = getT();
-    try {
-      await navigator.clipboard.writeText(text);
-      setCopied(text);
-      setCopyError(undefined);
-    } catch {
-      setCopyError(t["Could not copy. Try opening the sign-in page again."]);
-    }
-  }
-  const status = event && "message" in event ? event.message : t["Signing in…"];
-  return (
-    <dialog
-      ref={dialog}
-      className="oauth-dialog"
-      aria-modal="false"
-      aria-labelledby="oauth-title"
-      onKeyDown={(event) => {
-        if (event.key === "Escape" && !event.nativeEvent.isComposing) {
-          event.preventDefault();
-          event.stopPropagation();
-          cancel();
-        }
-      }}
-      onCancel={(e) => {
-        e.preventDefault();
-        cancel();
-      }}
-    >
-      <div className="dialog-heading">
-        <h2 id="oauth-title">
-          <ProviderIcon provider={login.provider} size={22} />
-          {login.method === "oauth" ? t.signIn(name) : t.setUp(name)}
-        </h2>
-        <button
-          type="button"
-          aria-label={t["Close sign-in dialog"]}
-          onClick={cancel}
-        >
-          <X size={16} />
-        </button>
-      </div>
-      {login.error ? (
-        <div className="oauth-error" role="alert">
-          <CircleAlert size={16} />
-          {login.error}
-        </div>
-      ) : (
-        <div className="oauth-status status" role="status">
-          <LoaderCircle size={14} className="spinner" />
-          {status}
-        </div>
-      )}
-      {!login.error && (
-        <>
-          {authUrl && (
-            <div className="oauth-block">
-              <p role={login.browserOpened === false ? "alert" : undefined}>
-                {login.browserOpened === undefined
-                  ? t["Opening your browser…"]
-                  : login.browserOpened
-                    ? t["Browser opened — finish signing in there"]
-                    : t[
-                        "Couldn't open your browser. Copy the link and open it manually."
-                      ]}
-              </p>
-              {authUrl.instructions && (
-                <p className="muted">{authUrl.instructions}</p>
-              )}
-              <div className="inline-actions">
-                <button type="button" onClick={() => void copy(authUrl.url)}>
-                  {copied === authUrl.url ? (
-                    <Check size={13} />
-                  ) : (
-                    <Copy size={13} />
-                  )}
-                  {copied === authUrl.url ? t.Copied : t["Copy link"]}
-                </button>
-                <button
-                  className="accent-link"
-                  type="button"
-                  onClick={() => rpc.send.openExternal({ url: authUrl.url })}
-                >
-                  <ExternalLink size={13} /> {t["Open again"]}
-                </button>
-              </div>
-            </div>
-          )}
-          {deviceCode && (
-            <div className="oauth-block">
-              <p>{t["Enter this code on the verification page"]}</p>
-              <button
-                type="button"
-                className="device-code"
-                aria-label={t.copyCode(deviceCode.userCode)}
-                onClick={() => void copy(deviceCode.userCode)}
-              >
-                {deviceCode.userCode}
-                {copied === deviceCode.userCode ? (
-                  <Check size={16} />
-                ) : (
-                  <Copy size={16} />
-                )}
-              </button>
-              <button
-                className="accent-link"
-                type="button"
-                onClick={() =>
-                  rpc.send.openExternal({ url: deviceCode.verificationUri })
-                }
-              >
-                <ExternalLink size={13} />
-                {deviceCode.verificationUri}
-              </button>
-            </div>
-          )}
-          {prompt && (
-            <div className="oauth-block">
-              <p>{prompt.message}</p>
-              {prompt.type === "select" ? (
-                <div className="oauth-options">
-                  {prompt.options.map((option) => (
-                    <button
-                      type="button"
-                      className="oauth-option"
-                      key={option.id}
-                      onClick={() => answer(option.id)}
-                    >
-                      <span>{option.label}</span>
-                      {option.description && (
-                        <small className="muted">{option.description}</small>
-                      )}
-                    </button>
-                  ))}
-                </div>
-              ) : (
-                <form
-                  className="input-row"
-                  onSubmit={(e) => {
-                    e.preventDefault();
-                    // Some text prompts only ask to press Enter (e.g. Bedrock credential chain).
-                    if (value.trim() || prompt.type === "text")
-                      answer(value.trim());
-                  }}
-                >
-                  <input
-                    ref={input}
-                    aria-label={prompt.message}
-                    autoComplete="off"
-                    className={
-                      prompt.type === "manual_code" ? "manual-code" : undefined
-                    }
-                    type={prompt.type === "secret" ? "password" : "text"}
-                    placeholder={prompt.placeholder}
-                    value={value}
-                    onChange={(e) => setValue(e.target.value)}
-                  />
-                  <button
-                    className="primary"
-                    type="submit"
-                    disabled={!value.trim() && prompt.type !== "text"}
-                  >
-                    {t.Submit}
-                  </button>
-                </form>
-              )}
-            </div>
-          )}
-          {event?.type === "info" &&
-            event.links?.map((link) => (
-              <button
-                key={link.url}
-                type="button"
-                className="accent-link"
-                onClick={() => rpc.send.openExternal({ url: link.url })}
-              >
-                {link.label || t["More information"]}
-                <ExternalLink size={13} />
-              </button>
-            ))}
-        </>
-      )}
-      {copyError && (
-        <p className="error" role="alert">
-          {copyError}
-        </p>
-      )}
-      <div className="dialog-actions">
-        <button type="button" onClick={cancel}>
-          {login.error ? t.Close : t.Cancel}
-        </button>
-      </div>
-    </dialog>
-  );
+  return info.id;
 }
+
+const AssistantBlocks = memo(function AssistantBlocks({
+  content,
+  folded,
+  live,
+  streaming,
+  thinkingLabel,
+  tools,
+  toolsRunning,
+  cards,
+}: {
+  content: AssistantMessage["content"];
+  folded: boolean;
+  live: boolean;
+  streaming: boolean;
+  thinkingLabel: string;
+  tools: ChatSnapshot["transcript"]["tools"];
+  toolsRunning: boolean;
+  cards: NonNullable<ChatSnapshot["sessionUI"]>["toolCards"];
+}) {
+  return groupBlocks(
+    folded ? content.filter((block) => block.type === "text") : content,
+  ).map(({ start, blocks }) => {
+    const block = blocks[0];
+    return (
+      <DisclosureScope key={`${block.type}-${start}`} id={`block:${start}`}>
+        <div
+          data-content-index={start}
+          data-tool-call-id={
+            blocks.length === 1 && block.type === "toolCall"
+              ? block.id
+              : undefined
+          }
+          tabIndex={-1}
+        >
+          {blocks.length > 1 ? (
+            <ToolGroup
+              calls={blocks.filter(
+                (block): block is ToolCall => block.type === "toolCall",
+              )}
+              tools={tools}
+              live={toolsRunning}
+              cards={cards}
+            />
+          ) : block.type === "text" ? (
+            <div className="prose">
+              <AnswerMarkdown text={block.text} streaming={streaming} />
+            </div>
+          ) : block.type === "thinking" ? (
+            <ThinkingBlock
+              text={block.thinking}
+              label={thinkingLabel}
+              active={live && start === content.length - 1}
+            />
+          ) : block.type === "toolCall" ? (
+            <ToolBlock
+              call={block}
+              state={tools[block.id]}
+              live={toolsRunning}
+              card={cards?.[block.id]}
+            />
+          ) : null}
+        </div>
+      </DisclosureScope>
+    );
+  });
+});
 
 export const Chat = memo(function Chat({
   snapshot,
@@ -744,7 +617,7 @@ export const Chat = memo(function Chat({
   const resizeContent = useCallback(
     (wasAtBottom: boolean) => {
       const element = thread.current;
-      if (!element) return;
+      if (!element || element.querySelector("[data-virtual-turns]")) return;
       if (view.follow) {
         if (wasAtBottom) element.scrollTop = element.scrollHeight;
       } else if (
@@ -783,16 +656,20 @@ export const Chat = memo(function Chat({
     };
   }, []);
   const preparePrepend = useCallback(() => {
-    if (!thread.current) return;
+    if (!thread.current || thread.current.querySelector("[data-virtual-turns]"))
+      return;
     // A native wheel can move the viewport before its React scroll event lands.
     if (!isThreadAtBottom(thread.current)) view.follow = false;
-    prependScroll.current = captureThreadAnchor(thread.current);
+    // Keep the same reader across batches, including asynchronous Markdown
+    // growth between them. User input clears this anchor above.
+    prependScroll.current =
+      retainedAnchor.current?.record &&
+      thread.current.contains(retainedAnchor.current.record)
+        ? retainedAnchor.current
+        : captureThreadAnchor(thread.current);
   }, [view]);
-  const { edge, loadingHistory, historyError, loadEarlier } = useHistoryPaging(
-    snapshot,
-    thread,
-    preparePrepend,
-  );
+  const { edge, hiddenRecords, loadingHistory, historyError, loadEarlier } =
+    useHistoryPaging(snapshot, thread, preparePrepend);
   const status = useStore(
     (s) => s.extensionStatuses[addressKey(snapshot.address)],
   );
@@ -867,7 +744,7 @@ export const Chat = memo(function Chat({
   );
   // biome-ignore lint/correctness/useExhaustiveDependencies: Re-run as history pages, work folds and the transcript change.
   useEffect(() => {
-    if (!jump || readOnly) return;
+    if (!jump || readOnly || hiddenRecords) return;
     const finish = () =>
       useStore.setState((s) =>
         s.jump?.nonce === jump.nonce ? { jump: undefined } : {},
@@ -899,14 +776,27 @@ export const Chat = memo(function Chat({
         null,
       finish,
     );
-  }, [jump, readOnly, transcript, loadingHistory, historyError, openWork]);
+  }, [
+    jump,
+    readOnly,
+    transcript,
+    loadingHistory,
+    historyError,
+    openWork,
+    hiddenRecords,
+  ]);
   useLayoutEffect(() => {
-    if (thread.current && !view.follow) thread.current.scrollTop = view.top;
+    if (
+      thread.current &&
+      !view.follow &&
+      !thread.current.querySelector("[data-virtual-turns]")
+    )
+      thread.current.scrollTop = view.top;
   }, [view]);
   // biome-ignore lint/correctness/useExhaustiveDependencies: Follow newly committed content only while the user is at the end.
   useLayoutEffect(() => {
     const element = thread.current;
-    if (!element) return;
+    if (!element || element.querySelector("[data-virtual-turns]")) return;
     if (prependScroll.current) {
       if (view.follow) element.scrollTop = element.scrollHeight;
       else restoreThreadAnchor(element, prependScroll.current);
@@ -916,7 +806,53 @@ export const Chat = memo(function Chat({
     } else if (view.follow) {
       element.scrollTop = element.scrollHeight;
     }
-  }, [transcript, notices, view]);
+  }, [transcript, notices, view, hiddenRecords]);
+  const renderTurns = (
+    items: ReturnType<typeof interleaveExtensionNotices>,
+    renderRow: (
+      item: (typeof items)[number],
+      key: string,
+      toggle: boolean,
+    ) => React.ReactElement,
+  ) => {
+    const keys: string[] = [];
+    const toggles = new Set<number>();
+    const rows = items.filter((item) => {
+      if ("notice" in item) {
+        keys.push(item.notice.id);
+        return true;
+      }
+      const { record, index } = item;
+      if (index < hiddenRecords || !isVisibleRecord(record)) return false;
+      const range = work.get(index);
+      if (range && !renderedWork.has(range.key)) {
+        renderedWork.add(range.key);
+        toggles.add(keys.length);
+      } else if (range && !openWork[range.key] && index !== range.final)
+        return false;
+      keys.push(liveIds.get(record.id) ?? record.id);
+      return true;
+    });
+    const render = (i: number) => renderRow(rows[i], keys[i], toggles.has(i));
+    if (
+      rows.length <= 200 ||
+      typeof __VIRTUAL_TURNS__ === "undefined" ||
+      !__VIRTUAL_TURNS__
+    )
+      return keys.map((_, i) => render(i));
+    const target =
+      jump &&
+      transcript.records.find((record) => record.entryId === jump.entryId)?.id;
+    return (
+      <VirtualTurns
+        follow={view}
+        thread={thread}
+        keys={keys}
+        renderRow={render}
+        target={target ? (liveIds.get(target) ?? target) : undefined}
+      />
+    );
+  };
   const layout = (
     <ChatLayout
       threadRef={thread}
@@ -930,6 +866,15 @@ export const Chat = memo(function Chat({
         retainedAnchor.current = undefined;
         view.follow = true;
       }}
+      rail={
+        !readOnly && (
+          <TurnRail
+            sessionId={info.id}
+            records={transcript.records}
+            thread={thread}
+          />
+        )
+      }
       composer={
         readOnly ? (
           <OpeningComposer preview={snapshot} />
@@ -945,201 +890,156 @@ export const Chat = memo(function Chat({
         </p>
       )}
       {!hasConversation && <ChatEmpty cwd={info.cwd} />}
-      {interleaveExtensionNotices(
-        cut >= 0
-          ? { ...transcript, records: transcript.records.slice(0, cut) }
-          : transcript,
-        notices ?? [],
-      ).map((item) => {
-        if ("notice" in item)
-          return (
-            <ExtensionNoticeLine key={item.notice.id} notice={item.notice} />
+      {renderTurns(
+        interleaveExtensionNotices(
+          cut >= 0
+            ? { ...transcript, records: transcript.records.slice(0, cut) }
+            : transcript,
+          notices ?? [],
+        ),
+        (item, key, showToggle) => {
+          if ("notice" in item)
+            return (
+              <ExtensionNoticeLine key={item.notice.id} notice={item.notice} />
+            );
+          const { record, index } = item;
+          const divider = dividers.get(record.id);
+          const range = work.get(index);
+          const folded = range !== undefined && !openWork[range.key];
+          const toggle = range && showToggle && (
+            <WorkToggle
+              open={!folded}
+              tools={range.tools}
+              onToggle={() =>
+                setOpenWork(
+                  (open) =>
+                    (view.work = {
+                      ...open,
+                      [range.key]: !open[range.key],
+                    }),
+                )
+              }
+            />
           );
-        const { record, index } = item;
-        const key = liveIds.get(record.id) ?? record.id;
-        const divider = dividers.get(record.id);
-        if (!isVisibleRecord(record)) return null;
-        const range = work.get(index);
-        const folded = range !== undefined && !openWork[range.key];
-        const toggle = range && !renderedWork.has(range.key) && (
-          <WorkToggle
-            open={!folded}
-            tools={range.tools}
-            onToggle={() =>
-              setOpenWork(
-                (open) =>
-                  (view.work = {
-                    ...open,
-                    [range.key]: !open[range.key],
-                  }),
-              )
-            }
-          />
-        );
-        if (range) renderedWork.add(range.key);
-        if (folded && index !== range.final)
-          return toggle ? <Fragment key={key}>{toggle}</Fragment> : null;
-        if (record.kind !== "message" || record.message.role === "custom")
-          return (
-            <Fragment key={key}>
-              {toggle}
-              <CustomRecord record={record} />
-            </Fragment>
-          );
-        const { id, message } = record;
-        const live =
-          transcript.running && index === transcript.records.length - 1;
-        return (
-          <div
-            key={key}
-            className="response-turn"
-            data-record-id={id}
-            data-record-order={record.order}
-            tabIndex={-1}
-          >
-            {divider && (
-              <div className="model-divider">
-                <span
-                  className="model-divider-model"
-                  aria-description={`${divider.from.provider}/${divider.from.id}`}
-                >
-                  <ProviderIcon provider={divider.from.provider} size={14} />
-                  {divider.from.id}
-                </span>
-                →
-                <span
-                  className="model-divider-model"
-                  aria-description={`${divider.to.provider}/${divider.to.id}`}
-                >
-                  <ProviderIcon provider={divider.to.provider} size={14} />
-                  {divider.to.id}
-                </span>
-              </div>
-            )}
-            <SavedOutputContext.Provider value={Boolean(record.entryId)}>
-              <DisclosureScope id={id} values={view.details}>
+          if (folded && index !== range.final)
+            return <Fragment key={key}>{toggle}</Fragment>;
+          if (record.kind !== "message" || record.message.role === "custom")
+            return (
+              <Fragment key={key}>
                 {toggle}
-                <article className={`message ${message.role}`}>
-                  {message.role === "user" ? (
-                    <UserMessage
-                      message={message}
-                      sessionId={info.id}
-                      entryId={record.entryId}
-                      disabled={readOnly || !snapshot.model}
-                      scheduled={scheduled.get(id)}
-                    />
-                  ) : message.role === "assistant" ? (
-                    <>
-                      {groupBlocks(
-                        folded
-                          ? message.content.filter(
-                              (block) => block.type === "text",
-                            )
-                          : message.content,
-                      ).map(({ start, blocks }) => {
-                        const content = blocks[0];
-                        return (
-                          <DisclosureScope
-                            key={`${content.type}-${start}`}
-                            id={`block:${start}`}
-                          >
-                            <div
-                              data-content-index={start}
-                              data-tool-call-id={
-                                blocks.length === 1 &&
-                                content.type === "toolCall"
-                                  ? content.id
-                                  : undefined
-                              }
-                              tabIndex={-1}
-                            >
-                              {blocks.length > 1 ? (
-                                <ToolGroup
-                                  calls={blocks.filter(
-                                    (block): block is ToolCall =>
-                                      block.type === "toolCall",
-                                  )}
-                                  tools={transcript.tools}
-                                  live={transcript.running}
-                                  cards={snapshot.sessionUI?.toolCards}
-                                />
-                              ) : content.type === "text" ? (
-                                <div className="prose">
-                                  <Markdown
-                                    text={content.text}
-                                    streaming={
-                                      live &&
-                                      transcript.current === id &&
-                                      !message.errorMessage
-                                    }
-                                  />
-                                </div>
-                              ) : content.type === "thinking" ? (
-                                <ThinkingBlock
-                                  text={content.thinking}
-                                  label={
-                                    status?.hiddenThinkingLabel ?? t.Thinking
-                                  }
-                                  active={
-                                    live && start === message.content.length - 1
-                                  }
-                                />
-                              ) : content.type === "toolCall" ? (
-                                <ToolBlock
-                                  call={content}
-                                  state={transcript.tools[content.id]}
-                                  live={transcript.running}
-                                  card={
-                                    snapshot.sessionUI?.toolCards?.[content.id]
-                                  }
-                                />
-                              ) : null}
-                            </div>
-                          </DisclosureScope>
-                        );
-                      })}
-                      {retried.has(id) ? (
-                        <RetryNotice
-                          attempt={retried.get(id) ?? 1}
-                          message={
-                            message.errorMessage ?? "Model request failed"
+                <CustomRecord record={record} />
+              </Fragment>
+            );
+          const { id, message } = record;
+          const live =
+            transcript.running && index === transcript.records.length - 1;
+          // Don't invalidate text-only or folded blocks with unrelated tool updates.
+          const hasTools =
+            !folded &&
+            message.role === "assistant" &&
+            message.content.some((block) => block.type === "toolCall");
+          return (
+            <div
+              key={key}
+              className="response-turn"
+              data-record-id={id}
+              data-record-order={record.order}
+              tabIndex={-1}
+            >
+              {divider && (
+                <div className="model-divider">
+                  <span
+                    className="model-divider-model"
+                    aria-description={`${divider.from.provider}/${divider.from.id}`}
+                  >
+                    <ProviderIcon provider={divider.from.provider} size={14} />
+                    {divider.from.id}
+                  </span>
+                  →
+                  <span
+                    className="model-divider-model"
+                    aria-description={`${divider.to.provider}/${divider.to.id}`}
+                  >
+                    <ProviderIcon provider={divider.to.provider} size={14} />
+                    {divider.to.id}
+                  </span>
+                </div>
+              )}
+              <SavedOutputContext.Provider value={Boolean(record.entryId)}>
+                <DisclosureScope id={id} values={view.details}>
+                  {toggle}
+                  <article className={`message ${message.role}`}>
+                    {message.role === "user" ? (
+                      <UserMessage
+                        message={message}
+                        sessionId={info.id}
+                        entryId={record.entryId}
+                        disabled={readOnly || !snapshot.model}
+                        scheduled={scheduled.get(id)}
+                      />
+                    ) : message.role === "assistant" ? (
+                      <>
+                        <AssistantBlocks
+                          content={message.content}
+                          folded={folded}
+                          live={live}
+                          streaming={
+                            live &&
+                            transcript.current === id &&
+                            !message.errorMessage
                           }
-                          waiting={
-                            snapshot.retry?.attempt === retried.get(id) &&
-                            id === [...retried.keys()].at(-1)
-                              ? snapshot.retry
-                              : undefined
+                          thinkingLabel={
+                            status?.hiddenThinkingLabel ?? t.Thinking
+                          }
+                          tools={hasTools ? transcript.tools : noTools}
+                          toolsRunning={hasTools && transcript.running}
+                          cards={
+                            hasTools ? snapshot.sessionUI?.toolCards : undefined
                           }
                         />
-                      ) : (
-                        (message.errorMessage ||
-                          message.stopReason === "error") && (
-                          <ResponseError
+                        {retried.has(id) ? (
+                          <RetryNotice
+                            attempt={retried.get(id) ?? 1}
                             message={
                               message.errorMessage ?? "Model request failed"
                             }
-                            stopReason={message.stopReason}
+                            waiting={
+                              snapshot.retry?.attempt === retried.get(id) &&
+                              id === [...retried.keys()].at(-1)
+                                ? snapshot.retry
+                                : undefined
+                            }
                           />
-                        )
-                      )}
-                    </>
-                  ) : (
-                    <CustomRecord record={record} />
-                  )}
-                  {record.details !== undefined && (
-                    <DisclosureScope id="record-details">
-                      <LazyDetails name="details" summary="Details">
-                        {() => <pre>{dataText(record.details)}</pre>}
-                      </LazyDetails>
-                    </DisclosureScope>
-                  )}
-                </article>
-                {footer(index)}
-              </DisclosureScope>
-            </SavedOutputContext.Provider>
-          </div>
-        );
-      })}
+                        ) : (
+                          (message.errorMessage ||
+                            message.stopReason === "error") && (
+                            <ResponseError
+                              message={
+                                message.errorMessage ?? "Model request failed"
+                              }
+                              stopReason={message.stopReason}
+                            />
+                          )
+                        )}
+                      </>
+                    ) : (
+                      <CustomRecord record={record} />
+                    )}
+                    {record.details !== undefined && (
+                      <DisclosureScope id="record-details">
+                        <LazyDetails name="details" summary="Details">
+                          {() => <pre>{dataText(record.details)}</pre>}
+                        </LazyDetails>
+                      </DisclosureScope>
+                    )}
+                  </article>
+                  {footer(index)}
+                </DisclosureScope>
+              </SavedOutputContext.Provider>
+            </div>
+          );
+        },
+      )}
       {rewind && cut >= 0 && (
         <div className="response-turn">
           <article className="message user">
@@ -1166,7 +1066,7 @@ export const Chat = memo(function Chat({
           {ja ? "実行環境の準備を再試行" : "Retry runtime initialization"}
         </button>
       )}
-      <span role="status" className="sr-status">
+      <span role="status" className="sr-only">
         {observedRun &&
           !transcript.running &&
           !snapshot.failure &&
@@ -1177,6 +1077,7 @@ export const Chat = memo(function Chat({
       )}
       {transcript.running && !transcript.compaction && (
         <RunningIndicator
+          turnKey={runningTurnKey(snapshot)}
           symbol={status?.workingSymbol}
           message={status?.workingMessage}
         />

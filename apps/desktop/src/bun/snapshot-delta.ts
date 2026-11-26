@@ -49,17 +49,26 @@ function toolSignature(
   }
 }
 function sameEnvelope(
-  current: ReturnType<typeof recordEnvelope>,
+  current: TranscriptRecord,
   previous: ReturnType<typeof recordEnvelope> | undefined,
 ) {
   if (!previous) return false;
-  const left = current as Record<string, unknown>;
+  // SAFETY: only read own enumerable fields here; no field type is assumed.
+  const left: Record<string, unknown> = current;
   const right = previous as Record<string, unknown>;
-  const keys = Object.keys(left);
-  return (
-    keys.length === Object.keys(right).length &&
-    keys.every((key) => Object.hasOwn(right, key) && left[key] === right[key])
-  );
+  let count = 0;
+  for (const key in left) {
+    if (!Object.hasOwn(left, key)) continue;
+    if (
+      current.kind === "message"
+        ? key === "message" || key === "details"
+        : key === "data"
+    )
+      continue;
+    if (!Object.hasOwn(right, key) || left[key] !== right[key]) return false;
+    count++;
+  }
+  return count === Object.keys(right).length;
 }
 
 /** Retain bounded metadata, IDs and latest live text, never saved bodies or SDK objects.
@@ -98,10 +107,8 @@ export function createRuntimeDeltaEncoder() {
     const base: Base = {
       revision,
       seq: snapshot.snapshotSeq,
-      entries: new Set(
-        snapshot.transcript.records.filter(eligible).map((record) => record.id),
-      ),
-      recordIds: snapshot.transcript.records.map((record) => record.id),
+      entries: new Set(),
+      recordIds: [],
       envelopes: new Map(),
       completedTools: new Map(),
       toolIds: new Set(Object.keys(transcript.tools)),
@@ -109,7 +116,17 @@ export function createRuntimeDeltaEncoder() {
       tools: new Map(),
     };
     for (const record of snapshot.transcript.records) {
+      base.recordIds.push(record.id);
       if (eligible(record)) {
+        base.entries.add(record.id);
+        const old =
+          previous?.revision === revision
+            ? previous.envelopes.get(record.id)
+            : undefined;
+        if (old && sameEnvelope(record, old)) {
+          base.envelopes.set(record.id, old);
+          continue;
+        }
         const envelope = recordEnvelope(record);
         if (
           Object.values(envelope).every(
@@ -188,7 +205,8 @@ export function createRuntimeDeltaEncoder() {
       }
       referenced = true;
       if (
-        sameEnvelope(recordEnvelope(record), previous.envelopes.get(record.id))
+        base.envelopes.has(record.id) &&
+        base.envelopes.get(record.id) === previous.envelopes.get(record.id)
       ) {
         reusedRecords = true;
         return record.id;

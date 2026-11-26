@@ -11,18 +11,18 @@ import {
   LogOut,
   Pencil,
   Plus,
-  Search,
   Settings2,
   SquarePen,
   Trash2,
   X,
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
-import { ActionsMenu } from "../../mainview/ActionsMenu";
-import { ConfirmButton } from "../../mainview/ConfirmButton";
-import { InlineRename } from "../../mainview/InlineRename";
-import { ProviderIcon } from "../../mainview/ProviderIcon";
 import { ProviderDetail } from "../../mainview/Providers";
+import { ActionsMenu } from "../../mainview/patterns/ActionsMenu";
+import { ConfirmButton } from "../../mainview/patterns/ConfirmButton";
+import { InlineRename } from "../../mainview/patterns/InlineRename";
+import { Chip } from "../../mainview/primitives/Chip";
+import { ProviderIcon } from "../../mainview/primitives/ProviderIcon";
 import { useStore } from "../../mainview/store";
 import {
   type Account,
@@ -35,6 +35,9 @@ import {
   shortLabel,
 } from "./accounts-data";
 import "./accounts.css";
+import { Button } from "../../mainview/primitives/Button";
+import { SearchField } from "../../mainview/primitives/SearchField";
+import { Spinner } from "../../mainview/primitives/Spinner";
 
 type Row = Omit<Account, "state"> & {
   state: Account["state"] | "signing-in";
@@ -144,7 +147,7 @@ function AccountItem({
         <button type="button" className="provider-row" onClick={onSelect}>
           <Dot state={account.state} />
           <span className="provider-row-name">{account.label}</span>
-          {account.standard && <small className="provider-tag">既定</small>}
+          {account.standard && <Chip variant="tag">既定</Chip>}
         </button>
       )}
       {!renaming && (
@@ -296,7 +299,7 @@ function ProviderGroup({
 }
 
 /**
- * Stand-in for the app's existing OAuth sign-in card (App.tsx OAuthLoginDialog),
+ * Stand-in for the app's existing OAuth sign-in card (OAuthLoginDialog),
  * which "+" opens unchanged. Production keeps its real prompts and links.
  */
 function SignInCard({
@@ -333,7 +336,7 @@ function SignInCard({
         </button>
       </div>
       <div className="oauth-status status" role="status">
-        <LoaderCircle size={14} className="spinner" /> サインイン中…
+        <Spinner size={14} /> サインイン中…
       </div>
       <div className="oauth-block">
         <p>ブラウザでサインインを完了してください。</p>
@@ -377,10 +380,10 @@ export function ProvidersNested({
       </p>
       <div className="providers-layout">
         <div className="provider-browser">
-          <div className="provider-search">
-            <Search size={14} />
-            <input aria-label="Providerを検索" placeholder="Providerを検索" />
-          </div>
+          <SearchField
+            aria-label="Providerを検索"
+            placeholder="Providerを検索"
+          />
           <div className="provider-groups">
             <h2 className="provider-group-title">接続済み</h2>
             {providers.map((provider) => (
@@ -499,18 +502,18 @@ export function ModelPickerPreview({
   return (
     <div className="acp-picker-stage">
       <div className="picker-panel model-panel acp-panel">
-        <div className="model-search">
-          <Search size={14} />
-          <input
-            aria-label="モデルを検索"
-            placeholder="モデルを検索"
-            value={query}
-            onChange={(event) => setQuery(event.target.value)}
-          />
-          <button type="button" aria-label="モデルを管理" title="モデルを管理">
+        <SearchField
+          variant="inline"
+          className="model-search"
+          aria-label="モデルを検索"
+          placeholder="モデルを検索"
+          value={query}
+          onChange={(event) => setQuery(event.target.value)}
+        >
+          <button type="button" aria-label="モデルを管理">
             <Settings2 size={14} />
           </button>
-        </div>
+        </SearchField>
         <div className="model-browser" data-has-rail>
           <nav className="model-source-rail" aria-label="モデルのソース">
             <button
@@ -556,9 +559,9 @@ export function ModelPickerPreview({
             {signedOut && sourceAccount ? (
               <div className="acp-empty">
                 <p>「{sourceAccount.label}」はサインインが必要です。</p>
-                <button type="button" className="primary">
+                <Button variant="primary">
                   <LogIn size={13} /> サインイン
-                </button>
+                </Button>
               </div>
             ) : (
               <>

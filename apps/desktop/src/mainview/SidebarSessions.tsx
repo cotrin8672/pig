@@ -1,11 +1,12 @@
 import { Archive, ChevronRight, Folder, Pin, SquarePen } from "lucide-react";
-import { memo, useId, useMemo, useState } from "react";
+import { memo, type ReactNode, useId, useMemo, useState } from "react";
 import { useShallow } from "zustand/react/shallow";
 import { visibleProjects } from "../shared/projects";
-import { InlineRename } from "./InlineRename";
 import { useT } from "./i18n";
 import { FolderPlusCorner } from "./icons";
 import { ProjectMenu, renameProject } from "./ProjectMenu";
+import { InlineRename } from "./patterns/InlineRename";
+import { IndicatorDot } from "./primitives/IndicatorDot";
 import { openChat, rpc } from "./rpc";
 import { SessionList } from "./SessionList";
 import { type SessionStatus, sessionStatusLabels } from "./session-status";
@@ -18,7 +19,12 @@ import {
 const basename = (path: string) =>
   path.split(/[\\/]/).filter(Boolean).pop() || path;
 
-export const SidebarSessions = memo(function SidebarSessions() {
+/** `after` holds sections that share the scroll area, e.g. remote PCs. */
+export const SidebarSessions = memo(function SidebarSessions({
+  after,
+}: {
+  after?: ReactNode;
+}) {
   const t = useT();
   const projects = useStore((s) => s.bootstrap.projects);
   const projectFlags = useStore((s) => s.bootstrap.desktop.projects);
@@ -79,15 +85,31 @@ export const SidebarSessions = memo(function SidebarSessions() {
           <p className="sidebar-empty">{t["No projects yet"]}</p>
         )}
       </section>
+      {after}
     </div>
   );
 });
 
-function ProjectSessions({ cwd }: { cwd: string }) {
+type Collapse = "open" | "opening" | "closing" | "closed";
+
+export function ProjectSessions({ cwd }: { cwd: string }) {
   const t = useT();
   const projectFlags = useStore((s) => s.bootstrap.desktop.projects?.[cwd]);
   const displayName = projectFlags?.name || basename(cwd);
-  const [expanded, setExpanded] = useState(true);
+  // Rows stay mounted while the list closes, then unmount like a collapsed list;
+  // they are clipped only while the height moves, so focus rings stay visible.
+  const [motion, setMotion] = useState<Collapse>("open");
+  const expanded = motion === "open" || motion === "opening";
+  const expand = (next: boolean) =>
+    setMotion(
+      matchMedia("(prefers-reduced-motion: reduce)").matches
+        ? next
+          ? "open"
+          : "closed"
+        : next
+          ? "opening"
+          : "closing",
+    );
   const [renaming, setRenaming] = useState(false);
   const listId = useId();
   const selectActivity = useMemo(createProjectActivitySelector, []);
@@ -133,7 +155,7 @@ function ProjectSessions({ cwd }: { cwd: string }) {
             aria-expanded={expanded}
             aria-controls={listId}
             aria-description={cwd}
-            onClick={() => setExpanded(!expanded)}
+            onClick={() => expand(!expanded)}
           >
             <ChevronRight
               className="project-chevron"
@@ -153,7 +175,7 @@ function ProjectSessions({ cwd }: { cwd: string }) {
             role="img"
             aria-label={`${t[sessionStatusLabels[leading]]}: ${counts[leading]}`}
           >
-            <span className={`session-dot ${leading}`} />
+            <IndicatorDot state={leading} />
             {counts[leading]}
           </span>
         )}
@@ -169,7 +191,7 @@ function ProjectSessions({ cwd }: { cwd: string }) {
             type="button"
             aria-label={t.newChatIn(displayName)}
             onClick={() => {
-              setExpanded(true);
+              expand(true);
               void openChat(cwd);
             }}
           >
@@ -182,8 +204,28 @@ function ProjectSessions({ cwd }: { cwd: string }) {
           />
         </div>
       </div>
-      <div id={listId} className="project-threads" hidden={!expanded}>
-        <SessionList cwd={cwd} expanded={expanded} />
+      <div
+        id={listId}
+        className="sidebar-collapse"
+        data-motion={motion}
+        inert={!expanded}
+        onTransitionEnd={(event) => {
+          if (
+            event.target === event.currentTarget &&
+            event.propertyName === "grid-template-rows"
+          )
+            setMotion((state) =>
+              state === "opening"
+                ? "open"
+                : state === "closing"
+                  ? "closed"
+                  : state,
+            );
+        }}
+      >
+        <div className="project-threads">
+          <SessionList cwd={cwd} expanded={motion !== "closed"} />
+        </div>
       </div>
     </section>
   );

@@ -6,10 +6,14 @@ import {
   useRef,
   useState,
 } from "react";
+import { flushSync } from "react-dom";
 import type { ChatSnapshot } from "./chat-snapshot";
 import { addressKey, prependHistory, sameAddress } from "./chat-snapshot";
 import { rpc } from "./rpc";
 import { isStaleSessionRead, showError, useStore } from "./store";
+
+// Publish each page atomically, but don't mount a whole page of rich text in one frame.
+const ROWS_PER_FRAME = 8;
 
 function cursorKey(snapshot: ChatSnapshot) {
   const cursor = snapshot.transcript.history;
@@ -40,7 +44,68 @@ export function useHistoryPaging(
   >(undefined);
   const [error, setError] = useState<typeof failure.current>();
   const [pending, setPending] = useState<string>();
-  const key = cursorKey(snapshot);
+  const [reveal, setReveal] = useState<{
+    first: string;
+    revision: string;
+    hidden: number;
+  }>();
+  const hiddenRecords =
+    reveal &&
+    reveal.revision === snapshot.transcript.history?.revision &&
+    reveal.first === snapshot.transcript.records[0]?.id
+      ? reveal.hidden
+      : 0;
+  const key = hiddenRecords ? undefined : cursorKey(snapshot);
+  const scrollingUntil = useRef(0);
+  const batchSize = useRef(ROWS_PER_FRAME);
+  useLayoutEffect(() => {
+    const root = thread.current;
+    if (!root) return;
+    const scrolling = () => {
+      scrollingUntil.current = performance.now() + 120;
+    };
+    const events = ["wheel", "touchmove", "keydown"] as const;
+    for (const event of events)
+      root.addEventListener(event, scrolling, { passive: true });
+    return () => {
+      for (const event of events) root.removeEventListener(event, scrolling);
+      scrollingUntil.current = 0;
+    };
+  }, [thread]);
+
+  useLayoutEffect(() => {
+    if (!hiddenRecords) return;
+    let frame: number;
+    const mountBatch = () => {
+      const root = thread.current;
+      // Let the gesture run uninterrupted unless the reader needs more runway.
+      if (
+        performance.now() < scrollingUntil.current &&
+        root &&
+        root.scrollTop > root.clientHeight
+      ) {
+        frame = requestAnimationFrame(mountBatch);
+        return;
+      }
+      const start = performance.now();
+      const count = batchSize.current;
+      latest.current.preparePrepend();
+      flushSync(() =>
+        setReveal((batch) =>
+          batch && batch.hidden > count
+            ? { ...batch, hidden: batch.hidden - count }
+            : undefined,
+        ),
+      );
+      // Leave room for input and paint when a batch contains expensive turns.
+      batchSize.current =
+        performance.now() - start > 8
+          ? Math.max(1, Math.floor(count / 2))
+          : Math.min(ROWS_PER_FRAME, count + 1);
+    };
+    frame = requestAnimationFrame(mountBatch);
+    return () => cancelAnimationFrame(frame);
+  }, [hiddenRecords, thread]);
 
   useLayoutEffect(() => {
     generation.current++;
@@ -95,13 +160,19 @@ export function useHistoryPaging(
           );
         if (page.history.before === before)
           throw new Error("History cursor did not advance");
-        useStore.setState((state) => {
-          const saved = state.snapshots[current.info.id];
-          if (!saved || !sameAddress(saved.address, owner)) return {};
-          const next = prependHistory(saved, page, before);
-          if (next === saved) return {};
+        const next = prependHistory(authoritative, page, before);
+        if (next === authoritative) return;
+        flushSync(() => {
           latest.current.preparePrepend();
-          return { snapshots: { ...state.snapshots, [current.info.id]: next } };
+          if (page.records.length)
+            setReveal({
+              first: page.records[0].id,
+              revision,
+              hidden: page.records.length,
+            });
+          useStore.setState((state) => ({
+            snapshots: { ...state.snapshots, [current.info.id]: next },
+          }));
         });
       } catch (cause) {
         if (!isCurrent() || isStaleSessionRead(cause)) return;
@@ -153,7 +224,7 @@ export function useHistoryPaging(
         },
         {
           root,
-          rootMargin: `${Math.max(320, root.clientHeight)}px 0px 0px 0px`,
+          rootMargin: `${Math.max(320, 3 * root.clientHeight)}px 0px 0px 0px`,
         },
       );
       observer.observe(sentinel);
@@ -198,6 +269,7 @@ export function useHistoryPaging(
 
   return {
     edge,
+    hiddenRecords,
     loadEarlier,
     loadingHistory: !!key && pending === key,
     historyError: error?.key === key ? error?.message : undefined,

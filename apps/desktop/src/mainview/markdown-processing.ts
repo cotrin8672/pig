@@ -1,5 +1,6 @@
 import type { Element, Root, RootContent } from "hast";
 import type { ParsedMarkdown } from "./markdown-engine";
+import { codeLanguage } from "./syntax-source";
 
 type Cached = {
   controller: AbortController;
@@ -86,6 +87,7 @@ export async function prepareMarkdown(
           return await markdownWorker.run(
             { text, streaming },
             controller.signal,
+            streaming,
           );
         } catch {
           if (controller.signal.aborted) return undefined;
@@ -145,6 +147,99 @@ export async function prepareMarkdown(
       },
     );
   });
+}
+
+type OpenCodeFence = {
+  text: string;
+  tree: Root;
+  pre: Element;
+  code: Element;
+  bodyStart: number;
+  closing: RegExp;
+};
+
+const codeLiteral = (body: string) =>
+  body.endsWith("\n") ? body : `${body}\n`;
+
+/** Seed only from a full parse. No other Markdown block can depend on text
+ * appended inside this still-open, top-level literal. */
+export function openCodeFence(
+  text: string,
+  tree: Root,
+): OpenCodeFence | undefined {
+  const pre = tree.children.at(-1);
+  if (pre?.type !== "element" || pre.tagName !== "pre") return;
+  const position = pre.position;
+  if (
+    !position ||
+    position.start.column !== 1 ||
+    position.start.offset === undefined ||
+    position.end.offset !== text.length
+  )
+    return;
+  const code = pre.children[0];
+  const literal = code?.type === "element" ? code.children[0] : undefined;
+  if (
+    code?.type !== "element" ||
+    code.tagName !== "code" ||
+    code.children.length !== 1 ||
+    literal?.type !== "text"
+  )
+    return;
+  // shortcut: simple LF fences only, broaden only with full-parser equivalence.
+  const start = position.start.offset;
+  const opening = /^(`{3,}|~{3,})[ \t]*([a-z0-9-]+)?[ \t]*\n/i.exec(
+    text.slice(start),
+  );
+  if (!opening || (opening[2] && !codeLanguage(opening[2]))) return;
+  const bodyStart = start + opening[0].length;
+  const body = text.slice(bodyStart);
+  const marker = opening[1];
+  const closing = new RegExp(`(?:^|\\n) {0,3}${marker[0]}{${marker.length},}`);
+  if (
+    !body ||
+    body.includes("\r") ||
+    body.includes("\0") ||
+    closing.test(body) ||
+    literal.value !== codeLiteral(body)
+  )
+    return;
+  return { text, tree, pre, code, bodyStart, closing };
+}
+
+export function appendOpenCodeFence(
+  text: string,
+  previous: OpenCodeFence | undefined,
+): OpenCodeFence | undefined {
+  if (!previous || !text.startsWith(previous.text)) return;
+  if (text === previous.text) return previous;
+  const added = text.slice(previous.text.length);
+  // A closing delimiter can straddle two samples. Even a possible close goes
+  // to the parser; it may change earlier references or start new Markdown.
+  const lastLine = previous.text.lastIndexOf("\n") + 1;
+  if (
+    added.includes("\r") ||
+    added.includes("\0") ||
+    previous.closing.test(text.slice(lastLine))
+  )
+    return;
+  const code: Element = {
+    ...previous.code,
+    children: [
+      { type: "text", value: codeLiteral(text.slice(previous.bodyStart)) },
+    ],
+  };
+  const pre: Element = { ...previous.pre, children: [code] };
+  return {
+    ...previous,
+    text,
+    pre,
+    code,
+    tree: {
+      ...previous.tree,
+      children: [...previous.tree.children.slice(0, -1), pre],
+    },
+  };
 }
 
 function appendMarkdownText(

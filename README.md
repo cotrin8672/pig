@@ -1,36 +1,18 @@
 # pig
 
 pig (pi on gui) is a thin GUI client for the pi agent harness.
-Electrobun **2.0.6**, Bun, React 19, Vite, Tailwind v4, and zustand.
+Tauri 2, Bun, React 19, Vite, Tailwind v4, and zustand.
 
 ## Install
 
-### PowerShell (without Scoop)
+### Windows installer
 
-On Windows x64 with Microsoft Edge WebView2 Runtime, run in PowerShell:
-
-```powershell
-irm https://github.com/cotrin8672/pig/releases/latest/download/install.ps1 | iex
-```
-
-Available after a stable release publishes `install.ps1`. Review
-[`install.ps1`](install.ps1) before running downloaded code. No administrator
-rights, Node, Bun, pnpm or manual ZIP extraction are needed. The script downloads
-the latest stable ZIP, verifies its SHA256 and bundle metadata, then installs:
-
-- App: `%LOCALAPPDATA%\Programs\pig` (Windows' per-user program directory).
-- Command: `%USERPROFILE%\.local\bin\pig.cmd`, added to the user and current
-  process `PATH` without replacing existing entries.
-- Start menu: `%APPDATA%\Microsoft\Windows\Start Menu\Programs\pig.lnk`.
-
-Run `pig` or use the Start menu. Reopen other terminals if `pig` is not found.
-Re-running the script repairs command/PATH/shortcut registration but **does not
-replace an existing app**; update it from **Settings → About & updates**.
-Unrelated files at those locations are never overwritten. WebView2 is a
-prerequisite, not installed by the script. To uninstall, remove the app directory,
-`pig.cmd` and `pig.lnk`; leave `.local\bin` on PATH if other apps use it.
-If another `pig` command (for example Scoop's) is already available, the script
-stops instead of creating a conflicting installation.
+Starting with the first Tauri installer release, install `pig-setup.exe` from
+[Releases](https://github.com/cotrin8672/pig/releases) for in-app updates.
+In **Settings → About & updates**, enable **Include nightly builds** to receive
+the newest stable or nightly build. Turning it off waits for a newer stable
+build; it does not downgrade. Updates verify the Tauri updater signature.
+Older Electrobun installations do not migrate themselves to this installer.
 
 ### Scoop
 
@@ -43,30 +25,24 @@ scoop install pig          # Latest stable release
 # Or: scoop install pig-nightly   # Latest successful dev build
 ```
 
-Both packages install the same unsigned portable app, with the `pig` command
+Both packages install an unsigned portable app, with the `pig` command
 and Start menu shortcut. **Scoop treats them as separate apps, not replacements:**
 installing both conflicts on the `pig` shim and shortcut. Fully exit the app,
 then use `scoop reset pig` or `scoop reset pig-nightly` to select which runs
 (also reset the remaining package after uninstalling the other).
-Both builds use the identifier `dev.pig.desktop` and channel
-`stable`. Desktop settings/projects live in `~/.config/pig`; pi credentials and
-sessions keep their existing SDK locations. The WebView profile/cache remains
-under `%LOCALAPPDATA%/dev.pig.desktop/stable`. Do not run both clients
-concurrently; back up data before switching.
+Tauri and Electrobun use `~/.config/pig` for desktop settings by default.
+Pi credentials and sessions keep their existing SDK locations. Do not run
+both clients concurrently; back up data before switching.
 Scoop uninstall does not remove this data. No Scoop `persist` directory is needed.
 
 Update with `scoop update` followed by `scoop update pig` or
 `scoop update pig-nightly`. Nightly uses a rolling prerelease and Scoop's
-`nightly` version: updates re-download it without hash verification.
+`nightly` version: updates re-download it without hash verification. For the
+first update from Electrobun to Tauri, close pig and run
+`scoop update pig-nightly --force --no-cache` to bypass a same-day cached build.
 
-Stable builds can also update from **Settings → About & updates** (Windows x64).
-The app checks the latest stable GitHub release, verifies the ZIP checksum, then
-replaces the installation after the app exits: Scoop installs run
-`scoop update pig`, portable installs replace their own folder and restore the
-old one if the swap fails. Nightly, development, and unverified installations
-never self-update; use the Scoop CLI for those. The update stops running agents
-and terminals, so drafts are saved before closing and the restart can be
-cancelled. A failed update is reported on the next launch.
+Scoop manages its own files; the installer updater is disabled for Scoop and
+portable ZIPs. Installer updates ask before stopping agents and saving drafts.
 
 ### Publish
 
@@ -74,23 +50,25 @@ Development lands on `dev`; `main` holds released code. PRs and pushes to
 `main` or `dev` run fast CI, not native release builds. The `Release` workflow
 publishes/replaces the `nightly` prerelease from `dev` daily at 19:00 UTC
 (04:00 JST), skipping it when the published commit is unchanged. Run `Release`
-manually on `dev` for an immediate nightly. Checks and packaging use one
+manually on `dev` to build a portable test artifact without publishing; turn off
+`build_only` only to publish. Checks and packaging use one
 resolved commit, never a moving branch tip. Scheduled workflows always run the
 workflow files on `main`, so workflow changes take effect on the schedule only
-after they reach `main`. The release body identifies nightlies as
-`0.1.0-nightly.<UTC date>.<short SHA>`; the internal app version stays at the
-configured base version, and the Electrobun channel stays `stable`.
-
-For stable releases, keep the versions in `apps/desktop/package.json` and
-`apps/desktop/electrobun.config.ts` equal, merge `dev` into `main`, push `main`,
-then tag a commit on `main` (the workflow rejects tags outside `main`):
+after they reach `main`. Both installer feeds use the same increasing Actions
+run number for version ordering, independent of the human-readable release tag.
+Before publishing, configure `TAURI_SIGNING_PRIVATE_KEY` and its password
+`TAURI_SIGNING_PRIVATE_KEY_PASSWORD` as Actions secrets and the matching public
+key contents as repository variable `TAURI_SIGNING_PUBLIC_KEY`. Back up the
+private key offline. This updater signature is not Windows Authenticode.
+For stable releases, bring only the selected release commits into `main`,
+push `main`, then tag the version in `apps/desktop/package.json` on `main`:
 
 ```sh
 git tag v0.1.0 && git push --tags
 ```
 
-The workflow uploads `pig-windows-x64.zip` plus its `.sha256` (and `install.ps1`
-for stable releases), then commits the
+The workflow uploads `pig-setup.exe`, `pig-windows-x64.zip` and its `.sha256`,
+publishes the applicable installer manifests, then commits the
 stable Scoop version/hash to `main` using `GITHUB_TOKEN` (`contents: write`).
 No Excavator service is needed; checkver/autoupdate metadata is also provided.
 Wait for that bucket commit before installing the first stable build, then
@@ -99,15 +77,18 @@ merge `main` back into `dev` so the branches do not diverge. See
 
 ## Run
 
+On `dev`, `mise run dev` starts the Windows
+[Tauri app](docs/tauri-preview.md) with the existing chat UI and Pi host.
+
 Requires Windows with WebView2, Node 22+, pnpm 10.14, Bun (tested with 1.4.2),
 and [mise](https://mise.jdx.dev/) for the pinned type checkers.
 
-Builds use Electrobun's stock Windows native binaries; no local C++ build is
-required. `dev`, `build`, and `typecheck` first run `electrobun sync` to generate
-`apps/desktop/.hutch/devkit`. Hutch downloads its pinned SDK/toolchains into
-`~/.hutch`; application code continues to run on Bun (bundled 1.4.4).
-See [Windows migration checks](apps/desktop/scripts/windows-smoke.md) for the
-native regression test and remaining manual release gates.
+Tauri development additionally requires the Rust MSVC toolchain and Visual
+Studio C++ Build Tools with a Windows SDK. To compare the Electrobun version,
+stop the running development app, then run
+`mise exec -- pnpm --filter @pig/desktop dev:electrobun`.
+The Electrobun `build` and `typecheck` scripts still generate
+`apps/desktop/.hutch/devkit` with `electrobun sync`.
 
 ```sh
 mise install
@@ -142,6 +123,14 @@ See [account storage and limits](docs/provider-accounts.md).
 Choose **Settings → General → Default model** to set the model for new chats.
 This saves pi's shared default; existing chats keep their saved model.
 Choose **Automatic** to reset the preference.
+
+For automatic chat titles, install `@pi-archimedes/session-name` from
+**Extensions → Marketplace → Supported by pig**. Then choose **Settings → General →
+Session title model**, or leave it as **Use the chat model**. The extension sends
+part of the first exchange to that model and leaves manually named chats
+unchanged. The picker edits `"archimedes.sessionName": { "model": "provider/model-id" }`
+in Pi's shared `~/.pi/agent/settings.json` (or `$PI_CODING_AGENT_DIR/settings.json`).
+Model choice does not change the extension's prompt or enforce a title language.
 
 Each chat's **…** menu provides Rename, Pin/Unpin, Archive/Restore, Copy link,
 and Delete. Rename updates the pi session name; pins and archive flags are
@@ -190,8 +179,8 @@ in use. Do not edit the generated devkit to change this setting.
 | `pnpm test:all` | All three maintained suites | Local full verification |
 
 CI also runs Lint, TypeScript and a Vite webview build. Superseded CI runs are
-cancelled. Native Electrobun packaging runs only for stable tags and scheduled
-or manual nightlies, after the same fast checks pass. A release deliberately
+cancelled. Native packaging runs only for stable tags (Electrobun) and scheduled
+or manual nightlies (Tauri), after the same fast checks pass. A release deliberately
 rechecks its exact revision rather than assuming a previous CI build covered
 it. It does **not** rerun the slow regression suites or wait for their daily run.
 Before releases or changes to SDK/storage/UI behavior, run the relevant suites

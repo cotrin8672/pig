@@ -1,0 +1,4 @@
+.ui-checkbox {
+  flex: none;
+  accent-color: var(--ds-accent);
+}

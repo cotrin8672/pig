@@ -79,10 +79,19 @@ viewまたは項目のactionsには `{id,label,command,input?,disabled?,confirma
 ## キー
 
 ```ts
-keymaps: [{ keys: "Ctrl+Shift+P", adapter: "planning", command: "toggle", when: "composer" }]
+leader: "Ctrl+Space",
+keymaps: [
+  { keys: "Ctrl+Shift+P", adapter: "planning", command: "toggle", when: "composer" },
+  { keys: "<leader> p", action: "search.open" },
+  { keys: "<leader> s v", action: "pane.splitColumns", when: "chat" },
+]
 ```
 
-chat / composer / panel、単一コンボのみ。同surface・同コンボの重複は設定エラー。UIで明示した既存キー設定が優先され、次にTS設定、次に既定キーです。IME変換中・TUI・既存UI要求中は発火しません。Pi内部の独自TUIキーまで変更するAPIではありません。
+`keys` は1コンボか、空白区切りの連続キー（`"Ctrl+X Ctrl+S"`）。`<leader>` は `leader` のコンボに展開されます。連続キーは1秒以内に次のキーを押さないと取り消され、途中で一致しないキーを押すとそのキーごと取り消されます。
+
+`action` は組み込み操作（設定画面のキー設定と同じID、`composer.*` を除く）にキーを追加します。既定キーもそのまま使えます。`when` を省略すると全画面で有効ですが、入力欄では文字入力になるキー（`Space` など）から始まる連続キーは発火しません。`adapter` のキーは `when`（chat / composer / panel）必須です。
+
+同じ範囲でのキーの重複や、一方が他方の先頭部分になる連続キーは設定エラー。UIで明示した既存キー設定が優先され、次にTS設定、次に既定キーです。IME変換中・TUI・既存UI要求中は発火しません。Pi内部の独自TUIキーまで変更するAPIではありません。
 
 ## 意図的に含めないもの
 

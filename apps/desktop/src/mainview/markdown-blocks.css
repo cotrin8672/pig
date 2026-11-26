@@ -39,6 +39,23 @@
   background: var(--ds-bg-hover);
   color: var(--ds-text-secondary);
 }
+.prose .markdown-table {
+  position: relative;
+  margin: 12px 0;
+}
+/* Overlay on hover so showing it never shifts the table. */
+.markdown-table > .markdown-code-copy {
+  position: absolute;
+  top: 5px;
+  right: 5px;
+  background: var(--ds-bg-secondary);
+  color: var(--ds-text-muted);
+  opacity: 0;
+}
+.markdown-table:hover > .markdown-code-copy,
+.markdown-table > .markdown-code-copy:focus-visible {
+  opacity: 1;
+}
 .markdown-code > pre {
   padding-top: 4px;
   background: transparent;

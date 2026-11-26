@@ -288,7 +288,7 @@
 .message-queue .message-queue-grip:focus-visible .message-queue-grip-idle {
   visibility: hidden;
 }
-.message-queue-started {
+.message-queue-handle > .spinner {
   color: var(--ds-accent);
 }
 .message-queue-grip:hover {

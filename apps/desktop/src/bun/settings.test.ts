@@ -12,6 +12,7 @@ test("missing and corrupt settings default without overwriting; valid saves roun
   const file = join(directory, "settings.json");
   try {
     expect(await loadSettings(file)).toEqual(defaultSettings);
+    expect((await loadSettings(file, "powershell")).shell).toBe("powershell");
     await writeFile(file, "{broken");
     expect(await loadSettings(file)).toEqual(defaultSettings);
     expect(await readFile(file, "utf8")).toBe("{broken");
@@ -23,23 +24,28 @@ test("missing and corrupt settings default without overwriting; valid saves roun
       keybindings: { "settings.open": null },
     } as const;
     await writeFile(file, JSON.stringify(old));
+    expect((await loadSettings(file, "powershell")).shell).toBe("powershell");
     expect(await loadSettings(file)).toEqual({
       ...old,
       usageDisplay: "remaining",
       shell: "git-bash",
       blockImages: false,
+      includeNightly: false,
       fastMode: false,
       fontFamily: "",
       codeFontFamily: "",
       imageGenerationModel: null,
       classificationModel: null,
     });
+    await writeFile(file, JSON.stringify({ ...old, shell: "git-bash" }));
+    expect((await loadSettings(file, "powershell")).shell).toBe("git-bash");
     const next = patchSettings(defaultSettings, {
       language: "ja",
       contextDisplay: "used",
       usageDisplay: "used",
       shell: "powershell",
       blockImages: true,
+      includeNightly: true,
       fontFamily: "游ゴシック",
       codeFontFamily: "Cascadia Code",
       keybindings: { "settings.open": null },

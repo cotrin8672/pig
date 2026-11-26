@@ -1,16 +1,20 @@
-import { LoaderCircle, LogIn, LogOut, Search, X } from "lucide-react";
+import { LogIn, LogOut } from "lucide-react";
 import { type ReactNode, useId, useState } from "react";
 import {
   type AccountSource,
   providerAccountSources,
 } from "../shared/account-models";
 import type { ProviderInfo } from "../shared/rpc-schema";
-import { ConfirmButton } from "./ConfirmButton";
 import { ContentPage } from "./ContentPage";
 import { useT } from "./i18n";
 import { ProviderAccounts } from "./ProviderAccounts";
-import { ProviderIcon } from "./ProviderIcon";
 import { ProviderModels } from "./ProviderModels";
+import { ConfirmButton } from "./patterns/ConfirmButton";
+import { Button } from "./primitives/Button";
+import { ProviderIcon } from "./primitives/ProviderIcon";
+import { SearchField } from "./primitives/SearchField";
+import { SegmentedControl } from "./primitives/SegmentedControl";
+import { Spinner } from "./primitives/Spinner";
 import { startProviderLogin } from "./provider-login";
 import { refresh, rpc } from "./rpc";
 import { showError, useStore } from "./store";
@@ -87,26 +91,23 @@ export function Providers() {
         ]
       }
     >
-      <nav
-        className="segmented-control provider-categories"
+      <SegmentedControl
+        className="provider-categories"
         aria-label={t.Providers}
-      >
-        {[
-          ["chat", "Agent"],
-          ["images", "Image"],
-          ["classification", "Classification"],
-        ].map(([id, label]) => (
-          <button
-            key={id}
-            id={`provider-category-${id}`}
-            type="button"
-            aria-pressed={category === id}
-            onClick={() => setCategory(id)}
-          >
-            {label}
-          </button>
-        ))}
-      </nav>
+        value={category}
+        onChange={setCategory}
+        options={(
+          [
+            ["chat", "Agent"],
+            ["images", "Image"],
+            ["classification", "Classification"],
+          ] as const
+        ).map(([id, label]) => ({
+          value: id,
+          id: `provider-category-${id}`,
+          label,
+        }))}
+      />
       {category === "images" ? (
         <div className="provider-utility-panel">
           <ImageModelSettings onConnect={() => setCategory("chat")} />
@@ -120,25 +121,15 @@ export function Providers() {
       ) : (
         <div className="providers-layout">
           <div className="provider-browser">
-            <div className="provider-search">
-              <Search size={14} />
-              <input
-                aria-label={t["Search providers"]}
-                placeholder={t["Search providers"]}
-                spellCheck={false}
-                value={query}
-                onChange={(event) => setQuery(event.target.value)}
-              />
-              {query && (
-                <button
-                  type="button"
-                  aria-label={t["Clear provider search"]}
-                  onClick={() => setQuery("")}
-                >
-                  <X size={12} />
-                </button>
-              )}
-            </div>
+            <SearchField
+              aria-label={t["Search providers"]}
+              placeholder={t["Search providers"]}
+              spellCheck={false}
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+              onClear={() => setQuery("")}
+              clearLabel={t["Clear provider search"]}
+            />
             <fieldset
               className="provider-filters"
               aria-label={t["Provider filters"]}
@@ -263,7 +254,7 @@ export function ProviderDetail({
           role="status"
           aria-description={via && t.connectedVia(via)}
         >
-          {busy && <LoaderCircle size={11} className="spinner" />}
+          {busy && <Spinner size={11} />}
           <span>{status}</span>
         </span>
         <div className="inline-actions">
@@ -289,13 +280,12 @@ export function ProviderDetail({
           ) : (
             <>
               {p.oauth && (
-                <button
-                  type="button"
-                  className="primary"
+                <Button
+                  variant="primary"
                   onClick={() => startProviderLogin(target, "oauth")}
                 >
                   <LogIn size={14} /> {p.oauth.label ?? t["Sign in"]}
-                </button>
+                </Button>
               )}
               {p.apiKey && (
                 <button

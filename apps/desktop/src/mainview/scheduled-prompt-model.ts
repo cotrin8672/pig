@@ -61,20 +61,36 @@ function userText(record: TranscriptRecord): string | undefined {
 export function scheduledUsers(
   records: readonly TranscriptRecord[],
 ): Map<string, string> {
-  const result = new Map<string, string>();
-  records.forEach((record, index) => {
+  type Matches = { users: { id: string; index: number }[]; next: number };
+  const byPrompt = new Map<string, Matches>();
+  const markers: { index: number; name: string; matches: Matches }[] = [];
+  for (const [index, record] of records.entries()) {
     const marker = scheduledMarker(record);
-    if (!marker || marker.mode) return;
-    // A prompt delivered while streaming lands after the current response.
-    for (const next of records.slice(index + 1)) {
-      if (
-        !result.has(next.id) &&
-        userText(next)?.trim() === marker.prompt.trim()
-      ) {
-        result.set(next.id, marker.jobName);
-        return;
+    if (marker && !marker.mode) {
+      const prompt = marker.prompt.trim();
+      let matches = byPrompt.get(prompt);
+      if (!matches) {
+        matches = { users: [], next: 0 };
+        byPrompt.set(prompt, matches);
+      }
+      markers.push({ index, name: marker.jobName, matches });
+    } else if (byPrompt.size) {
+      const prompt = userText(record)?.trim();
+      if (prompt !== undefined)
+        byPrompt.get(prompt)?.users.push({ id: record.id, index });
+    }
+  }
+
+  const result = new Map<string, string>();
+  // A delayed prompt can land after later markers; assign in marker order.
+  for (const { index, name, matches } of markers) {
+    while (matches.next < matches.users.length) {
+      const user = matches.users[matches.next++];
+      if (user.index > index && !result.has(user.id)) {
+        result.set(user.id, name);
+        break;
       }
     }
-  });
+  }
   return result;
 }

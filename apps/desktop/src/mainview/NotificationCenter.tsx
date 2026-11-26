@@ -3,6 +3,9 @@ import { useId, useState } from "react";
 import { sessionLink } from "../shared/session-links";
 import { useT } from "./i18n";
 import { usePicker } from "./Picker";
+import { CountBadge } from "./primitives/CountBadge";
+import { IndicatorDot } from "./primitives/IndicatorDot";
+import { SegmentedControl } from "./primitives/SegmentedControl";
 import { openChatLink } from "./rpc";
 import {
   clearNotices,
@@ -20,7 +23,8 @@ export function NotificationCenter() {
   const tooltip = useTooltip();
   const titleId = useId();
   const [unreadOnly, setUnreadOnly] = useState(false);
-  const history = useStore((s) => s.noticeHistory);
+  const history =
+    useStore((s) => (s.clearingNotices ? undefined : s.noticeHistory)) ?? [];
   const snapshots = useStore((s) => s.snapshots);
   const language = useStore((s) => s.settings.language);
   const unread = history.filter((notice) => !notice.read).length;
@@ -38,11 +42,7 @@ export function NotificationCenter() {
         {...tooltip({ tier: "label", side: "top", label: t.Notifications })}
       >
         <Bell size={16} aria-hidden="true" />
-        {unread > 0 && (
-          <span className="notification-badge" aria-hidden="true">
-            {unread > 99 ? "99+" : unread}
-          </span>
-        )}
+        <CountBadge count={unread} decorative />
       </summary>
       <section className="notification-panel" aria-labelledby={titleId}>
         <div className="notification-heading">
@@ -64,26 +64,19 @@ export function NotificationCenter() {
             <Trash2 size={15} />
           </button>
         </div>
-        <fieldset
+        <SegmentedControl
           className="notification-filters"
           aria-label={t["Notification filter"]}
-        >
-          <button
-            type="button"
-            aria-pressed={!unreadOnly}
-            onClick={() => setUnreadOnly(false)}
-          >
-            {t.All}
-          </button>
-          <button
-            type="button"
-            aria-pressed={unreadOnly}
-            onClick={() => setUnreadOnly(true)}
-          >
-            {t.Unread}
-            {unread > 0 ? ` (${unread})` : ""}
-          </button>
-        </fieldset>
+          value={unreadOnly}
+          onChange={setUnreadOnly}
+          options={[
+            { value: false, label: t.All },
+            {
+              value: true,
+              label: unread ? `${t.Unread} (${unread})` : t.Unread,
+            },
+          ]}
+        />
         <div className="notification-history">
           {visible.length ? (
             visible.map((notice) => (
@@ -132,11 +125,7 @@ export function NotificationCenter() {
                   </time>
                 </span>
                 {!notice.read && (
-                  <span
-                    className="notification-unread-dot"
-                    role="img"
-                    aria-label={t.Unread}
-                  />
+                  <IndicatorDot state="unread" label={t.Unread} />
                 )}
               </button>
             ))

@@ -3,9 +3,9 @@ import { FoldVertical, LoaderCircle } from "lucide-react";
 import type { TranscriptRecord } from "../shared/transcript";
 import { ChatContent } from "./ChatContent";
 import { useT } from "./i18n";
-import { LazyDetails } from "./LazyDetails";
 import { Markdown } from "./MessageContent";
-import "./compaction.css";
+import { LazyDetails } from "./patterns/LazyDetails";
+import "./transcript-notices.css";
 
 export function BuiltinCompaction({ data }: ChatRendererProps<"compaction">) {
   const t = useT();

@@ -72,6 +72,30 @@ test("warm listing reads no bodies and only an updated file is reparsed", () =>
     expect((await cache.list(dir))[0].title).not.toBe("Caller mutation");
   }));
 
+test.each([
+  "entries",
+  "bytes",
+] as const)("an overflowing scan keeps warm metadata within the %s budget", (budget) =>
+  fixture(async (dir) => {
+    const { cache, reads } = counted(
+      budget === "entries" ? { maxEntries: 2 } : { maxBytes: 20_000 },
+    );
+    const title = "a".repeat(4000);
+    for (const id of ["a", "b"])
+      await writeFile(join(dir, `${id}.jsonl`), body(id, title));
+    expect((await cache.list(dir)).map((info) => info.id)).toEqual(["b", "a"]);
+    expect(reads()).toBe(2);
+
+    const added = Array.from({ length: 10 }, (_, i) => `z${i}`);
+    for (const id of added)
+      await writeFile(join(dir, `${id}.jsonl`), body(id, title));
+    const expected = [...added.reverse(), "b", "a"];
+    for (let i = 1; i <= 3; i++) {
+      expect((await cache.list(dir)).map((info) => info.id)).toEqual(expected);
+      expect(reads()).toBe(2 + added.length * i);
+    }
+  }));
+
 test("listing projection keeps SDK title, activity, clear-name, no-message and tie-order semantics", () =>
   fixture(async (dir) => {
     const file = join(dir, "a.jsonl");

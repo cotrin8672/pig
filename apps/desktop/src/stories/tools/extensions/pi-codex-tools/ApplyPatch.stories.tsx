@@ -1,5 +1,5 @@
 import { ApplyPatchRenderer } from "../../../../mainview/ApplyPatchRenderer";
-import { DisclosureScope } from "../../../../mainview/LazyDetails";
+import { DisclosureScope } from "../../../../mainview/patterns/LazyDetails";
 import {
   atPhase,
   type Phase,

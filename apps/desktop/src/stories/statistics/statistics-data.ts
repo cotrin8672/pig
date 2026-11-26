@@ -86,6 +86,7 @@ const models: ModelStats[] = [
 ];
 
 export const statisticsFixture: StatisticsFixture = {
+  cost: { usd: 84.72, missing: 0 },
   collectingSince: "11/2",
   coverage: { unknownUsage: 0, dropped: 0, collection: "active" },
   days,
@@ -222,6 +223,7 @@ export const statisticsFixture: StatisticsFixture = {
 };
 
 export const emptyStatistics: StatisticsFixture = {
+  cost: { usd: null, missing: 0 },
   collectingSince: "11/13",
   coverage: { unknownUsage: 0, dropped: 0, collection: "active" },
   days,

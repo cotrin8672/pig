@@ -8,7 +8,6 @@ import {
 } from "../../mainview/PaneDrag";
 import {
   initialPaneTree,
-  movePane,
   type PaneLayout,
   paneGeometry,
 } from "../../mainview/pane-layout";
@@ -61,8 +60,8 @@ export function PaneDragPreview({
   const { dragging, winbarProps } = usePaneDrag(
     tree,
     workspace,
-    (id, target, side) => {
-      setTree(movePane(tree, id, target, side));
+    (id, result) => {
+      setTree(result);
       setActive(id);
     },
   );

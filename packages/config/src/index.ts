@@ -93,10 +93,18 @@ export interface SessionAdapter {
       void | Unsubscribe>;
 }
 export interface AdapterKeymap {
+  /** One combo, or a space-separated sequence such as "<leader> p" or "Ctrl+X Ctrl+S". */
   keys: string;
   adapter: string;
   command: string;
   when: "chat" | "composer" | "panel";
+}
+/** Adds a key for a built-in pig action (e.g. "search.open"); its default key keeps working. */
+export interface ActionKeymap {
+  keys: string;
+  action: string;
+  /** Omit to work on every page, like built-in keys. */
+  when?: AdapterKeymap["when"];
 }
 /** Pure display mapping for tool calls. It never runs, approves or retries a tool. */
 export interface ToolView {
@@ -110,7 +118,9 @@ export interface PigConfig {
   apiVersion: 1;
   sessionAdapters?: readonly SessionAdapter[];
   toolViews?: readonly ToolView[];
-  keymaps?: readonly AdapterKeymap[];
+  /** One combo that `<leader>` expands to in keymaps, e.g. "Ctrl+Space". */
+  leader?: string;
+  keymaps?: readonly (AdapterKeymap | ActionKeymap)[];
 }
 export function defineConfig(config: PigConfig): PigConfig {
   return config;

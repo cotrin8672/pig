@@ -13,7 +13,8 @@ const icons = {
 
 export function Notifications() {
   const t = useT();
-  const notices = useStore((s) => s.notices);
+  const notices =
+    useStore((s) => (s.clearingNotices ? undefined : s.notices)) ?? [];
   const snapshots = useStore((s) => s.snapshots);
   return (
     <section className="notifications" aria-label={t.Notifications}>

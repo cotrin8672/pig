@@ -35,7 +35,7 @@ if (process.env.PIG_LENS_RENDERER_TEST_CHILD !== "1") {
   const { piLensRenderer, piLensSummary } = await import("./PiLensRenderer");
   const { dictionary } = await import("../shared/i18n");
   const { ToolBlock, WorkToggle } = await import("./ToolBlock");
-  const { DisclosureScope } = await import("./LazyDetails");
+  const { DisclosureScope } = await import("./patterns/LazyDetails");
   const { Markdown, UserMessage, ToolResultContent } = await import(
     "./MessageContent"
   );

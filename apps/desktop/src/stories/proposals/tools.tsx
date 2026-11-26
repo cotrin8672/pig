@@ -8,7 +8,6 @@ import {
   FilePlus,
   FileText,
   Folder,
-  LoaderCircle,
   Search,
   TriangleAlert,
   X,
@@ -21,6 +20,7 @@ import {
   TerminalOutput,
 } from "../../mainview/HighlightedCode";
 import { Markdown } from "../../mainview/MessageContent";
+import { Spinner } from "../../mainview/primitives/Spinner";
 import {
   languageFromPath,
   terminalText,
@@ -60,8 +60,8 @@ function groupBy(items: string[], key: (item: string) => string) {
 }
 const dirName = (path: string) => path.split("/").slice(0, -1).join("/");
 const str = (value: unknown) => (typeof value === "string" ? value : "");
-const Spinner = ({ size = 12 }: { size?: number }) => (
-  <LoaderCircle size={size} className="spinner" aria-label="実行中" />
+const RunningSpinner = ({ size = 12 }: { size?: number }) => (
+  <Spinner size={size} label="実行中" />
 );
 function FileIcon({ path, size = 14 }: { path: string; size?: number }) {
   if (path.endsWith("/"))
@@ -143,7 +143,7 @@ function ReadRangeMap({ tool, phase }: ToolProps) {
         <small>{dirName(path)}</small>
         <span>
           {phase === "running" ? (
-            <Spinner />
+            <RunningSpinner />
           ) : phase === "done" ? (
             <>
               L{start}–{end} <small>/ {total} 行</small>
@@ -196,7 +196,11 @@ function ReadCitation({ tool, phase }: ToolProps) {
         title={phase === "error" ? terminalText(output(tool)) : path}
         onClick={() => setOpen(!open)}
       >
-        {phase === "running" ? <Spinner /> : <FileIcon path={path} size={12} />}
+        {phase === "running" ? (
+          <RunningSpinner />
+        ) : (
+          <FileIcon path={path} size={12} />
+        )}
         <code>
           {baseName(path)}
           {phase === "done" && `:${start}–${end}`}
@@ -236,7 +240,7 @@ function ReadPeek({ tool, phase }: ToolProps) {
         <code>{path}</code>
         <span>
           {phase === "running" ? (
-            <Spinner />
+            <RunningSpinner />
           ) : (
             phase === "done" && `L${start}–${end}`
           )}
@@ -365,7 +369,7 @@ function EditHeader({
       <FileIcon path={path} />
       <strong>{baseName(path)}</strong>
       <small>{dirName(path)}</small>
-      <span>{phase === "running" ? <Spinner /> : children}</span>
+      <span>{phase === "running" ? <RunningSpinner /> : children}</span>
     </header>
   );
 }
@@ -625,7 +629,7 @@ function WriteOutline({ tool, phase }: ToolProps) {
         <code>{path}</code>
         <span>
           {phase === "running" ? (
-            <Spinner />
+            <RunningSpinner />
           ) : phase === "done" ? (
             "作成"
           ) : (
@@ -686,7 +690,7 @@ function WriteArtifact({ tool, phase }: ToolProps) {
           </small>
         </div>
         {phase === "running" ? (
-          <Spinner size={14} />
+          <RunningSpinner size={14} />
         ) : phase === "done" ? (
           <span className="pp-actions">
             <button
@@ -757,7 +761,7 @@ function SearchHead({
         {str(args.path) || "."}
         {args.glob ? ` · ${str(args.glob)}` : ""}
       </small>
-      <span>{phase === "running" ? <Spinner /> : children}</span>
+      <span>{phase === "running" ? <RunningSpinner /> : children}</span>
     </header>
   );
 }
@@ -863,7 +867,7 @@ function GrepSentence({ tool, phase }: ToolProps) {
         <Search size={13} />
         {phase === "running" ? (
           <>
-            {pattern} を検索しています <Spinner />
+            {pattern} を検索しています <RunningSpinner />
           </>
         ) : phase === "error" ? (
           <>
@@ -1064,7 +1068,7 @@ function LsHead({ tool, phase }: ToolProps) {
     <header className="pp-ls-head">
       <Folder size={14} className="pp-icon-folder" />
       <code>{str(toolArgs(tool).path) || "."}</code>
-      {phase === "running" && <Spinner />}
+      {phase === "running" && <RunningSpinner />}
     </header>
   );
 }
@@ -1145,7 +1149,7 @@ function LsColumns(props: ToolProps) {
             {crumb}
           </span>
         ))}
-        {phase === "running" && <Spinner />}
+        {phase === "running" && <RunningSpinner />}
       </nav>
       {phase === "error" && <Failure tool={tool} />}
       {phase === "done" && (
@@ -1259,7 +1263,7 @@ function ShellVerdict({ tool, phase }: ToolProps) {
     <div className={`pp-verdict pp-${phase}`}>
       <div className="pp-verdict-head">
         {phase === "running" ? (
-          <Spinner size={16} />
+          <RunningSpinner size={16} />
         ) : phase === "done" ? (
           <Check size={16} />
         ) : (
@@ -1326,7 +1330,7 @@ function ShellHeadTail({ tool, phase }: ToolProps) {
         </code>
         <span className={exitCode ? "pp-error-text" : "pp-ok-text"}>
           {phase === "running" ? (
-            <Spinner />
+            <RunningSpinner />
           ) : exitCode === undefined ? (
             "中断"
           ) : (
@@ -1408,7 +1412,7 @@ function ExtensionSignature({ tool, phase }: ToolProps) {
       <div className="pp-return">
         <ArrowRight size={12} />
         {phase === "running" ? (
-          <Spinner />
+          <RunningSpinner />
         ) : phase === "error" ? (
           <span className="pp-error-text">{output(tool)}</span>
         ) : (
@@ -1439,7 +1443,7 @@ function ExtensionTable({ tool, phase }: ToolProps) {
         <strong>{tool.call.name}</strong>
         <span>
           {phase === "running" ? (
-            <Spinner />
+            <RunningSpinner />
           ) : phase === "done" ? (
             <Check size={13} />
           ) : (
@@ -1475,7 +1479,7 @@ function ExtensionResultFirst({ tool, phase }: ToolProps) {
     <div className="pp-resultfirst">
       {phase === "running" ? (
         <p className="pp-faint">
-          <Spinner /> {tool.call.name} を実行しています
+          <RunningSpinner /> {tool.call.name} を実行しています
         </p>
       ) : phase === "error" ? (
         <Failure tool={tool} />
@@ -1550,7 +1554,7 @@ function StateIcon({ item }: { item: ListItem }) {
   return item.state === "completed" ? (
     <Check size={13} className="pp-ok-text" />
   ) : item.state === "active" ? (
-    <Spinner size={13} />
+    <RunningSpinner size={13} />
   ) : item.state === "cancelled" ? (
     <X size={13} className="pp-faint" />
   ) : (
@@ -1570,7 +1574,7 @@ function cardParts(tool: Tool) {
 }
 function CardPhase({ tool, phase }: ToolProps) {
   return phase === "running" ? (
-    <Spinner />
+    <RunningSpinner />
   ) : phase === "error" ? (
     <Failure tool={tool} />
   ) : null;

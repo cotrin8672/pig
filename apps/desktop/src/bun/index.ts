@@ -1,4 +1,6 @@
 import { Updater, Utils } from "electrobun/bun";
+import { installDesktopPlatform } from "./desktop-platform";
+import { electrobunPlatform } from "./electrobun-platform";
 import { claimInstance, instancePipe } from "./single-instance";
 
 // Claim the instance before loading the SDK: a second launch only asks the
@@ -9,7 +11,8 @@ const onOpenWindow = () => {
   if (openWindow) openWindow();
   else requestedWindows++;
 };
-const pipe = instancePipe(await Updater.localInfo.channel());
+const channel = await Updater.localInfo.channel();
+const pipe = instancePipe(channel);
 let primary = true;
 for (let attempt = 0; ; attempt++) {
   try {
@@ -26,6 +29,7 @@ for (let attempt = 0; ; attempt++) {
   }
 }
 if (primary) {
+  installDesktopPlatform(await electrobunPlatform(channel));
   ({ openWindow } = await import("./app"));
   for (; requestedWindows > 0; requestedWindows--) openWindow();
 } else {

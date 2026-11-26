@@ -52,21 +52,18 @@ test("sync flights are isolated from later edits without copying image data", as
   expect(seen[0].content.images[0]).not.toBe(image);
   expect(seen[0].content.images[0].image.data).toBe(image.image.data);
 });
-test("an explicit discard releases conflicting remote payloads and rejects late echoes", () => {
+test("an explicit discard releases payloads and rejects late echoes", () => {
   const store = new DraftStore();
   const image = {
     id: "i",
     image: { type: "image" as const, mimeType: "image/png", data: "x" },
   };
-  store.edit(a, () => content("local"));
   store.receive(a, { ...content("remote"), images: [image], revision: 1 });
-  expect(store.read(a).conflict?.images).toHaveLength(1);
+  expect(store.read(a).content.images).toHaveLength(1);
   store.discard(a, true);
   expect(store.read(a).content).toEqual(emptyContent());
-  expect(store.read(a).conflict).toBeUndefined();
   store.receive(a, { ...content("late"), images: [image], revision: 2 });
   expect(store.read(a).content).toEqual(emptyContent());
-  expect(store.read(a).conflict).toBeUndefined();
 });
 test("extension setText applies to inactive clean draft and does not erase images", () => {
   const store = new DraftStore();
@@ -81,35 +78,30 @@ test("extension setText applies to inactive clean draft and does not erase image
   expect(store.read(b).content.text).toBe("extension");
   expect(store.read(b).content.images).toHaveLength(1);
 });
-test("CAS conflict retains local and extension editor changes until explicit reconciliation", async () => {
+test("an extension update rebases an unsynced draft without changing its content or version", async () => {
   const store = new DraftStore();
   store.edit(a, () => content("typing"));
+  const original = store.read(a);
   store.receive(a, { ...content("extension"), revision: 4 });
-  expect(store.read(a).content.text).toBe("typing");
-  expect(store.read(a).conflict?.text).toBe("extension");
-  let calls = 0;
-  await expect(
-    store.flush(a, async () => {
-      calls++;
-      throw new Error("not reached");
-    }),
-  ).rejects.toThrow("Choose");
-  expect(calls).toBe(0);
-  store.resolve(a, "extension");
-  expect(store.read(a).content.text).toBe("extension");
+  expect(store.read(a)).toEqual({ ...original, revision: 4 });
+  await store.flush(a, async (params) => {
+    expect(params.expectedRevision).toBe(4);
+    expect(params.content.text).toBe("typing");
+    return { applied: true, draft: { ...params.content, revision: 5 } };
+  });
   expect(store.read(a).dirty).toBe(false);
 });
-test("CAS reject cannot silently overwrite local content", async () => {
+test("a CAS rejection without newer state stops without losing local content", async () => {
   const store = new DraftStore();
   store.edit(a, () => content("local"));
   await expect(
     store.flush(a, async () => ({
       applied: false,
-      draft: { ...content("remote"), revision: 2 },
+      draft: { ...content("remote"), revision: 0 },
     })),
-  ).rejects.toThrow("conflict");
+  ).rejects.toThrow("did not advance");
   expect(store.read(a).content.text).toBe("local");
-  expect(store.read(a).conflict?.text).toBe("remote");
+  expect(store.read(a).dirty).toBe(true);
 });
 test("one mirror flush captures its revision; edits during ACK remain for the next flush", async () => {
   const store = new DraftStore();
@@ -123,7 +115,6 @@ test("one mirror flush captures its revision; edits during ACK remain for the ne
     return { applied: true, draft: remote };
   });
   expect(seen).toEqual(["first"]);
-  expect(store.read(a).conflict).toBeUndefined();
   expect(store.read(a).dirty).toBe(true);
   await store.flush(a, async (params) => {
     seen.push(params.content.text);
@@ -142,7 +133,6 @@ test("a host consumption event advances CAS without conflicting with newer local
   store.edit(a, () => content("next draft"));
   store.receive(a, { ...emptyContent(), revision: 2, consumedRevision: 1 });
   expect(store.read(a).content.text).toBe("next draft");
-  expect(store.read(a).conflict).toBeUndefined();
   expect(store.read(a).revision).toBe(2);
   expect(store.read(a).dirty).toBe(true);
 });
@@ -174,7 +164,6 @@ for (const echoFirst of [false, true])
     store.transfer(a, next, remote.revision);
     if (!echoFirst) store.receive(next, remote);
     expect(store.read(next).content.text).toBe("late local input");
-    expect(store.read(next).conflict).toBeUndefined();
     expect(store.read(next).revision).toBe(3);
     await store.flush(next, async (params) => {
       expect(params.expectedRevision).toBe(3);
@@ -193,10 +182,11 @@ test("suspension cannot erase input already edited under its new owner", () => {
   store.receive(next, { ...emptyContent(), revision: 3 });
   store.edit(next, () => content("new owner's input"));
   store.transfer(a, next, 3);
-  expect(store.read(next).content.text).toBe("old owner's late input");
-  expect(store.read(next).conflict?.text).toBe("new owner's input");
+  expect(store.read(next).content.text).toBe(
+    "old owner's late input\n\nnew owner's input",
+  );
 });
-test("transfers release old payloads and conflicts, retaining only the destination draft", () => {
+test("transfers release old payloads, retaining only the destination draft", () => {
   const store = new DraftStore();
   let address = a;
   const previous = [];
@@ -220,14 +210,11 @@ test("transfers release old payloads and conflicts, retaining only the destinati
     const next = { ...address, epoch: address.epoch + 1 };
     store.transfer(address, next);
     expect(store.read(next).content).toBe(payload);
-    expect(store.read(next).conflict?.text).toBe("extension");
     expect(store.read(address).content).toEqual(emptyContent());
-    expect(store.read(address).conflict).toBeUndefined();
     expect(store.read(address).transferredVersion).toBe(
       store.read(next).version,
     );
     previous.push(address);
-    store.resolve(next, "local");
     expect(store.clearAccepted(next, store.read(next).version)).toBe(true);
     address = next;
   }
@@ -264,7 +251,6 @@ test.each([
     });
   expect(await flush).toMatchObject({ retired: true });
   expect(store.read(a).content).toEqual(emptyContent());
-  expect(store.read(a).conflict).toBeUndefined();
   expect(store.read(next).content.text).toBe("local");
 });
 

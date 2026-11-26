@@ -122,9 +122,9 @@ const stream = (lines: number, kind: string) => `
         if(job){roundTrips[job.kind].push(performance.now()-job.start);jobs.delete(event.data.id);}
       });
     }
-    if(measuring&&value?.input?.text){
-      const kind=value.input.language?'syntax':'markdown';
-      posted.push({kind,chars:value.input.text.length});
+    if(measuring&&(value?.input?.text!==undefined||value?.input?.append!==undefined)){
+      const kind=value.input.language||value.input.append!==undefined?'syntax':'markdown';
+      posted.push({kind,chars:(value.input.text??value.input.append).length});
       inflight.get(this).set(value.id,{kind,start:performance.now()});
     }
     return post.call(this,value,...rest);

@@ -1,0 +1,9 @@
+/* Keep the measured row, divider and drag target still; only its contents rise. */
+.message-queue-row-content {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  align-self: stretch;
+  align-items: inherit;
+  gap: inherit;
+}

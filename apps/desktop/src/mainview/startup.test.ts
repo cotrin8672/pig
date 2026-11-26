@@ -66,14 +66,19 @@ if (process.env.PIG_STARTUP_CHILD !== "1") {
               reads.installed.push(read);
               return read.promise;
             },
+            actionKeymaps: async () => [],
           },
         };
       }
     },
   }));
+  let savedWorkspace: string | null;
   Object.defineProperty(globalThis, "localStorage", {
     configurable: true,
-    value: { getItem: () => null },
+    value: {
+      getItem: (key: string) =>
+        key === "pig.pane-workspace" ? savedWorkspace : null,
+    },
   });
   const { refresh, updateSettings } = await import("./rpc");
   const { useStore } = await import("./store");
@@ -87,6 +92,7 @@ if (process.env.PIG_STARTUP_CHILD !== "1") {
   };
   const tick = () => Bun.sleep(0);
   beforeEach(() => {
+    savedWorkspace = null;
     reads.bootstrap.length =
       reads.appearance.length =
       reads.settings.length =
@@ -154,6 +160,34 @@ if (process.env.PIG_STARTUP_CHILD !== "1") {
     reads.settings[1].resolve(settings);
     await retry;
     expect(useStore.getState()).toMatchObject({ initialized: true, settings });
+  });
+
+  test("an invalid saved workspace falls back to one empty pane", async () => {
+    savedWorkspace = JSON.stringify({
+      paneTree: {
+        type: "split",
+        axis: "rows",
+        weights: [0.5, 0.5],
+        children: [
+          { type: "pane", id: 1 },
+          { type: "pane", id: 1 },
+        ],
+      },
+      activePane: 1,
+      panes: { 1: { sessionId: "old" } },
+    });
+    const pending = refresh();
+    reads.bootstrap[0].resolve(bootstrap);
+    reads.appearance[0].resolve(appearance);
+    reads.settings[0].resolve(settings);
+    await pending;
+    expect(useStore.getState()).toMatchObject({
+      initialized: true,
+      paneTree: initial.paneTree,
+      panes: initial.panes,
+      activePane: 1,
+    });
+    expect(useStore.getState().active).toBeUndefined();
   });
 
   test("an installed-package event distinguishes a confirmed empty list from an unread list", () => {

@@ -5,11 +5,53 @@ import {
   movePane,
   paneDropAt,
   paneGeometry,
+  planPaneDrop,
   removePane,
   replacePane,
   resizePane,
   splitPane,
 } from "./pane-layout";
+
+for (const axis of ["columns", "rows"] as const) {
+  test(`${axis}: divider inserts equally; farther inside splits only the target`, () => {
+    const cross = axis === "columns" ? "rows" : "columns";
+    const three = splitPane(
+      splitPane(initialPaneTree("single"), 1, 2, axis),
+      2,
+      3,
+      axis,
+    );
+    const tree = splitPane(three, 2, 4, cross);
+    const widths = (offset: number) => {
+      const pos = (800 + offset) / 1200;
+      const drop = planPaneDrop(
+        tree,
+        4,
+        axis === "columns" ? pos : 0.25,
+        axis === "rows" ? pos : 0.25,
+        1200,
+        1200,
+      );
+      if (!drop) throw Error("Expected drop");
+      return paneGeometry(drop.tree).panes.map(({ id, bounds }) => [
+        id,
+        axis === "columns" ? bounds.width : bounds.height,
+      ]);
+    };
+    expect(widths(8)).toEqual([
+      [1, 0.25],
+      [2, 0.25],
+      [4, 0.25],
+      [3, 0.25],
+    ]);
+    expect(widths(24)).toEqual([
+      [1, 1 / 3],
+      [2, 1 / 3],
+      [4, 1 / 6],
+      [3, 1 / 6],
+    ]);
+  });
+}
 
 for (const axis of ["rows", "columns"] as const) {
   test(`repeated ${axis} splits equally divide siblings without reordering them`, () => {

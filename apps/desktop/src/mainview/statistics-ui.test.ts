@@ -33,6 +33,7 @@ test.skipIf(!existsSync(edge) && !process.env.PIG_REQUIRE_UI_TESTS)(
         import {useStore} from ${source("./store.ts")};
         import {navigate} from ${source("./navigation.ts")};
         import {rpc} from ${source("../stories/browser-rpc.ts")};
+        import {receiveStatisticsProgress} from ${source("./statistics-progress.ts")};
         import {installPreview,previewDefaults} from ${source("../stories/current-ui/fixtures.ts")};
         import {statisticsFixture,emptyStatistics} from ${source("../stories/statistics/statistics-data.ts")};
         import ${source("./styles.css")};
@@ -41,8 +42,16 @@ test.skipIf(!existsSync(edge) && !process.env.PIG_REQUIRE_UI_TESTS)(
         rpc.request.listFontFamilies = async () => [];
         rpc.request.listInstalled = async () => [];
         rpc.request.searchPackages = async () => ({items:[],total:0});
-        rpc.request.statistics = async ({period}) => {
+        let first = true;
+        rpc.request.statistics = async ({period, requestId}) => {
           if(period === 'all') throw Error('SECRET must not escape');
+          if (first) {
+            first = false;
+            await new Promise(resolve=>window.releaseUsage=resolve);
+            const {models,cost,coverage,collectingSince}=statisticsFixture;
+            receiveStatisticsProgress({requestId,data:{models,cost,coverage,collectingSince}});
+            await new Promise(resolve=>window.releaseDetails=resolve);
+          }
           await new Promise(resolve => setTimeout(resolve,period === 'today' ? 200 : 20));
           if(period === 'today') return emptyStatistics;
           return statisticsFixture;
@@ -125,8 +134,30 @@ test.skipIf(!existsSync(edge) && !process.env.PIG_REQUIRE_UI_TESTS)(
             `document.querySelector('.sidebar-footer button[aria-label="統計"]').click()`,
           );
           await waitFor(
+            "!!window.releaseUsage && !!document.querySelector('.stats-summary .stats-skeleton')",
+          );
+          const sizes = () =>
+            browser.evaluate<number[][]>(
+              `[...document.querySelectorAll('.statistics-page > [data-ui-surface]')].map(e=>{const r=e.getBoundingClientRect();return [r.x,r.y,r.width,r.height]})`,
+            );
+          const pendingSizes = await sizes();
+          await browser.evaluate("window.releaseUsage()");
+          await waitFor(
+            "!!document.querySelector('.stats-models table') && !!document.querySelector('.stats-daily .stats-skeleton')",
+          );
+          await browser.evaluate("window.releaseDetails()");
+          await waitFor("!document.querySelector('.stats-skeleton')");
+          expect(await sizes()).toEqual(pendingSizes);
+          const switchDetail = async (index: number, selector: string) => {
+            await browser.evaluate(
+              `document.querySelectorAll('.stats-tabs button')[${index}].click()`,
+            );
+            await waitFor(`!!document.querySelector('${selector}')`);
+          };
+          await waitFor(
             "document.querySelector('.stats-models')?.textContent.includes('Claude Opus')",
           );
+          await switchDetail(1, ".stats-commands table");
           const layout = await browser.evaluate<{
             scroll: boolean;
             cards: boolean;
@@ -140,19 +171,19 @@ test.skipIf(!existsSync(edge) && !process.env.PIG_REQUIRE_UI_TESTS)(
             const cards=[...page.querySelectorAll('[data-ui-surface="card"]')];
             const visible=cards.every(el=>{const r=el.getBoundingClientRect();return r.top>=0&&r.bottom<=innerHeight});
             const glass=cards.every(el=>{const c=getComputedStyle(el);return c.opacity==='1'&&c.backgroundColor.startsWith('rgba(')});
-            const model=document.querySelector('.stats-models .stats-scroll');
+            const model=document.querySelector('.stats-commands .stats-scroll');
             const colors=new Set([...page.querySelectorAll('.stats-stack span')].map(el=>getComputedStyle(el).backgroundColor));
             const commands=page.querySelector('.stats-commands .stats-scroll');
             const daily=page.querySelector('.stats-daily').getBoundingClientRect(), panel=page.querySelector('.stats-commands').getBoundingClientRect();
             return {scroll:page.scrollHeight>page.clientHeight+1,cards:visible&&glass&&model.scrollWidth<=model.clientWidth+1,tokenColumns:page.querySelectorAll('.stats-summary > div').length,colors:colors.size,
               commands:[...page.querySelectorAll('.stats-commands tbody th')].map(el=>el.textContent),
-              commandsFit:commands.scrollWidth<=commands.clientWidth+1&&Math.abs(daily.left-panel.left)<1&&Math.abs(daily.width-panel.width)<1&&panel.top>daily.bottom,
+              commandsFit:commands.scrollWidth<=commands.clientWidth+1&&Math.abs(daily.left-panel.left)<1&&panel.width>daily.width&&panel.top>daily.bottom,
               coverage:page.querySelector('.stats-commands h2 span').textContent};
           })()`);
           expect(layout).toMatchObject({
             scroll: false,
             cards: true,
-            tokenColumns: 6,
+            tokenColumns: 5,
             colors: 3,
             commands: [
               "pnpm testbash",
@@ -170,11 +201,12 @@ test.skipIf(!existsSync(edge) && !process.env.PIG_REQUIRE_UI_TESTS)(
             await browser.screenshot(),
           );
           // The tools card switches to the initial context breakdown in place.
+          await switchDetail(2, ".stats-tools table");
           const panel = await browser.evaluate<{ height: number }>(
             "({height:document.querySelector('.stats-tools').getBoundingClientRect().height})",
           );
           await browser.evaluate(
-            "document.querySelectorAll('.stats-tabs button')[1].click()",
+            "document.querySelectorAll('.stats-tabs button')[3].click()",
           );
           await waitFor("!!document.querySelector('.stats-context')");
           await browser.evaluate(
@@ -250,7 +282,7 @@ test.skipIf(!existsSync(edge) && !process.env.PIG_REQUIRE_UI_TESTS)(
               return {
                 aligned:Math.abs(title.top+title.height/2-periods.top-periods.height/2)<1,
                 equalDonuts:rings.length===2&&Math.abs(rings[0].top-rings[1].top)<1&&Math.abs(rings[0].width-rings[1].width)<1&&Math.abs(rings[0].height-rings[1].height)<1,
-                fullWidth:Math.abs(summary.width-shell.width+parseFloat(style.paddingLeft)+parseFloat(style.paddingRight))<1,
+                fullWidth:Math.abs(rect('.stats-models').width-shell.width+parseFloat(style.paddingLeft)+parseFloat(style.paddingRight))<1 && shell.width<=1040 && Math.abs(summary.width-rect('.stats-daily').width)<1,
                 fullHeight:Math.abs(bottom-shell.bottom+parseFloat(style.paddingBottom))<1,
                 overflowX:page.scrollWidth>page.clientWidth+1,
                 scroll:page.scrollHeight>page.clientHeight+1,
@@ -271,12 +303,12 @@ test.skipIf(!existsSync(edge) && !process.env.PIG_REQUIRE_UI_TESTS)(
               overflowX: false,
               dates: false,
               headings: 1,
-              scroll: width < 1000,
             });
             expect(geometry.modelHeight).toBeGreaterThan(90);
-            if (width >= 1000) expect(geometry.fullHeight).toBe(true);
-            else {
-              expect(geometry.summaryHeight).toBeGreaterThan(100);
+            if (width >= 1000) {
+              expect(geometry.fullHeight).toBe(true);
+              expect(geometry.scroll).toBe(false);
+            } else {
               expect(
                 await browser.evaluate<boolean>(`(() => {
                   const page=document.querySelector('.statistics-overview');

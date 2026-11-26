@@ -1,0 +1,593 @@
+.turn-spinner {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  height: 1em;
+  color: var(--ds-text-secondary);
+}
+.turn-spinner i,
+.turn-spinner b {
+  display: block;
+  font-style: normal;
+}
+
+/* ── Stardust ────────────────────────────────── */
+.turn-spinner-dust {
+  display: grid;
+  grid-template: repeat(4, 1fr) / repeat(4, 1fr);
+  width: 0.9em;
+  height: 1em;
+}
+.turn-spinner-dust > i {
+  width: 0.14em;
+  height: 0.14em;
+  place-self: center;
+  border-radius: 50%;
+  background: currentColor;
+  animation: turn-spinner-twinkle 1s ease-in-out infinite;
+}
+@keyframes turn-spinner-twinkle {
+  0%,
+  100% {
+    opacity: 0.1;
+    transform: scale(0.6);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.2);
+  }
+}
+
+/* ── Hourglass ───────────────────────────────── */
+.turn-spinner-glass {
+  position: relative;
+  width: 0.6em;
+  height: 1em;
+  border-block: 0.07em solid currentColor;
+  box-sizing: border-box;
+  animation: turn-spinner-flip 2.6s cubic-bezier(0.6, 0, 0.3, 1.3) infinite;
+}
+.turn-spinner-glass-top,
+.turn-spinner-glass-bottom {
+  position: absolute;
+  left: 0.04em;
+  right: 0.04em;
+  height: calc(50% - 0.02em);
+  overflow: hidden;
+  background: color-mix(in srgb, currentColor 18%, transparent);
+}
+.turn-spinner-glass-top {
+  top: 0;
+  clip-path: polygon(0 0, 100% 0, 50% 100%);
+}
+.turn-spinner-glass-bottom {
+  bottom: 0;
+  clip-path: polygon(50% 0, 100% 100%, 0 100%);
+}
+.turn-spinner-glass-top > i,
+.turn-spinner-glass-bottom > i {
+  display: block;
+  width: 100%;
+  height: 100%;
+  background: currentColor;
+}
+.turn-spinner-glass-top > i {
+  animation: turn-spinner-drain 2.6s cubic-bezier(0.33, 0.17, 0.88, 0.47)
+    infinite;
+}
+.turn-spinner-glass-bottom > i {
+  animation: turn-spinner-fill 2.6s cubic-bezier(0.33, 0.17, 0.88, 0.47)
+    infinite;
+}
+.turn-spinner-glass-stream {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  translate: -50% 0;
+  width: max(1px, 0.045em);
+  height: 50%;
+  overflow: hidden;
+  animation: turn-spinner-stream 2.6s linear infinite;
+}
+.turn-spinner-glass-stream > i {
+  position: absolute;
+  inset: -0.12em 0 0;
+  background:
+    linear-gradient(currentColor, transparent 85%, currentColor) 0 0 / 100%
+    0.12em;
+  animation: turn-spinner-grains 130ms linear infinite;
+}
+@keyframes turn-spinner-grains {
+  to {
+    transform: translateY(0.12em);
+  }
+}
+@keyframes turn-spinner-flip {
+  0%,
+  80% {
+    transform: rotate(0);
+  }
+  100% {
+    transform: rotate(180deg);
+  }
+}
+@keyframes turn-spinner-drain {
+  0% {
+    transform: translateY(0);
+  }
+  78%,
+  100% {
+    transform: translateY(100%);
+  }
+}
+@keyframes turn-spinner-fill {
+  0% {
+    transform: translateY(100%);
+  }
+  78%,
+  100% {
+    transform: translateY(0);
+  }
+}
+@keyframes turn-spinner-stream {
+  0%,
+  78%,
+  100% {
+    opacity: 0;
+  }
+  5%,
+  74% {
+    opacity: 0.85;
+  }
+}
+
+/* ── Star (cross-faded frames) ───────────────── */
+.turn-spinner-star {
+  display: grid;
+  width: 1em;
+  height: 1em;
+  color: var(--ds-accent);
+  line-height: 1em;
+  text-align: center;
+}
+.turn-spinner-star > i {
+  grid-area: 1 / 1;
+  opacity: 0;
+  animation: turn-spinner-xfade 1.2s linear infinite;
+  animation-delay: calc(var(--i) * 0.12s - 1.2s);
+}
+@keyframes turn-spinner-xfade {
+  0% {
+    opacity: 0;
+    transform: scale(0.7) rotate(-40deg);
+  }
+  10% {
+    opacity: 1;
+    transform: none;
+  }
+  20%,
+  100% {
+    opacity: 0;
+    transform: scale(1.15) rotate(40deg);
+  }
+}
+
+/* ── Scanner ─────────────────────────────────── */
+.turn-spinner-scan {
+  position: relative;
+  display: flex;
+  gap: 0.08em;
+  height: 0.5em;
+}
+.turn-spinner-scan > i {
+  width: 0.24em;
+  border-radius: 0.07em;
+  background: color-mix(in srgb, currentColor 18%, transparent);
+}
+.turn-spinner-scan > b {
+  position: absolute;
+  inset-block: 0;
+  left: 0;
+  width: 0.24em;
+  border-radius: 0.07em;
+  background: currentColor;
+  animation: turn-spinner-scan 1s cubic-bezier(0.45, 0, 0.55, 1) infinite
+    alternate;
+  animation-delay: calc(var(--i) * 0.08s - 2s);
+}
+@keyframes turn-spinner-scan {
+  to {
+    transform: translateX(1.6em);
+  }
+}
+
+.turn-spinner-geo {
+  width: 1.3em;
+  height: 1.3em;
+  display: block;
+}
+.turn-spinner-geo-vacancy {
+  animation: turn-spinner-geo-step 2.4s linear infinite;
+}
+@keyframes turn-spinner-geo-step {
+  0%,
+  24.99% {
+    opacity: 0;
+  }
+  25%,
+  75% {
+    opacity: 1;
+    transform: translate(0);
+  }
+  97%,
+  100% {
+    opacity: 1;
+    transform: translate(var(--dx), var(--dy));
+  }
+}
+.turn-spinner-geo-slit {
+  animation: turn-spinner-geo-slant 2.4s ease-in-out infinite;
+}
+@keyframes turn-spinner-geo-slant {
+  0%,
+  100% {
+    transform: skewX(-13deg);
+  }
+  50% {
+    transform: skewX(13deg);
+  }
+}
+.turn-spinner-geo-orbit {
+  transform-origin: 12px 12px;
+  animation: turn-spinner-geo-turn 2.8s linear infinite;
+}
+.turn-spinner-geo-counter {
+  animation-direction: reverse;
+  animation-duration: 1.9s;
+}
+@keyframes turn-spinner-geo-turn {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.turn-spinner-geo-phase-dot {
+  animation: turn-spinner-geo-phase-dot 2s ease-in-out infinite;
+}
+@keyframes turn-spinner-geo-phase-dot {
+  0%,
+  100% {
+    transform: translateY(-4px);
+  }
+  50% {
+    transform: translateY(4px);
+  }
+}
+
+.turn-spinner-geo-cell {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation-duration: 4.8s;
+  animation-timing-function: ease-in-out;
+  animation-iteration-count: infinite;
+}
+.turn-spinner-geo-cell-center {
+  animation-name: turn-spinner-geo-cell-center;
+}
+.turn-spinner-geo-cell-cross {
+  animation-name: turn-spinner-geo-cell-cross;
+}
+.turn-spinner-geo-cell-diag-a {
+  animation-name: turn-spinner-geo-cell-diag-a;
+}
+.turn-spinner-geo-cell-diag-b {
+  animation-name: turn-spinner-geo-cell-diag-b;
+}
+@keyframes turn-spinner-geo-cell-center {
+  0%,
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+  16% {
+    transform: scale(0.35);
+    opacity: 0.18;
+  }
+  32%,
+  44% {
+    transform: scale(1);
+    opacity: 1;
+  }
+  56% {
+    transform: scale(0.45);
+    opacity: 0.25;
+  }
+  68%,
+  80% {
+    transform: scale(1);
+    opacity: 1;
+  }
+  90% {
+    transform: scale(0.4);
+    opacity: 0.2;
+  }
+}
+@keyframes turn-spinner-geo-cell-cross {
+  0%,
+  100% {
+    transform: scale(0.35);
+    opacity: 0.18;
+  }
+  12% {
+    transform: scale(1);
+    opacity: 1;
+  }
+  28% {
+    transform: scale(0.35);
+    opacity: 0.18;
+  }
+  40%,
+  52% {
+    transform: scale(1);
+    opacity: 1;
+  }
+  64%,
+  78% {
+    transform: scale(0.35);
+    opacity: 0.18;
+  }
+  88% {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+@keyframes turn-spinner-geo-cell-diag-a {
+  0%,
+  10%,
+  100% {
+    transform: scale(0.35);
+    opacity: 0.18;
+  }
+  22%,
+  36% {
+    transform: scale(1);
+    opacity: 1;
+  }
+  48% {
+    transform: scale(0.35);
+    opacity: 0.18;
+  }
+  60%,
+  70% {
+    transform: scale(1);
+    opacity: 1;
+  }
+  82% {
+    transform: scale(0.9);
+    opacity: 0.85;
+  }
+}
+@keyframes turn-spinner-geo-cell-diag-b {
+  0%,
+  10%,
+  100% {
+    transform: scale(0.35);
+    opacity: 0.18;
+  }
+  22%,
+  36% {
+    transform: scale(1);
+    opacity: 1;
+  }
+  48%,
+  64% {
+    transform: scale(0.35);
+    opacity: 0.18;
+  }
+  74%,
+  86% {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+.turn-spinner-geo-hex-ring {
+  animation: turn-spinner-geo-hex-pulse 1.32s ease-in-out infinite;
+}
+.turn-spinner-geo-hex-core {
+  animation: turn-spinner-geo-hex-pulse 1.98s ease-in-out infinite;
+}
+@keyframes turn-spinner-geo-hex-pulse {
+  0%,
+  100% {
+    transform: scale(0.45);
+    opacity: 0.28;
+  }
+  45% {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+.turn-spinner-machine {
+  width: 1.65em;
+  height: 1.15em;
+}
+
+.turn-spinner-m-left {
+  transform-origin: 10px 3px;
+  animation: turn-spinner-m-swing 1.6s ease-out infinite;
+}
+.turn-spinner-m-right {
+  transform-origin: 22px 3px;
+  animation: turn-spinner-m-swing 1.6s ease-out -0.8s infinite;
+  --swing: -32deg;
+}
+@keyframes turn-spinner-m-swing {
+  25% {
+    transform: rotate(var(--swing, 32deg));
+  }
+  50%,
+  100% {
+    transform: rotate(0);
+  }
+}
+
+.turn-spinner-m-pulse {
+  transform: translate(2px, 15px);
+  animation: turn-spinner-m-send 1.6s linear infinite;
+}
+@keyframes turn-spinner-m-send {
+  21.4% {
+    transform: translate(11px, 15px);
+  }
+  40.5% {
+    transform: translate(11px, 7px);
+  }
+  61.9% {
+    transform: translate(20px, 7px);
+  }
+  76.2% {
+    transform: translate(20px, 13px);
+  }
+  to {
+    transform: translate(30px, 13px);
+  }
+}
+
+.turn-spinner-run-glyph {
+  flex: none;
+  width: 1em;
+  height: 1.25em;
+  fill: var(--ds-text-secondary);
+}
+.turn-spinner-run-glyph circle {
+  transform: translate(5px, 6px);
+  animation: turn-spinner-run-braille-lap 1s linear infinite;
+}
+@keyframes turn-spinner-run-braille-lap {
+  10% {
+    transform: translate(6px, 4px);
+  }
+  18% {
+    transform: translate(8px, 3px);
+  }
+  26% {
+    transform: translate(10px, 4px);
+  }
+  32% {
+    transform: translate(11px, 6px);
+  }
+  56% {
+    transform: translate(11px, 14px);
+  }
+  62% {
+    transform: translate(10px, 16px);
+  }
+  68% {
+    transform: translate(8px, 17px);
+  }
+  74% {
+    transform: translate(6px, 16px);
+  }
+  80% {
+    transform: translate(5px, 14px);
+  }
+  to {
+    transform: translate(5px, 6px);
+  }
+}
+
+.turn-spinner-run-dots {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 3px;
+  width: 1em;
+  height: 1em;
+}
+.turn-spinner-run-dots > span {
+  width: 3px;
+  height: 3px;
+  border-radius: 50%;
+  background: currentColor;
+  animation: turn-spinner-run-dot 1.05s ease-in-out infinite;
+}
+.turn-spinner-run-dots > span:nth-child(2) {
+  animation-delay: 0.14s;
+}
+.turn-spinner-run-dots > span:nth-child(3) {
+  animation-delay: 0.28s;
+}
+@keyframes turn-spinner-run-dot {
+  0%,
+  55%,
+  100% {
+    opacity: 0.35;
+    transform: translateY(0);
+  }
+  28% {
+    opacity: 1;
+    transform: translateY(-3px);
+  }
+}
+
+.turn-spinner-run-bars {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 2px;
+  width: 1em;
+  height: 1em;
+}
+.turn-spinner-run-bars > span {
+  width: 2px;
+  height: 100%;
+  border-radius: 1px;
+  background: currentColor;
+  transform-origin: center;
+  animation: turn-spinner-run-bar 1.1s ease-in-out infinite;
+}
+.turn-spinner-run-bars > span:nth-child(2) {
+  animation-delay: 0.16s;
+}
+.turn-spinner-run-bars > span:nth-child(3) {
+  animation-delay: 0.32s;
+}
+.turn-spinner-run-bars > span:nth-child(4) {
+  animation-delay: 0.48s;
+}
+@keyframes turn-spinner-run-bar {
+  0%,
+  100% {
+    transform: scaleY(0.3);
+    opacity: 0.5;
+  }
+  45% {
+    transform: scaleY(0.85);
+    opacity: 1;
+  }
+}
+
+.turn-spinner-run-dots,
+.turn-spinner-run-bars {
+  color: var(--ds-text-muted);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .turn-spinner::before,
+  .turn-spinner::after,
+  .turn-spinner *::before,
+  .turn-spinner *::after,
+  .turn-spinner *:not(.turn-spinner-run-glyph circle) {
+    animation: none;
+  }
+  .turn-spinner-run-glyph circle {
+    animation-play-state: paused;
+  }
+  .turn-spinner-geo-vacancy:last-child {
+    visibility: hidden;
+  }
+  .turn-spinner-star > i:first-child {
+    opacity: 1;
+  }
+}

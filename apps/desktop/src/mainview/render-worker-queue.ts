@@ -26,6 +26,7 @@ export function createRenderWorkerQueue<I, O>(
   let failures = 0;
   let generation = 0;
   const jobs = new Map<number, Job<I, O>>();
+  const urgent = new Set<number>();
   const counts = { posted: 0, completed: 0, cancelled: 0 };
   const fail = (error: Error, owner = generation) => {
     if (owner !== generation) return;
@@ -38,6 +39,7 @@ export function createRenderWorkerQueue<I, O>(
       job.reject(error);
     }
     jobs.clear();
+    urgent.clear();
     running = undefined;
     const stopped = worker;
     worker = undefined;
@@ -83,7 +85,11 @@ export function createRenderWorkerQueue<I, O>(
   const pump = () => {
     if (failed || running !== undefined || !jobs.size) return;
     // Reserve the head before asynchronous worker startup; no duplicate sends.
-    const job = jobs.values().next().value as Job<I, O>;
+    const first = urgent.values().next();
+    const job = first.done
+      ? (jobs.values().next().value as Job<I, O>)
+      : (jobs.get(first.value) as Job<I, O>);
+    urgent.delete(job.id);
     running = job.id;
     let started: Promise<RenderWorker>;
     try {
@@ -113,12 +119,13 @@ export function createRenderWorkerQueue<I, O>(
   };
   // Keep cancellation closures outside run(): otherwise their lexical scope can
   // retain run's input parameter even after job.input has been released.
-  const enqueue = (job: Job<I, O>, signal?: AbortSignal) => {
+  const enqueue = (job: Job<I, O>, signal?: AbortSignal, priority = false) => {
     const id = job.id;
     const cancel = () => {
       const current = jobs.get(id);
       if (!current) return;
       jobs.delete(id);
+      urgent.delete(id);
       current.input = undefined;
       current.cleanup();
       counts.cancelled++;
@@ -128,11 +135,16 @@ export function createRenderWorkerQueue<I, O>(
     };
     job.cleanup = () => signal?.removeEventListener("abort", cancel);
     jobs.set(id, job);
+    if (priority) urgent.add(id);
     signal?.addEventListener("abort", cancel, { once: true });
     pump();
   };
   return {
-    run(input: I, signal?: AbortSignal): Promise<O | undefined> {
+    run(
+      input: I,
+      signal?: AbortSignal,
+      priority = false,
+    ): Promise<O | undefined> {
       if (signal?.aborted) return Promise.resolve(undefined);
       // A later request may replace a crashed worker. Never replay a posted job
       // (its input is released), or loop forever when the host blocks workers.
@@ -144,6 +156,7 @@ export function createRenderWorkerQueue<I, O>(
       enqueue(
         { id: ++nextId, input, resolve, reject, cleanup: () => {} },
         signal,
+        priority,
       );
       return promise;
     },

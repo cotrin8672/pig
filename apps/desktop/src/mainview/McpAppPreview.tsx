@@ -5,9 +5,10 @@ import {
   useCallback,
   useMemo,
 } from "react";
-import type { McpAppRef } from "../shared/mcp-app";
+import type { McpAppPreviewResult, McpAppRef } from "../shared/mcp-app";
 import type { SessionAddress } from "../shared/runtime-contract";
 import type { WidgetBlock } from "../shared/widget";
+import type { McpWidgetData } from "./InteractiveWidgetFrame";
 import { rpc } from "./rpc";
 import { WidgetFrame } from "./WidgetFrame";
 
@@ -34,22 +35,36 @@ export function McpAppScope({
 
 /** Scrolling back reuses HTML instead of asking the host again. */
 const MAX_CACHED = 32;
-const cache = new Map<string, Promise<string | undefined>>();
-function load(address: SessionAddress, appId: string, toolCallId: string) {
+const cache = new Map<string, Promise<McpAppPreviewResult>>();
+function load(
+  address: SessionAddress,
+  appId: string,
+  toolCallId: string,
+  interactive: boolean,
+) {
   const key = JSON.stringify([
     address.hostId,
     address.sessionId,
     address.epoch,
     appId,
+    toolCallId,
+    interactive,
   ]);
   let html = cache.get(key);
   if (!html) {
     html = rpc.request
-      .getMcpAppPreview({ ...address, appId, toolCallId })
-      .then((result) => result?.html)
-      .catch(() => undefined);
+      .getMcpAppPreview({
+        ...address,
+        appId,
+        toolCallId,
+        ...(interactive && { interactive: true }),
+      })
+      .catch(() => null);
     // Failures are not cached, so Retry asks again.
-    void html.then((value) => value === undefined && cache.delete(key));
+    const flight = html;
+    void flight.then((value) => {
+      if (!value && cache.get(key) === flight) cache.delete(key);
+    });
   } else cache.delete(key);
   cache.set(key, html);
   while (cache.size > MAX_CACHED)
@@ -61,10 +76,12 @@ export const McpAppPreview = memo(function McpAppPreview({
   address,
   appRef,
   toolCallId,
+  data,
 }: {
   address: SessionAddress;
   appRef: McpAppRef;
   toolCallId: string;
+  data: McpWidgetData;
 }) {
   const { id, title } = appRef;
   const block = useMemo<WidgetBlock>(
@@ -80,8 +97,9 @@ export const McpAppPreview = memo(function McpAppPreview({
     [id, title],
   );
   const read = useCallback(
-    () => load(address, id, toolCallId),
+    async (interactive: boolean) =>
+      (await load(address, id, toolCallId, interactive)) ?? undefined,
     [address, id, toolCallId],
   );
-  return <WidgetFrame block={block} load={read} />;
+  return <WidgetFrame block={block} load={read} mcp={data} />;
 });

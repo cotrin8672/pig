@@ -7,7 +7,11 @@ import type { FileEntry } from "@earendil-works/pi-coding-agent";
 import type { SessionInfo } from "../shared/rpc-schema";
 import { isProjectTrusted } from "./project-trust";
 import { agentDir, expandHome } from "./runtime-profile";
-import { SessionManager, SettingsManager } from "./sdk";
+import {
+  CURRENT_SESSION_VERSION,
+  SessionManager,
+  SettingsManager,
+} from "./sdk";
 import { defaultSessionDir } from "./session-directory";
 import { SessionListCache } from "./session-list-cache";
 
@@ -60,13 +64,14 @@ type HistoryBasis = { digest: string; entryCount: number; leaf: string | null };
 export function unchangedHistoryPrefix(
   manager: ReturnType<typeof SessionManager.inMemory>,
   basis: HistoryBasis,
-  fullDigest?: string,
+  digests?: { full?: string; sourcePrefix?: string },
 ) {
   const count = manager.getEntryCount();
   return (
     count >= basis.entryCount &&
-    ((count === basis.entryCount ? fullDigest : undefined) ??
-      sessionHistoryDigest(manager, basis.entryCount)) === basis.digest &&
+    (digests?.sourcePrefix === basis.digest ||
+      ((count === basis.entryCount ? digests?.full : undefined) ??
+        sessionHistoryDigest(manager, basis.entryCount)) === basis.digest) &&
     (!basis.leaf ||
       manager.getBranch().some((entry) => entry.id === basis.leaf))
   );
@@ -109,28 +114,67 @@ export async function removeSessionFile(cwd: string, id: string) {
   await unlink(await resolveSessionFile(cwd, id));
 }
 
-/** SDK open repairs files and skips malformed lines; browsing must do neither. */
 export async function readSessionFile(
   cwd: string,
   id: string,
   resolvedFile?: string,
 ) {
   const file = resolvedFile ?? (await resolveSessionFile(cwd, id));
-  const stream = createReadStream(file, { encoding: "utf8" });
-  const lines = createInterface({ input: stream, crlfDelay: Infinity });
+  return (await readSessionSource(cwd, id, file)).manager;
+}
+
+export async function readSessionFileForPaging(
+  cwd: string,
+  id: string,
+  prefixCount: number,
+) {
+  const file = await resolveSessionFile(cwd, id);
+  return readSessionSource(cwd, id, file, prefixCount);
+}
+
+/** SDK open repairs files and skips malformed lines; browsing must do neither. */
+async function readSessionSource(
+  cwd: string,
+  id: string,
+  file: string,
+  prefixCount?: number,
+) {
+  const stream = createReadStream(file, {
+    encoding: "utf8",
+    highWaterMark: 1024 * 1024,
+  });
   const entries: FileEntry[] = [];
-  try {
-    for await (const line of lines) {
-      if (!line.trim()) continue;
-      const entry = JSON.parse(line) as FileEntry;
-      if (!entry || typeof entry !== "object" || Array.isArray(entry))
-        throw new Error("Invalid session history entry");
-      entries.push(entry);
+  let sourceHash: ReturnType<typeof createHash> | undefined;
+  let remaining = prefixCount ?? 0;
+  const parse = (line: string) => {
+    if (!line.trim()) return;
+    const entry = JSON.parse(line) as FileEntry;
+    if (!entry || typeof entry !== "object" || Array.isArray(entry))
+      throw new Error("Invalid session history entry");
+    entries.push(entry);
+    if (entries.length === 1 && entry.type === "session") {
+      if (
+        prefixCount !== undefined &&
+        entry.version === CURRENT_SESSION_VERSION
+      )
+        sourceHash = createHash("sha256");
+    } else if (sourceHash && remaining > 0 && entry.type !== "session") {
+      sourceHash.update(line).update("\n");
+      remaining--;
     }
-  } finally {
-    lines.close();
-    stream.destroy();
+  };
+  // Await chunks, not individual entries. Split before joining the carry so a
+  // multi-MiB tool result is never scanned repeatedly for its first newline.
+  let carry = "";
+  for await (const chunk of stream) {
+    const lines = (chunk as string).split(/[\r\n]/);
+    for (let i = 0; i < lines.length - 1; i++) {
+      parse(carry + lines[i]);
+      carry = "";
+    }
+    carry += lines[lines.length - 1];
   }
+  parse(carry);
   const header = entries[0];
   if (
     header?.type !== "session" ||
@@ -139,6 +183,10 @@ export async function readSessionFile(
     !sameSessionPath(header.cwd, cwd)
   )
     throw new Error("Session does not belong to this project or was not found");
+  // Current SDK files already use JSON.stringify. Only an exact digest match
+  // can skip re-encoding; migrations and differently formatted JSON still
+  // need the canonical digest.
+  const prefixDigest = remaining === 0 ? sourceHash?.digest("hex") : undefined;
   const manager = SessionManager.inMemory(cwd, undefined, entries);
   const seen = new Set<string>();
   for (const entry of manager.getEntries()) {
@@ -150,5 +198,5 @@ export async function readSessionFile(
       throw new Error("Invalid session history branch");
     seen.add(entry.id);
   }
-  return manager;
+  return { manager, prefixDigest };
 }

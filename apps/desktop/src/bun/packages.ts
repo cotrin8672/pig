@@ -7,7 +7,10 @@ import {
   SettingsManager,
 } from "@earendil-works/pi-coding-agent";
 import { classify, npmName } from "../shared/packages";
-import { SUPPORTED_EXTENSIONS } from "../shared/supported-extensions";
+import {
+  SUPPORTED_EXTENSIONS,
+  supportedExtension,
+} from "../shared/supported-extensions";
 import "./bun-package-manager";
 import type {
   InstalledPackage,
@@ -114,9 +117,15 @@ async function search(query: string, size: number, from: number) {
     const data = object(await getJson(url));
     if (!Array.isArray(data.objects))
       throw new Error("Invalid npm search response");
+    const items = data.objects
+      .map(mapSearchItem)
+      .filter((pkg) => pkg.name !== "@ogulcancelik/pi-codex-subagents");
     return {
-      items: data.objects.map(mapSearchItem),
-      total: typeof data.total === "number" ? data.total : 0,
+      items,
+      total:
+        typeof data.total === "number"
+          ? Math.max(0, data.total - (data.objects.length - items.length))
+          : 0,
     };
   } catch (error) {
     throw new Error(`Package search failed: ${String(error)}`, {
@@ -132,13 +141,15 @@ async function supportedPackages(query: string) {
   const items = await Promise.all(
     SUPPORTED_EXTENSIONS.filter((pkg) => pkg.name.includes(q)).map(
       async (pkg): Promise<MarketPackage> => {
-        try {
-          const found = (await search(pkg.name, 20, 0)).items.find(
-            (item) => item.name === pkg.name,
-          );
-          if (found) return found;
-        } catch {
-          /* Fall through to the static entry. */
+        if (!pkg.source) {
+          try {
+            const found = (await search(pkg.name, 20, 0)).items.find(
+              (item) => item.name === pkg.name,
+            );
+            if (found) return found;
+          } catch {
+            /* Fall through to the static entry. */
+          }
         }
         return {
           name: pkg.name,
@@ -147,7 +158,10 @@ async function supportedPackages(query: string) {
           date: "",
           monthlyDownloads: 0,
           types: ["extension"],
-          npmUrl: `https://www.npmjs.com/package/${pkg.name}`,
+          npmUrl: pkg.source
+            ? undefined
+            : `https://www.npmjs.com/package/${pkg.name}`,
+          repoUrl: pkg.repoUrl,
         };
       },
     ),
@@ -318,7 +332,10 @@ async function installed(entries: Configured): Promise<InstalledPackage[]> {
   return Promise.all(
     entries.map(async (entry) => {
       let pkg: ObjectValue = {};
-      if (npmName(entry.source) && entry.installedPath) {
+      const name =
+        SUPPORTED_EXTENSIONS.find((p) => p.source === entry.source)?.name ??
+        npmName(entry.source);
+      if (name && entry.installedPath) {
         try {
           pkg = object(
             JSON.parse(
@@ -332,7 +349,7 @@ async function installed(entries: Configured): Promise<InstalledPackage[]> {
       return {
         source: entry.source,
         scope: entry.scope,
-        name: text(pkg.name) || npmName(entry.source) || entry.source,
+        name: text(pkg.name) || name || entry.source,
         version: text(pkg.version) || undefined,
         description: text(pkg.description) || undefined,
         types: classify(keywords(pkg.keywords)),
@@ -389,8 +406,11 @@ export async function packageOperation(
   if (typeof value.opId !== "string" || !value.opId || value.opId.length > 200)
     throw new Error("Invalid package operation ID");
   const opId = value.opId;
+  const name = text(value.name);
   const source =
-    action === "install" ? `npm:${text(value.name)}` : text(value.source);
+    action === "install"
+      ? (supportedExtension(name)?.source ?? `npm:${name}`)
+      : text(value.source);
   const frame = { opId, source, action };
   const refreshWarning = (error: unknown) =>
     warn(

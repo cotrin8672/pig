@@ -40,6 +40,7 @@ if (process.env.PIG_ACCOUNT_EVENTS_CHILD !== "1") {
             },
             appearance: async () => useStore.getState().appearance,
             settings: async () => useStore.getState().settings,
+            actionKeymaps: async () => [],
           },
         };
       }

@@ -25,6 +25,8 @@ type Story = StoryObj<typeof meta>;
 
 export const Default: Story = {};
 export const Running: Story = { args: { scene: "running" } };
+/** 応答の後に届いたサブエージェントの結果が、第三者の吹き出しとして次の応答を始める。 */
+export const SubagentResult: Story = { args: { scene: "subagent" } };
 export const SessionPanel: Story = {
   parameters: { appPreview: false, gallery: true },
   render: (args) => (

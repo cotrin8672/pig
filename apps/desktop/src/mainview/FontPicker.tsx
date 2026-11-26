@@ -1,7 +1,8 @@
-import { Check, ChevronDown, Search } from "lucide-react";
+import { Check, ChevronDown } from "lucide-react";
 import { useEffect, useId, useRef, useState } from "react";
 import { useT } from "./i18n";
 import { usePicker } from "./Picker";
+import { SearchField } from "./primitives/SearchField";
 
 export function FontPicker({
   label,
@@ -61,43 +62,41 @@ export function FontPicker({
         <ChevronDown size={14} aria-hidden="true" />
       </summary>
       <div className="picker-panel font-picker-panel">
-        <div className="settings-search">
-          <Search size={16} aria-hidden="true" />
-          <input
-            ref={search}
-            type="search"
-            role="combobox"
-            aria-label={`${label}: ${t["Search fonts"]}`}
-            placeholder={t["Search fonts"]}
-            aria-expanded={open}
-            aria-controls={id}
-            aria-autocomplete="list"
-            aria-activedescendant={
-              options[active] !== undefined ? `${id}-${active}` : undefined
+        <SearchField
+          variant="inline"
+          className="font-picker-search"
+          ref={search}
+          type="search"
+          role="combobox"
+          aria-label={`${label}: ${t["Search fonts"]}`}
+          placeholder={t["Search fonts"]}
+          aria-expanded={open}
+          aria-controls={id}
+          aria-autocomplete="list"
+          aria-activedescendant={
+            options[active] !== undefined ? `${id}-${active}` : undefined
+          }
+          value={query}
+          onChange={(event) => {
+            setQuery(event.target.value);
+            setActive(0);
+          }}
+          onKeyDown={(event) => {
+            if (event.nativeEvent.isComposing || event.keyCode === 229) return;
+            if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+              event.preventDefault();
+              event.stopPropagation();
+              const direction = event.key === "ArrowDown" ? 1 : -1;
+              setActive((index) =>
+                Math.max(0, Math.min(options.length - 1, index + direction)),
+              );
+            } else if (event.key === "Enter") {
+              event.preventDefault();
+              event.stopPropagation();
+              if (options[active] !== undefined) select(options[active]);
             }
-            value={query}
-            onChange={(event) => {
-              setQuery(event.target.value);
-              setActive(0);
-            }}
-            onKeyDown={(event) => {
-              if (event.nativeEvent.isComposing || event.keyCode === 229)
-                return;
-              if (event.key === "ArrowDown" || event.key === "ArrowUp") {
-                event.preventDefault();
-                event.stopPropagation();
-                const direction = event.key === "ArrowDown" ? 1 : -1;
-                setActive((index) =>
-                  Math.max(0, Math.min(options.length - 1, index + direction)),
-                );
-              } else if (event.key === "Enter") {
-                event.preventDefault();
-                event.stopPropagation();
-                if (options[active] !== undefined) select(options[active]);
-              }
-            }}
-          />
-        </div>
+          }}
+        />
         <div
           id={id}
           ref={list}

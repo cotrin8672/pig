@@ -1,0 +1,142 @@
+.pp-material {
+  display: block;
+  width: 1.4em;
+  height: 1.2em;
+  flex: none;
+}
+
+.pp-material-fold {
+  transform-origin: 16px 9px;
+  animation: pp-material-fold 2s ease-in-out infinite;
+}
+@keyframes pp-material-fold {
+  0%,
+  15%,
+  100% {
+    transform: scaleX(1);
+  }
+  53%,
+  65% {
+    transform: skewY(-16deg) scaleX(-0.85);
+    opacity: 0.72;
+  }
+}
+
+.pp-material-tumble {
+  transform-origin: 14px 14px;
+  animation: pp-material-tumble 3.3s infinite;
+}
+@keyframes pp-material-tumble {
+  0%,
+  10% {
+    transform: rotate(0deg);
+  }
+  33%,
+  43% {
+    transform: rotate(120deg);
+  }
+  66%,
+  76% {
+    transform: rotate(240deg);
+  }
+  100% {
+    transform: rotate(360deg);
+  }
+}
+
+.pp-material-ink {
+  transform-origin: 14px 12px;
+  animation: pp-ink-axis 3s infinite alternate;
+}
+.pp-material-drop {
+  animation: pp-ink-merge 3s infinite alternate;
+}
+.pp-material-right {
+  --merge: -6px;
+}
+.pp-material-neck {
+  opacity: 0;
+  animation: pp-ink-neck 3s infinite alternate;
+}
+@keyframes pp-ink-axis {
+  0%,
+  40% {
+    transform: rotate(0);
+  }
+  60%,
+  100% {
+    transform: rotate(90deg);
+  }
+}
+@keyframes pp-ink-merge {
+  40%,
+  60% {
+    transform: translateX(var(--merge, 6px));
+  }
+}
+@keyframes pp-ink-neck {
+  15%,
+  85% {
+    opacity: 0;
+  }
+  30%,
+  70% {
+    opacity: 1;
+  }
+}
+
+.pp-material-shuttle {
+  animation: pp-material-weave 1.9s ease-in-out infinite;
+}
+@keyframes pp-material-weave {
+  0%,
+  100% {
+    transform: translate(0, 0);
+  }
+  45%,
+  52% {
+    transform: translate(15px, -2px);
+  }
+}
+
+.pp-material-focus {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: pp-material-focus 2.8s ease-in-out infinite;
+}
+.pp-material-near {
+  opacity: 0.4;
+  animation-delay: -1.4s;
+}
+@keyframes pp-material-focus {
+  0%,
+  18%,
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50%,
+  68% {
+    opacity: 0.25;
+    transform: scale(1.24);
+  }
+}
+
+.pp-material-flock {
+  transform-origin: 14px 12px;
+  animation: pp-material-circle 2.7s linear infinite;
+}
+@keyframes pp-material-circle {
+  from {
+    transform: scaleY(0.76) rotate(0deg);
+  }
+  to {
+    transform: scaleY(0.76) rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pp-material * {
+    animation: none;
+  }
+}

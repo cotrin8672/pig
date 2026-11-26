@@ -63,7 +63,7 @@ test.skipIf(!existsSync(fixtureEdge) && !process.env.PIG_REQUIRE_UI_TESTS)(
     check(editor.selectionStart===2&&editor.selectionEnd===8,"suspension must not reset the editor selection");
     check(thread.scrollTop===top&&thread.clientHeight===height,"suspension must not move or resize the conversation");
     check(drafts.read(next).content.text==="local editor input"&&wakes===0,"cold history and draft edits must not wake the SDK");
-    check(!drafts.read(next).conflict,"ownership-only echo must not invent an editor conflict");
+    check(drafts.read(next).revision>=revision,"draft must follow the new owner's revision");
     editor.dispatchEvent(new CompositionEvent("compositionend",{bubbles:true,data:""}));
     // Cold reads and a later ready publication keep explicitly loaded older rows.
     const tail={...snapshot,address:next,snapshotSeq:3,suspended:true,

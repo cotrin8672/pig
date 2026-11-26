@@ -84,6 +84,17 @@ async function paused(action: () => void | Promise<void>) {
   }
 }
 
+test("a cached miss is invalidated when the indexed session becomes visible", async () => {
+  await Bun.write(file, head() + msg("only-entry", "日本語の設定"));
+  await paused(() => {
+    expect(count()).toBe(1);
+    expect(index.search("設定")).toEqual([]);
+  });
+  expect(index.search("設定").map((hit) => hit.entryId)).toEqual([
+    "only-entry",
+  ]);
+});
+
 test("forget during a committed slice cannot resurrect rows or checkpoints", async () => {
   await paused(() => {
     expect(count()).toBeGreaterThan(0);

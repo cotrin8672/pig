@@ -65,21 +65,24 @@ function plainToken(
 }
 
 function useHighlightedLines(text: string, language?: string) {
+  const saved = useContext(SavedOutputContext);
   const [result, setResult] = useState<HighlightSnapshot | undefined>(() => {
-    const tokens = cachedHighlight(text, language);
+    const tokens = cachedHighlight(text, language, saved);
     return tokens ? { text, language, tokens } : undefined;
   });
   useEffect(() => {
     const controller = new AbortController();
-    void highlightCode(text, language, controller.signal).then((tokens) => {
-      if (!controller.signal.aborted && tokens)
-        startTransition(() => setResult({ text, language, tokens }));
-    });
+    void highlightCode(text, language, controller.signal, saved).then(
+      (tokens) => {
+        if (!controller.signal.aborted && tokens)
+          startTransition(() => setResult({ text, language, tokens }));
+      },
+    );
     return () => controller.abort();
-  }, [text, language]);
+  }, [text, language, saved]);
   // Prefer exact tokens; while loading, retain only text that is still unchanged.
   return (
-    cachedHighlight(text, language) ??
+    cachedHighlight(text, language, saved) ??
     (result?.text === text && result.language === language
       ? result.tokens
       : retainedHighlight(text, language, result))

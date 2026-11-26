@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import { existsSync } from "node:fs";
-import { mkdtemp, readFile, realpath, rm } from "node:fs/promises";
+import { mkdtemp, realpath } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -10,6 +10,10 @@ import { build as buildStyles } from "vite";
 import { renderWorkerFixturePlugin } from "../../scripts/render-worker-fixture";
 import { syntaxFixture } from "../../scripts/syntax-fixture";
 import { titlebarChatFixture } from "../../scripts/titlebar-chat-fixture";
+import {
+  fixtureBrowser,
+  removeFixtureDirectory,
+} from "../../scripts/ui-browser";
 import {
   fixtureHelpers,
   fixtureImport,
@@ -101,13 +105,14 @@ test.skipIf(!existsSync(edge) && !process.env.PIG_REQUIRE_UI_TESTS)(
         await render({running,compaction:{reason:running?'threshold':'manual'}});
         const card=document.querySelector('.compaction-card[data-active]');
         check(card?.textContent.includes('コンテキストを圧縮中…'),'manual and automatic compaction must be visible');
+        check(document.querySelector('.message.user .user-bubble')?.textContent.includes('続きをお願いします'),'the sent message must remain visible during compaction');
         check(!document.querySelector('.running'),'normal working text must not duplicate compaction');
         const css=getComputedStyle(card),alpha=Number(css.backgroundColor.match(/[\\d.]+(?=\\)$)/)?.[0]);
         check(css.opacity==='1'&&alpha>0&&alpha<1,'card must use a translucent background without whole-card opacity');
         check(card.scrollWidth===card.clientWidth,'narrow cards must not overflow');
         const icon=card.querySelector('svg'),heading=card.querySelector('strong');
         check(getComputedStyle(icon).flexShrink==='0'&&getComputedStyle(icon).width==='16px','icon stays aligned at narrow widths');
-        check(getComputedStyle(icon).animationName==='compaction-spin','only the active icon animates');
+        check(getComputedStyle(icon).animationName==='transcript-notice-spin','only the active icon animates');
         check(getComputedStyle(heading).opacity==='1','text stays fully visible');
         await capturePixels();
       }
@@ -118,6 +123,7 @@ test.skipIf(!existsSync(edge) && !process.env.PIG_REQUIRE_UI_TESTS)(
     await render({running:false,records:[user,saved]});
     const card=document.querySelector('.compaction-card');
     check(card?.textContent.includes('コンテキストを圧縮しました')&&card.textContent.includes('42,000'),'saved compaction must show completion and tokens before compaction');
+    check(document.querySelectorAll('.message.user').length===1,'compaction must not remove or duplicate the sent message');
     check(!card.querySelector('.prose')&&!card.querySelector('details').open,'summary must be lazy and collapsed');
     card.querySelector('summary').click();
     await until(()=>card.querySelector('.prose')?.textContent.includes('次にテストを実行する。'),'summary must expand');
@@ -154,7 +160,7 @@ test.skipIf(!existsSync(edge) && !process.env.PIG_REQUIRE_UI_TESTS)(
 );
 
 test.skipIf(!existsSync(edge) && !process.env.PIG_REQUIRE_UI_TESTS)(
-  "running status keeps the original static text and extension overrides in Edge",
+  "running status keeps its turn spinner, translated label and extension overrides in Edge",
   () =>
     runUiFixture(
       "running-status",
@@ -167,24 +173,35 @@ test.skipIf(!existsSync(edge) && !process.env.PIG_REQUIRE_UI_TESTS)(
     ${fixtureHelpers}
     const root=createFixtureRoot(createRoot);
     flushSync(()=>useStore.setState(s=>({settings:{...s.settings,language:'ja'}})));
-    flushSync(()=>root.render(<RunningIndicator/>));
+    const render=(props={})=>flushSync(()=>root.render(<RunningIndicator turnKey="session/turn-1" {...props}/>));
+    render();
     await wait();
     const line=document.querySelector('p.running[role="status"]');
-    check(line?.textContent==='処理中…' && line.childElementCount===0,'original plain label, no spinner');
-    check(line.getAnimations({subtree:true}).length===0,'no waiting animation');
-    const before=line.getBoundingClientRect().toJSON();
-    let changes=0;
-    const observer=new MutationObserver(()=>changes++);
-    observer.observe(line,{subtree:true,childList:true,characterData:true,attributes:true});
+    const spinner=()=>line.querySelector('[data-turn-spinner]');
+    const label=()=>{
+      const copy=line.cloneNode(true);
+      copy.querySelectorAll('[aria-hidden="true"]').forEach(el=>el.remove());
+      return copy.textContent.trim();
+    };
+    const initial=spinner();
+    const variant=initial?.dataset.turnSpinner;
+    const sameSpinner=()=>spinner()===initial && spinner()?.dataset.turnSpinner===variant;
+    check(variant && initial.getAttribute('aria-hidden')==='true' && label()==='処理中…','decorative spinner with a localized status');
+    const centerY=el=>{const r=el.getBoundingClientRect();return r.top+r.height/2;};
+    check(Math.abs(centerY(initial)-centerY(line.lastElementChild))<1,'spinner and Japanese label share a vertical center');
     await new Promise(resolve=>setTimeout(resolve,2900));
-    observer.disconnect();
-    check(changes===0 && line.textContent==='処理中…','no rotating words or spinner frames');
-    check(JSON.stringify(line.getBoundingClientRect().toJSON())===JSON.stringify(before),'waiting must not move the line');
-    flushSync(()=>root.render(<RunningIndicator symbol="🐖" message="Shipping it"/>));
-    check(line.textContent==='🐖 Shipping it','extension message and symbol stay visible');
+    check(sameSpinner() && label()==='処理中…','turn spinner and default label stay stable while waiting');
     flushSync(()=>useStore.setState(s=>({settings:{...s.settings,language:'en'}})));
-    flushSync(()=>root.render(<RunningIndicator/>));
-    check(line.textContent==='Working…','language change uses the fixed translated label');
+    check(label()==='Working…' && sameSpinner(),'language change updates only the translated label');
+    render({message:'Shipping it'});
+    check(label()==='Shipping it' && sameSpinner(),'extension message keeps the turn spinner');
+    render({symbol:'🐖',message:'Shipping it'});
+    check(!spinner() && line.textContent.includes('🐖') && line.textContent.includes('Shipping it'),'extension symbol replaces the spinner');
+    render();
+    window.__fixtureInput={method:'Emulation.setEmulatedMedia',params:{features:[{name:'prefers-reduced-motion',value:'reduce'}]}};
+    await until(()=>!window.__fixtureInput && matchMedia('(prefers-reduced-motion: reduce)').matches,'emulate reduced motion');
+    check(line.getAnimations({subtree:true}).every(a=>a.playState!=='running'),'reduced motion stops spinner animations');
+    check(label()==='Working…','reduced motion retains the status label');
     root.unmount();
   `,
     ),
@@ -239,6 +256,26 @@ test.skipIf(!existsSync(edge) && !process.env.PIG_REQUIRE_UI_TESTS)(
     check(more.getAttribute('aria-label')==='Show fewer chats','offer collapse when no older chats remain');
     more.click();await wait();
     check(JSON.stringify(measure())===JSON.stringify(baseline),'collapsing must restore the fixed recent slots');
+    const toggle=project.querySelector('.project-toggle'),settle=()=>new Promise(r=>setTimeout(r,300));
+    toggle.click();await wait();
+    const closing=measure();
+    check(closing.project===7&&closing.height<baseline.height&&closing.nextTop<baseline.nextTop,'closing slides later projects up while rows stay mounted');
+    await settle();
+    check(measure().project===0&&project.querySelector('.sidebar-collapse').inert,'closed project unmounts its rows and is inert');
+    toggle.click();await wait();
+    const opening=measure();
+    check(opening.project===7&&opening.nextTop<baseline.nextTop,'opening grows the list instead of jumping');
+    await settle();
+    check(JSON.stringify(measure())===JSON.stringify(baseline),'reopened project restores its height');
+    const trigger=project.querySelector('.thread-more:not(:disabled)'),menu=document.getElementById(trigger.getAttribute('popovertarget'));
+    trigger.click();await wait();
+    check(menu.matches(':popover-open')&&getComputedStyle(menu).transform!=='none','menu opens with a scale from the trigger');
+    await settle();
+    check(getComputedStyle(menu).opacity==='1'&&getComputedStyle(menu).transform==='none','menu settles at full size');
+    menu.hidePopover();await wait();
+    check(getComputedStyle(menu).display!=='none'&&getComputedStyle(menu).pointerEvents==='none','closing menu fades without taking input');
+    await settle();
+    check(getComputedStyle(menu).display==='none','closed menu leaves the page');
   `,
     ),
   60_000,
@@ -411,7 +448,7 @@ test.skipIf(!existsSync(edge) && !process.env.PIG_REQUIRE_UI_TESTS)(
       import {contentBase,encodeContentAppend} from ${source("../shared/content-append.ts")};
       import {expandSnapshotDelta} from ${source("../shared/snapshot-delta.ts")};
       import {ToolBlock,ToolGroup,ThinkingBlock} from ${source("./ToolBlock.tsx")};
-      import {DisclosureScope} from ${source("./LazyDetails.tsx")};
+      import {DisclosureScope} from ${source("./patterns/LazyDetails.tsx")};
       import {Markdown,BuiltinMarkdown,markdownComponents} from ${source("./MessageContent.tsx")};
       import ReactMarkdown from ${JSON.stringify(fileURLToPath(import.meta.resolve("react-markdown")))};
       import remarkGfm from ${JSON.stringify(fileURLToPath(import.meta.resolve("remark-gfm")))};
@@ -1293,6 +1330,7 @@ test.skipIf(!existsSync(edge) && !process.env.PIG_REQUIRE_UI_TESTS)(
       const streamingSearch=document.querySelector(".model-search input");
       await type(streamingSearch,"Large model 9");
       check(document.querySelector(".model-option"),"open streaming picker must have searchable results");
+      check(document.querySelectorAll(".model-option").length<80,"long search results must mount only the viewport");
       catalogReads=0;
       for(let token=0;token<100;token++){
         await render(<Composer snapshot={{...readyInputSnapshot,snapshotSeq:token+102,address:{...readyInputSnapshot.address},model:{...readyInputSnapshot.model},effortLevels:[...readyInputSnapshot.effortLevels],contextUsage:{tokens:token,contextWindow:1000,percent:token/10},transcript:{...readyInputSnapshot.transcript,running:true,records:[assistant("live",1000,[{type:"text",text:"Streaming "+token}])]}}}/>);
@@ -1300,6 +1338,8 @@ test.skipIf(!existsSync(edge) && !process.env.PIG_REQUIRE_UI_TESTS)(
       check(catalogReads===0,"an open picker must not rescan its catalog during 100 body/context updates: "+catalogReads);
       check(document.querySelector(".model-search input")===streamingSearch && streamingSearch.value==="Large model 9" && document.activeElement===streamingSearch,"streaming must preserve open picker search, focus and DOM");
       metrics.newChatInput.openStreamingCatalogReads=catalogReads;
+      streamingSearch.dispatchEvent(new KeyboardEvent("keydown",{key:"ArrowUp",bubbles:true}));
+      await until(()=>document.querySelector('.model-option[data-highlighted="true"]')?.getAttribute("data-model-index")==="110","keyboard wrap must reveal the last of 111 matching models");
       await click(document.querySelector(".model-picker summary"));
       await render(<div/>);
       flushSync(()=>useStore.setState({bootstrap:pickerBootstrap,openingTarget:beforeNewChat.openingTarget,newChatDrafts:beforeNewChat.newChatDrafts}));
@@ -1555,6 +1595,8 @@ test.skipIf(!existsSync(edge) && !process.env.PIG_REQUIRE_UI_TESTS)(
         const height=toggle.getBoundingClientRect().height;
         await click(toggle);
         check(toggle.getAttribute("aria-expanded")==="true","chat list must expand");checkCentered();
+        const shownRows=[...document.querySelectorAll(".thread-row")];
+        check(shownRows.length===8&&shownRows.slice(5).every(row=>row.getAnimations().length===1)&&shownRows.slice(0,5).every(row=>!row.getAnimations().length),"only rows revealed by the toggle grow in");
         check(toggle.getBoundingClientRect().height===height,"toggle height must not change on expansion");
         await click(toggle);checkCentered();
       }
@@ -1610,7 +1652,6 @@ test.skipIf(!existsSync(edge) && !process.env.PIG_REQUIRE_UI_TESTS)(
         ["extension-dialogs",'<div class="extension-dialogs audit-scroller"></div>'],
         ["toasts",'<div class="notifications audit-scroller"></div>'],
         ["custom-record",'<div class="custom-record"><pre class="audit-scroller"></pre></div>'],
-        ["draft-conflict",'<div class="draft-conflict"><pre class="audit-scroller"></pre></div>'],
       ];
       const screenshot=async()=>{
         window.__scrollbarCapture=true;
@@ -1747,96 +1788,17 @@ test.skipIf(!existsSync(edge) && !process.env.PIG_REQUIRE_UI_TESTS)(
         html,
         '<!doctype html><meta charset="utf-8"><link rel="stylesheet" href="fixture.css"><div id="root"></div><script src="fixture.js"></script>',
       );
-      const child = Bun.spawn(
-        [
-          edge,
-          "--headless=new",
-          "--disable-gpu",
-          "--no-first-run",
-          "--no-default-browser-check",
-          "--disable-extensions",
-          "--disable-background-mode",
-          `--user-data-dir=${join(dir, "profile")}`,
-          "--remote-debugging-port=0",
-          "--disable-background-timer-throttling",
-          "--disable-renderer-backgrounding",
-          "--disable-backgrounding-occluded-windows",
-          "--force-device-scale-factor=1",
-          "--window-size=1100,800",
-          "about:blank",
-        ],
-        { stdout: "ignore", stderr: "pipe" },
-      );
-      // The scrollbar audit renders and screenshots 18 batches; a slow CI
-      // runner needs well over a minute, so keep the caps generous.
-      const timeout = setTimeout(() => child.kill(), 120_000);
-      const errors = new Response(child.stderr).text();
-      let socket: WebSocket | undefined;
-      try {
-        const portFile = join(dir, "profile", "DevToolsActivePort");
-        let port = "";
-        for (let i = 0; i < 400; i++) {
-          try {
-            const lines = (await readFile(portFile, "utf8")).split(/\r?\n/);
-            if (/^\d+$/.test(lines[0]) && lines[1]?.startsWith("/devtools/")) {
-              port = lines[0];
-              break;
-            }
-          } catch (error) {
-            // On Windows Edge may still hold the new port file exclusively.
-            const code = (error as NodeJS.ErrnoException).code;
-            if (code !== "ENOENT" && code !== "EBUSY") throw error;
-          }
-          await Bun.sleep(25);
-        }
-        if (!port) throw new Error("Edge did not publish its debugging port");
-        const target = (await (
-          await fetch(`http://127.0.0.1:${port}/json/new?about:blank`, {
-            method: "PUT",
-          })
-        ).json()) as { webSocketDebuggerUrl: string };
-        socket = new WebSocket(target.webSocketDebuggerUrl);
-        const connected = socket;
-        await new Promise<void>((resolve, reject) => {
-          connected.addEventListener("open", () => resolve(), { once: true });
-          connected.addEventListener("error", reject, { once: true });
-        });
-        let id = 0;
-        function command<T = unknown>(
-          method: string,
-          params: Record<string, unknown> = {},
-        ): Promise<T> {
-          return new Promise((resolve, reject) => {
-            const requestId = ++id;
-            const cleanup = () => {
-              connected.removeEventListener("message", receive);
-              connected.removeEventListener("close", closed);
-            };
-            const closed = () => {
-              cleanup();
-              reject(new Error("Fixture browser closed"));
-            };
-            const receive = (event: MessageEvent) => {
-              const reply = JSON.parse(String(event.data));
-              if (reply.id !== requestId) return;
-              cleanup();
-              if (reply.error) reject(new Error(reply.error.message));
-              else resolve(reply.result);
-            };
-            connected.addEventListener("message", receive);
-            connected.addEventListener("close", closed, { once: true });
-            connected.send(JSON.stringify({ id: requestId, method, params }));
-          });
-        }
-        // Edge's delayed 34px automation infobar must not resize the content
-        // viewport halfway through native input/geometry assertions.
-        await command("Emulation.setDeviceMetricsOverride", {
+      const browser = await fixtureBrowser(
+        edge,
+        dir,
+        pathToFileURL(html).href,
+        {
           width: 1100,
           height: 800,
-          deviceScaleFactor: 1,
-          mobile: false,
-        });
-        await command("Page.navigate", { url: pathToFileURL(html).href });
+        },
+      );
+      const { command } = browser;
+      try {
         type Report = { ok: boolean; metrics: { wheels: unknown[] } };
         type Evaluation = {
           result: {
@@ -1950,31 +1912,11 @@ test.skipIf(!existsSync(edge) && !process.env.PIG_REQUIRE_UI_TESTS)(
         );
         passed = true;
       } finally {
-        if (socket?.readyState === WebSocket.OPEN)
-          socket.send(JSON.stringify({ id: -1, method: "Browser.close" }));
-        else child.kill();
-        await child.exited;
-        clearTimeout(timeout);
-        socket?.close();
-        await errors;
+        await browser.close();
       }
     } finally {
-      if (passed) {
-        try {
-          await rm(dir, {
-            recursive: true,
-            force: true,
-            maxRetries: 10,
-            retryDelay: 100,
-          });
-        } catch (error) {
-          // Edge's Windows profile writers can outlive the browser process; don't mask UI results.
-          expect(["EBUSY", "ENOTEMPTY"], String(error)).toContain(
-            (error as NodeJS.ErrnoException).code ?? "",
-          );
-          console.warn("Windows still holds the temporary Edge profile:", dir);
-        }
-      } else console.error("Failed Edge fixture retained at", dir);
+      if (passed) await removeFixtureDirectory(dir);
+      else console.error("Failed Edge fixture retained at", dir);
     }
   },
   150_000,

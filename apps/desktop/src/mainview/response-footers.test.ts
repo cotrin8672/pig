@@ -174,3 +174,22 @@ test.each([
   expect(index(observed, false).size).toBe(count / 2);
   expect(visits).toBe(count);
 });
+
+test("an extension message after a finished response starts a new response", () => {
+  const notice = turn("c1", {
+    role: "custom",
+    customType: "pi-codex-subagent-completion",
+    display: true,
+    timestamp: 1500,
+    content: "done",
+  });
+  const records = [user("u1"), assistant("a1"), notice, assistant("a2")];
+  // The live continuation must not take the finished footer away.
+  expect([...createResponseFooterIndex()(records, true).keys()]).toEqual([
+    "a1",
+  ]);
+  const done = createResponseFooterIndex()(records, false);
+  expect([...done.keys()]).toEqual(["a1", "a2"]);
+  expect(done.get("a2")?.user?.id).toBe("c1");
+  expect(done.get("a1")?.stats.requests).toBe(1);
+});

@@ -7,7 +7,8 @@ test("isolated SDK: idle suspension, cold drafts/history, single-flight wake and
   const home = await mkdtemp(join(tmpdir(), "pig-suspension-"));
   try {
     const script = `
-      import {expect} from "bun:test";
+      import {expect, spyOn} from "bun:test";
+      import * as sessionFiles from ${JSON.stringify(new URL("./session-files.ts", import.meta.url).href)};
       import {mkdir, writeFile, readFile, stat, utimes} from "node:fs/promises";
       import {join} from "node:path";
       import {fauxProvider, fauxAssistantMessage} from "@earendil-works/pi-ai";
@@ -96,16 +97,52 @@ test("isolated SDK: idle suspension, cold drafts/history, single-flight wake and
       // Extensions do not veto suspension; the SDK shuts them down officially.
       await mkdir(join(cwd,".pi/extensions"),{recursive:true});
       await writeFile(join(cwd,".pi/extensions/shutdown-probe.ts"),'export default pi => pi.on("session_shutdown",()=>{globalThis.__shutdowns=(globalThis.__shutdowns??0)+1;});');
+      const pkg=join(cwd,".pi/extensions/subagents");
+      await mkdir(pkg,{recursive:true});
+      await writeFile(join(pkg,"package.json"),JSON.stringify({name:"pi-subagent",pi:{extensions:["index.ts"]}}));
+      await writeFile(join(pkg,"index.ts"), 'export default pi => { let parentId; let status="starting"; pi.registerCommand("agents",{handler:()=>{}}); pi.on("session_start",(_e,ctx)=>{parentId=ctx.sessionManager.getSessionId(); globalThis.__finishChild=()=>{status="completed";pi.events.emit("pig:subagents:changed",{parentId});};}); pi.events.on("pig:subagents:snapshot",q=>{if(q.parentId===parentId)q.reply([{agent_id:"a",task_name:"Review",run_id:"r",status}]);}); }');
       await host.reloadSession(chat.address);
       chat=host.runtimeState().sessions.find(item=>item.address.sessionId===id).snapshot;
       draft=host.getSessionDraft(chat.address);
       host.syncDraft({...chat.address,expectedRevision:draft.revision,content:{text:"",pastes:[],images:[]}});
+      // The initial public-bus snapshot pins a starting child even if the parent is idle.
+      const nativeView=()=>host.getSessionSnapshot(chat.address).sessionUI.views.find(e=>e.view.source.label==="pi-subagent");
+      expect(nativeView().view.runs[0].state.phase).toBe("queued");
+      heartbeat();await host.suspendIdle();now+=RUNTIME_IDLE_MS;heartbeat();
+      expect(await host.suspendIdle()).toBe(0);
+      globalThis.__finishChild();
+      expect(nativeView().view.runs[0].state.outcome).toBe("success");
       const shutdownsBefore=globalThis.__shutdowns??0;
       heartbeat();await host.suspendIdle();now+=RUNTIME_IDLE_MS;heartbeat();
       expect(await host.suspendIdle()).toBe(1);
       expect(globalThis.__shutdowns).toBe(shutdownsBefore+1);
+      // A package update skips sleeping tabs; they discover new extensions on wake.
+      await writeFile(join(cwd,".pi/extensions/reload-probe.ts"),'export default pi => pi.registerCommand("reload-probe",{handler:async()=>{}});');
+      expect(await host.reloadPackageExtensions()).toEqual([]);
+      expect(()=>host.session(id)).toThrow("Chat is not open");
       chat=await host.wakeSession(host.runtimeState().sessions.find(item=>item.address.sessionId===id).address);
+      expect(host.listSlashCommands(chat.address).some(command=>command.name==="reload-probe")).toBe(true);
       await host.closeSession(chat.address);
+      // A live open wins while the browser is reading the same history file.
+      const reading=Promise.withResolvers(), resumeRead=Promise.withResolvers();
+      const readHistory=sessionFiles.readSessionFile;
+      const spy=spyOn(sessionFiles,"readSessionFile").mockImplementationOnce(async (...args)=>{
+        const result=await readHistory(...args);
+        reading.resolve();await resumeRead.promise;return result;
+      });
+      const browsing=host.openSession({cwd,id,openId:"racing-browser",historyOnly:true});
+      await reading.promise;
+      let live;
+      try {
+        live=await host.openSession({cwd,id,openId:"racing-live"});
+      } finally {
+        resumeRead.resolve();spy.mockRestore();
+      }
+      const browsed=await browsing;
+      expect(browsed.address).toEqual(live.address);
+      expect(browsed.suspended).toBeUndefined();
+      expect(events.filter(e=>e.type==="ready" && e.openId==="racing-browser")).toHaveLength(0);
+      await host.closeSession(live.address);
       // Browsing starts no SDK and changes no history file.
       const before=await readFile(file,"utf8");
       const priorStarts=starts;

@@ -1,4 +1,3 @@
-import { X } from "lucide-react";
 import {
   createContext,
   useCallback,
@@ -12,6 +11,7 @@ import type { ModelSelection, Snapshot } from "../shared/rpc-schema";
 import type { DraftContent, PromptDelivery } from "../shared/runtime-contract";
 import { imageTypes, maxImageBase64 } from "./attachment-reads";
 import { ChatEmpty, ChatLayout } from "./ChatLayout";
+import { ComposerAttachments } from "./ComposerAttachments";
 import { ComposerEditor, insertEditorNewline } from "./ComposerEditor";
 import { ComposerFrame } from "./ComposerFrame";
 import { ComposerSubmit } from "./ComposerSubmit";
@@ -19,11 +19,9 @@ import { ContextIndicator } from "./ContextIndicator";
 import { addressKey } from "./chat-snapshot";
 import { composerHistory } from "./composer-input-history";
 import { drafts, emptyContent, expandedDraft } from "./draft-store";
-import { fileIcon } from "./file-icon";
-import { ImagePreview } from "./ImageGallery";
 import { useT } from "./i18n";
 import { UserMessage } from "./MessageContent";
-import { MessageQueue } from "./MessageQueue";
+import { MessageQueue, usePendingArrival } from "./MessageQueue";
 import { ModelPicker } from "./ModelPicker";
 import {
   openingDraftKey,
@@ -88,14 +86,12 @@ export function OpeningComposer({ preview }: { preview?: Snapshot }) {
   );
   const images = existingContent ? existingContent.images : newImages;
   const files = existingContent ? (existingContent.files ?? noFiles) : newFiles;
-  const imageSources = images.map(
-    ({ image }) => `data:${image.mimeType};base64,${image.data}`,
-  );
   const queued = openingSends(target).length > 0;
   const existing = !!preview || !!target?.id;
   const text = existing
     ? [existingText, newText].filter(Boolean).join("\n")
     : newText;
+  const hasContent = !!text.trim() || images.length + files.length > 0;
   function changeText(value: string, pastes?: DraftContent["pastes"]) {
     if (snapshot)
       drafts.edit(
@@ -182,7 +178,7 @@ export function OpeningComposer({ preview }: { preview?: Snapshot }) {
     }
   }
   function send(delivery: PromptDelivery = "steer") {
-    if (!text.trim() && !images.length) return;
+    if (!hasContent) return;
     if (!currentOpenId() && preview)
       void openChat(preview.info.cwd, preview.info.id);
     const state = useStore.getState();
@@ -247,52 +243,16 @@ export function OpeningComposer({ preview }: { preview?: Snapshot }) {
       >
         {images.length + files.length > 0 && (
           <div className="composer-attachments">
-            {images.map(({ id }, index) => (
-              <div className="composer-attachment" key={id}>
-                <ImagePreview
-                  sources={imageSources}
-                  index={index}
-                  alt={t.imageN(index + 1, images.length)}
-                />
-                <button
-                  type="button"
-                  className="composer-attachment-remove"
-                  aria-label={`${t["Remove attachment"]}: ${t.imageN(index + 1, images.length)}`}
-                  onClick={() =>
-                    setImages((current) =>
-                      current.filter((item) => item.id !== id),
-                    )
-                  }
-                >
-                  <X size={14} />
-                </button>
-              </div>
-            ))}
-            {files.map(({ id, name, path }) => {
-              const Icon = fileIcon(name);
-              return (
-                <div
-                  className="composer-attachment file"
-                  key={id}
-                  aria-description={path}
-                >
-                  <Icon size={28} aria-hidden />
-                  <span>{name}</span>
-                  <button
-                    type="button"
-                    className="composer-attachment-remove"
-                    aria-label={`${t["Remove attachment"]}: ${name}`}
-                    onClick={() =>
-                      setFiles((current) =>
-                        current.filter((item) => item.id !== id),
-                      )
-                    }
-                  >
-                    <X size={14} />
-                  </button>
-                </div>
-              );
-            })}
+            <ComposerAttachments
+              images={images}
+              files={files}
+              onRemoveImage={(id) =>
+                setImages((items) => items.filter((item) => item.id !== id))
+              }
+              onRemoveFile={(id) =>
+                setFiles((items) => items.filter((item) => item.id !== id))
+              }
+            />
           </div>
         )}
         <ComposerEditor
@@ -360,8 +320,8 @@ export function OpeningComposer({ preview }: { preview?: Snapshot }) {
             <ComposerSubmit
               busy={false}
               waiting={queued}
-              hasContent={!!text || images.length + files.length > 0}
-              disabled={!text.trim() && !images.length && !files.length}
+              hasContent={hasContent}
+              disabled={!hasContent}
               onStop={() => {
                 const id = currentOpenId();
                 if (id) restoreOpeningSends(id);
@@ -376,11 +336,12 @@ export function OpeningComposer({ preview }: { preview?: Snapshot }) {
 
 export function OpeningMessages() {
   const target = useOpeningTarget();
+  const arrival = usePendingArrival();
   return openingSends(target)
     .filter((send) => send.delivery !== "followUp")
     .map((send) => (
       <div className="response-turn" key={send.id}>
-        <article className="message user">
+        <article ref={arrival(send.id, send.content)} className="message user">
           <UserMessage
             sessionId="opening"
             disabled
