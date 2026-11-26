@@ -1366,6 +1366,50 @@ details[open] > summary .tool-chevron,
 .composer textarea::placeholder {
   color: var(--ds-placeholder-ink);
 }
+.composer-editor-field {
+  position: relative;
+  min-width: 0;
+}
+.composer-editor-paint {
+  position: absolute;
+  inset: 0;
+  overflow: auto;
+  pointer-events: none;
+  padding: 2px 4px;
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
+  font: inherit;
+}
+.composer-editor-field:not([data-composing]) .composer-editor-paint + textarea {
+  position: relative;
+  color: transparent;
+  caret-color: var(--ds-text-primary);
+}
+.composer-editor-field[data-composing] .composer-editor-paint {
+  visibility: hidden;
+}
+.composer-url {
+  color: var(--ds-link-blue);
+  text-decoration: underline;
+}
+.composer-list-marker {
+  color: var(--ds-accent);
+}
+.composer-list-marker[data-bullet] {
+  position: relative;
+  color: transparent;
+}
+.composer-list-marker[data-bullet]::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 0.45em;
+  height: 0.45em;
+  border-radius: 50%;
+  background: var(--ds-accent);
+}
 .composer-toolbar {
   display: flex;
   align-items: center;

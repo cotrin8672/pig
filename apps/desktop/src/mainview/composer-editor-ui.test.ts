@@ -141,6 +141,44 @@ test.skipIf(!existsSync(fixtureEdge) && !process.env.PIG_REQUIRE_UI_TESTS)(
       check(field().value==='hello\\nworld','undo selected-text replacement');
       check(field().selectionStart===0 && field().selectionEnd===11,'undo restores the selection');
 
+      for(const [line,marker] of [['1. 調査','2. '],['- 確認','- ']]){
+        await setText(line);field().setSelectionRange(line.length,line.length);
+        await press('Enter');
+        check(field().value===line+'\\n'+marker && field().selectionStart===field().value.length,'caret follows list marker');
+        await press('Enter');check(field().value===line+'\\n','empty item ends list');
+        await undo();check(field().value===line+'\\n'+marker,'undo restores empty list item');
+        check(document.querySelectorAll('.composer-list-marker').length===2,'both list markers are painted');
+        for(const key of ['Backspace','Delete']){
+          const before=field().selectionStart,event=await press(key);
+          check(field().value===line+'\\n' && field().selectionStart===line.length+1,'one key removes the whole empty marker: '+JSON.stringify([key,line,before,event.defaultPrevented,field().value,field().selectionStart]));
+          check(document.querySelectorAll('.composer-list-marker').length===1,'removed item loses its emphasis');
+          await press(key);check(field().value===line,'second '+key+' removes the empty line');
+          await undo();
+          await undo();
+        }
+      }
+
+      for(const marker of ['1.','-']){
+        await setText('');await insert(marker);await insert(' ');
+        check(field().value==='  '+marker+' ' && field().selectionStart===field().value.length,'space indents the item without losing the caret');
+        if(marker==='-'){
+          const dot=getComputedStyle(document.querySelector('.composer-list-marker'),'::after');
+          check(parseFloat(dot.width)>=0.44*parseFloat(dot.fontSize) && dot.width===dot.height && dot.borderRadius==='50%','bullet is a visible filled circle');
+        }
+        await insert('項目');await press('Enter');
+        const previous='  '+marker+' 項目';
+        const del=async()=>{
+          for(const type of ['rawKeyDown','keyUp'])
+            await trusted('Input.dispatchKeyEvent',{type,key:'Delete',code:'Delete',windowsVirtualKeyCode:46});
+        };
+        await del();check(field().value===previous+'\\n','physical Delete removes only the marker');
+        field().blur();field().focus();
+        await del();check(field().value===previous && field().selectionStart===previous.length,'physical Delete joins the previous item even after refocus');
+      }
+      await insert('https://example.com/path');
+      const url=document.querySelector('.composer-url');
+      check(url?.textContent==='https://example.com/path' && getComputedStyle(url).color==='rgb(131, 186, 255)' && getComputedStyle(url).textDecorationLine==='underline','editable URL is blue and underlined');
+
       await setText('unsent draft');const editor=field();
       await press('ArrowUp');check(field().value==='second prompt','up recalls latest user prompt');
       await press('ArrowUp');check(field().value==='first prompt','up recalls older prompt');

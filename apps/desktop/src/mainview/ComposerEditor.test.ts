@@ -56,30 +56,48 @@ test("long drafts stay bounded and retain their internal scroll position", () =>
   expect(input.scrollTop).toBe(200);
 });
 
-test("the configured newline key inserts at the selection and retains the caret", () => {
-  const previous = globalThis.requestAnimationFrame;
-  globalThis.requestAnimationFrame = (callback) => {
-    callback(0);
-    return 1;
+test("typing at the top only measures content height once", () => {
+  const input = editor(96);
+  let reads = 0;
+  Object.defineProperty(input, "scrollHeight", {
+    get() {
+      reads++;
+      return 96;
+    },
+  });
+  sizeEditor(input);
+  expect(reads).toBe(1);
+  expect(input.style.height).toBe("96px");
+});
+
+test.each([
+  ["before selected after", 7, 15, "before \n after", 8],
+  ["1. abc", 6, 6, "1. abc\n2. ", 10],
+  ["  9. abc", 8, 8, "  9. abc\n  10. ", 15],
+  ["- abc\nnext", 5, 5, "- abc\n- \nnext", 8],
+  ["- abc\n- ", 8, 8, "- abc\n", 6],
+  ["1. abc", 4, 4, "1. a\nbc", 5],
+] satisfies [
+  string,
+  number,
+  number,
+  string,
+  number,
+][])("configured newline: %s", (value, start, end, expected, caret) => {
+  const input = {
+    value,
+    selectionStart: start,
+    selectionEnd: end,
+    setRangeText(text: string, from: number, to: number, mode: string) {
+      expect(mode).toBe("end");
+      this.value = value.slice(0, from) + text + value.slice(to);
+      this.selectionStart = this.selectionEnd = from + text.length;
+    },
   };
-  try {
-    let caret: number[] = [];
-    const input = {
-      value: "before selected after",
-      selectionStart: 7,
-      selectionEnd: 15,
-      setSelectionRange: (start: number, end: number) => {
-        caret = [start, end];
-      },
-    } as unknown as HTMLTextAreaElement;
-    insertEditorNewline(input, (text) => {
-      input.value = text;
-    });
-    expect(input.value).toBe("before \n after");
-    expect(caret).toEqual([8, 8]);
-  } finally {
-    globalThis.requestAnimationFrame = previous;
-  }
+  insertEditorNewline(input as unknown as HTMLTextAreaElement, (text) =>
+    expect(text).toBe(expected),
+  );
+  expect(input.selectionStart).toBe(caret);
 });
 
 test("clearing a draft returns to measured content height; CSS supplies the minimum", () => {

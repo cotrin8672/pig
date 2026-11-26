@@ -1,5 +1,6 @@
 import {
   type ComponentProps,
+  type ReactNode,
   type RefObject,
   useLayoutEffect,
   useMemo,
@@ -74,13 +75,57 @@ export function forgetEditorView(key: string) {
 export const editorViewCount = () =>
   new Set([...views.keys(), ...histories.keys(), ...scrollTops.keys()]).size;
 
+const listPrefix = /^([ \t]*)(?:(\d{1,9})\.|-)[ \t]+/;
+
+function decoratedText(value: string) {
+  const parts: ReactNode[] = [];
+  let end = 0;
+  for (const match of value.matchAll(
+    /^[ \t]*(\d{1,9}\.|-)(?=[ \t])|https?:\/\/[^\s<>"`）】。、]+/gim,
+  )) {
+    const marker = match[1];
+    const text = marker ?? match[0].replace(/[.,;:!?)\]]+$/, "");
+    const start = match.index + (marker ? match[0].length - marker.length : 0);
+    parts.push(
+      value.slice(end, start),
+      <span
+        key={start}
+        className={marker ? "composer-list-marker" : "composer-url"}
+        data-bullet={marker === "-" || undefined}
+      >
+        {text}
+      </span>,
+    );
+    end = start + text.length;
+  }
+  if (!parts.length) return null;
+  parts.push(value.slice(end), "\u200b");
+  return parts;
+}
+
 export function insertEditorNewline(
   input: HTMLTextAreaElement,
   change: (value: string) => void,
 ) {
   const { value, selectionStart: start, selectionEnd: end } = input;
-  change(`${value.slice(0, start)}\n${value.slice(end)}`);
-  requestAnimationFrame(() => input.setSelectionRange(start + 1, start + 1));
+  const before = value.slice(0, start);
+  const lineStart = before.lastIndexOf("\n") + 1;
+  const list =
+    start === end && (end === value.length || value[end] === "\n")
+      ? listPrefix.exec(before.slice(lineStart))
+      : null;
+  let from = start;
+  let insert = "\n";
+  if (list) {
+    if (before.slice(lineStart + list[0].length).trim()) {
+      insert += `${list[1]}${list[2] ? `${Number(list[2]) + 1}.` : "-"} `;
+    } else {
+      from = lineStart;
+      insert = "";
+    }
+  }
+  input.setRangeText(insert, from, end, "end");
+  change(input.value);
 }
 
 export function sizeEditor(input: HTMLTextAreaElement) {
@@ -88,7 +133,8 @@ export function sizeEditor(input: HTMLTextAreaElement) {
   // CSS owns the one-line minimum, including the current font size and padding.
   input.style.height = "0px";
   input.style.height = `${Math.min(220, input.scrollHeight)}px`;
-  input.scrollTop = input.scrollHeight > input.clientHeight ? scrollTop : 0;
+  input.scrollTop =
+    scrollTop && input.scrollHeight > input.clientHeight ? scrollTop : 0;
 }
 
 export function ComposerEditor({
@@ -119,6 +165,8 @@ export function ComposerEditor({
 }) {
   const localRef = useRef<HTMLTextAreaElement>(null);
   const ref = inputRef ?? localRef;
+  const paint = useMemo(() => decoratedText(value), [value]);
+  const mirror = useRef<HTMLDivElement>(null);
   // biome-ignore lint/correctness/useExhaustiveDependencies: Editing history belongs to the draft, not a render/value.
   const history = useMemo(() => {
     let history = histories.get(viewKey);
@@ -200,121 +248,192 @@ export function ComposerEditor({
     );
     pendingGroup.current = undefined;
     sizeEditor(input);
+    if (mirror.current) mirror.current.scrollTop = input.scrollTop;
   }, [value, pastes, ref, history]);
   return (
-    <textarea
-      {...props}
-      ref={ref}
-      rows={1}
-      value={value}
-      onBeforeInput={(event) => {
-        history.select(
-          event.currentTarget.selectionStart,
-          event.currentTarget.selectionEnd,
-        );
-        onBeforeInput?.(event);
-      }}
-      onChange={(event) => {
-        const input = event.nativeEvent as InputEvent;
-        pendingGroup.current =
-          input.isComposing ||
-          composing.current ||
-          input.inputType === "insertCompositionText"
-            ? "composition"
-            : input.inputType === "insertText"
-              ? "typing"
-              : "edit";
-        remember(event.currentTarget);
-        onChange?.(event);
-      }}
-      onPaste={(event) => {
-        history.select(
-          event.currentTarget.selectionStart,
-          event.currentTarget.selectionEnd,
-        );
-        onPaste?.(event);
-      }}
-      onKeyDown={(event) => {
-        if (!composing.current && !event.nativeEvent.isComposing)
+    <div className="composer-editor-field">
+      {paint && (
+        <div aria-hidden="true" ref={mirror} className="composer-editor-paint">
+          {paint}
+        </div>
+      )}
+      <textarea
+        {...props}
+        ref={ref}
+        rows={1}
+        value={value}
+        onBeforeInput={(event) => {
           history.select(
             event.currentTarget.selectionStart,
             event.currentTarget.selectionEnd,
           );
-        onKeyDown?.(event);
-        if (
-          event.defaultPrevented ||
-          event.nativeEvent.isComposing ||
-          event.keyCode === 229 ||
-          composing.current
-        )
-          return;
-        const input = event.currentTarget;
-        const key = event.key.toLowerCase();
-        if (
-          (event.ctrlKey || event.metaKey) &&
-          !event.altKey &&
-          (key === "z" || (key === "y" && !event.shiftKey))
-        ) {
-          event.preventDefault();
-          const edit = history.undo(key === "y" || event.shiftKey);
-          if (edit) restore(edit);
-          return;
-        }
-        if (
-          !messageHistory ||
-          event.ctrlKey ||
-          event.metaKey ||
-          event.altKey ||
-          event.shiftKey ||
-          input.selectionStart !== input.selectionEnd
-        )
-          return;
-        const direction =
-          event.key === "ArrowUp" && input.selectionStart === 0
-            ? -1
-            : event.key === "ArrowDown" &&
-                (input.selectionEnd === input.value.length ||
-                  input.selectionEnd === 0)
-              ? 1
-              : undefined;
-        if (!direction) return;
-        const edit = history.recall(direction, messageHistory);
-        if (edit) {
-          event.preventDefault();
-          restore(edit);
-        }
-      }}
-      onCompositionStart={(event) => {
-        history.breakGroup();
-        composing.current = true;
-        onCompositionStart?.(event);
-      }}
-      onCompositionEnd={(event) => {
-        composing.current = false;
-        onCompositionEnd?.(event);
-      }}
-      onSelect={(event) => {
-        if (!composing.current)
+          onBeforeInput?.(event);
+        }}
+        onChange={(event) => {
+          const input = event.nativeEvent as InputEvent;
+          const field = event.currentTarget;
+          if (
+            !composing.current &&
+            !input.isComposing &&
+            input.inputType === "insertText" &&
+            input.data === " "
+          ) {
+            const caret = field.selectionStart;
+            const start = field.value.slice(0, caret).lastIndexOf("\n") + 1;
+            if (/^(?:\d{1,9}\.|-) $/.test(field.value.slice(start, caret))) {
+              field.setRangeText("  ", start, start, "preserve");
+            }
+          }
+          pendingGroup.current =
+            input.isComposing ||
+            composing.current ||
+            input.inputType === "insertCompositionText"
+              ? "composition"
+              : input.inputType === "insertText"
+                ? "typing"
+                : "edit";
+          remember(event.currentTarget);
+          onChange?.(event);
+        }}
+        onPaste={(event) => {
           history.select(
             event.currentTarget.selectionStart,
             event.currentTarget.selectionEnd,
           );
-        remember(event.currentTarget);
-        onSelect?.(event);
-      }}
-      onFocus={(event) => {
-        remember(event.currentTarget);
-        onFocus?.(event);
-      }}
-      onBlur={(event) => {
-        remember(event.currentTarget);
-        onBlur?.(event);
-      }}
-      onScroll={(event) => {
-        scrollTops.set(viewKey, event.currentTarget.scrollTop);
-        remember(event.currentTarget);
-        onScroll?.(event);
-      }}
-    />
+          onPaste?.(event);
+        }}
+        onKeyDown={(event) => {
+          if (!composing.current && !event.nativeEvent.isComposing)
+            history.select(
+              event.currentTarget.selectionStart,
+              event.currentTarget.selectionEnd,
+            );
+          onKeyDown?.(event);
+          if (
+            event.defaultPrevented ||
+            event.nativeEvent.isComposing ||
+            event.keyCode === 229 ||
+            composing.current
+          )
+            return;
+          const input = event.currentTarget;
+          const key = event.key.toLowerCase();
+          if (
+            (key === "backspace" || key === "delete") &&
+            !event.ctrlKey &&
+            !event.metaKey &&
+            !event.altKey &&
+            !event.shiftKey &&
+            input.selectionStart === input.selectionEnd
+          ) {
+            const caret = input.selectionStart;
+            const before = input.value.slice(0, caret);
+            const start = before.lastIndexOf("\n") + 1;
+            const prefix = listPrefix.exec(before.slice(start));
+            if (
+              start === caret &&
+              start > 0 &&
+              (caret === input.value.length || input.value[caret] === "\n") &&
+              listPrefix.test(
+                before.slice(
+                  before.lastIndexOf("\n", start - 2) + 1,
+                  start - 1,
+                ),
+              )
+            ) {
+              event.preventDefault();
+              pendingGroup.current = "edit";
+              input.setRangeText("", caret - 1, caret, "end");
+              onRestore({ text: input.value, pastes });
+              return;
+            }
+            if (
+              prefix &&
+              start + prefix[0].length === caret &&
+              (key === "backspace" ||
+                caret === input.value.length ||
+                input.value[caret] === "\n")
+            ) {
+              event.preventDefault();
+              pendingGroup.current = "edit";
+              input.setRangeText("", start, caret, "end");
+              onRestore({ text: input.value, pastes });
+              return;
+            }
+          }
+          if (
+            (event.ctrlKey || event.metaKey) &&
+            !event.altKey &&
+            (key === "z" || (key === "y" && !event.shiftKey))
+          ) {
+            event.preventDefault();
+            const edit = history.undo(key === "y" || event.shiftKey);
+            if (edit) restore(edit);
+            return;
+          }
+          if (
+            !messageHistory ||
+            event.ctrlKey ||
+            event.metaKey ||
+            event.altKey ||
+            event.shiftKey ||
+            input.selectionStart !== input.selectionEnd
+          )
+            return;
+          const direction =
+            event.key === "ArrowUp" && input.selectionStart === 0
+              ? -1
+              : event.key === "ArrowDown" &&
+                  (input.selectionEnd === input.value.length ||
+                    input.selectionEnd === 0)
+                ? 1
+                : undefined;
+          if (!direction) return;
+          const edit = history.recall(direction, messageHistory);
+          if (edit) {
+            event.preventDefault();
+            restore(edit);
+          }
+        }}
+        onCompositionStart={(event) => {
+          event.currentTarget.parentElement?.setAttribute("data-composing", "");
+          history.breakGroup();
+          composing.current = true;
+          onCompositionStart?.(event);
+        }}
+        onCompositionEnd={(event) => {
+          event.currentTarget.parentElement?.removeAttribute("data-composing");
+          composing.current = false;
+          onCompositionEnd?.(event);
+        }}
+        onSelect={(event) => {
+          if (
+            !composing.current &&
+            event.currentTarget.value === history.current.text
+          )
+            history.select(
+              event.currentTarget.selectionStart,
+              event.currentTarget.selectionEnd,
+            );
+          remember(event.currentTarget);
+          onSelect?.(event);
+        }}
+        onFocus={(event) => {
+          remember(event.currentTarget);
+          onFocus?.(event);
+        }}
+        onBlur={(event) => {
+          remember(event.currentTarget);
+          onBlur?.(event);
+        }}
+        onScroll={(event) => {
+          if (mirror.current)
+            mirror.current.scrollTop = event.currentTarget.scrollTop;
+          scrollTops.set(viewKey, event.currentTarget.scrollTop);
+          remember(event.currentTarget);
+          onScroll?.(event);
+        }}
+      />
+    </div>
   );
 }
