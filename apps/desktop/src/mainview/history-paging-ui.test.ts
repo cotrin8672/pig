@@ -54,13 +54,14 @@ test.skipIf(!existsSync(fixtureEdge) && !process.env.PIG_REQUIRE_UI_TESTS)(
     const input=async(method,params)=>{window.__fixtureInput={method,params};await until(()=>!window.__fixtureInput,'trusted input must be delivered');};
     let wheel;
     thread.addEventListener('wheel',event=>{wheel=event;},{passive:true});
+    // Wheel over the messages, clear of the turn rail on the left edge.
     const rect=thread.getBoundingClientRect();
-    await input('Input.dispatchMouseEvent',{type:'mouseWheel',x:rect.left+12,y:rect.top+Math.min(rect.height,innerHeight-rect.top)/2,
+    await input('Input.dispatchMouseEvent',{type:'mouseWheel',x:rect.left+rect.width/2,y:rect.top+Math.min(rect.height,innerHeight-rect.top)/2,
       deltaX:0,deltaY:Math.round(2.5*thread.clientHeight-thread.scrollTop)});
     await until(()=>calls.length===1,'approaching the top must prefetch without reaching the edge');await wait();
     check(wheel?.isTrusted&&!wheel.defaultPrevented&&thread.scrollTop>2*thread.clientHeight,'prefetch must start with at least two screens of content still above the reader');
     const requestTop=thread.scrollTop;
-    await input('Input.dispatchMouseEvent',{type:'mouseWheel',x:rect.left+12,y:rect.top+120,deltaX:0,deltaY:70});await wait();
+    await input('Input.dispatchMouseEvent',{type:'mouseWheel',x:rect.left+rect.width/2,y:rect.top+120,deltaX:0,deltaY:70});await wait();
     check(thread.scrollTop>requestTop+10&&calls.length===1,'a pending page must neither block native scrolling nor duplicate the request');
     const editor=document.querySelector('textarea');editor.focus();let typed;
     editor.addEventListener('input',event=>{typed=event;},{once:true});
@@ -127,7 +128,7 @@ test.skipIf(!existsSync(fixtureEdge) && !process.env.PIG_REQUIRE_UI_TESTS)(
     const scrollProperty=Object.getOwnPropertyDescriptor(Element.prototype,'scrollTop');let scrollWrites=0;
     Object.defineProperty(thread,'scrollTop',{configurable:true,get(){return scrollProperty.get.call(this);},set(value){scrollWrites++;scrollProperty.set.call(this,value);}});
     const nativeTop=thread.scrollTop;
-    await input('Input.dispatchMouseEvent',{type:'mouseWheel',x:rect.left+12,y:rect.top+120,deltaX:0,deltaY:-140});await wait();
+    await input('Input.dispatchMouseEvent',{type:'mouseWheel',x:rect.left+rect.width/2,y:rect.top+120,deltaX:0,deltaY:-140});await wait();
     check(Math.abs(thread.scrollTop-(nativeTop-140))<=2&&scrollWrites===0,'post-prepend wheel scrolling must remain native without viewport corrections');
     const afterWheel=oldFirst.getBoundingClientRect().top,firstRow=thread.querySelector('[data-record-id="r0"]');firstRow.style.minHeight=(firstRow.getBoundingClientRect().height+90)+'px';await wait();
     check(scrollWrites===0&&Math.abs(oldFirst.getBoundingClientRect().top-afterWheel)<=2,'after user scrolling, late growth must use browser anchoring rather than pull the reader back');
@@ -145,7 +146,7 @@ test.skipIf(!existsSync(fixtureEdge) && !process.env.PIG_REQUIRE_UI_TESTS)(
     await until(()=>calls.length===6&&useStore.getState().notices.length===2,'a nonadvancing cursor must report one failure');await pause(150);
     check(calls.length===6&&thread.querySelectorAll('[data-record-id]').length===100,'a nonadvancing cursor must not duplicate rows or enter an automatic loop');
     await pause(550);
-    await input('Input.dispatchMouseEvent',{type:'mouseWheel',x:rect.left+12,y:rect.top+120,deltaX:0,deltaY:-100});
+    await input('Input.dispatchMouseEvent',{type:'mouseWheel',x:rect.left+rect.width/2,y:rect.top+120,deltaX:0,deltaY:-100});
     await until(()=>calls.length===7&&thread.querySelectorAll('[data-record-id]').length===150,'scrolling upward again at the hard top must retry without a button or leaving the prefetch area');
     loaf.disconnect();
     window.__fixtureMetrics={initialRows:100,finalLoadedRows:200,requests:calls.length,inputWhilePendingMs:inputMs,pageApplyMs,maxAdded,partialFrames,prependFrameGapMs,maxFrameGapMs:maxFrameGap,frames,longestFrame,
