@@ -47,3 +47,14 @@ jobs:
         run: pnpm test:${{ matrix.suite }}
         env:
           PI_OFFLINE: '1'
+      - name: Verify remote pairing across restart and run isolated loopback chat
+        if: matrix.suite == 'integration'
+        shell: pwsh
+        env:
+          CARGO_TARGET_DIR: ${{ github.workspace }}/apps/desktop/src-tauri/target
+        run: |
+          cargo test --locked --manifest-path examples/remote-pairing-poc/Cargo.toml
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          cargo build --locked --manifest-path apps/desktop/src-tauri/Cargo.toml -p pig-remote
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          bun apps/desktop/scripts/remote-smoke.ts

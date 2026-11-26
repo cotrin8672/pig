@@ -101,7 +101,11 @@ async fn probe(relay: Option<&RelayUrl>) -> Result<()> {
     submit.write_all(copied.as_bytes()).await?;
     submit.finish()?;
     let bytes = server.accept_uni().await?.read_to_end(INVITE_LEN).await?;
-    ensure!(store.redeem(&std::str::from_utf8(&bytes)?.parse()?, server.remote_id())?);
+    ensure!(store.redeem(
+        &std::str::from_utf8(&bytes)?.parse()?,
+        server.remote_id(),
+        "probe"
+    )?);
     ensure!(authorize(&server, &store)?);
     let (mut send, mut recv) = client.open_bi().await?;
     send.write_all(b"snapshot").await?;
@@ -214,7 +218,7 @@ mod restart {
             let (server, client) = dial(&host, dst, &laptop).await?;
             ensure!(client.remote_id() == host_id);
             if let Some(invite) = invite {
-                ensure!(store.redeem(&invite, server.remote_id())?);
+                ensure!(store.redeem(&invite, server.remote_id(), "probe")?);
                 fs::write(target, host_id.to_string())?;
             }
             if phase == "after-revoke" {
