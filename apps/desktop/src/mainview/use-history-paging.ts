@@ -199,6 +199,7 @@ export function useHistoryPaging(
     if (!key || !root || !sentinel) return;
     let disposed = false;
     let nearTop = false;
+    let observedHeight: number | undefined;
     let observer: IntersectionObserver;
     const request = () => {
       if (
@@ -211,6 +212,9 @@ export function useHistoryPaging(
     };
     const observe = () => {
       if (disposed) return;
+      const height = root.clientHeight;
+      if (height === observedHeight) return;
+      observedHeight = height;
       observer?.disconnect();
       observer = new IntersectionObserver(
         (entries) => {
@@ -224,7 +228,7 @@ export function useHistoryPaging(
         },
         {
           root,
-          rootMargin: `${Math.max(320, 3 * root.clientHeight)}px 0px 0px 0px`,
+          rootMargin: `${Math.max(320, 3 * height)}px 0px 0px 0px`,
         },
       );
       observer.observe(sentinel);

@@ -10,8 +10,14 @@ export function useChatWidth() {
   );
   return {
     width,
-    setWidth: (value: number) =>
-      updateUiPreferences({ chatWidth: clampChatWidth(value) }),
+    setWidth: (value: number) => {
+      const chatWidth = clampChatWidth(value);
+      if (
+        chatWidth !==
+        (useStore.getState().bootstrap.desktop.chatWidth ?? DEFAULT_CHAT_WIDTH)
+      )
+        updateUiPreferences({ chatWidth });
+    },
   };
 }
 

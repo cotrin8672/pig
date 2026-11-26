@@ -179,13 +179,13 @@ export const TerminalOutput = memo(function TerminalOutput({
 }: {
   text: string;
 }) {
-  const colored = terminalText(text, true);
-  const plain = terminalText(colored);
+  const colored = useMemo(() => terminalText(text, true), [text]);
+  const plain = useMemo(() => terminalText(colored), [colored]);
   const tokens = useHighlightedLines(
     text,
     colored !== plain ? "ansi" : undefined,
   );
-  const lines = plain.split("\n");
+  const lines = useMemo(() => plain.split("\n"), [plain]);
   // No pending ANSI enhancement can replace these plain log nodes. Preserve
   // every byte/line while avoiding thousands of unstyled wrapper spans.
   if (colored === plain && lines.length > 200)
@@ -292,17 +292,20 @@ function DiffHunk({
   const saved = useContext(SavedOutputContext);
   const [compact] = useState(saved);
   const [beforeText, afterText] = useMemo(
-    () => [
-      lines
-        .filter((line) => line.code && line.tone !== "add")
-        .map((line) => line.text)
-        .join("\n"),
-      lines
-        .filter((line) => line.code && line.tone !== "del")
-        .map((line) => line.text)
-        .join("\n"),
-    ],
-    [lines],
+    () =>
+      !language
+        ? ["", ""]
+        : [
+            lines
+              .filter((line) => line.code && line.tone !== "add")
+              .map((line) => line.text)
+              .join("\n"),
+            lines
+              .filter((line) => line.code && line.tone !== "del")
+              .map((line) => line.text)
+              .join("\n"),
+          ],
+    [lines, language],
   );
   const before = useHighlightedLines(beforeText, language);
   const after = useHighlightedLines(afterText, language);

@@ -79,6 +79,8 @@ export function interleaveExtensionNotices(
   transcript: Transcript,
   notices: readonly ExtensionNotice[],
 ): ChatItem[] {
+  if (!notices.length)
+    return transcript.records.map((record, index) => ({ record, index }));
   const groups = new Map<string | null | undefined, ExtensionNotice[]>();
   for (const notice of notices) {
     if (
