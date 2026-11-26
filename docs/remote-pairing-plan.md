@@ -38,19 +38,24 @@ Windowsでは `cargo test --locked --manifest-path examples/remote-pairing-poc/C
 
 ### Storybook の画面案（Settings → Remote Pairing）
 
-統計と通知の間にリンク形の「Pairing」を置く。開いた画面では「このPCをホスト」と
-「別PCに接続」を分け、自宅で招待を発行する操作と、外出先で使う操作を取り違えないようにする。
+サイドバーの統計と通知の間に「Pairing」（リンクのアイコン）を置く。1画面に2節を縦に並べる。
 Story は模擬データのみで、待ち受けや端末登録は行わない。
 
-- [Claude Code Remote Control](https://code.claude.com/docs/en/remote-control) は実行中のセッションを
-  URL または QR から開ける。pig の招待は会話リンクではなく、端末に継続アクセスを許すものなので、
-  「会話を開く」と「端末を登録」を別の操作にする。
-- [OpenCode のペアリング](https://opencode.ai/docs/cli/web) は接続先をリンクや QR で渡せる。
-  pig の初版は自分の Windows PC 間で、両端を同時に操作しない用途。QR の常設より、
-  期限と使用回数を示した招待をコピーし、後で貼り付ける方式を優先する。
-- [OpenCode のサーバー選択実装](https://github.com/anomalyco/opencode/blob/v1.19.5/packages/app/src/components/dialog-select-server.tsx)
-  は通常の一覧と追加フォームを同時に見せず、追加操作で切り替える。pig でも招待入力や権限の説明は操作時だけにする。
-  開閉は既存の `snappy-motion.css` の折り畳みと同様に、見出しを固定して本文の高さを往復させる。
+- **このPCへの接続**：「他のPCからの接続を許可」スイッチ、「PCを追加」（招待コードのダイアログ）、
+  追加済みPCの一覧（接続中の緑点／オフライン・最終接続、二度押しの「削除」）。
+- **他のPCへの接続**：「PCに接続」（招待コードの貼り付けダイアログ）、接続先PCの一覧（「チャットを開く」「削除」）。
+- ダイアログは番号付き2手順・コード・失効までの残り時間・コピーを並べ、待機→完了をスピナーからチェックへの変化で示す。
+  追加したPCに許す範囲（チャットの閲覧、このPCでのモデル・ツール実行）はダイアログ内に1行で示す。
+- 動きは `Prototypes/Snappy Motion` の値（開く140ms・閉じる80ms、行の追加・削除は120msの高さ変化）に合わせる。
+
+| 他ハーネス | 採用した点 |
+| --- | --- |
+| [Codex（ChatGPT desktop）](https://learn.chatgpt.com/docs/remote-connections) | Settings > Connections に「このPCを操作させる」と「他のPCを操作する」の2節。1台が両方を同時に持てるので、タブで切り替えず縦に並べる。 |
+| [OpenCode Desktop](https://github.com/anomalyco/opencode/blob/dev/packages/gui-plugins/src/pairing/page.tsx) | 設定行のボタンでダイアログを開き、コード・残り時間・再発行／コピーを並べる。接続の許可は別行のスイッチ。 |
+| [Conductor](https://www.conductor.build/docs/reference/remote-control) | 追加済み端末の一覧に「追加」と各行の失効。許可をオフにすると全端末が切断され、オンで戻る。 |
+| [Claude Code](https://code.claude.com/docs/en/remote-control) | 登録端末は一覧から即時に失効でき、接続中は緑の点で示す。 |
+
+PC同士ではカメラを前提にできないため、QRではなく招待コードのコピー＆貼り付けにする。
 
 | 確認したもの | 設計に使う点 |
 | --- | --- |

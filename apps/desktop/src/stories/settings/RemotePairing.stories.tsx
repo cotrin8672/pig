@@ -1,219 +1,183 @@
-import type { Meta } from "@storybook/react-vite";
-import { Laptop, Link2 } from "lucide-react";
-import { useState } from "react";
+import type { Meta, StoryObj } from "@storybook/react-vite";
+import { Laptop, Link2, Monitor } from "lucide-react";
 import { ContentPage } from "../../mainview/ContentPage";
-import { ConfirmButton } from "../../mainview/patterns/ConfirmButton";
 import { SettingsCard } from "../../mainview/patterns/SettingsCard";
-import { SettingsRow } from "../../mainview/patterns/SettingsRow";
 import { Button } from "../../mainview/primitives/Button";
-import { SegmentedControl } from "../../mainview/primitives/SegmentedControl";
 import { Switch } from "../../mainview/primitives/Switch";
-import { TextField } from "../../mainview/primitives/TextField";
 import { installPreview, previewDefaults } from "../current-ui/fixtures";
-import SidebarPreview from "../current-ui/SidebarPreview";
-import "../current-ui/preview.css";
-import "./remote-pairing-story.css";
+import { PreviewTheme } from "../current-ui/Previews";
+import {
+  AddRow,
+  clock,
+  Grow,
+  hostSummary,
+  ListRow,
+  type Pairing,
+  type PairingArgs,
+  PairingStory,
+  Presence,
+  RemoveMenu,
+  sampleDevices,
+  sampleHome,
+  Tile,
+} from "./remote-pairing-parts";
 
-function Pairing({ registered = false }: { registered?: boolean }) {
-  const [visible, setVisible] = useState(true);
-  const [role, setRole] = useState<"host" | "client">("host");
-  const [enabled, setEnabled] = useState(registered);
-  const [expanded, expand] = useState(false);
-  const [device, setDevice] = useState(registered);
-  const [issued, issue] = useState(false);
-  const [value, setValue] = useState("");
-  const [message, report] = useState("");
-  const host = role === "host";
-  function close() {
-    expand(false);
-    setValue("");
-    report("");
-  }
+/** 案A: macOS のシステム設定のような、2つの節に分けた角丸リスト。 */
+function MacListPage({ p }: { p: Pairing }) {
   return (
-    <SidebarPreview
-      afterStatistics={
-        <button
-          type="button"
-          className={`sidebar-icon ${visible ? "active" : ""}`}
-          aria-label="Pairing"
-          aria-pressed={visible}
-          onClick={() => setVisible(!visible)}
+    <ContentPage
+      title="Pairing"
+      className="settings-page mac-page"
+      description="自分のPC同士をつなぎ、別のPCのProjectとチャットをこのPCのサイドバーで使えます。"
+    >
+      <SettingsCard className="mac-list">
+        <ListRow
+          icon={
+            <Tile>
+              <Link2 size={15} aria-hidden="true" />
+            </Tile>
+          }
+          title="他のPCからの接続を許可"
+          detail={
+            p.allow
+              ? "このPCで待ち受けています"
+              : "オフの間は待ち受けず、外部と通信しません"
+          }
         >
-          <Link2 size={16} />
-        </button>
-      }
-      main={
-        visible && (
-          <ContentPage title="Pairing" className="pairing-page">
-            <div className="pairing-stack">
-              <SegmentedControl
-                aria-label="操作するPC"
-                value={role}
-                onChange={(next) => {
-                  close();
-                  setRole(next);
-                }}
-                options={[
-                  { value: "host", label: "このPCを公開" },
-                  { value: "client", label: "別PCに接続" },
-                ]}
+          <label>
+            <Switch
+              aria-label="他のPCからの接続を許可"
+              checked={p.allow}
+              onChange={(event) => p.setAllow(event.target.checked)}
+            />
+          </label>
+        </ListRow>
+      </SettingsCard>
+
+      <h3 className="settings-group-title">このPCを使えるPC</h3>
+      <SettingsCard className="mac-list">
+        {p.devices.map((device) => (
+          <Grow key={device.id} leaving={p.leaving.includes(device.id)}>
+            <ListRow
+              icon={
+                <Tile tone="neutral">
+                  <Laptop size={15} aria-hidden="true" />
+                </Tile>
+              }
+              title={device.name}
+              detail={
+                <Presence online={p.allow && device.online}>
+                  {!(p.allow && device.online) &&
+                    device.seen &&
+                    ` · ${device.seen}に接続`}
+                </Presence>
+              }
+            >
+              <RemoveMenu
+                name={device.name}
+                onRemove={() => p.removeDevice(device.id)}
               />
-              <SettingsCard>
-                {host && (
-                  <SettingsRow label="接続を受け付ける">
-                    <label>
-                      <Switch
-                        aria-label="接続を受け付ける"
-                        checked={enabled}
-                        onChange={(event) => {
-                          setEnabled(event.target.checked);
-                          close();
-                          issue(false);
-                        }}
-                      />
-                    </label>
-                  </SettingsRow>
-                )}
-                {(!host || enabled) && (
-                  <SettingsRow label={host ? "別PCを招待" : "招待で接続"}>
-                    <Button
-                      aria-expanded={expanded}
-                      aria-controls="pairing-invite"
-                      onClick={() => (expanded ? close() : expand(true))}
-                    >
-                      {expanded
-                        ? "閉じる"
-                        : host
-                          ? issued
-                            ? "招待を見る"
-                            : "招待を作る"
-                          : "招待を入力"}
-                    </Button>
-                  </SettingsRow>
-                )}
-                <div
-                  className="pairing-reveal"
-                  data-open={expanded || undefined}
-                  inert={!expanded}
-                  id="pairing-invite"
-                >
-                  <div>
-                    <div className="pairing-form">
-                      {host ? (
-                        <>
-                          <small>
-                            自分のPC専用。登録すると会話を読め、ホスト負担でツールを実行できます。
-                          </small>
-                          {issued ? (
-                            <>
-                              <code>PIG-DEMO</code>
-                              <Button
-                                onClick={async () => {
-                                  try {
-                                    await navigator.clipboard.writeText(
-                                      "PIG-DEMO",
-                                    );
-                                    report("コピーしました");
-                                  } catch {
-                                    report(
-                                      "コードを選択してコピーしてください",
-                                    );
-                                  }
-                                }}
-                              >
-                                コピー
-                              </Button>
-                              <ConfirmButton
-                                onConfirm={() => {
-                                  issue(false);
-                                  close();
-                                }}
-                              >
-                                招待を取消
-                              </ConfirmButton>
-                            </>
-                          ) : (
-                            <Button
-                              variant="primary"
-                              onClick={() => issue(true)}
-                            >
-                              1回限りの招待を発行
-                            </Button>
-                          )}
-                          <small>12時間有効</small>
-                        </>
-                      ) : (
-                        <>
-                          <TextField
-                            aria-label="招待コード"
-                            value={value}
-                            placeholder="デモ用コード：PIG-DEMO"
-                            onChange={(e) => {
-                              setValue(e.target.value);
-                              report("");
-                            }}
-                          />
-                          <Button
-                            disabled={!value.trim()}
-                            variant="primary"
-                            onClick={() => {
-                              if (!issued || value.trim() !== "PIG-DEMO")
-                                return report(
-                                  "このPCで招待を発行してから入力してください",
-                                );
-                              setDevice(true);
-                              issue(false);
-                              close();
-                            }}
-                          >
-                            登録
-                          </Button>
-                        </>
-                      )}
-                      <span role="status">{message}</span>
-                    </div>
-                  </div>
-                </div>
-              </SettingsCard>
-              {device && (
-                <SettingsCard>
-                  <SettingsRow
-                    label={
-                      <span className="pairing-device">
-                        <Laptop size={16} />
-                        {host ? "研究室PC" : "自宅PC"} <small>登録済み</small>
-                      </span>
-                    }
-                  >
-                    {host && (
-                      <ConfirmButton onConfirm={() => setDevice(false)}>
-                        解除
-                      </ConfirmButton>
-                    )}
-                  </SettingsRow>
-                </SettingsCard>
-              )}
-            </div>
-          </ContentPage>
-        )
-      }
-    />
+            </ListRow>
+          </Grow>
+        ))}
+        <AddRow disabled={!p.allow} onClick={p.openInvite}>
+          {p.expires
+            ? `PCを追加…（招待コード 残り ${clock(p.left)}）`
+            : "PCを追加…"}
+        </AddRow>
+      </SettingsCard>
+
+      <h3 className="settings-group-title">接続先のPC</h3>
+      <SettingsCard className="mac-list">
+        {p.hosts.map((host) => (
+          <Grow key={host.id} leaving={p.leaving.includes(host.id)}>
+            <ListRow
+              icon={
+                <Tile tone="neutral">
+                  <Monitor size={15} aria-hidden="true" />
+                </Tile>
+              }
+              title={host.name}
+              detail={
+                <Presence online={host.online}> · {hostSummary(host)}</Presence>
+              }
+            >
+              <Button disabled={!host.online} onClick={() => p.setOpen("add")}>
+                Projectを追加…
+              </Button>
+              <RemoveMenu
+                name={host.name}
+                onRemove={() => p.removeHost(host.id)}
+              />
+            </ListRow>
+          </Grow>
+        ))}
+        <AddRow onClick={p.openConnect}>PCに接続…</AddRow>
+      </SettingsCard>
+    </ContentPage>
   );
 }
 
-export default {
+const meta = {
   title: "Settings/Remote Pairing",
-  parameters: { appPreview: true },
+  parameters: {
+    appPreview: true,
+    docs: {
+      description: {
+        component:
+          "Codex App の Remote と同じ使い勝手：接続先PCをつなぎ、そのPCの既存Project・新しいフォルダー・Projectなしのチャットを" +
+          "このPCのサイドバーに追加する。サイドバーは接続先PCごとの欄（接続先 → Project → チャット）にまとめる。" +
+          "デモ: 招待コードをコピーすると2.5秒後に登録完了。接続欄は pig-pair:1: で始まる文字列で成功する。" +
+          "別案は Prototypes/Remote Pairing Layouts。",
+      },
+    },
+  },
   beforeEach: () => installPreview(previewDefaults),
-} satisfies Meta;
+  render: (args) => (
+    <PreviewTheme args={previewDefaults}>
+      <PairingStory args={args} page={(p) => <MacListPage p={p} />} />
+    </PreviewTheme>
+  ),
+  args: { allow: false, devices: [], hosts: [] },
+} satisfies Meta<PairingArgs>;
+export default meta;
+type Story = StoryObj<typeof meta>;
 
-export const Off = { name: "初回", render: () => <Pairing /> };
-// Keep the sidebar review permalink usable across redesigns.
-export const SidebarEntryStates = {
-  name: "サイドバーの Pairing",
-  render: Off.render,
+const inUse = { allow: true, devices: sampleDevices, hosts: [sampleHome] };
+export const Off: Story = { name: "01 · 初回" };
+export const Connected: Story = {
+  name: "02 · 使用中（サイドバーに自宅PC）",
+  args: inUse,
 };
-export const Connected = {
-  name: "登録済み",
-  render: () => <Pairing registered />,
+export const AddProjects: Story = {
+  name: "03 · 自宅PCからProjectを追加",
+  args: { ...inUse, dialog: "add" },
+};
+export const AddFolder: Story = {
+  name: "04 · 自宅PCのフォルダーを選んで追加",
+  args: { ...inUse, dialog: "add-folder" },
+};
+export const InviteDialog: Story = {
+  name: "05 · PCを追加（招待コード）",
+  args: {
+    allow: true,
+    devices: sampleDevices.slice(1),
+    hosts: [],
+    dialog: "invite",
+  },
+};
+export const ConnectError: Story = {
+  name: "06 · PCに接続（コードが無効）",
+  args: {
+    allow: false,
+    devices: [],
+    hosts: [],
+    dialog: "connect",
+    connectError: true,
+  },
+};
+// Keeps an earlier review link working.
+export const SidebarEntryStates: Story = {
+  name: "07 · サイドバーの Pairing",
+  args: inUse,
 };
