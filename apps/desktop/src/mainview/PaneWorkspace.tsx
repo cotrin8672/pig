@@ -1,5 +1,6 @@
 import { SquarePen, X } from "lucide-react";
 import {
+  type CSSProperties,
   type HTMLAttributes,
   memo,
   type ReactNode,
@@ -10,7 +11,12 @@ import { useShallow } from "zustand/react/shallow";
 import { ChatOpening } from "./ChatOpening";
 import type { ChatSnapshot } from "./chat-snapshot";
 import { getT, useT } from "./i18n";
-import { PaneDragGrip, PaneDropOverlay, usePaneDrag } from "./PaneDrag";
+import {
+  PaneDragGrip,
+  PaneDropOverlay,
+  paneRect,
+  usePaneDrag,
+} from "./PaneDrag";
 import { paneGeometry } from "./pane-layout";
 import { closePane, dropPane, focusPane, newChatInPane } from "./pane-state";
 import { ResizeDivider } from "./ResizeDivider";
@@ -37,13 +43,23 @@ export function PaneWorkspace({
       active: s.activePane,
     })),
   );
-  const geometry = useMemo(() => paneGeometry(tree), [tree]);
+  const geometry = useMemo(() => {
+    const { panes, dividers } = paneGeometry(tree);
+    return {
+      // Re-inserting a pane's DOM resets its scroll position in Chromium.
+      panes: panes
+        // Keep every pane ahead of the dividers (reading-order: 0).
+        .map((pane, index) => ({ ...pane, readingOrder: index - panes.length }))
+        .sort((a, b) => a.id - b.id),
+      dividers,
+    };
+  }, [tree]);
   const workspace = useRef<HTMLDivElement>(null);
   const { dragging, winbarProps } = usePaneDrag(tree, workspace, dropPane);
   const movable = geometry.panes.length > 1;
   return (
     <div className="pane-workspace" ref={workspace} data-dragging={!!dragging}>
-      {geometry.panes.map(({ id, bounds }) => (
+      {geometry.panes.map(({ id, bounds, readingOrder }) => (
         <section
           key={id}
           className="pane-view"
@@ -56,12 +72,12 @@ export function PaneWorkspace({
           onFocusCapture={(event) => {
             if (!isPaneCloseTarget(event.target)) focusPane(id);
           }}
-          style={{
-            left: `${bounds.x * 100}%`,
-            top: `${bounds.y * 100}%`,
-            width: `${bounds.width * 100}%`,
-            height: `${bounds.height * 100}%`,
-          }}
+          style={
+            {
+              ...paneRect(bounds),
+              "--pane-reading-order": readingOrder,
+            } as CSSProperties
+          }
         >
           <PaneWinbar paneId={id} {...winbarProps(id, movable)} />
           <PaneContent

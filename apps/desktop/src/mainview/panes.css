@@ -3,6 +3,7 @@
   height: 100%;
   min-height: 0;
   min-width: 0;
+  reading-flow: source-order;
 }
 .pane-view {
   position: absolute;
@@ -12,6 +13,7 @@
   min-height: 0;
   overflow: hidden;
   container-type: size;
+  reading-order: var(--pane-reading-order, 0);
 }
 .pane-winbar {
   display: flex;
