@@ -69,7 +69,13 @@ export function lintUiCss(source: string, file: string): UiStyleIssue[] {
     const value = decl.value.trim();
     if (
       ["scrollbar-width", "scrollbar-color"].includes(property) &&
-      value.toLowerCase() !== "auto"
+      value.toLowerCase() !== "auto" &&
+      !(
+        property === "scrollbar-width" &&
+        value === "none" &&
+        decl.parent?.type === "rule" &&
+        decl.parent.selector === ".turn-rail-ticks"
+      )
     )
       report(
         "native-scrollbar-override",

@@ -1,6 +1,7 @@
 import { Split } from "lucide-react";
 import {
   type RefObject,
+  useCallback,
   useEffect,
   useLayoutEffect,
   useMemo,
@@ -31,17 +32,19 @@ function markEdges(ticks: HTMLElement) {
  */
 function swell(ticks: Element | null, y?: number) {
   if (!(ticks instanceof HTMLElement)) return;
-  for (const tick of ticks.children as HTMLCollectionOf<HTMLElement>) {
-    if (y === undefined) {
-      tick.style.removeProperty("--swell");
-      continue;
-    }
-    const distance = (tick.offsetTop + tick.offsetHeight / 2 - y) / 26;
-    tick.style.setProperty(
-      "--swell",
-      Math.exp(-distance * distance).toFixed(3),
-    );
+  const children = Array.from(ticks.children as HTMLCollectionOf<HTMLElement>);
+  if (y === undefined) {
+    for (const tick of children) tick.style.removeProperty("--swell");
+    return;
   }
+  const values = children.map((tick) => {
+    const distance = (tick.offsetTop + tick.offsetHeight / 2 - y) / 26;
+    return Math.exp(-distance * distance).toFixed(3);
+  });
+  children.forEach((tick, i) => {
+    if (tick.style.getPropertyValue("--swell") !== values[i])
+      tick.style.setProperty("--swell", values[i]);
+  });
 }
 
 /**
@@ -64,31 +67,94 @@ export function TurnRail({
   const [active, setActive] = useState(0);
   const [open, setOpen] = useState<{ index: number; top: number }>();
   const ticksRef = useRef<HTMLDivElement>(null);
-  const pointer = useRef<{ x: number; y: number }>(undefined);
+  const cardRef = useRef<HTMLDivElement>(null);
+  const pointer = useRef<number | "card">(undefined);
+  const previewVisible = !!open && !!turns[open.index] && turns.length >= 2;
 
-  const openTick = (tick: HTMLElement) => {
+  const openTick = useCallback((tick: HTMLElement) => {
     const nav = tick.closest(".turn-rail");
     if (!nav) return;
     const box = tick.getBoundingClientRect();
-    setOpen({
-      index: Number(tick.dataset.index),
-      top: box.top - nav.getBoundingClientRect().top + box.height / 2,
-    });
-  };
-  // Pointer moves and wheel scrolls both re-aim the swell and the card at
-  // whatever tick is now under the pointer.
-  const follow = () => {
+    const index = Number(tick.dataset.index);
+    const top = box.top - nav.getBoundingClientRect().top + box.height / 2;
+    setOpen((old) =>
+      old?.index === index && old.top === top ? old : { index, top },
+    );
+  }, []);
+  const follow = useCallback(() => {
     const ticks = ticksRef.current;
     if (!ticks) return;
     markEdges(ticks);
-    if (!pointer.current) return;
-    const { x, y } = pointer.current;
-    swell(ticks, y - ticks.getBoundingClientRect().top + ticks.scrollTop);
-    const tick = document
-      .elementFromPoint(x, y)
-      ?.closest<HTMLElement>(".turn-rail-tick");
-    if (tick) openTick(tick);
-  };
+    const first = ticks.firstElementChild;
+    if (
+      typeof pointer.current !== "number" ||
+      !(first instanceof HTMLElement) ||
+      !first.offsetHeight
+    )
+      return;
+    const y =
+      ticks.scrollTop +
+      Math.max(
+        0,
+        Math.min(
+          ticks.clientHeight - 1,
+          pointer.current - ticks.getBoundingClientRect().top,
+        ),
+      );
+    const tick = ticks.children[Math.floor(y / first.offsetHeight)];
+    if (tick instanceof HTMLElement) {
+      swell(ticks, y);
+      openTick(tick);
+    }
+  }, [openTick]);
+
+  useEffect(() => {
+    if (!previewVisible) return;
+    const close = () => {
+      pointer.current = undefined;
+      swell(ticksRef.current);
+      setOpen(undefined);
+    };
+    // Only retain a pointer-opened preview; the extra space is never a hit target.
+    const track = (event: PointerEvent) => {
+      if (pointer.current === undefined) return;
+      if (
+        event.target instanceof Element &&
+        event.target.closest(".turn-rail-card") ===
+          cardRef.current?.firstElementChild
+      ) {
+        pointer.current = "card";
+        return;
+      }
+      for (const element of [ticksRef.current, cardRef.current]) {
+        if (!element) continue;
+        const r = element.getBoundingClientRect();
+        if (
+          event.clientX >= r.left - 24 &&
+          event.clientX <= r.right + 24 &&
+          event.clientY >= r.top - 24 &&
+          event.clientY <= r.bottom + 24
+        ) {
+          if (element === ticksRef.current) {
+            if (event.target instanceof Node && element.contains(event.target))
+              return; // handled by the rail
+            pointer.current = event.clientY;
+            follow();
+          } else pointer.current = "card";
+          return;
+        }
+      }
+      close();
+    };
+    document.addEventListener("pointermove", track, true);
+    document.documentElement.addEventListener("pointerleave", close);
+    window.addEventListener("blur", close);
+    return () => {
+      document.removeEventListener("pointermove", track, true);
+      document.documentElement.removeEventListener("pointerleave", close);
+      window.removeEventListener("blur", close);
+    };
+  }, [previewVisible, follow]);
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: Re-measure when the tick list changes.
   useLayoutEffect(() => {
@@ -98,7 +164,7 @@ export function TurnRail({
   useEffect(() => {
     const ticks = ticksRef.current;
     const tick = ticks?.children[active] as HTMLElement | undefined;
-    if (!ticks || !tick || pointer.current) return;
+    if (!ticks || !tick || pointer.current !== undefined) return;
     ticks.scrollTo({
       top: tick.offsetTop - (ticks.clientHeight - tick.offsetHeight) / 2,
       behavior: "smooth",
@@ -108,17 +174,23 @@ export function TurnRail({
   // shortcut: reads rendered rows, so turns outside VirtualTurns' window (>200 rows) never become active; derive from VirtualTurns keys if that matters.
   useEffect(() => {
     const element = thread.current;
-    if (!element) return;
+    if (!element || turns.length < 2) return;
+    const indices = new Map(turns.map((turn, i) => [turn.id, i]));
     const update = () => {
       const line =
         element.getBoundingClientRect().top + element.clientHeight / 3;
       let current = 0;
-      turns.forEach((turn, index) => {
-        const row = element.querySelector(
-          `[data-record-id="${CSS.escape(turn.id)}"]`,
-        );
-        if (row && row.getBoundingClientRect().top <= line) current = index;
-      });
+      for (const row of element.querySelectorAll<HTMLElement>(
+        "[data-record-id]",
+      )) {
+        const index = indices.get(row.dataset.recordId ?? "");
+        if (
+          index !== undefined &&
+          index > current &&
+          row.getBoundingClientRect().top <= line
+        )
+          current = index;
+      }
       setActive(current);
     };
     update();
@@ -144,12 +216,8 @@ export function TurnRail({
   return (
     <nav
       className="turn-rail"
+      data-preview={previewVisible || undefined}
       aria-label={t["Conversation turns"]}
-      onMouseLeave={() => {
-        pointer.current = undefined;
-        setOpen(undefined);
-        swell(ticksRef.current);
-      }}
       onBlur={(event) => {
         if (!event.currentTarget.contains(event.relatedTarget))
           setOpen(undefined);
@@ -162,7 +230,7 @@ export function TurnRail({
         ref={ticksRef}
         className="turn-rail-ticks"
         onPointerMove={(event) => {
-          pointer.current = { x: event.clientX, y: event.clientY };
+          pointer.current = event.clientY;
           follow();
         }}
         onScroll={follow}
@@ -192,7 +260,11 @@ export function TurnRail({
         })}
       </div>
       {shown && open && (
-        <div className="turn-rail-card-anchor" style={{ top: open.top }}>
+        <div
+          ref={cardRef}
+          className="turn-rail-card-anchor"
+          style={{ top: open.top }}
+        >
           <div className="turn-rail-card ui-tooltip" data-side="right">
             <div key={shown.id} className="ui-tooltip-swap">
               <div className="turn-rail-card-head">
