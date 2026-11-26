@@ -6,6 +6,7 @@ import {
   type ReactNode,
   useMemo,
   useRef,
+  useState,
 } from "react";
 import { useShallow } from "zustand/react/shallow";
 import { ChatOpening } from "./ChatOpening";
@@ -17,7 +18,7 @@ import {
   paneRect,
   usePaneDrag,
 } from "./PaneDrag";
-import { paneGeometry } from "./pane-layout";
+import { type PaneNode, paneGeometry } from "./pane-layout";
 import { closePane, dropPane, focusPane, newChatInPane } from "./pane-state";
 import { ResizeDivider } from "./ResizeDivider";
 import { useStore } from "./store";
@@ -43,8 +44,11 @@ export function PaneWorkspace({
       active: s.activePane,
     })),
   );
+  const [preview, setPreview] = useState<{ from: PaneNode; next: PaneNode }>();
+  // Only settled splits belong in the store (its workspace cache writes synchronously).
+  const layout = preview?.from === tree ? preview.next : tree;
   const geometry = useMemo(() => {
-    const { panes, dividers } = paneGeometry(tree);
+    const { panes, dividers } = paneGeometry(layout);
     return {
       // Re-inserting a pane's DOM resets its scroll position in Chromium.
       panes: panes
@@ -53,7 +57,7 @@ export function PaneWorkspace({
         .sort((a, b) => a.id - b.id),
       dividers,
     };
-  }, [tree]);
+  }, [layout]);
   const workspace = useRef<HTMLDivElement>(null);
   const { dragging, winbarProps } = usePaneDrag(tree, workspace, dropPane);
   const movable = geometry.panes.length > 1;
@@ -117,7 +121,13 @@ export function PaneWorkspace({
             key={`${divider.path.join(".")}:${divider.index}`}
             divider={divider}
             tree={tree}
-            onChange={(paneTree) => useStore.setState({ paneTree })}
+            onPreview={(next, from) => setPreview({ from, next })}
+            onChange={(paneTree, from) => {
+              setPreview(undefined);
+              const current = useStore.getState().paneTree;
+              if ((!from || from === current) && paneTree !== current)
+                useStore.setState({ paneTree });
+            }}
           />
         ))}
       {dragging && (

@@ -506,7 +506,11 @@ function SidebarPage({ page }: { page: string }) {
   return null;
 }
 
-function ConversationWorkspace({ active: shown }: { active: boolean }) {
+const ConversationWorkspace = memo(function ConversationWorkspace({
+  active: shown,
+}: {
+  active: boolean;
+}) {
   const t = useT();
   const {
     activeSnapshot: active,
@@ -535,7 +539,7 @@ function ConversationWorkspace({ active: shown }: { active: boolean }) {
       ) : null}
     </PaneWorkspace>
   );
-}
+});
 
 const noTools: ChatSnapshot["transcript"]["tools"] = {};
 
@@ -671,9 +675,13 @@ export const Chat = memo(function Chat({
   const resizeContent = useCallback(
     (wasAtBottom: boolean) => {
       const element = thread.current;
-      if (!element || element.querySelector("[data-virtual-turns]")) return;
+      if (!element) return;
       if (view.follow) {
-        if (wasAtBottom) element.scrollTop = element.scrollHeight;
+        if (wasAtBottom && !isThreadAtBottom(element))
+          element.scrollTop = element.scrollHeight;
+      } else if (element.querySelector("[data-virtual-turns]")) {
+        // Only the virtualizer restores an off-bottom reader's anchor.
+        return;
       } else if (
         retainedAnchor.current?.record &&
         element.contains(retainedAnchor.current.record)

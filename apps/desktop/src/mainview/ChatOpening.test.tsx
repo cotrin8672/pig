@@ -101,7 +101,7 @@ if (process.env.PIG_CHAT_OPENING_CHILD !== "1") {
       for (const text of [
         'class="session-layout"',
         'class="chat-shell"',
-        "--chat-width:900px",
+        "--saved-chat-width:900px",
         'class="composer-dock"',
         'class="composer"',
         'class="picker model-picker"',

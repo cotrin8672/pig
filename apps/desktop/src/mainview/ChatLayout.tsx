@@ -10,7 +10,7 @@ import {
 } from "react";
 import { filterModels } from "../shared/models";
 import { projectLabel } from "../shared/projects";
-import { ChatWidthHandles, useChatWidth } from "./ChatWidth";
+import { ChatWidthHandles, registerChatShell, useChatWidth } from "./ChatWidth";
 import { useT } from "./i18n";
 import { navigate } from "./navigation";
 import { Button } from "./primitives/Button";
@@ -42,6 +42,7 @@ export function ChatLayout({
   const thread = useRef<HTMLElement>(null);
   const resizeContent = useRef(onContentResize);
   resizeContent.current = onContentResize;
+  const measureThread = useRef<() => void>(undefined);
   const [awayFromBottom, setAwayFromBottom] = useState(false);
   useImperativeHandle(threadRef, () => thread.current as HTMLElement, []);
   useLayoutEffect(() => {
@@ -50,32 +51,55 @@ export function ChatLayout({
     if (!element || !content) return;
     // The baseline comes from the observer's first callback, delivered before
     // paint: reading it here would force a second layout of a freshly mounted chat.
-    let scrollHeight: number | undefined;
+    let previous:
+      | {
+          scrollHeight: number;
+          clientHeight: number;
+          clientWidth: number;
+          atBottom: boolean;
+        }
+      | undefined;
     const measure = () => {
-      const nextHeight = element.scrollHeight;
-      if (scrollHeight === undefined) scrollHeight = nextHeight;
-      else if (nextHeight !== scrollHeight) {
-        // Respect wheel/focus scrolling even before its scroll event is flushed.
-        const wasAtBottom = isThreadAtBottom({
-          scrollHeight,
-          clientHeight: element.clientHeight,
-          scrollTop: element.scrollTop,
-        });
-        scrollHeight = nextHeight;
+      const scrollTop = element.scrollTop;
+      const next = {
+        scrollHeight: element.scrollHeight,
+        clientHeight: element.clientHeight,
+        clientWidth: element.clientWidth,
+      };
+      const before = previous;
+      const viewportChanged =
+        before &&
+        (before.clientHeight !== next.clientHeight ||
+          before.clientWidth !== next.clientWidth);
+      if (
+        before &&
+        (viewportChanged || before.scrollHeight !== next.scrollHeight)
+      ) {
+        // Changing the viewport may clamp scrollTop before the event arrives.
+        const wasAtBottom =
+          (viewportChanged && before.atBottom) ||
+          isThreadAtBottom({ ...before, scrollTop });
         resizeContent.current?.(wasAtBottom);
       }
-      setAwayFromBottom(!isThreadAtBottom(element));
+      const atBottom = isThreadAtBottom(element);
+      previous = { ...next, atBottom };
+      setAwayFromBottom(!atBottom);
     };
+    measureThread.current = measure;
     const observer = new ResizeObserver(measure);
     observer.observe(element);
     observer.observe(content);
-    return () => observer.disconnect();
+    return () => {
+      measureThread.current = undefined;
+      observer.disconnect();
+    };
   }, []);
   return (
     <div className="session-layout">
       <div
         className="chat-shell"
-        style={{ "--chat-width": `${width}px` } as React.CSSProperties}
+        ref={registerChatShell}
+        style={{ "--saved-chat-width": `${width}px` } as React.CSSProperties}
       >
         <ChatWidthHandles width={width} onChange={setWidth} />
         <section
@@ -85,7 +109,8 @@ export function ChatLayout({
           // biome-ignore lint/a11y/noNoninteractiveTabindex: The scroll region must support keyboard paging after removal of the manual load button.
           tabIndex={0}
           onScroll={(event) => {
-            setAwayFromBottom(!isThreadAtBottom(event.currentTarget));
+            // A scroll caused by layout can arrive before the resize observer.
+            measureThread.current?.();
             onScroll?.(event);
           }}
           aria-busy={loading}

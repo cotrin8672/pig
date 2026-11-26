@@ -116,6 +116,7 @@ test("resizing affects only the adjacent pair and respects minimum sizes", () =>
 
 test("nested resizing leaves the outer group unchanged, including in a small viewport", () => {
   const tree = initialPaneTree("bottomSplit");
+  expect(resizePane(tree, [1], 0, 0, 1000)).toBe(tree);
   const resized = resizePane(tree, [1], 0, -0.1, 1000);
   expect(paneGeometry(resized).panes[0]).toEqual(paneGeometry(tree).panes[0]);
   expect(paneGeometry(resized).panes[1].bounds.width).toBeCloseTo(0.4);

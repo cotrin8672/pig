@@ -628,7 +628,32 @@ main > *,
   padding: 24px;
   text-align: center;
 }
+/* Only the layout surfaces inherit width, not every node in a conversation. */
+@property --chat-width {
+  syntax: "*";
+  inherits: false;
+}
+@property --saved-chat-width {
+  syntax: "<length>";
+  inherits: false;
+  initial-value: 768px;
+}
+:where(
+    .chat-width-guides,
+    .thread-scroll,
+    .transcript,
+    .turn-rail,
+    .composer-dock,
+    .composer,
+    .message-queue,
+    .ask-panel,
+    .extension-dialogs,
+    .remote-composer
+  ) {
+  --chat-width: inherit;
+}
 .chat-shell {
+  --chat-width: var(--saved-chat-width, 768px);
   height: 100%;
   display: flex;
   min-height: 0;

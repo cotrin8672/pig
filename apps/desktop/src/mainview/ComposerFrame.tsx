@@ -26,13 +26,14 @@ export function ComposerFrame({
     const shell = dock?.closest<HTMLElement>(".chat-shell");
     if (!dock || !shell) return;
     setShell(shell);
+    let height: number | undefined;
     const measure = () => {
+      const nextHeight = dock.getBoundingClientRect().height;
+      if (nextHeight === height) return;
+      height = nextHeight;
       const thread = shell.querySelector<HTMLElement>(".thread-scroll");
       const follow = thread && isThreadAtBottom(thread);
-      shell.style.setProperty(
-        "--composer-height",
-        `${dock.getBoundingClientRect().height}px`,
-      );
+      shell.style.setProperty("--composer-height", `${height}px`);
       if (follow) thread.scrollTop = thread.scrollHeight;
     };
     measure();

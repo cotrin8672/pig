@@ -344,24 +344,27 @@ export function resizePane(
   pixels: number,
 ): PaneNode {
   if (node.type === "pane") return node;
-  if (path.length)
-    return {
-      ...node,
-      children: node.children.map((child, childIndex) =>
-        childIndex === path[0]
-          ? resizePane(child, path.slice(1), index, delta, pixels)
-          : child,
-      ),
-    };
-  const weights = [...node.weights];
-  const total = weights[index] + weights[index + 1];
+  if (path.length) {
+    const [branch, ...rest] = path;
+    const previous = node.children[branch];
+    if (!previous) return node;
+    const child = resizePane(previous, rest, index, delta, pixels);
+    if (child === previous) return node;
+    const children = [...node.children];
+    children[branch] = child;
+    return { ...node, children };
+  }
+  const total = node.weights[index] + node.weights[index + 1];
   const before = minimumSize(node.children[index], node.axis) / pixels;
   const after = minimumSize(node.children[index + 1], node.axis) / pixels;
   const fit = Math.min(1, total / (before + after));
-  weights[index] = Math.max(
+  const next = Math.max(
     before * fit,
-    Math.min(total - after * fit, weights[index] + delta),
+    Math.min(total - after * fit, node.weights[index] + delta),
   );
-  weights[index + 1] = total - weights[index];
+  if (next === node.weights[index]) return node;
+  const weights = [...node.weights];
+  weights[index] = next;
+  weights[index + 1] = total - next;
   return { ...node, weights };
 }
