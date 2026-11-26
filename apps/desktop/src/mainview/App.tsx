@@ -85,6 +85,7 @@ import { initShortcuts } from "./shortcuts";
 import { showError, showNotice, useStore } from "./store";
 import { ThinkingBlock, ToolBlock, ToolGroup, WorkToggle } from "./ToolBlock";
 import { TooltipLayer, useTooltip } from "./Tooltip";
+import { TurnRail } from "./TurnRail";
 import {
   captureThreadAnchor,
   restoreThreadAnchor,
@@ -837,6 +838,15 @@ export const Chat = memo(function Chat({
         retainedAnchor.current = undefined;
         view.follow = true;
       }}
+      rail={
+        !readOnly && (
+          <TurnRail
+            sessionId={info.id}
+            records={transcript.records}
+            thread={thread}
+          />
+        )
+      }
       composer={
         readOnly ? (
           <OpeningComposer preview={snapshot} />

@@ -20,6 +20,7 @@ import { isThreadAtBottom } from "./thread-scroll";
 export function ChatLayout({
   children,
   composer,
+  rail,
   threadRef,
   onScroll,
   onJumpToBottom,
@@ -28,6 +29,8 @@ export function ChatLayout({
 }: {
   children: ReactNode;
   composer: ReactNode;
+  /** Overlay pinned beside the thread (turn index). */
+  rail?: ReactNode;
   threadRef?: Ref<HTMLElement>;
   onScroll?: UIEventHandler<HTMLElement>;
   onJumpToBottom?: () => void;
@@ -89,6 +92,7 @@ export function ChatLayout({
         >
           <div className="transcript">{children}</div>
         </section>
+        {rail}
         {awayFromBottom && (
           <button
             type="button"
