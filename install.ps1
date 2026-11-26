@@ -62,11 +62,72 @@
     if ($command -and $command.Source -ine $shim) {
         throw "Another pig command is already available ($($command.Source)). Use its existing installer instead."
     }
-    $shell = New-Object -ComObject WScript.Shell
-    $shortcut = $shell.CreateShortcut($shortcutPath)
+    # WScript.Shell cannot set shortcut targets outside the system ANSI code page.
+    if (!('PigInstall.Shortcut' -as [type])) {
+        Add-Type -TypeDefinition @'
+using System;
+using System.IO;
+using System.Runtime.InteropServices;
+using System.Runtime.InteropServices.ComTypes;
+using System.Text;
+
+namespace PigInstall {
+    [ComImport, Guid("00021401-0000-0000-C000-000000000046")]
+    class ShellLink {}
+
+    [ComImport, Guid("000214F9-0000-0000-C000-000000000046"),
+     InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+    interface IShellLinkW {
+        // Unused methods reserve their native vtable slots.
+        void GetPath([Out, MarshalAs(UnmanagedType.LPWStr)] StringBuilder path, int size, IntPtr data, uint flags);
+        void GetIDList();
+        void SetIDList();
+        void GetDescription();
+        void SetDescription();
+        void GetWorkingDirectory([Out, MarshalAs(UnmanagedType.LPWStr)] StringBuilder directory, int size);
+        void SetWorkingDirectory([MarshalAs(UnmanagedType.LPWStr)] string directory);
+        void GetArguments();
+        void SetArguments();
+        void GetHotkey();
+        void SetHotkey();
+        void GetShowCmd();
+        void SetShowCmd();
+        void GetIconLocation();
+        void SetIconLocation([MarshalAs(UnmanagedType.LPWStr)] string path, int index);
+        void SetRelativePath();
+        void Resolve();
+        void SetPath([MarshalAs(UnmanagedType.LPWStr)] string path);
+    }
+
+    public static class Shortcut {
+        public static string[] Read(string file) {
+            var link = (IShellLinkW)new ShellLink();
+            try {
+                ((IPersistFile)link).Load(file, 0);
+                var path = new StringBuilder(32768);
+                var directory = new StringBuilder(32768);
+                link.GetPath(path, path.Capacity, IntPtr.Zero, 4); // SLGP_RAWPATH
+                link.GetWorkingDirectory(directory, directory.Capacity);
+                return new[] { path.ToString(), directory.ToString() };
+            } finally { Marshal.FinalReleaseComObject(link); }
+        }
+
+        public static void Write(string file, string target) {
+            var link = (IShellLinkW)new ShellLink();
+            try {
+                link.SetPath(target);
+                link.SetWorkingDirectory(Path.GetDirectoryName(target));
+                link.SetIconLocation(target, 0);
+                ((IPersistFile)link).Save(file, true);
+            } finally { Marshal.FinalReleaseComObject(link); }
+        }
+    }
+}
+'@
+    }
     if (Test-Path -LiteralPath $shortcutPath) {
         if (((Get-Item -LiteralPath $shortcutPath -Force).Attributes -band [IO.FileAttributes]::ReparsePoint) -or
-            $shortcut.TargetPath -ine $launcher) {
+            [PigInstall.Shortcut]::Read($shortcutPath)[0] -ine $launcher) {
             throw "An unrelated shortcut already exists at $shortcutPath; it was not changed."
         }
     }
@@ -170,10 +231,7 @@ public static extern System.IntPtr SendMessageTimeout(System.IntPtr window, uint
         $env:Path = Add-BinToPath $env:Path
 
         New-Item -ItemType Directory -Force -Path (Split-Path -Parent $shortcutPath) | Out-Null
-        $shortcut.TargetPath = $launcher
-        $shortcut.WorkingDirectory = Split-Path -Parent $launcher
-        $shortcut.IconLocation = $launcher
-        $shortcut.Save()
+        [PigInstall.Shortcut]::Write($shortcutPath, $launcher)
         Write-Host "pig $version is ready. Run 'pig' or use the Start menu."
         Write-Host 'Other terminals may need to be reopened. Microsoft Edge WebView2 Runtime is required.'
         if ($installed) { Write-Host 'Existing app files were kept. Update from Settings > About & updates.' }

@@ -126,10 +126,10 @@ try {
   Get-Content -LiteralPath $Installer -Raw | Invoke-Expression
   if ($ErrorActionPreference -ne 'Continue' -or $ProgressPreference -ne 'Continue' -or
       (Get-Command Assert-Bundle -ErrorAction SilentlyContinue)) { throw 'Installer leaked its scope' }
-  $link = (New-Object -ComObject WScript.Shell).CreateShortcut((Join-Path $env:APPDATA 'Microsoft\\Windows\\Start Menu\\Programs\\pig.lnk'))
+  $link = [PigInstall.Shortcut]::Read((Join-Path $env:APPDATA 'Microsoft\\Windows\\Start Menu\\Programs\\pig.lnk'))
   @{
-    target = $link.TargetPath;
-    workingDirectory = $link.WorkingDirectory;
+    target = $link[0];
+    workingDirectory = $link[1];
     path = $env:Path
   } | ConvertTo-Json | Set-Content -LiteralPath "$CaseDir/result.json" -Encoding UTF8
 } catch {
