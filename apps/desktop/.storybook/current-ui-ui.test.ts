@@ -392,7 +392,7 @@ test("the actual App and its feature components render in isolated Storybook pre
           ],
           [
             "domain-composer-ui--default",
-            `document.querySelectorAll('form.composer').length === 4 &&
+            `document.querySelectorAll('form.composer').length === 6 &&
              [...document.querySelectorAll('.current-ui-composer-story-state')].every(section => {
                const dock = section.querySelector('.composer-dock').getBoundingClientRect();
                return dock.height > 0 && dock.top >= section.querySelector('h3').getBoundingClientRect().bottom
@@ -401,7 +401,9 @@ test("the actual App and its feature components render in isolated Storybook pre
              !!document.querySelector('[aria-label="空入力・送信不可"] button[type=submit]:disabled') &&
              !!document.querySelector('[aria-label="入力済み・送信可能"] button[type=submit]:enabled') &&
              !!document.querySelector('[aria-label="応答中"] [aria-keyshortcuts=Escape]') &&
-             document.querySelector('[aria-label="キューあり"] .message-queue')?.textContent.includes('次にテスト結果を確認して')`,
+             document.querySelector('[aria-label="キューあり"] .message-queue')?.textContent.includes('次にテスト結果を確認して') &&
+             getComputedStyle(document.querySelector('[aria-label="非アクティブPane"] .composer-toolbar')).filter === 'grayscale(1)' &&
+             document.querySelectorAll('[aria-label="未送信の引用が多数"] form.composer .composer-annotation').length === 12`,
           ],
         ]) {
           await navigate(id, ready);

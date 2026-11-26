@@ -213,8 +213,6 @@ p {
   margin-left: calc(-1 * var(--ds-sidebar-width));
   /* Peeking floats over the content, so it needs its own glass. */
   z-index: 14;
-  background: var(--ds-bg-popover);
-  backdrop-filter: blur(var(--ds-popover-blur));
   border-radius: 0 var(--radius-md) var(--radius-md) 0;
   transition:
     margin-left var(--motion-duration-normal) var(--motion-ease-out),
@@ -1331,22 +1329,28 @@ details[open] > summary .tool-chevron,
   width: min(100%, var(--chat-width, 768px));
   border-radius: var(--ds-composer-radius);
   padding: 8px 12px;
-  box-shadow: var(--ds-shadow-dialog);
+  box-shadow: 0 10px 32px #1111164d;
 }
 /* The glass lives on a layer, not on .composer: an ancestor with
    backdrop-filter becomes the backdrop root, and popovers inside the composer
    (model picker, slash options) would no longer blur the chat behind them. */
+.sidebar-collapsed .sidebar::before,
 .composer::before {
   content: "";
   position: absolute;
-  inset: -1px; /* Covers the border box, as the composer background did. */
+  inset: 0;
   z-index: -1;
   border-radius: inherit;
-  background: var(--ds-bg-composer);
+  /* The same glass as popovers and tooltips: the theme tint shows through. */
+  background: var(--ds-bg-popover);
   backdrop-filter: blur(var(--ds-popover-blur));
   /* Drawn here: this layer paints over the composer's own (transparent) border. */
-  box-shadow: inset 0 0 0 1px var(--ds-border-strong);
+  box-shadow: inset 0 0 0 1px
+    color-mix(in srgb, var(--ds-accent) 16%, transparent);
   pointer-events: none;
+}
+.composer::before {
+  inset: -1px; /* Covers the composer's border box. */
 }
 .composer textarea {
   display: block;

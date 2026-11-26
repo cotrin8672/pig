@@ -144,6 +144,44 @@ export function App() {
   const [peek, setPeek] = useState(false);
   const peekTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
   useEffect(() => () => clearTimeout(peekTimer.current), []);
+  const sidebarRef = useRef<HTMLElement>(null);
+  useLayoutEffect(() => {
+    if (sidebarOpen || peek) return;
+    const notifications = sidebarRef.current?.querySelector<HTMLDetailsElement>(
+      ".notification-center[open]",
+    );
+    if (notifications) notifications.open = false;
+  }, [sidebarOpen, peek]);
+  useEffect(() => {
+    const sidebar = sidebarRef.current;
+    if (!peek || !sidebar) return;
+    let frame: number;
+    const check = () => {
+      if (
+        !sidebar.matches(":hover") &&
+        !document.querySelector(
+          ".sidebar-peek-zone:hover, .sidebar-toggle:hover",
+        ) &&
+        !sidebar.querySelector(":popover-open, input:focus")
+      )
+        setPeek(false);
+    };
+    // Check after hover/focus has moved, including when a menu or edit ends.
+    const recheck = () => {
+      cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(check);
+    };
+    recheck();
+    document.addEventListener("pointerout", recheck, true);
+    sidebar.addEventListener("toggle", recheck, true);
+    sidebar.addEventListener("focusout", recheck);
+    return () => {
+      cancelAnimationFrame(frame);
+      document.removeEventListener("pointerout", recheck, true);
+      sidebar.removeEventListener("toggle", recheck, true);
+      sidebar.removeEventListener("focusout", recheck);
+    };
+  }, [peek]);
   const savedSidebarWidth = useStore(
     (s) => s.bootstrap.desktop.sidebarWidth ?? SIDEBAR_WIDTH.default,
   );
@@ -258,19 +296,19 @@ export function App() {
           />
         )}
         <aside
+          ref={sidebarRef}
           id="app-sidebar"
           className="sidebar"
           inert={!sidebarOpen && !peek}
           style={liveSidebar}
-          onPointerLeave={(event) => {
-            // Keep it while a row menu is open or a name is being edited.
-            if (
-              !event.currentTarget.querySelector(":popover-open, input:focus")
-            )
-              setPeek(false);
-          }}
         >
-          <header className="electrobun-webkit-app-region-drag">
+          <header
+            className={
+              sidebarOpen
+                ? "electrobun-webkit-app-region-drag"
+                : "electrobun-webkit-app-region-no-drag"
+            }
+          >
             <strong className="sidebar-brand">
               <img src={appIcon} alt="" width={20} height={20} />
               pig

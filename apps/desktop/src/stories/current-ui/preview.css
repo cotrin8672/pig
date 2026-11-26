@@ -1,7 +1,10 @@
 .current-ui-composer-story-state > .composer-dock {
   position: relative;
 }
-.current-ui-composer-story-state {
+.current-ui-composer-story-state,
+.current-ui-composer-story-state.pane-view {
+  position: static;
+  container-type: normal;
   display: grid;
   gap: 12px;
   padding-block: 12px;
