@@ -477,12 +477,12 @@ export class SessionHost {
     if (!m?.runtime) throw new Error("Chat is not open");
     return m.runtime.session;
   }
-  sessionAddress(id: string) {
-    const history = this.histories.get(id);
-    if (history) return { ...history.address };
-    const m = this.sessions.get(id);
-    if (!m) throw new Error("Chat is not open");
-    return { ...m.address };
+  sessionAddress(id: string, cwd?: string) {
+    const owner = this.histories.get(id) ?? this.sessions.get(id);
+    if (!owner) throw new Error("Chat is not open");
+    if (cwd !== undefined && owner.cwd !== cwd)
+      throw new Error("Session does not belong to this project");
+    return { ...owner.address };
   }
   private serialize<T>(m: Managed, fn: () => Promise<T>) {
     m.operations++;
@@ -979,6 +979,8 @@ export class SessionHost {
       // A live open may have claimed the session while the file was being read.
       const acquired = this.sessions.get(id);
       if (acquired) {
+        if (acquired.cwd !== input.cwd)
+          throw new Error("Session does not belong to this project");
         const snapshot = this.snapshot(acquired);
         open.state = { state: "ready", snapshot };
         return snapshot;
@@ -1015,6 +1017,8 @@ export class SessionHost {
         prepared.fresh = history;
       }
     }
+    if (history.cwd !== input.cwd)
+      throw new Error("Session does not belong to this project");
     const snapshot = await this.historySnapshot(history, prepared);
     controller.signal.throwIfAborted();
     open.state = { state: "ready", snapshot };
@@ -3089,10 +3093,13 @@ export class SessionHost {
   }
   async renameSession(info: SessionInfo, name: string) {
     if (!name.trim()) throw new Error("Chat name is empty");
+    const file = this.sessions.has(info.id)
+      ? undefined
+      : await resolveSessionFile(info.cwd, info.id);
     const m = this.sessions.get(info.id);
-    const manager =
-      m?.manager ??
-      SessionManager.open(await resolveSessionFile(info.cwd, info.id));
+    if (m && m.cwd !== info.cwd)
+      throw new Error("Session does not belong to this project");
+    const manager = m?.manager ?? SessionManager.open(required(file));
     manager.appendSessionInfo(name.trim());
     if (m) this.publish(m);
     return { ...info, title: name.trim(), modified: Date.now() };

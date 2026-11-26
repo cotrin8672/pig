@@ -9,7 +9,10 @@ test("deletion handles unsaved chats and persisted history without accepting for
     const script = `
       import {expect} from "bun:test";
       import {existsSync} from "node:fs";
-      import {join} from "node:path";
+      import {mkdir,readFile,writeFile} from "node:fs/promises";
+      import {basename,join} from "node:path";
+      import {defaultSessionDir} from ${JSON.stringify(new URL("./session-directory.ts", import.meta.url).href)};
+      import {agentDir} from ${JSON.stringify(new URL("./runtime-profile.ts", import.meta.url).href)};
       import {fauxProvider} from "@earendil-works/pi-ai";
       import {SessionHost} from ${JSON.stringify(new URL("./session-host.ts", import.meta.url).href)};
       import {modelInfo,disposeSessions} from ${JSON.stringify(new URL("./pi-service.ts", import.meta.url).href)};
@@ -41,6 +44,20 @@ test("deletion handles unsaved chats and persisted history without accepting for
           manager.appendMessage({role:"user",content:"Persisted",timestamp:1});
           const file = manager.getSessionFile();
           expect(existsSync(file)).toBe(true);
+          if(!closed){
+            const other=join(cwd,"copy-project"), directory=defaultSessionDir(other,agentDir);
+            await mkdir(other,{recursive:true});await mkdir(directory,{recursive:true});
+            const original=await readFile(file,"utf8");
+            const lines=original.split("\\n");lines[0]=JSON.stringify({...JSON.parse(lines[0]),cwd:other});
+            const copy=join(directory,basename(file));
+            await writeFile(copy,lines.join("\\n"));
+            const copied=await host.findSession(other,chat.info.id);
+            expect(copied.cwd).toBe(other);
+            expect(()=>host.sessionAddress(copied.id,other)).toThrow("does not belong");
+            await expect(host.renameSession(copied,"Copy title")).rejects.toThrow("does not belong");
+            expect(await readFile(file,"utf8")).toBe(original);
+            expect(await readFile(copy,"utf8")).toBe(lines.join("\\n"));
+          }
           if(closed) await host.closeSession(chat.address);
           await expect(host.findSession(join(cwd,"foreign"),chat.info.id)).rejects.toThrow("does not belong");
           await expect(host.deleteSession({...chat.info,cwd:join(cwd,"foreign")})).rejects.toThrow("does not belong");
