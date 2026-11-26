@@ -64,6 +64,21 @@ const SPINNERS = {
     tui: "▰▰▱▱▱▱",
     fit: "6マスの上を光が残像つきで往復する（ナイトライダー）。進捗バーに似るので「進んでいる」感が出る。",
   },
+  Lagrange: {
+    title: "三体問題・ラグランジュ解",
+    tui: "△",
+    fit: "正三角形を保ったまま回り、楕円軌道で広がっては縮む。三つの楕円が120°ずつ重なる。",
+  },
+  FigureEight: {
+    title: "三体問題・8の字解",
+    tui: "∞",
+    fit: "3つの天体が同じ8の字を追いかけ合う周期解（Chenciner–Montgomery）。軌跡は遠いほど淡く細く消える。",
+  },
+  Lorenz: {
+    title: "ローレンツアトラクタ",
+    tui: "ɞɛ",
+    fit: "1点が蝶の羽のような2つの輪を気まぐれに行き来する。周期がなく見飽きにくい。",
+  },
 };
 
 const variants = Object.keys(SPINNERS) as (keyof typeof SPINNERS)[];

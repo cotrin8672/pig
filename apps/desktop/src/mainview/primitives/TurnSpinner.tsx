@@ -1,4 +1,5 @@
 import type { CSSProperties, ReactNode } from "react";
+import { OrbitTrail } from "./OrbitTrail";
 import "./turn-spinner.css";
 
 function Geometric({ children }: { children: ReactNode }) {
@@ -325,6 +326,9 @@ export const TURN_SPINNERS = {
   Spinner,
   Dots,
   Bars,
+  Lagrange: () => <OrbitTrail figure="Lagrange" />,
+  FigureEight: () => <OrbitTrail figure="FigureEight" />,
+  Lorenz: () => <OrbitTrail figure="Lorenz" />,
 };
 
 export function TurnSpinner({

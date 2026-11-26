@@ -19,11 +19,11 @@ test("the default status pairs a decorative spinner with the fixed label", () =>
   expect(html).toContain(`data-turn-spinner="${spinnerVariant()}"`);
 });
 
-test("turn keys select all 15 variants and keep their choice across renders", () => {
+test("turn keys select all 18 variants and keep their choice across renders", () => {
   const keys = Array.from({ length: 256 }, (_, i) => `session/turn-${i}`);
   const variants = keys.map(spinnerVariant);
   const available = Object.keys(TURN_SPINNERS);
-  expect(available).toHaveLength(15);
+  expect(available).toHaveLength(18);
   expect(new Set(variants)).toEqual(new Set(available));
   expect(keys.reverse().map(spinnerVariant)).toEqual(variants.reverse());
 });
