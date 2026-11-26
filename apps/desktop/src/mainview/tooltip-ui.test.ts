@@ -116,6 +116,8 @@ test.skipIf(!existsSync(fixtureEdge) && !process.env.PIG_REQUIRE_UI_TESTS)(
     const reopened=panel();
     check(reopened&&reopened.textContent==='Two','crossing a gap reopens immediately');
     check(names(reopened).includes('tooltip-in')&&!names(reopened).includes('top'),'crossing a gap re-enters with the fade instead of gliding: '+names(reopened));
+    flushSync(()=>root.render(<TooltipLayer>{null}</TooltipLayer>));
+    await until(()=>!panel(),'removing the hovered tool closes its tooltip without pointer input');
   `,
     ),
   60_000,

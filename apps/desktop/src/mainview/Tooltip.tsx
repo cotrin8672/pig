@@ -198,10 +198,16 @@ export function TooltipLayer({ children }: { children: ReactNode }) {
     const scroll = (event: Event) => {
       if (event.target instanceof Node && event.target.contains(el)) close();
     };
+    // A tool can collapse under a stationary pointer without a leave event.
+    const visibility = new IntersectionObserver(([entry]) => {
+      if (anchor.current === el && !entry.isIntersecting) close();
+    });
+    visibility.observe(el);
     document.addEventListener("keydown", dismiss);
     document.addEventListener("scroll", scroll, true);
     window.addEventListener("resize", close);
     return () => {
+      visibility.disconnect();
       if (described === null) el.removeAttribute("aria-describedby");
       else el.setAttribute("aria-describedby", described);
       document.removeEventListener("keydown", dismiss);

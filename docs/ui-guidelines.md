@@ -118,6 +118,7 @@ UIの追加・変更・レビュー時に適用する。スクリーンショッ
   壁紙も同じ基準に揃える。半透明の合成色は背景で変わるため、seedの一致を見た目の一致と扱わない。
   `tooltip-theme-ui.test.ts` でシェル・壁紙・Tooltipのテーマ一致を検査する。
 - 実装は `mainview/Tooltip.tsx`：アプリに1つの `TooltipLayer` と、アンカーに展開する `useTooltip()`。
+  応答完了時の折り畳みなどでアンカーが消えたら、カーソルが動かなくてもTooltipを閉じる。
   アンカーには `data-tooltip-anchor` が付き、文字の上でもIビームではなく矢印カーソルになる
   （`:where()` で詳細度0。ボタン等の `pointer` は維持）。
   個別に表示処理を書かない。チャット名など長い文字は `clipTooltipText` で上限（80字）に切る。
