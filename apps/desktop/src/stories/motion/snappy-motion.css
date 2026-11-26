@@ -261,11 +261,14 @@
     animation: spin 900ms linear infinite;
     transition: stroke-dasharray var(--snappy-open) var(--snappy-ease);
   }
+  /* A fully hidden dash still paints its round cap as a dot, so hide it until drawn. */
   & .snappy-spin-tick {
     stroke-dasharray: 100;
     stroke-dashoffset: 100;
-    transition: stroke-dashoffset var(--snappy-open) var(--snappy-ease)
-      var(--snappy-mid);
+    opacity: 0;
+    transition:
+      stroke-dashoffset var(--snappy-open) var(--snappy-ease) var(--snappy-mid),
+      opacity 0ms var(--snappy-mid);
   }
   &[data-done] {
     stroke: var(--color-success);
@@ -274,6 +277,7 @@
     }
     & .snappy-spin-tick {
       stroke-dashoffset: 0;
+      opacity: 1;
     }
   }
   &[data-settled] .snappy-spin-arc {
