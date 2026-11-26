@@ -37,9 +37,13 @@
 
     function Add-BinToPath([string]$Value) {
         foreach ($entry in ($Value -split ';')) {
-            if ([Environment]::ExpandEnvironmentVariables($entry.Trim().Trim('"')).TrimEnd('\') -ieq $binDir) {
-                return $Value
+            $expanded = [Environment]::ExpandEnvironmentVariables($entry.Trim().Trim('"'))
+            # Absolute PATH entries may spell the same directory with an 8.3 alias.
+            if ($expanded -match '^(?:[A-Za-z]:[\\/]|\\\\)') {
+                try { $expanded = [IO.Path]::GetFullPath($expanded) }
+                catch { continue }
             }
+            if ($expanded.TrimEnd('\') -ieq $binDir) { return $Value }
         }
         if (!$Value) { return $binDir }
         return "$Value;$binDir"

@@ -4,6 +4,7 @@ import {
   mkdtemp,
   readdir,
   readFile,
+  realpath,
   rm,
   writeFile,
 } from "node:fs/promises";
@@ -221,8 +222,9 @@ windowsTest(
         '"%LOCALAPPDATA%\\Programs\\pig\\bin\\launcher.exe"',
       );
       expect(shim).toContain("%*");
+      const bin = await realpath(c.bin);
       expect(await Bun.file(join(c.caseDir, "user-path")).text()).toBe(
-        `C:\\Existing;${c.bin}`,
+        `C:\\Existing;${bin}`,
       );
       const info = JSON.parse(
         (await Bun.file(join(c.caseDir, "result.json")).text()).replace(
@@ -230,9 +232,9 @@ windowsTest(
           "",
         ),
       );
-      expect(info.target).toBe(join(c.app, "bin/launcher.exe"));
-      expect(info.workingDirectory).toBe(join(c.app, "bin"));
-      expect(info.path.split(";")).toContain(c.bin);
+      expect(info.target).toBe(await realpath(join(c.app, "bin/launcher.exe")));
+      expect(info.workingDirectory).toBe(await realpath(join(c.app, "bin")));
+      expect(info.path.split(";")).toContain(bin);
       const requests = await Bun.file(join(c.caseDir, "downloads")).text();
       await writeFile(join(c.app, "keep"), "existing app files");
       const again = await c.execute(executable);
