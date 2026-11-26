@@ -1,10 +1,16 @@
-import { defaultRangeExtractor, useVirtualizer } from "@tanstack/react-virtual";
+import {
+  defaultRangeExtractor,
+  observeElementOffset,
+  useVirtualizer,
+} from "@tanstack/react-virtual";
 import {
   Fragment,
   type ReactElement,
   type RefObject,
+  useCallback,
   useEffect,
   useLayoutEffect,
+  useRef,
   useState,
 } from "react";
 import type { ThreadView } from "./thread-scroll";
@@ -15,16 +21,23 @@ export function VirtualTurns({
   thread,
   target,
   follow,
+  inlineLimit = 0,
 }: {
   keys: string[];
   renderRow: (index: number) => ReactElement;
   thread: RefObject<HTMLElement | null>;
   target?: string;
   follow?: Pick<ThreadView, "follow" | "reading">;
+  inlineLimit?: number;
 }) {
+  // Keep row keys, measurements and selected text when a live chat reaches the limit.
+  const [wasVirtual, setVirtual] = useState(keys.length > inlineLimit);
+  const startedVirtual = useRef(wasVirtual);
+  const virtual = wasVirtual || keys.length > inlineLimit;
+  if (virtual && !wasVirtual) setVirtual(true);
   const [selection, pin] = useState<{ anchor: string; focus: string }>();
   const [extending, setExtending] = useState(false);
-  const key = (index: number) => keys[index];
+  const key = useCallback((index: number) => keys[index], [keys]);
   const anchor = selection ? keys.indexOf(selection.anchor) : -1;
   const focus = selection ? keys.indexOf(selection.focus) : -1;
   // The parent attaches its thread ref after children's layout effects on mount.
@@ -35,11 +48,20 @@ export function VirtualTurns({
   const list = useVirtualizer({
     count: keys.length,
     getScrollElement: () => scrollElement,
+    observeElementOffset(instance, notify) {
+      // Inline rows may already have restored their native viewport before we attach.
+      if (instance.scrollElement)
+        notify(instance.scrollElement.scrollTop, false);
+      return observeElementOffset(instance, notify);
+    },
+    // Rounding every wrapped row accumulates enough error to drop tail following.
+    measureElement: (row, entry) =>
+      entry?.borderBoxSize[0]?.blockSize ?? row.getBoundingClientRect().height,
     estimateSize: () => 160,
     getItemKey: key,
     overscan: 5,
-    anchorTo: "end",
-    followOnAppend: true,
+    anchorTo: virtual ? "end" : "start",
+    followOnAppend: virtual,
     rangeExtractor(range) {
       const visible = defaultRangeExtractor(range);
       if (anchor < 0) return visible;
@@ -66,14 +88,20 @@ export function VirtualTurns({
     },
   });
   list.shouldAdjustScrollPositionOnItemSizeChange = (item, _delta, instance) =>
-    item.end <= (instance.scrollOffset ?? 0);
+    virtual && item.end <= (instance.scrollOffset ?? 0);
   useLayoutEffect(() => {
-    if (!scrollElement) return;
+    if (!scrollElement || !virtual) return;
     const old = scrollElement.style.overflowAnchor;
     scrollElement.style.overflowAnchor = "none";
-    const saved = follow?.reading;
+    return () => {
+      scrollElement.style.overflowAnchor = old;
+    };
+  }, [scrollElement, virtual]);
+  useLayoutEffect(() => {
+    if (!scrollElement) return;
+    const saved = startedVirtual.current && follow?.reading;
     let frame = 0;
-    if (follow?.follow) list.scrollToEnd();
+    if (startedVirtual.current && follow?.follow) list.scrollToEnd();
     else if (saved) {
       let index = 0;
       while (
@@ -101,16 +129,15 @@ export function VirtualTurns({
     scrollElement.addEventListener("scroll", remember);
     return () => {
       cancelAnimationFrame(frame);
-      scrollElement.style.overflowAnchor = old;
       scrollElement.removeEventListener("scroll", remember);
     };
     // Restore on attachment only, not on every streamed update.
   }, [scrollElement, list, follow]);
   const targetIndex = target ? keys.indexOf(target) : -1;
   useLayoutEffect(() => {
-    if (targetIndex >= 0 && scrollElement)
+    if (virtual && targetIndex >= 0 && scrollElement)
       list.scrollToIndex(targetIndex, { align: "center" });
-  }, [targetIndex, list, scrollElement]);
+  }, [targetIndex, list, scrollElement, virtual]);
   useEffect(() => {
     const root = thread.current;
     if (!root) return;
@@ -159,10 +186,11 @@ export function VirtualTurns({
       document.removeEventListener("selectionchange", sync);
     };
   }, [thread]);
-  const items = list.getVirtualItems();
-  const total = list.getTotalSize();
+  const items = virtual
+    ? list.getVirtualItems()
+    : keys.map((key, index) => ({ key, index, start: 0, end: 0 }));
   return (
-    <div data-virtual-turns="">
+    <div data-virtual-turns={virtual ? "" : undefined}>
       <div aria-hidden style={{ height: items[0]?.start ?? 0 }} />
       {items.map(({ index, key, start }, n) => (
         <Fragment key={key}>
@@ -179,7 +207,12 @@ export function VirtualTurns({
           </div>
         </Fragment>
       ))}
-      <div aria-hidden style={{ height: total - (items.at(-1)?.end ?? 0) }} />
+      {virtual && (
+        <div
+          aria-hidden
+          style={{ height: list.getTotalSize() - (items.at(-1)?.end ?? 0) }}
+        />
+      )}
     </div>
   );
 }

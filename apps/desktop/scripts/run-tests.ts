@@ -56,6 +56,7 @@ const ui = [
   "grep-ui",
   "sidebar-update-dot-ui",
   "sidebar-resize-ui",
+  "resize-ui",
   "session-status-ui",
   "notification-center-ui",
   "primitives-ui",

@@ -29,7 +29,7 @@ const exchanges: [string, string][] = [
     "はい。`useHistoryPaging` が上端に近づいたときに前のページを読みます。`jump` は見つかるまで `loadEarlier` を繰り返すので、未読み込みのターンにも移動できます。",
   ],
   [
-    "200行を超えると VirtualTurns になるけど、目次は大丈夫？",
+    "40行を超えると VirtualTurns になるけど、目次は大丈夫？",
     "描画されていない行は位置が取れないので、現在地の判定は描画済みの行に限られます。本実装では VirtualTurns の `keys` とスクロール位置から求めるのが確実です。",
   ],
   [
@@ -168,7 +168,6 @@ export default meta;
 type Story = StoryObj<typeof meta>;
 
 export const LongSession: Story = { name: "長いセッション（24ターン）" };
-/** Ticks shrink to fit; stays under 200 rows so VirtualTurns does not kick in. */
 export const ManyTurns: Story = {
   name: "非常に長いセッション（96ターン）",
   args: { rounds: 8 },

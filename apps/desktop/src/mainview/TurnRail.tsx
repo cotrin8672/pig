@@ -171,7 +171,7 @@ export function TurnRail({
     });
   }, [active]);
 
-  // shortcut: reads rendered rows, so turns outside VirtualTurns' window (>200 rows) never become active; derive from VirtualTurns keys if that matters.
+  // shortcut: only rendered rows can mark the reading position; use virtual item offsets if unmounted turns need to be marked.
   useEffect(() => {
     const element = thread.current;
     if (!element || turns.length < 2) return;

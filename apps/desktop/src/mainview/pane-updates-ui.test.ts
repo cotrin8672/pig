@@ -202,8 +202,8 @@ test.skipIf(!existsSync(fixtureEdge) && !process.env.PIG_REQUIRE_UI_TESTS)(
         return [];
       }};
       function snapshot(id,seq=1,epoch=1){
-        const transcript={history:{revision:id},records:Array.from({length:100},(_,i)=>{
-          const content='Question '+id+' '+i+' '+(i===99?'update '+seq:'words '.repeat(20));
+        const transcript={history:{revision:id},records:Array.from({length:32},(_,i)=>{
+          const content='Question '+id+' '+i+' '+(i===31?'update '+seq:'words '.repeat(20));
           return {id:id+'-'+i,entryId:id+'-'+i,parentId:i?id+'-'+(i-1):null,branchId:id,order:i,kind:'message',
             get requestId(){requestIdReads++;return undefined;},
             message:{role:'user',get content(){reads[id]++;return content;},timestamp:i}};

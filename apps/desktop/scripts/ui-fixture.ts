@@ -39,6 +39,7 @@ export async function runUiFixture(
   source: string,
   options: {
     realRpc?: boolean;
+    virtualTurns?: boolean;
     viewport?: { width: number; height: number };
     sampleHeap?: boolean;
   } = {},
@@ -59,7 +60,9 @@ export async function runUiFixture(
       minify: true,
       define: {
         "process.env.NODE_ENV": '"production"',
-        __VIRTUAL_TURNS__: String(process.env.VITE_VIRTUAL_TURNS !== "0"),
+        __VIRTUAL_TURNS__: String(
+          options.virtualTurns ?? process.env.VITE_VIRTUAL_TURNS !== "0",
+        ),
       },
       plugins: [
         await renderWorkerFixturePlugin(),

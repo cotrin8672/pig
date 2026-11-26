@@ -896,11 +896,7 @@ export const Chat = memo(function Chat({
       return true;
     });
     const render = (i: number) => renderRow(rows[i], keys[i], toggles.has(i));
-    if (
-      rows.length <= 200 ||
-      typeof __VIRTUAL_TURNS__ === "undefined" ||
-      !__VIRTUAL_TURNS__
-    )
+    if (typeof __VIRTUAL_TURNS__ === "undefined" || !__VIRTUAL_TURNS__)
       return keys.map((_, i) => render(i));
     const target =
       jump &&
@@ -910,6 +906,7 @@ export const Chat = memo(function Chat({
         follow={view}
         thread={thread}
         keys={keys}
+        inlineLimit={40}
         renderRow={render}
         target={target ? (liveIds.get(target) ?? target) : undefined}
       />

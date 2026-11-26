@@ -47,7 +47,7 @@ test.skipIf(!existsSync(fixtureEdge) && !process.env.PIG_REQUIRE_UI_TESTS)(
     await document.fonts.ready;
     const paragraph=document.querySelector(".prose p"),range=document.createRange();
     range.selectNodeContents(paragraph);const selected=range.toString(),start=range.startContainer;
-    const thread=document.querySelector(".thread-scroll");thread.scrollTop=240;await wait();
+    const thread=document.querySelector(".thread-scroll");thread.scrollTop-=240;await wait();
     const top=thread.scrollTop,height=thread.clientHeight;
     flushSync(()=>drafts.edit(address,()=>({...emptyContent(),text:"local editor input"})));await wait();
     const editor=document.querySelector(".composer textarea");

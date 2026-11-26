@@ -8,7 +8,7 @@ import {
 } from "../../scripts/ui-fixture";
 
 test.skipIf(!existsSync(fixtureEdge) && !process.env.PIG_REQUIRE_UI_TESTS)(
-  "automatic history in Edge: prefetch, native input, stable anchors, retries and stale replies",
+  "non-virtual history in Edge: prefetch, native input, stable anchors, retries and stale replies",
   () =>
     runUiFixture(
       "history-paging",
@@ -153,6 +153,7 @@ test.skipIf(!existsSync(fixtureEdge) && !process.env.PIG_REQUIRE_UI_TESTS)(
       note:'Synthetic Edge fixture; input includes runner polling, not physical key latency; frame gaps are observations, not a real-session guarantee'};
     root.unmount();
   `,
+      { virtualTurns: false },
     ),
   60_000,
 );
