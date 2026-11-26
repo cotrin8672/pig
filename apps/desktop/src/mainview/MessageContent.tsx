@@ -271,6 +271,7 @@ function StreamdownBody({ data: { text } }: ChatRendererProps<"markdown">) {
     if (!smooth) return;
     const stream = createSmoothStream({
       targetLatencyMs: 90,
+      adaptMs: 65,
       settleMs: 90,
       idleGraceMs: 50,
       boundary: "char",
@@ -294,7 +295,7 @@ function StreamdownBody({ data: { text } }: ChatRendererProps<"markdown">) {
       text.length > 8192 ||
       added > 1024 ||
       !text.startsWith(previous.source) ||
-      (previous.text === previous.source && added < 24)
+      (previous.text === previous.source && added < 12)
     )
       stream.reset(text);
     else stream.setSource(text);

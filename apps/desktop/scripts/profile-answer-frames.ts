@@ -33,13 +33,22 @@ await runUiFixture(
   const append=text=>{target+=text;render();};
   const delay=ms=>new Promise(resolve=>setTimeout(resolve,ms));
   await wait();
+  if (!${twoStage}) {
+    append('あ'.repeat(11));
+    check(sample()===target.length,'small appends must remain immediate');
+    const start=target.length;
+    append('い'.repeat(12));
+    await until(()=>{const n=sample();return n>start&&n<target.length;},'a medium append must reveal an intermediate prefix');
+    await until(()=>sample()===target.length,'the medium append must settle');
+  }
+  const longStart=target.length;
   const long='日本語の文章を少しずつ表示して、途中の文字も読めるか確かめます。'.repeat(5);
   append(long);
   const partial=new Set();
   const end=performance.now()+2000;
   do {
     await frame();const n=sample();if(n===target.length)break;
-    if(n>0)partial.add(n);
+    if(n>longStart)partial.add(n-longStart);
     check(performance.now()<end,'append did not settle: '+history);
   } while(true);
   // Uneven sizes and overlapping arrivals, including completion while behind.
