@@ -80,6 +80,18 @@ import {
   searchPackages,
 } from "./packages";
 import {
+  cancelPairingInvite,
+  connectPairing,
+  createPairingInvite,
+  pairingStatus,
+  hosts as remoteHosts,
+  remoteWorkspace,
+  removePairingHost,
+  revokePairingDevice,
+  saveRemoteProjects,
+  setPairingAllowed,
+} from "./pairing";
+import {
   importLegacyAuth,
   importLegacySessions,
   piDataReport,
@@ -186,10 +198,16 @@ await Promise.all([
   projectStore.load(),
 ]);
 const validateScope = (cwd: string) => projectStore.validateScope(cwd);
-export const remoteRequest = remoteChat(sessionHost, () => [
-  generalCwd,
-  ...projectStore.value,
-]);
+export const remoteRequest = remoteChat(
+  sessionHost,
+  () => [generalCwd, ...projectStore.value],
+  async (cwd) => {
+    await projectStore.save((current) =>
+      current.includes(cwd) ? current : [...current, cwd],
+    );
+    hub.broadcast("projects", projectStore.value);
+  },
+);
 const samePath = (a: string, b: string) =>
   process.platform === "win32"
     ? resolve(a).toLowerCase() === resolve(b).toLowerCase()
@@ -381,6 +399,20 @@ async function settingsModelChoices() {
 }
 /** Window-independent API: identical for every UI client. */
 const hostRequests = {
+  pairingStatus: () => pairingStatus(),
+  remoteHosts: () => remoteHosts(),
+  remoteWorkspace: ({ id, query }) => remoteWorkspace(id, query),
+  remoteProjectsSave: ({ id, projects }) => saveRemoteProjects(id, projects),
+  pairingSetAllow: ({ allow }) => setPairingAllowed(allow === true),
+  pairingInvite: () => createPairingInvite(),
+  pairingCancelInvite: () => cancelPairingInvite(),
+  pairingRevoke: ({ id }) => revokePairingDevice(String(id)),
+  pairingRemoveHost: ({ id }) => removePairingHost(String(id)),
+  pairingConnect: ({ code }) => {
+    if (typeof code !== "string" || code.length > 1024)
+      throw new Error("Invalid invite.");
+    return connectPairing(code);
+  },
   getAppUpdate: () =>
     appUpdater?.info() ??
     ({

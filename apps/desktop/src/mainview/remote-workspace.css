@@ -1,0 +1,40 @@
+.remote-project-options,
+.remote-composer {
+  display: grid;
+  gap: 8px;
+}
+.remote-project-options {
+  max-height: min(32vh, 260px);
+  overflow: auto;
+}
+.remote-project-options label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px;
+}
+.remote-composer {
+  margin: 8px auto;
+  width: min(100%, var(--chat-width));
+  padding: 0 16px 12px;
+}
+.remote-composer button {
+  justify-self: end;
+}
+.remote-composer [role="status"],
+.remote-message strong {
+  font-size: var(--text-sm);
+  color: var(--ds-text-secondary);
+}
+.remote-message p {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.remote-chat-row {
+  display: block;
+  width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: start;
+}

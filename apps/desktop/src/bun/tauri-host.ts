@@ -240,15 +240,8 @@ installDesktopPlatform({
 });
 
 const { openWindow, remoteRequest } = await import("./app");
-if (process.env.PIG_REMOTE_ENABLED === "1" && process.env.PIG_REMOTE_BIN) {
-  const { desktopConfigDir } = await import("./desktop-config");
-  const { startRemotePipe } = await import("./remote-pipe");
-  startRemotePipe(
-    process.env.PIG_REMOTE_BIN,
-    process.env.PIG_TAURI_PAIRING_DIR ?? join(desktopConfigDir, "pairing"),
-    remoteRequest,
-  );
-}
+const { initPairing } = await import("./pairing");
+initPairing(remoteRequest);
 const input = createInterface({ input: process.stdin, crlfDelay: Infinity });
 input.on("line", (line) => {
   try {

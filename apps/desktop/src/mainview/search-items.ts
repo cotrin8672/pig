@@ -22,7 +22,7 @@ export type PaletteTarget =
   | { type: "chat"; cwd: string; id?: string }
   | {
       type: "page";
-      page: "settings" | "providers" | "extensions" | "statistics";
+      page: "settings" | "providers" | "extensions" | "statistics" | "pairing";
     }
   | { type: "action"; action: ActionId }
   | { type: "setting"; category: SettingsCategory; setting?: string }
@@ -89,6 +89,7 @@ export function paletteItems(t: typeof en, s: PaletteSources): PaletteItem[] {
     ["providers", "Providers"],
     ["extensions", "Extensions"],
     ["statistics", "Statistics"],
+    ["pairing", "Pairing"],
   ] as const)
     items.push({
       key: `page:${page}`,

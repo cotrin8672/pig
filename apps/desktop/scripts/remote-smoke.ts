@@ -57,6 +57,9 @@ try {
   const peer = await cli("init", client);
   const sessions = env.PI_CODING_AGENT_SESSION_DIR;
   await mkdir(sessions, { recursive: true });
+  const projectRoot = join(base, "smoke-project");
+  await mkdir(join(projectRoot, "subproject"), { recursive: true });
+  await Bun.write(join(base, "projects.json"), JSON.stringify([projectRoot]));
   const cwd = join(base, "general"),
     timestamp = new Date().toISOString();
   await Bun.write(
@@ -120,7 +123,25 @@ try {
   const call = async (q: unknown, ok = true) =>
     JSON.parse(await cli("call", client, JSON.stringify(q), undefined, ok))
       .value;
-  const { chats } = await call({ op: "list" });
+  const projects = await call({ op: "projects" });
+  assert.equal(projects.length, 2);
+  const [root] = await call({ op: "folders" });
+  const [folder] = await call({ op: "folders", parent: root.id });
+  assert.equal(folder.name, "subproject");
+  await call({ op: "addFolder", folder: projectRoot }, false);
+  const added = await call({ op: "addFolder", folder: folder.id });
+  assert.ok(
+    (await call({ op: "projects" })).some(
+      (p: { id: string }) => p.id === added.id,
+    ),
+  );
+  const fresh = await call({ op: "new", project: added.id });
+  assert.ok(fresh.view);
+  const { chats } = await call({
+    op: "list",
+    project: projects[0].id,
+    offset: 0,
+  });
   const { view, messages } = await call({ op: "open", chat: chats[0].chat });
   assert.equal(messages[0].text, "fixture history");
   await call({ op: "send", view, id: "no", text: "/reload" }, false);

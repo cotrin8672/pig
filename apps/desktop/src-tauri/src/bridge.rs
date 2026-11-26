@@ -49,11 +49,11 @@ impl Bridge {
             path.push(bin.to_owned());
         }
         let mut command = Command::new(bun);
-        if std::env::var("PIG_REMOTE_ENABLED").as_deref() == Ok("1") {
-            command.env(
-                "PIG_REMOTE_BIN",
-                std::env::current_exe()?.with_file_name("pig-remote.exe"),
-            );
+        // The Pairing page needs the transport even before the user enables it; Bun
+        // only creates keys or starts listening after an explicit action there.
+        let remote = std::env::current_exe()?.with_file_name("pig-remote.exe");
+        if remote.is_file() {
+            command.env("PIG_REMOTE_BIN", remote);
             if std::env::var_os("PIG_DESKTOP_CONFIG_DIR").is_none() {
                 // Keep existing Tauri pairing keys without redirecting desktop data.
                 command.env(

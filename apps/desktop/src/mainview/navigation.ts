@@ -10,9 +10,15 @@ export function historyEntry(value: unknown): HistoryEntry {
   if (!value || typeof value !== "object") return { page: "chat" };
   const entry = value as HistoryEntry;
   if (
-    !["chat", "providers", "extensions", "settings", "statistics"].includes(
-      entry.page,
-    )
+    ![
+      "chat",
+      "providers",
+      "extensions",
+      "settings",
+      "statistics",
+      "pairing",
+      "remoteChat",
+    ].includes(entry.page)
   )
     return { page: "chat" };
   return {

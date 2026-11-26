@@ -25,6 +25,13 @@ type Query = (EndpointId, Value, oneshot::Sender<Value>);
 fn store(dir: &Path, host: EndpointId) -> Result<PairingStore> {
     PairingStore::open(&dir.join("paired.sqlite"), host)
 }
+/// Display label only: at most 64 printable characters.
+fn label(text: &str) -> String {
+    text.chars().filter(|c| !c.is_control()).take(64).collect()
+}
+fn machine_name() -> String {
+    label(&env::var("COMPUTERNAME").unwrap_or_default())
+}
 fn local() -> bool {
     cfg!(debug_assertions) && env::var("PIG_REMOTE_LOOPBACK").as_deref() == Ok("1")
 }
@@ -57,7 +64,15 @@ async fn handle(
     let mut db = store(&dir, host)?;
     let reply = if msg.get("op").and_then(Value::as_str) == Some("pair") {
         let invite: Invite = msg["invite"].as_str().context("missing invite")?.parse()?;
-        json!({"ok":db.redeem(&invite,peer)?})
+        let name = label(msg["name"].as_str().unwrap_or_default());
+        let ok = db.redeem(&invite, peer, &name)?;
+        if ok {
+            json!({"ok":true,"name":machine_name()})
+        } else {
+            json!({"ok":false})
+        }
+    } else if msg["op"] == "ping" {
+        json!({"ok":db.is_paired(peer)?})
     } else if db.is_paired(peer)? {
         let (done, recv) = oneshot::channel();
         tx.try_send((peer, msg, done))
@@ -143,7 +158,10 @@ async fn main() -> Result<()> {
             let pin = dir.join("trusted-host");
             let (host, req) = if op == "pair" {
                 let invite: Invite = text.parse()?;
-                (invite.host, json!({"op":"pair","invite":text}))
+                (
+                    invite.host,
+                    json!({"op":"pair","invite":text,"name":machine_name()}),
+                )
             } else {
                 (
                     fs::read_to_string(&pin)?.parse()?,
@@ -160,6 +178,8 @@ async fn main() -> Result<()> {
                 }
                 let c = ep.connect(dst, ALPN).await?;
                 ensure!(c.remote_id() == host, "host mismatch");
+                // Progress for the desktop UI; the request itself follows.
+                eprintln!("pig-remote: connected");
                 let (mut out, mut input) = c.open_bi().await?;
                 out.write_all(&serde_json::to_vec(&req)?).await?;
                 out.finish()?;
@@ -170,7 +190,12 @@ async fn main() -> Result<()> {
             .await
             .context("request timed out; do not retry a send automatically")??;
             if op == "pair" && result["ok"] == true {
+                eprintln!("pig-remote: registering");
                 fs::write(pin, host.to_string())?;
+                fs::write(
+                    dir.join("host-name"),
+                    label(result["name"].as_str().unwrap_or_default()),
+                )?;
             }
             println!("{}", result);
             ensure!(result["ok"] == true, "request not accepted");

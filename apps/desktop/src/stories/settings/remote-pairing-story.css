@@ -1,22 +1,6 @@
 /* Remote Pairing: sheets, sidebar sections and shared rows.
    Surfaces come from SettingsCard and the sign-in dialog; motion reuses the
    Snappy profile (stories/motion/snappy-motion.css). */
-.pairing-motion,
-.remote-host {
-  --snappy-fast: 100ms;
-  --snappy-open: 160ms;
-  --snappy-mid: 120ms;
-  --snappy-exit: 90ms;
-  --snappy-ease: var(--motion-ease-out);
-  --snappy-pop: 0.6;
-  --snappy-press: 0.97;
-  --snappy-rise: 6px;
-  --mac-inset: 56px;
-}
-.pairing-motion {
-  height: 100%;
-}
-
 /* Page: a narrow column of inset grouped lists. */
 .mac-list {
   border-radius: var(--radius-md);
@@ -53,80 +37,6 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.mac-row-detail {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  margin-top: 1px;
-  color: var(--ds-text-muted);
-  font-size: var(--text-sm);
-  font-variant-numeric: tabular-nums;
-  white-space: nowrap;
-}
-.mac-row-actions {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-}
-.mac-remove {
-  color: var(--ds-error);
-  font-size: var(--text-sm);
-  padding-inline: 8px;
-}
-
-.mac-connect-progress {
-  display: grid;
-  gap: 8px;
-}
-.mac-connect-progress-heading,
-.mac-connect-status {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-.mac-connect-progress-heading {
-  justify-content: space-between;
-}
-.mac-connect-status {
-  font-size: var(--text-md);
-  & > span {
-    display: grid;
-    flex: none;
-    place-items: center;
-  }
-  &[data-state="input"] {
-    color: var(--ds-text-muted);
-  }
-  &[data-state="error"] {
-    color: var(--ds-error);
-  }
-}
-.mac-connect-count {
-  color: var(--ds-text-muted);
-  font-family: var(--font-mono);
-  font-size: var(--text-xs);
-  white-space: nowrap;
-}
-.mac-connect-segments {
-  display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: 4px;
-  & span {
-    height: 6px;
-    border-radius: var(--radius-full);
-    background: var(--ds-bg-chip);
-  }
-  & [data-current="connecting"] {
-    background: var(--ds-focus);
-  }
-  & [data-done] {
-    background: var(--ds-accent);
-  }
-  & [data-current="error"] {
-    background: var(--ds-error);
-  }
-}
-
 /* Solid rounded-square icons, as in System Settings. */
 .mac-tile {
   display: grid;
@@ -184,119 +94,6 @@
   }
 }
 
-/* Sheets: same entry as Snappy popovers, the exit retraces it. */
-.mac-sheet {
-  width: min(460px, calc(100vw - 32px));
-  padding: 18px 20px 16px;
-  border: 0;
-  border-radius: var(--radius-md-plus);
-  box-shadow: var(--ds-elevation-stroke), var(--ds-shadow-dialog);
-  transform-origin: top center;
-  opacity: 0;
-  transform: translateY(calc(-1 * var(--snappy-rise)))
-    scale(var(--snappy-press));
-  transition:
-    opacity var(--snappy-exit) var(--snappy-ease),
-    transform var(--snappy-exit) var(--snappy-ease),
-    display var(--snappy-exit) allow-discrete;
-  &[data-wide] {
-    width: min(560px, calc(100vw - 32px));
-  }
-  &:not([open]) {
-    pointer-events: none;
-  }
-  &[open] {
-    gap: 14px;
-    opacity: 1;
-    transform: none;
-    transition-duration: var(--snappy-open);
-    @starting-style {
-      opacity: 0;
-      transform: translateY(calc(-1 * var(--snappy-rise)))
-        scale(var(--snappy-press));
-    }
-  }
-  & .dialog-heading h2 {
-    margin: 0;
-    font-size: var(--text-base);
-    font-weight: var(--font-weight-semibold);
-  }
-  & .dialog-actions {
-    gap: 8px;
-    margin-top: 2px;
-  }
-}
-.mac-sheet-tabs {
-  align-self: flex-start;
-}
-.mac-note {
-  margin: 0;
-  color: var(--ds-text-muted);
-  font-size: var(--text-sm);
-}
-/* Adopted invite sheet. */
-.mac-invite-status {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: var(--text-base);
-}
-.mac-invite-glyph {
-  display: grid;
-  flex: none;
-  place-items: center;
-  width: 28px;
-  height: 28px;
-  border-radius: var(--radius-xs);
-  background: var(--ds-bg-chip);
-  color: var(--ds-accent);
-}
-.mac-invite-token {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  gap: 6px;
-}
-.mac-invite-token-head {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: 2px 8px;
-  & strong {
-    font-size: var(--text-sm);
-    font-weight: var(--font-weight-medium);
-  }
-}
-.mac-invite-code-line {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  min-height: 44px;
-  padding: 6px 6px 6px 12px;
-  border-radius: var(--radius-md);
-  background: var(--ds-field-inset-bg);
-  box-shadow: var(--ds-elevation-stroke);
-  & > code {
-    flex: 1;
-    min-width: 0;
-    overflow: hidden;
-    font-family: var(--font-mono);
-    font-size: var(--text-sm);
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    user-select: all;
-  }
-}
-.mac-copy {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-}
-.mac-code-input {
-  flex: 1;
-  font-family: var(--font-mono);
-}
 /* Picker lists inside the "add from host" sheet. */
 .mac-pick {
   --mac-inset: 84px;
@@ -393,19 +190,4 @@
   padding: 0 8px;
   border-radius: var(--radius-xs);
   font-size: var(--text-sm);
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .pairing-motion,
-  .remote-host {
-    --snappy-open: 0ms;
-    --snappy-mid: 0ms;
-    --snappy-exit: 0ms;
-    --snappy-pop: 1;
-    --snappy-press: 1;
-    --snappy-rise: 0px;
-  }
-  .pairing-motion .snappy-spin-arc {
-    animation: none;
-  }
 }

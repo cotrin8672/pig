@@ -36,10 +36,12 @@ Windowsでは `cargo test --locked --manifest-path examples/remote-pairing-poc/C
 
 ## 調査結果と設計への反映
 
-### Storybook の画面（Settings → Remote Pairing）
+### 実装した画面（Storybook：Settings → Remote Pairing）
 
 サイドバーの統計と通知の間に「Pairing」（リンクのアイコン）を置く。設定画面は E「一覧表」を採用する。
-Story は模擬データのみで、待ち受けや端末登録は行わない。
+Windows Tauri版では一覧、招待、接続、削除を実処理に接続した。[操作手順](remote-cli.md)。
+Story は同じ一覧とダイアログを模擬データで表示し、待ち受けや端末登録は行わない。
+接続先のProject・一般チャットを選択してサイドバーに保存し、ホストでの会話の新規作成・履歴閲覧・テキスト送信・受付照会まで実装した。
 
 - 接続先と接続元を1つの表に並べ、向き・状態・最終接続・サイドバーの表示件数を比較できる。削除は「…」を介さず行で二度押しする。
 - 「PCに接続」は A「区切りバー」を採用。コードの確認・接続先の検索・暗号化・登録の進捗を、4区画のバー・完了した数・現在の処理名で示す。
@@ -87,7 +89,7 @@ PC同士ではカメラを前提にできないため、QRではなく招待コ�
   保存するのはトークンのSHA-256だけ。使用後は招待取消ではなく端末登録の解除が必要。
   上記の発行・登録台帳は `apps/desktop/src-tauri/pairing` に実装。検証は
   `cargo test --locked --manifest-path apps/desktop/src-tauri/Cargo.toml -p pig-pairing`。
-  接続との連携は通信PoCのみで、通常起動時の待ち受けや設定画面はまだない。
+  Windows Tauri版ではPairing画面で明示的に許可すると待ち受ける。
 - **保存と失効。** Windowsではユーザースコープの[DPAPI](https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-cryptprotectdata)
   で秘密鍵を保護し、Tauriのプロファイル別に保存。公開鍵の許可リストはホストが所有。
   秘密鍵・招待・会話本文を診断ログに残さない。鍵の読取失敗時は接続を停止し、黙って再発行しない。

@@ -1,6 +1,7 @@
 import type { AssistantMessage, ToolCall } from "@earendil-works/pi-ai";
 import {
   ChartColumn,
+  Link2,
   PanelLeft,
   Puzzle,
   Settings2,
@@ -59,6 +60,9 @@ import { Providers } from "./Providers";
 import { ProviderUsage } from "./ProviderUsage";
 import { createPane } from "./pane-state";
 import { ProviderIcon } from "./primitives/ProviderIcon";
+import { RemoteConversation } from "./RemoteConversation";
+import { RemotePairing } from "./RemotePairing";
+import { RemoteSidebar } from "./RemoteSidebar";
 import { ResponseError, RetryNotice } from "./ResponseError";
 import { ResponseFooter } from "./ResponseFooter";
 import { RunningIndicator } from "./RunningIndicator";
@@ -274,7 +278,7 @@ export function App() {
           </header>
           {state.sidebarReady && (
             <>
-              <SidebarSessions />
+              <SidebarSessions after={<RemoteSidebar />} />
               <ProviderUsage />
               <SidebarFooter
                 page={state.page}
@@ -439,6 +443,16 @@ function SidebarFooter({
       >
         <ChartColumn size={16} aria-hidden="true" />
       </button>
+      <button
+        type="button"
+        className={`sidebar-icon ${page === "pairing" ? "active" : ""}`}
+        aria-label={t.Pairing}
+        aria-pressed={page === "pairing"}
+        onClick={() => toggle("pairing")}
+        {...tip(t.Pairing)}
+      >
+        <Link2 size={16} aria-hidden="true" />
+      </button>
       <NotificationCenter />
     </div>
   );
@@ -449,6 +463,8 @@ function SidebarPage({ page }: { page: string }) {
   if (page === "extensions") return <Extensions />;
   if (page === "settings") return <Settings />;
   if (page === "statistics") return <Statistics />;
+  if (page === "pairing") return <RemotePairing />;
+  if (page === "remoteChat") return <RemoteConversation />;
   return null;
 }
 

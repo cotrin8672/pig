@@ -1,4 +1,6 @@
 import { createHash } from "node:crypto";
+import { opendir, realpath } from "node:fs/promises";
+import { basename, isAbsolute, join, relative } from "node:path";
 import type { SessionInfo, Snapshot } from "../shared/rpc-schema";
 import type { SessionAddress } from "../shared/runtime-contract";
 import type { Transcript } from "../shared/transcript";
@@ -42,7 +44,7 @@ function page(t: Transcript) {
     else
       for (const block of m.content)
         if (block.type === "text") append(block.text);
-    messages.push({ role: m.role, text });
+    messages.push({ id: r.id, role: m.role, text });
     if (!budget || messages.length >= 256) {
       truncated = true;
       break;
@@ -57,8 +59,30 @@ function page(t: Transcript) {
 }
 
 /** No window RPC dispatch here. All paths and live addresses originate on this host. */
-export function remoteChat(host: Host, scopes: () => string[]) {
-  let catalog = new Map<string, SessionInfo>();
+export function remoteChat(
+  host: Host,
+  scopes: () => string[],
+  register?: (cwd: string) => Promise<void>,
+) {
+  const catalog = new Map<string, SessionInfo>();
+  const folders = new Map<string, { cwd: string; root: string }>();
+  const projectKey = (cwd: string) =>
+    createHash("sha256").update(cwd).digest("hex");
+  const project = (cwd: string) => ({
+    id: projectKey(cwd),
+    name: cwd === scopes()[0] ? "Projectなしのチャット" : basename(cwd) || cwd,
+  });
+  const projectPath = (id: unknown) =>
+    scopes().find((cwd) => projectKey(cwd) === id) ?? fail();
+  async function folderPath(id: unknown) {
+    const f = folders.get(string(id, 64));
+    if (!f || !scopes().slice(1).includes(f.root)) return fail();
+    const cwd = await realpath(f.cwd);
+    const rel = relative(await realpath(f.root), cwd);
+    if (isAbsolute(rel) || rel.split(/[\\/]/)[0] === ".." || cwd !== f.cwd)
+      return fail();
+    return { ...f, cwd };
+  }
   const views = new Map<
     string,
     { address: SessionAddress; cwd: string; peer: string }
@@ -67,17 +91,55 @@ export function remoteChat(host: Host, scopes: () => string[]) {
     check();
     if (!raw || typeof raw !== "object" || Array.isArray(raw)) return fail();
     const q = raw as Record<string, unknown>;
+    if (q.op === "projects") return scopes().map(project);
+    if (q.op === "folders") {
+      const result: { id: string; name: string }[] = [];
+      async function add(path: string, root: string) {
+        const cwd = await realpath(path);
+        const id = projectKey(cwd);
+        const oldest = folders.keys().next().value;
+        if (folders.size >= 8192 && oldest) folders.delete(oldest);
+        folders.set(id, { cwd, root });
+        result.push({ id, name: basename(cwd) || cwd });
+      }
+      if (q.parent === undefined) {
+        for (const root of scopes().slice(1)) await add(root, root);
+      } else {
+        const { cwd, root } = await folderPath(q.parent);
+        for await (const dir of await opendir(cwd)) {
+          if (
+            dir.isDirectory() &&
+            !dir.isSymbolicLink() &&
+            !dir.name.startsWith(".")
+          )
+            await add(join(cwd, dir.name), root);
+          if (result.length >= 500) break;
+        }
+      }
+      return result;
+    }
+    if (q.op === "addFolder") {
+      const { cwd } = await folderPath(q.folder);
+      check();
+      if (!register) return fail();
+      await register(cwd);
+      return project(cwd);
+    }
     if (q.op === "list") {
       const next = new Map<string, SessionInfo>();
-      for (const cwd of new Set(scopes())) {
+      for (const cwd of q.project === undefined
+        ? new Set(scopes())
+        : [projectPath(q.project)]) {
+        for (const [id, info] of catalog)
+          if (info.cwd === cwd) catalog.delete(id);
         for (const chat of await host.listSessions(cwd)) {
           const key = createHash("sha256")
             .update(JSON.stringify([cwd, chat.id]))
             .digest("hex");
           next.set(key, { ...chat, cwd });
+          catalog.set(key, { ...chat, cwd });
         }
       }
-      catalog = next;
       const offset = q.offset ?? 0;
       if (
         typeof offset !== "number" ||
@@ -92,8 +154,11 @@ export function remoteChat(host: Host, scopes: () => string[]) {
           .map(([chat, s]) => ({ chat, title: s.title.slice(0, 256) })),
       };
     }
-    if (q.op === "open") {
-      const info = catalog.get(string(q.chat, 64));
+    if (q.op === "open" || q.op === "new") {
+      const info =
+        q.op === "new"
+          ? { cwd: projectPath(q.project), id: undefined }
+          : catalog.get(string(q.chat, 64));
       if (!info || !scopes().includes(info.cwd)) return fail();
       const snapshot: Snapshot = await host.openSession({
         id: info.id,

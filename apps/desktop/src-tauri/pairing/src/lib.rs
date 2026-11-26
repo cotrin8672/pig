@@ -62,8 +62,23 @@ impl PairingStore {
             "CREATE TABLE IF NOT EXISTS invite(
             host BLOB PRIMARY KEY NOT NULL, digest BLOB NOT NULL, expires INTEGER NOT NULL);
             CREATE TABLE IF NOT EXISTS device(host BLOB NOT NULL, peer BLOB NOT NULL,
+            name TEXT NOT NULL DEFAULT '', added INTEGER NOT NULL DEFAULT 0, redeemed BLOB,
             PRIMARY KEY(host, peer));",
         )?;
+        // Databases from before device names: add the display columns in place.
+        let columns = db
+            .prepare("SELECT name FROM pragma_table_info('device')")?
+            .query_map([], |r| r.get::<_, String>(0))?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+        for (column, ty) in [
+            ("name", "TEXT NOT NULL DEFAULT ''"),
+            ("added", "INTEGER NOT NULL DEFAULT 0"),
+            ("redeemed", "BLOB"),
+        ] {
+            if !columns.iter().any(|c| c == column) {
+                db.execute_batch(&format!("ALTER TABLE device ADD COLUMN {column} {ty}"))?;
+            }
+        }
         Ok(Self { db, host })
     }
 
@@ -89,7 +104,13 @@ impl PairingStore {
     }
 
     /// Caller must use iroh's completed connection.remote_id(), never a packet field.
-    pub fn redeem(&mut self, invite: &Invite, authenticated_peer: EndpointId) -> Result<bool> {
+    /// `name` is the peer's self-reported label, for display only; identity is the key.
+    pub fn redeem(
+        &mut self,
+        invite: &Invite,
+        authenticated_peer: EndpointId,
+        name: &str,
+    ) -> Result<bool> {
         if self.host != invite.host || authenticated_peer == self.host {
             return Ok(false);
         }
@@ -103,8 +124,9 @@ impl PairingStore {
             return Ok(false);
         }
         tx.execute(
-            "INSERT OR IGNORE INTO device VALUES (?1, ?2)",
-            params![self.host.as_bytes(), authenticated_peer.as_bytes()],
+            "INSERT INTO device(host, peer, name, added, redeemed) VALUES (?1, ?2, ?3, unixepoch(), ?4)
+             ON CONFLICT(host,peer) DO UPDATE SET name=excluded.name, redeemed=excluded.redeemed",
+            params![self.host.as_bytes(), authenticated_peer.as_bytes(), name, &digest[..]],
         )?;
         tx.commit()?;
         Ok(true)
@@ -148,13 +170,13 @@ mod tests {
         let mut s = PairingStore::open(Path::new(":memory:"), host)?;
         let old = s.issue()?;
         let current = s.issue()?;
-        assert!(!s.redeem(&old, peer)?);
+        assert!(!s.redeem(&old, peer, "")?);
         let mut fake = current.for_copy().parse::<Invite>()?;
         fake.host = peer;
-        assert!(!s.redeem(&fake, peer)?);
+        assert!(!s.redeem(&fake, peer, "")?);
         fake.host = host;
         fake.secret[0] ^= 1;
-        assert!(!s.redeem(&fake, peer)?);
+        assert!(!s.redeem(&fake, peer, "")?);
         assert!(
             current
                 .for_copy()
@@ -164,11 +186,36 @@ mod tests {
         );
         assert!(current.for_copy()[1..].parse::<Invite>().is_err());
         s.db.execute("UPDATE invite SET expires=unixepoch()", [])?;
-        assert!(!s.redeem(&current, peer)?);
+        assert!(!s.redeem(&current, peer, "")?);
         let cancelled = s.issue()?;
         s.cancel_invite()?;
-        assert!(!s.redeem(&cancelled, peer)?);
+        assert!(!s.redeem(&cancelled, peer, "")?);
         assert!(!s.is_paired(peer)?);
+        Ok(())
+    }
+
+    #[test]
+    fn upgrades_devices_without_names() -> Result<()> {
+        let dir = tempfile::tempdir()?;
+        let file = dir.path().join("old.sqlite");
+        let (host, old, new) = (id(), id(), id());
+        Connection::open(&file)?.execute_batch(
+            "CREATE TABLE device(host BLOB NOT NULL, peer BLOB NOT NULL, PRIMARY KEY(host, peer));",
+        )?;
+        Connection::open(&file)?.execute(
+            "INSERT INTO device VALUES (?1, ?2)",
+            params![host.as_bytes(), old.as_bytes()],
+        )?;
+        let mut s = PairingStore::open(&file, host)?;
+        assert!(s.is_paired(old)?);
+        assert!(s.redeem(&s.issue()?, new, "laptop")?);
+        let name: String = s.db.query_row(
+            "SELECT name FROM device WHERE peer=?1 AND added>0",
+            [new.as_bytes()],
+            |r| r.get(0),
+        )?;
+        assert_eq!(name, "laptop");
+        PairingStore::open(&file, host)?; // Reopening must not re-add columns.
         Ok(())
     }
 
@@ -185,7 +232,7 @@ mod tests {
             let barrier = barrier.clone();
             Ok(thread::spawn(move || -> Result<_> {
                 barrier.wait();
-                Ok((peer, store.redeem(&invite, peer)?))
+                Ok((peer, store.redeem(&invite, peer, "laptop")?))
             }))
         });
         let mut store = PairingStore::open(&file, host)?;
@@ -196,7 +243,7 @@ mod tests {
             count += usize::from(won);
             store.revoke(peer)?;
             assert!(!PairingStore::open(&file, host)?.is_paired(peer)?);
-            assert!(!store.redeem(&token.parse()?, peer)?);
+            assert!(!store.redeem(&token.parse()?, peer, "")?);
         }
         assert_eq!(count, 1);
         Ok(())

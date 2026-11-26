@@ -101,7 +101,22 @@ export const useStore = create<{
   activePane: number;
   panes: Record<number, { sessionId?: string; openId?: string }>;
   restoringChats: ReadonlySet<string>;
-  page: "chat" | "providers" | "extensions" | "settings" | "statistics";
+  page:
+    | "chat"
+    | "providers"
+    | "extensions"
+    | "settings"
+    | "statistics"
+    | "pairing"
+    | "remoteChat";
+  remoteThread?: {
+    host: string;
+    hostName: string;
+    project: string;
+    projectName: string;
+    title: string;
+    view: string;
+  };
   searchOpen: boolean;
   settingsCategory: SettingsCategory;
   /** Settings row (`data-setting`) to reveal once the settings page renders. */

@@ -3,7 +3,10 @@ import { join } from "node:path";
 import { createInterface } from "node:readline";
 import { Readable } from "node:stream";
 
-/** Only the native transport owns the network. EOF on parent exit stops its endpoint. */
+/**
+ * Only the native transport owns the network. EOF on parent exit stops its endpoint.
+ * Returns a function that stops listening.
+ */
 export function startRemotePipe(
   exe: string,
   dir: string,
@@ -57,11 +60,16 @@ export function startRemotePipe(
       await child.stdin.flush();
     })().catch(() => console.error("Remote transport pipe failed"));
   });
-  const stop = () => child.kill();
+  let stopped = false;
+  const stop = () => {
+    stopped = true;
+    child.kill();
+  };
   process.once("exit", stop);
   void child.exited.then((code) => {
     process.off("exit", stop);
     db?.close();
-    if (code) console.error("Remote transport stopped", code);
+    if (code && !stopped) console.error("Remote transport stopped", code);
   });
+  return stop;
 }

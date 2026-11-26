@@ -24,6 +24,7 @@ import type {
   NoticeHistorySnapshot,
   NoticeRecord,
 } from "./notification-history";
+import type { PairingInvite, PairingStatus } from "./pairing";
 import type { ProjectFlags } from "./projects";
 import type { AccountTarget, ProviderAccount } from "./provider-accounts";
 import type { ProviderUsage } from "./provider-usage";
@@ -334,6 +335,29 @@ export type RPCSchema = {
       };
       // biome-ignore lint/suspicious/noConfusingVoidType: Electrobun's parameterless RPC convention.
       refreshProviderUsage: { params: void; response: void };
+      // biome-ignore lint/suspicious/noConfusingVoidType: Electrobun's parameterless RPC convention.
+      pairingStatus: { params: void; response: PairingStatus };
+      remoteHosts: { params: {}; response: import("./pairing").PairingHost[] };
+      remoteProjectsSave: {
+        params: {
+          id: string;
+          projects: import("./remote-workspace").RemoteProject[];
+        };
+        response: boolean;
+      };
+      remoteWorkspace: {
+        params: { id: string; query: import("./remote-workspace").RemoteQuery };
+        response: unknown;
+      };
+      pairingSetAllow: { params: { allow: boolean }; response: void };
+      // biome-ignore lint/suspicious/noConfusingVoidType: Electrobun's parameterless RPC convention.
+      pairingInvite: { params: void; response: PairingInvite };
+      // biome-ignore lint/suspicious/noConfusingVoidType: Electrobun's parameterless RPC convention.
+      pairingCancelInvite: { params: void; response: void };
+      pairingRevoke: { params: { id: string }; response: void };
+      pairingRemoveHost: { params: { id: string }; response: void };
+      /** Starts pairing; progress arrives through `pairingStatus().connect`. */
+      pairingConnect: { params: { code: string }; response: { id: number } };
       // biome-ignore lint/suspicious/noConfusingVoidType: Electrobun's parameterless RPC convention.
       listFontFamilies: { params: void; response: string[] };
       listSessions: { params: { cwd: string }; response: SessionInfo[] };

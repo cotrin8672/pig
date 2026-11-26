@@ -3,6 +3,7 @@ import type { Settings } from "./settings";
 
 export const en = {
   Statistics: "Statistics",
+  Pairing: "Remote Pairing",
   statisticsText: {
     input: "Input",
     output: "Output",
@@ -985,6 +986,7 @@ export const en = {
 type Dictionary = { [K in keyof typeof en]: (typeof en)[K] };
 export const ja: Dictionary = {
   Statistics: "統計",
+  Pairing: "PCのペアリング",
   statisticsText: {
     input: "入力",
     output: "出力",
