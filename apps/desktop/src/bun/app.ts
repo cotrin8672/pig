@@ -201,10 +201,11 @@ const validateScope = (cwd: string) => projectStore.validateScope(cwd);
 export const remoteRequest = remoteChat(
   sessionHost,
   () => [generalCwd, ...projectStore.value],
-  async (cwd) => {
-    await projectStore.save((current) =>
-      current.includes(cwd) ? current : [...current, cwd],
-    );
+  async (cwd, check) => {
+    await projectStore.save((current) => {
+      check();
+      return current.includes(cwd) ? current : [...current, cwd];
+    });
     hub.broadcast("projects", projectStore.value);
   },
 );

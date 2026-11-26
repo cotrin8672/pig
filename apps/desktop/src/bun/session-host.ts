@@ -2293,6 +2293,9 @@ export class SessionHost {
   getPromptReceipt(key: SendKey) {
     return this.receipts.lookup(key);
   }
+  remoteReceipt(id: string, cwd: string, request: string) {
+    return this.recovery.remoteReceipt(id, cwd, request, this.hostId);
+  }
   acknowledgePromptRecovery(params: PromptRecoveryAck) {
     const history = this.histories.get(params.sessionId);
     const m =
@@ -2349,7 +2352,7 @@ export class SessionHost {
   prompt(
     params: PromptParams,
     onAdmitted?: (admission: PromptAdmission) => void,
-    independentDraft = false,
+    checkRemoteDispatch?: () => void,
   ) {
     // Ledger lookup remains usable across closed/old epochs; mutation never does.
     const m = this.current(params),
@@ -2359,7 +2362,7 @@ export class SessionHost {
     const reserved = this.receipts.has(params);
     if (
       !reserved &&
-      !independentDraft &&
+      !checkRemoteDispatch &&
       params.delivery === "followUp" &&
       this.drafts.read(params).revision !== params.draftRevision
     )
@@ -2412,7 +2415,7 @@ export class SessionHost {
           if (m.stopping) throw new Error("Session is stopping");
           if (
             !reserved &&
-            !independentDraft &&
+            !checkRemoteDispatch &&
             params.delivery !== "followUp" &&
             this.drafts.read(params).revision !== params.draftRevision
           )
@@ -2461,7 +2464,7 @@ export class SessionHost {
           }
         },
         (intent) =>
-          independentDraft
+          checkRemoteDispatch
             ? this.recovery.intent(intent)
             : this.drafts.consume(params, params.draftRevision, (consumed) =>
                 this.recovery.intent(
@@ -2472,6 +2475,7 @@ export class SessionHost {
                 ),
               ),
         onAdmitted,
+        checkRemoteDispatch,
       )
       .finally(() => {
         if (m.admissionRequestId === params.requestId)

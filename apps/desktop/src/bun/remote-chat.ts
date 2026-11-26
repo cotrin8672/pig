@@ -9,6 +9,9 @@ import type { SessionHost } from "./session-host";
 type Host = Pick<
   SessionHost,
   | "openSession"
+  | "cancelOpen"
+  | "cancelPrompt"
+  | "remoteReceipt"
   | "listSessions"
   | "getSessionHistory"
   | "readSessionSnapshot"
@@ -65,7 +68,7 @@ function page(t: Transcript) {
 export function remoteChat(
   host: Host,
   scopes: () => string[],
-  register?: (cwd: string) => Promise<void>,
+  register?: (cwd: string, check: () => void) => Promise<void>,
 ) {
   const catalog = new Map<string, SessionInfo>();
   const chatKey = (cwd: string, id: string) =>
@@ -101,14 +104,24 @@ export function remoteChat(
     views.set(token, { address, cwd, peer });
     return token;
   }
-  return async (peer: string, raw: unknown, check: () => void) => {
+  async function handle(
+    peer: string,
+    raw: unknown,
+    check: () => void,
+    signal?: AbortSignal,
+  ) {
     check();
     if (!raw || typeof raw !== "object" || Array.isArray(raw)) return fail();
     const q = raw as Record<string, unknown>;
+    const scoped = (cwd: string) => {
+      check();
+      if (!scopes().includes(cwd)) fail();
+    };
     if (q.op === "projects") return scopes().map(project);
     if (q.op === "folders") {
       const result: { id: string; name: string }[] = [];
       async function add(path: string, root: string) {
+        scoped(root);
         const cwd = await realpath(path);
         const id = projectKey(cwd);
         const oldest = folders.keys().next().value;
@@ -121,6 +134,7 @@ export function remoteChat(
       } else {
         const { cwd, root } = await folderPath(q.parent);
         for await (const dir of await opendir(cwd)) {
+          signal?.throwIfAborted();
           if (
             dir.isDirectory() &&
             !dir.isSymbolicLink() &&
@@ -130,13 +144,20 @@ export function remoteChat(
           if (result.length >= 500) break;
         }
       }
+      check();
+      if (
+        result.some(
+          (item) => !scopes().includes(folders.get(item.id)?.root ?? ""),
+        )
+      )
+        return fail();
       return result;
     }
     if (q.op === "addFolder") {
-      const { cwd } = await folderPath(q.folder);
+      const { cwd, root } = await folderPath(q.folder);
       check();
       if (!register) return fail();
-      await register(cwd);
+      await register(cwd, () => scoped(root));
       return project(cwd);
     }
     if (q.op === "list") {
@@ -146,7 +167,9 @@ export function remoteChat(
         : [projectPath(q.project)]) {
         for (const [id, info] of catalog)
           if (info.cwd === cwd) catalog.delete(id);
-        for (const chat of await host.listSessions(cwd)) {
+        const chats = await host.listSessions(cwd);
+        scoped(cwd);
+        for (const chat of chats) {
           const key = chatKey(cwd, chat.id);
           next.set(key, { ...chat, cwd });
           catalog.set(key, { ...chat, cwd });
@@ -159,9 +182,10 @@ export function remoteChat(
         offset < 0
       )
         return fail();
+      const visible = [...next].filter(([, s]) => scopes().includes(s.cwd));
       return {
-        total: next.size,
-        chats: [...next]
+        total: visible.length,
+        chats: visible
           .slice(offset, offset + 100)
           .map(([chat, s]) => ({ chat, title: s.title.slice(0, 256) })),
       };
@@ -172,11 +196,21 @@ export function remoteChat(
           ? { cwd: projectPath(q.project), id: undefined }
           : catalog.get(string(q.chat, 64));
       if (!info || !scopes().includes(info.cwd)) return fail();
-      const snapshot: Snapshot = await host.openSession({
-        id: info.id,
-        cwd: info.cwd,
-        openId: crypto.randomUUID(),
-      });
+      const openId = crypto.randomUUID();
+      const cancel = () => host.cancelOpen({ openId });
+      signal?.addEventListener("abort", cancel, { once: true });
+      let snapshot: Snapshot;
+      try {
+        snapshot = await host.openSession({
+          id: info.id,
+          cwd: info.cwd,
+          openId,
+        });
+      } finally {
+        signal?.removeEventListener("abort", cancel);
+      }
+      scoped(info.cwd);
+      if (snapshot.info.cwd !== info.cwd) return fail();
       return {
         view: issueView(snapshot.address, info.cwd, peer),
         chat: chatKey(info.cwd, snapshot.info.id),
@@ -188,10 +222,11 @@ export function remoteChat(
       return fail();
     const addr = view.address;
     if (q.op === "read") {
-      const current = host.sessionAddress(addr.sessionId);
+      const current = host.sessionAddress(addr.sessionId, view.cwd);
       const snapshot = host.isSuspended(current)
         ? await host.wakeSession(current)
         : await host.readSessionSnapshot(current);
+      scoped(view.cwd);
       if (
         snapshot.info.cwd !== view.cwd ||
         snapshot.address.hostId !== addr.hostId
@@ -213,22 +248,74 @@ export function remoteChat(
           ),
       };
     }
-    if (q.op === "history")
-      return page(
+    if (q.op === "history") {
+      const result = page(
         await host.getSessionHistory({
           ...addr,
           before: string(q.before, 256),
           revision: string(q.revision, 512),
         }),
       );
+      scoped(view.cwd);
+      return result;
+    }
     const id = string(q.id, 64);
     if (!/^[\w-]+$/.test(id)) return fail();
     const key = { ...addr, requestId: `remote:${peer}:${id}` };
-    if (q.op === "receipt") return { state: host.getPromptReceipt(key).state };
+    if (q.op === "receipt") {
+      const state = host.getPromptReceipt(key).state;
+      return {
+        state:
+          state === "unknown"
+            ? host.remoteReceipt(addr.sessionId, view.cwd, key.requestId)
+            : state,
+      };
+    }
     if (q.op !== "send") return fail();
     const text = string(q.text, 16000);
     if (!text.trim() || /^[!/]/.test(text.trimStart())) return fail();
     check();
-    return host.prompt({ ...key, text, draftRevision: 0 }, undefined, true);
+    const cancel = () => host.cancelPrompt(key);
+    signal?.addEventListener("abort", cancel, { once: true });
+    try {
+      return await host.prompt(
+        { ...key, text, draftRevision: 0 },
+        undefined,
+        () => scoped(view.cwd),
+      );
+    } finally {
+      signal?.removeEventListener("abort", cancel);
+    }
+  }
+  // Keep control/receipt requests available. Count actual work until settlement,
+  // even when the caller has disconnected from a shared SDK wake or admission.
+  let work = 0;
+  return async (
+    peer: string,
+    raw: unknown,
+    check: () => void,
+    signal?: AbortSignal,
+  ) => {
+    signal?.throwIfAborted();
+    const op = (raw as { op?: string } | null)?.op;
+    if (op === "receipt" || op === "projects")
+      return handle(peer, raw, check, signal);
+    if (work >= 6) throw Error("Remote host busy");
+    work++;
+    const task = handle(peer, raw, check, signal).finally(() => {
+      work--;
+    });
+    if (!signal) return task;
+    let abort = () => {};
+    const gone = new Promise<never>((_, reject) => {
+      abort = () => reject(Error("Request expired"));
+      signal.addEventListener("abort", abort, { once: true });
+      if (signal.aborted) abort();
+    });
+    try {
+      return await Promise.race([task, gone]);
+    } finally {
+      signal.removeEventListener("abort", abort);
+    }
   };
 }

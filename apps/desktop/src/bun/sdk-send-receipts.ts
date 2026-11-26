@@ -361,6 +361,7 @@ export class SendReceipts {
     onError: (error: unknown) => void,
     onAccepted?: (intent: SendIntent) => void,
     onAdmitted?: (admission: PromptAdmission) => void,
+    checkRemoteDispatch?: () => void,
   ): Promise<PromptAccepted> {
     let record: RecordState;
     try {
@@ -452,6 +453,8 @@ export class SendReceipts {
           slot.admission.resolve();
           slot = undefined;
         }
+        // The device or project may have been removed while this send waited.
+        checkRemoteDispatch?.();
         record.dispatched = true;
         record.receipt = {
           ...record.receipt,

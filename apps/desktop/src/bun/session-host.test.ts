@@ -95,8 +95,21 @@ test("SDK fork/rewind/reload/shutdown, root startup UI and stale epochs", async 
       const localDraft = host.syncDraft({...chat.address,expectedRevision:host.drafts.read(chat.address).revision,content:{text:"unsent local edit",images:[],pastes:[]}});
       expect(localDraft.applied).toBe(true);
       faux.setResponses([fauxAssistantMessage("remote answer")]);
-      await host.prompt({...chat.address,requestId:"remote:peer:one",draftRevision:0,text:"remote text"}, undefined, true);
+      let dispatchChecks=0;
+      await host.prompt({...chat.address,requestId:"remote:peer:one",draftRevision:0,text:"remote text"}, undefined, ()=>{dispatchChecks++;});
+      expect(dispatchChecks).toBe(1);
       await host.receipts.settled();
+      let permitted=true,modelCalls=0;
+      faux.setResponses([()=>{modelCalls++;return fauxAssistantMessage("unused");}]);
+      const waiting={...chat.address,requestId:"remote:peer:pending",draftRevision:0,text:"pending remote text"};
+      const remotePending=host.prompt(waiting,()=>{permitted=false;},()=>{
+        if(!permitted) throw Error("permission withdrawn");
+      });
+      await expect(remotePending).rejects.toThrow("permission withdrawn");
+      await host.receipts.settled();
+      expect(host.getPromptReceipt(waiting).state).toBe("rejected");
+      expect(modelCalls).toBe(0);
+      expect(host.getPromptReceipt({...waiting,requestId:"remote:peer:one"}).state).toBe("accepted");
       expect(host.drafts.read(chat.address)).toEqual(localDraft.draft);
       const second = chat.transcript.records.filter(r => r.kind === "message" && r.message.role === "user")[1];
       const last = chat.transcript.records.filter(r => r.kind === "message" && r.message.role === "assistant").at(-1);

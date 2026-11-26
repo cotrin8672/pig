@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { RemoteTranscript } from "../shared/remote-workspace";
 import { ChatLayout } from "./ChatLayout";
 import { navigate } from "./navigation";
@@ -20,9 +20,17 @@ function Thread({ target }: { target: Target }) {
   const { host } = target;
   const [view, setView] = useState(target.view);
   const storageKey = `pig.remote.draft:${host}:${target.chat}`;
+  const outbox = `${storageKey}:pending:`;
   const [saved] = useState(() => {
     try {
-      return JSON.parse(sessionStorage.getItem(storageKey) ?? "{}") as {
+      const pendingKey = Object.keys(localStorage).find((k) =>
+        k.startsWith(outbox),
+      );
+      return JSON.parse(
+        (pendingKey && localStorage.getItem(pendingKey)) ||
+          sessionStorage.getItem(storageKey) ||
+          "{}",
+      ) as {
         text?: string;
         pending?: { view: string; id: string };
       };
@@ -41,7 +49,17 @@ function Thread({ target }: { target: Target }) {
       mounted.current = false;
     };
   }, []);
-  function save(text: string, unresolved?: { view: string; id: string }) {
+  function save(
+    text: string,
+    unresolved?: { view: string; id: string },
+    settled = pending?.id,
+  ) {
+    if (unresolved)
+      localStorage.setItem(
+        outbox + unresolved.id,
+        JSON.stringify({ text, pending: unresolved }),
+      );
+    else if (settled) localStorage.removeItem(outbox + settled);
     if (text || unresolved)
       sessionStorage.setItem(
         storageKey,
@@ -99,7 +117,7 @@ function Thread({ target }: { target: Target }) {
       save(draft, { view, id });
       await remote(host, { op: "send", view, id, text: draft });
       if (!mounted.current) return;
-      save("");
+      save("", undefined, id);
       setRefresh((x) => x + 1);
     } catch (e) {
       if (mounted.current) showError(e);
@@ -112,7 +130,7 @@ function Thread({ target }: { target: Target }) {
     if (!pending || busy) return;
     setBusy(true);
     try {
-      const r = await remote(host, { op: "receipt", ...pending });
+      const r = await remote(host, { op: "receipt", view, id: pending.id });
       if (!mounted.current) return;
       if (r.state === "accepted") {
         save("");
@@ -146,6 +164,21 @@ function Thread({ target }: { target: Target }) {
     }
   }
   const blocked = /^[!/]/.test(draft.trimStart());
+  const messages = useMemo(
+    () =>
+      [...past, ...(page ? [page] : [])].map((p, i) => (
+        <div key={p.history?.before ?? i}>
+          {p.messages.map((m) => (
+            <div key={m.id} className="remote-message">
+              <strong>{m.role === "user" ? "あなた" : target.hostName}</strong>
+              <p>{m.text}</p>
+            </div>
+          ))}
+          {p.truncated && <span>一部の本文は省略されています。</span>}
+        </div>
+      )),
+    [past, page, target.hostName],
+  );
   return (
     <ChatLayout
       threadRef={thread}
@@ -216,17 +249,7 @@ function Thread({ target }: { target: Target }) {
           以前の履歴を読む
         </Button>
       )}
-      {[...past, ...(page ? [page] : [])].map((p, i) => (
-        <div key={p.history?.before ?? i}>
-          {p.messages.map((m) => (
-            <div key={m.id} className="remote-message">
-              <strong>{m.role === "user" ? "あなた" : target.hostName}</strong>
-              <p>{m.text}</p>
-            </div>
-          ))}
-          {p.truncated && <span>一部の本文は省略されています。</span>}
-        </div>
-      ))}
+      {messages}
     </ChatLayout>
   );
 }

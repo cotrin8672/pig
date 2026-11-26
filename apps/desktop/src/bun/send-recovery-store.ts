@@ -59,6 +59,8 @@ export class SendRecoveryStore {
         CREATE INDEX IF NOT EXISTS drafts_session ON drafts(session);
         CREATE TABLE IF NOT EXISTS intents (id TEXT PRIMARY KEY, session TEXT NOT NULL, host TEXT NOT NULL, hash TEXT NOT NULL, terminal INTEGER NOT NULL, metadata TEXT NOT NULL, content TEXT);
         CREATE INDEX IF NOT EXISTS intents_session ON intents(session, terminal);
+        CREATE TABLE IF NOT EXISTS remote_receipts(session TEXT NOT NULL, request TEXT NOT NULL, id TEXT PRIMARY KEY, host TEXT NOT NULL,state TEXT NOT NULL);
+        CREATE INDEX IF NOT EXISTS remote_receipts_request ON remote_receipts(session,request);
         CREATE TABLE IF NOT EXISTS deleted (session TEXT PRIMARY KEY);
         CREATE TABLE IF NOT EXISTS discarded (owner TEXT PRIMARY KEY);
         CREATE TABLE IF NOT EXISTS images (hash TEXT PRIMARY KEY, mime TEXT NOT NULL, data TEXT NOT NULL);
@@ -257,6 +259,11 @@ export class SendRecoveryStore {
       );
       if (consumed)
         this.putDraft(db, consumed.address, consumed.draft, consumed.owner);
+      if (r.requestId.startsWith("remote:")) {
+        db.query(
+          "INSERT INTO remote_receipts VALUES (?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET state=excluded.state",
+        ).run(id, r.requestId, key(r), r.hostId, r.state);
+      }
       // Live hosts retain all hashes in memory. Retired host IDs cannot mutate a new host.
       if (terminal)
         db.query(
@@ -278,6 +285,21 @@ export class SendRecoveryStore {
     if (key(intent.receipt) !== key(input))
       throw new Error("Invalid saved send identity");
     return intent;
+  }
+  remoteReceipt(id: string, cwd: string, request: string, host: string) {
+    const rows = this.db
+      ?.query(
+        "SELECT host,state FROM remote_receipts WHERE session=? AND request=? LIMIT 2",
+      )
+      .all(session(id, cwd), request) as
+      | { host: string; state: string }[]
+      | undefined;
+    if (
+      rows?.length !== 1 ||
+      (rows[0].state === "pending" && rows[0].host !== host)
+    )
+      return "unknown";
+    return rows[0].state;
   }
   private decode(row: IntentRow, hostId: string): SendIntent {
     const intent = parseRecovery<SendIntent>(row.metadata);
@@ -391,6 +413,7 @@ export class SendRecoveryStore {
         this.removeImageRefs(db, `intent:${row.id}`);
       db.query("DELETE FROM drafts WHERE session = ?").run(id);
       db.query("DELETE FROM intents WHERE session = ?").run(id);
+      db.query("DELETE FROM remote_receipts WHERE session = ?").run(id);
       return [...addresses.values()];
     });
   }

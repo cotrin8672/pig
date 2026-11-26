@@ -6,11 +6,11 @@ use serde_json::{Value, json};
 use std::{
     collections::HashMap,
     env, fs,
-    io::Read,
+    io::{Read, Write},
     net::{Ipv4Addr, SocketAddr},
     path::{Path, PathBuf},
     sync::Arc,
-    time::Duration,
+    time::{Duration, SystemTime, UNIX_EPOCH},
 };
 use tokio::{
     io::{AsyncBufReadExt, BufReader},
@@ -21,7 +21,7 @@ use tokio::{
 const ALPN: &[u8] = b"pig/remote/1";
 const MAX: usize = 64 * 1024;
 const REPLY: usize = 2 * 1024 * 1024;
-type Query = (EndpointId, Value, oneshot::Sender<Value>);
+type Query = (EndpointId, Value, u64, oneshot::Sender<Value>);
 fn store(dir: &Path, host: EndpointId) -> Result<PairingStore> {
     PairingStore::open(&dir.join("paired.sqlite"), host)
 }
@@ -55,6 +55,7 @@ async fn handle(
     host: EndpointId,
     dir: Arc<PathBuf>,
     tx: mpsc::Sender<Query>,
+    deadline: u64,
 ) -> Result<()> {
     let conn = incoming.await?;
     let peer = conn.remote_id();
@@ -72,12 +73,17 @@ async fn handle(
             json!({"ok":false})
         }
     } else if msg["op"] == "ping" {
-        json!({"ok":db.is_paired(peer)?})
+        if db.is_paired(peer)? {
+            json!({"ok":true,"name":machine_name()})
+        } else {
+            json!({"ok":false})
+        }
     } else if db.is_paired(peer)? {
         let (done, recv) = oneshot::channel();
-        tx.try_send((peer, msg, done))
+        tx.try_send((peer, msg, deadline, done))
             .map_err(|_| anyhow::anyhow!("busy"))?;
-        let value = recv.await?;
+        let value =
+            tokio::select! { r=recv=>r?, _=conn.closed()=>anyhow::bail!("peer disconnected") };
         ensure!(db.is_paired(peer)?, "revoked");
         value
     } else {
@@ -102,18 +108,24 @@ async fn serve(dir: PathBuf) -> Result<()> {
     let mut replies = BufReader::new(tokio::io::stdin()).lines();
     let mut pending = HashMap::<u64, oneshot::Sender<Value>>::new();
     let mut seq = 0u64;
+    let mut cleanup = tokio::time::interval(Duration::from_millis(250));
     loop {
         tokio::select! {
             it = ep.accept() => {
                 let Some(incoming) = it else {break};
                 let Ok(permit) = slots.clone().try_acquire_owned() else {incoming.refuse();continue};
                 let (dir,tx,id)=(dir.clone(),tx.clone(),ep.id());
-                tokio::spawn(async move {let _permit=permit; let _=timeout(Duration::from_secs(35),handle(incoming,id,dir,tx)).await;});
+                let budget=Duration::from_secs(35);
+                let deadline=(SystemTime::now().duration_since(UNIX_EPOCH)?+budget).as_millis() as u64;
+                tokio::spawn(async move {let _permit=permit; let _=timeout(budget,handle(incoming,id,dir,tx,deadline)).await;});
             }
-            Some((peer,msg,done)) = queries.recv() => {
-                pending.retain(|_,s| !s.is_closed()); seq += 1;
+            _=cleanup.tick(), if !pending.is_empty()=> {
+                pending.retain(|id,s| {if s.is_closed(){println!("{}",json!(["cancel",id]));false}else{true}});
+            }
+            Some((peer,msg,deadline,done)) = queries.recv() => {
+                seq += 1;
                 pending.insert(seq,done);
-                println!("{}",json!([seq,ep.id().to_string(),peer.to_string(),msg]));
+                println!("{}",json!([seq,ep.id().to_string(),peer.to_string(),msg,deadline]));
             }
             line = replies.next_line() => {
                 let Some(line) = line? else {break};
@@ -154,14 +166,23 @@ async fn main() -> Result<()> {
         "invite" => println!("{}", store(&dir, id)?.issue()?.for_copy()),
         "cancel" => store(&dir, id)?.cancel_invite()?,
         "revoke" => store(&dir, id)?.revoke(args.next().context("expected peer key")?.parse()?)?,
-        "pair" | "call" => {
-            let text = stdin_text()?;
+        "pair" | "recover" | "call" => {
+            let text = if op == "recover" {
+                String::new()
+            } else {
+                stdin_text()?
+            };
             let pin = dir.join("trusted-host");
             let (host, req) = if op == "pair" {
                 let invite: Invite = text.parse()?;
                 (
                     invite.host,
                     json!({"op":"pair","invite":text,"name":machine_name()}),
+                )
+            } else if op == "recover" {
+                (
+                    args.next().context("expected host key")?.parse()?,
+                    json!({"op":"ping"}),
                 )
             } else {
                 (
@@ -190,13 +211,16 @@ async fn main() -> Result<()> {
             })
             .await
             .context("request timed out; do not retry a send automatically")??;
-            if op == "pair" && result["ok"] == true {
+            if op != "call" && result["ok"] == true {
                 eprintln!("pig-remote: registering");
-                fs::write(pin, host.to_string())?;
-                fs::write(
+                let mut tmp = tempfile::NamedTempFile::new_in(&dir)?;
+                tmp.write_all(host.to_string().as_bytes())?;
+                tmp.as_file().sync_all()?;
+                tmp.persist(pin)?;
+                let _ = fs::write(
                     dir.join("host-name"),
                     label(result["name"].as_str().unwrap_or_default()),
-                )?;
+                );
             }
             println!("{}", result);
             ensure!(result["ok"] == true, "request not accepted");

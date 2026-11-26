@@ -1,6 +1,6 @@
 // Default: debug transport on loopback. --release boots the portable Tauri app.
 import assert from "node:assert/strict";
-import { mkdir } from "node:fs/promises";
+import { mkdir, unlink } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { tauriSmokeProfile } from "./tauri-smoke-profile";
 
@@ -53,6 +53,21 @@ const cli = async (
 };
 let child: ReturnType<typeof Bun.spawn> | undefined;
 try {
+  if (!portable && !publicRelay)
+    for (const phase of ["issue", "cancel", "off"]) {
+      const probe = Bun.spawn(
+        [
+          process.execPath,
+          join(import.meta.dir, "remote-policy-probe.ts"),
+          phase,
+        ],
+        {
+          env: { ...env, PIG_TAURI_PAIRING_DIR: join(base, "policy-probe") },
+          stderr: "inherit",
+        },
+      );
+      assert.equal(await probe.exited, 0);
+    }
   await cli("init", host);
   const peer = await cli("init", client);
   const sessions = env.PI_CODING_AGENT_SESSION_DIR;
@@ -120,6 +135,9 @@ try {
   const invite = await cli("invite", host);
   await cli("pair", client, invite);
   await cli("pair", client, invite, undefined, false);
+  // Same state as losing the first reply: the host committed, but the client has no pin.
+  await unlink(join(client, "trusted-host"));
+  await cli("recover", client, "", await cli("id", host));
   if (!publicRelay) {
     // Kill ONLY this isolated fixture host's transport. No user app is targeted.
     const stop = Bun.spawnSync([
@@ -183,7 +201,48 @@ try {
     `fixture calls=${fixture.requests()} last=${JSON.stringify(last).slice(0, 1000)}`,
   );
   assert.equal(fixture.requests(), 1);
+  if (!portable && !publicRelay) {
+    child.kill();
+    await child.exited;
+    await unlink(addr);
+    child = Bun.spawn(
+      [
+        process.execPath,
+        "--no-env-file",
+        resolve(import.meta.dir, "../src/bun/tauri-host.ts"),
+      ],
+      {
+        env,
+        cwd: fixture.env.HOME,
+        stdin: "pipe",
+        stdout: "pipe",
+        stderr: "inherit",
+      },
+    );
+    void new Response(child.stdout as ReadableStream<Uint8Array>).arrayBuffer();
+    for (let i = 0; i < 450 && !(await Bun.file(addr).exists()); i++)
+      await Bun.sleep(100);
+    env.PIG_REMOTE_TEST_ADDR = (await Bun.file(addr).text()).trim();
+    const reopened = await call({
+      op: "list",
+      project: projects[0].id,
+      offset: 0,
+    });
+    const active = await call({
+      op: "open",
+      chat: reopened.chats.find(
+        (c: { chat: string }) => c.chat === chats[0].chat,
+      ).chat,
+    });
+    assert.equal(
+      (await call({ op: "receipt", view: active.view, id: "one" })).state,
+      "accepted",
+    );
+    assert.equal(fixture.requests(), 1);
+  }
   await cli("revoke", host, "", peer);
+  await call({ op: "ping" }, false);
+  await cli("recover", client, "", await cli("id", host), false);
   await call({ op: "read", view }, false);
   console.log(
     "PASS: paired, opened persisted chat, denied command, submitted twice / model ran once, read reply, revoked",

@@ -10,6 +10,8 @@ import { rpc } from "./rpc";
 import { showError } from "./store";
 
 const errors = {
+  storage:
+    "接続先では登録済みの可能性があります。このPCの保存先を確認し、同じコードでもう一度接続してください。",
   invalid: "招待コードを最後まで貼り付けてください。",
   self: "このPCのコードです。別のPCで発行したコードを使ってください。",
   unreachable:
@@ -113,6 +115,10 @@ export function RemotePairing() {
         removeDevice={(id) => void act(() => rpc.request.pairingRevoke({ id }))}
         openInvite={() =>
           void act(async () => {
+            if (invite && !invite.code && !invite.pairedWith) {
+              setDialog("invite");
+              return;
+            }
             const result = await rpc.request.pairingInvite();
             setStatus((old) => old && { ...old, invite: result });
             setDialog("invite");
@@ -152,7 +158,17 @@ export function RemotePairing() {
           )
         }
       >
-        {invite ? (
+        {invite && !invite.code && !invite.pairedWith ? (
+          <>
+            <p>発行済みの招待があります。コードは再表示できません。</p>
+            <Button
+              disabled={busy}
+              onClick={() => void act(() => rpc.request.pairingInvite())}
+            >
+              新しいコードに置き換える
+            </Button>
+          </>
+        ) : invite ? (
           <InviteBody
             code={invite.code}
             peer={invite.pairedWith}

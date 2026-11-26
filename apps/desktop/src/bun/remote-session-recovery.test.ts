@@ -22,6 +22,7 @@ test("read rotates a suspended view without redirecting old sends or receipt loo
     },
     readSessionSnapshot: async () => snapshot(),
     broker: { pending: () => [] },
+    remoteReceipt: () => "unknown",
     prompt: async (addr: typeof a) => {
       if (addr.epoch !== epoch) throw Error("stale");
       return { disposition: "started" };
@@ -53,4 +54,37 @@ test("read rotates a suspended view without redirecting old sends or receipt loo
   expect(await call({ ...send, view: resumed.view })).toEqual({
     disposition: "started",
   });
+});
+
+test("a disconnected opener is cancelled and receipt/control capacity survives slow work", async () => {
+  const gate = Promise.withResolvers<never>();
+  const cancelled: string[] = [];
+  const run = remoteChat(
+    {
+      openSession: () => gate.promise,
+      cancelOpen: ({ openId }: { openId: string }) => cancelled.push(openId),
+    } as unknown as Parameters<typeof remoteChat>[0],
+    () => ["root"],
+  );
+  const call = (q: unknown, s?: AbortSignal) => run("peer", q, () => {}, s);
+  const [p] = (await call({ op: "projects" })) as {
+    id: string;
+    name: string;
+  }[];
+  const ctl = new AbortController();
+  const tasks = Array.from({ length: 6 }, () =>
+    call({ op: "new", project: p.id }, ctl.signal),
+  );
+  ctl.abort();
+  expect(
+    (await Promise.allSettled(tasks)).every((x) => x.status === "rejected"),
+  ).toBe(true);
+  expect(cancelled.length).toBe(6);
+  await expect(call({ op: "new", project: p.id })).rejects.toThrow("busy");
+  expect(await call({ op: "projects" })).toEqual([p]);
+  gate.reject(Error("fixture settled"));
+  await Bun.sleep(0);
+  await expect(call({ op: "new", project: p.id })).rejects.toThrow(
+    "fixture settled",
+  );
 });

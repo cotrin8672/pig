@@ -158,7 +158,7 @@ export function PairingTable(p: {
             ))}
           </tbody>
         </table>
-        {!rows.length && (
+        {(p.notice || !rows.length) && (
           <p className="settings-empty" role="status">
             {p.notice ?? "該当するPCはありません。"}
           </p>

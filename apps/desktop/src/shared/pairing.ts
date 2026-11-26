@@ -29,6 +29,7 @@ export const pairingConnectSteps = 4;
 export type PairingConnectError =
   | "invalid"
   | "self"
+  | "storage"
   | "rejected"
   | "unreachable";
 export interface PairingConnect {

@@ -34,10 +34,10 @@ test(
   area().dispatchEvent(new Event('input',{bubbles:true}));
   await until(()=>!button('送信').disabled,'send enabled');button('送信').click();
   await until(()=>button('受付を確認') && !button('受付を確認').disabled,'uncertain');
-  flushSync(()=>root.render(null));open('new');
+  flushSync(()=>root.render(null));sessionStorage.clear();open('new');
   await until(()=>area()?.value==='keep my words','restored draft');
   button('受付を確認').click();await wait();await until(()=>receipt && !button('再送せず下書きに戻す').disabled,'receipt lookup');
-  check(receipt.view==='old' && receipt.id===original.id,'must look up original receipt');
+  check(receipt.view==='new' && receipt.id===original.id,'lookup original request using reopened chat');
   button('再送せず下書きに戻す').click();
   await until(()=>!area().disabled,'unlocked');
   check(sends===1 && area().value==='keep my words','recover text without resending');

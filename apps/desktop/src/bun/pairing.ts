@@ -34,6 +34,7 @@ const dir =
 /** One client identity per host: `pig-remote` pins a single trusted host per directory. */
 const hostsDir = join(dir, "hosts");
 const enabledFile = join(dir, "enabled");
+const disabledFile = join(dir, "disabled");
 const KEY = /^[0-9a-f]{64}$/;
 const INVITE = /^pig-pair:1:([0-9a-f]{64}):[0-9a-f]{64}$/;
 const INVITE_MS = 12 * 60 * 60 * 1000;
@@ -43,9 +44,17 @@ type Dispatch = (
   peer: string,
   request: unknown,
   check: () => void,
+  signal: AbortSignal,
 ) => Promise<unknown>;
 let dispatch: Dispatch | undefined;
-let stopPipe: (() => void) | undefined;
+let stopPipe: (() => Promise<void>) | undefined;
+let hostKey: string | undefined;
+let changes: Promise<unknown> = Promise.resolve();
+function change<T>(action: () => Promise<T>) {
+  const result = changes.then(action);
+  changes = result.catch(() => {});
+  return result;
+}
 let listener: PairingStatus["listener"];
 let generation = 0;
 let retry: ReturnType<typeof setTimeout> | undefined;
@@ -58,7 +67,9 @@ let connectId = 0;
 const reach = new Map<string, { online?: boolean; checked: number }>();
 
 const available = () => !!exe && existsSync(exe);
-let allow = process.env.PIG_REMOTE_ENABLED === "1" || existsSync(enabledFile);
+let allow =
+  !existsSync(disabledFile) &&
+  (process.env.PIG_REMOTE_ENABLED === "1" || existsSync(enabledFile));
 
 async function run(
   args: string[],
@@ -127,15 +138,15 @@ async function startListening() {
     retry.unref();
   };
   try {
-    await must(["id", dir]); // Never enroll or replace a missing key on startup.
+    hostKey = await must(["id", dir]); // Never enroll or replace a missing key on startup.
     if (!allow || gen !== generation) return;
     const forward = dispatch;
     stopPipe = startRemotePipe(
       exe,
       dir,
-      (peer, request, check) => {
+      (peer, request, check, signal) => {
         seen.set(peer, Date.now());
-        return forward(peer, request, check);
+        return forward(peer, request, check, signal);
       },
       () => {
         if (gen === generation) listener = "ready";
@@ -161,8 +172,6 @@ function readDb<T>(read: (db: Database) => T, fallback: T): T {
   const db = new Database(file, { readonly: true });
   try {
     return read(db);
-  } catch {
-    return fallback;
   } finally {
     db.close();
   }
@@ -171,7 +180,9 @@ function devices(): PairingDevice[] {
   return readDb(
     (db) =>
       (
-        db.query("SELECT * FROM device").all() as {
+        db
+          .query("SELECT * FROM device WHERE host=?")
+          .all(Buffer.from(hostKey ?? "", "hex")) as {
           peer: Uint8Array;
           name?: string;
           added?: number;
@@ -189,21 +200,21 @@ function devices(): PairingDevice[] {
   );
 }
 function currentInvite(): PairingInvite | undefined {
-  if (!invite) return;
-  if (Date.now() > invite.expires) {
-    invite = undefined;
-    return;
-  }
-  const { host, digest, code, expires } = invite;
+  if (!hostKey) return;
+  const host = Buffer.from(hostKey, "hex");
   return readDb((db) => {
-    if (
-      db
-        .query(
-          "SELECT 1 FROM invite WHERE host=? AND digest=? AND expires>unixepoch()",
-        )
-        .get(host, digest)
-    )
-      return { code, expires };
+    const row = db
+      .query(
+        "SELECT digest, expires FROM invite WHERE host=? AND expires>unixepoch()",
+      )
+      .get(host) as { digest: Uint8Array; expires: number } | null;
+    if (row)
+      return {
+        code: invite?.digest.equals(row.digest) ? invite.code : "",
+        expires: row.expires * 1000,
+      };
+    if (!invite || Date.now() > invite.expires) return;
+    const { digest, expires } = invite;
     const device = db
       .query(
         "SELECT name, hex(peer) AS peer FROM device WHERE host=? AND redeemed=?",
@@ -253,13 +264,13 @@ export async function hosts(): Promise<PairingHost[]> {
       name: name || `PC ${id.slice(0, 8)}`,
       lastSeen: seenAt,
       online: reach.get(id)?.online,
-      projects: await readFile(join(profile, "sidebar.json"), "utf8").then(
-        (text) => checkedProjects(JSON.parse(text)),
-        (e) => {
-          if (e.code === "ENOENT") return [];
-          throw e;
-        },
-      ),
+      projects: await readFile(join(profile, "sidebar.json"), "utf8")
+        .then((text) => checkedProjects(JSON.parse(text)))
+        .catch((e) => {
+          if (e.code !== "ENOENT")
+            console.warn("Remote sidebar settings unavailable for", id);
+          return [];
+        }),
     });
   }
   return list;
@@ -331,6 +342,8 @@ export async function remoteWorkspace(
 export async function pairingStatus(): Promise<PairingStatus> {
   if (!available())
     return { available: false, allow: false, devices: [], hosts: [] };
+  if (!hostKey && existsSync(join(dir, "pairing-identity.dpapi")))
+    hostKey = await must(["id", dir]);
   const list = devices();
   return {
     available: true,
@@ -343,45 +356,57 @@ export async function pairingStatus(): Promise<PairingStatus> {
   };
 }
 
-export async function setPairingAllowed(next: boolean) {
-  if (next) {
-    await identity(dir);
-    await writeFile(enabledFile, "");
-    allow = true;
-    await startListening();
-    return;
-  }
-  await rm(enabledFile, { force: true });
-  allow = false;
-  generation++;
-  clearTimeout(retry);
-  listener = undefined;
-  stopPipe?.();
-  stopPipe = undefined;
-  if (existsSync(join(dir, "paired.sqlite"))) await cancelPairingInvite();
+export function setPairingAllowed(next: boolean) {
+  return change(async () => {
+    if (next) {
+      hostKey = await identity(dir);
+      if (existsSync(disabledFile) && existsSync(join(dir, "paired.sqlite")))
+        await cancelInvite();
+      await writeFile(enabledFile, "");
+      await rm(disabledFile, { force: true });
+      allow = true;
+      await startListening();
+      return;
+    }
+    await mkdir(dir, { recursive: true });
+    await writeFile(disabledFile, "");
+    allow = false;
+    generation++;
+    clearTimeout(retry);
+    listener = undefined;
+    await stopPipe?.();
+    stopPipe = undefined;
+    await rm(enabledFile, { force: true });
+    if (existsSync(join(dir, "paired.sqlite"))) await cancelInvite();
+  });
 }
 
 /** Reuses the open invite; a new one replaces any previous invite. */
-export async function createPairingInvite(): Promise<PairingInvite> {
-  if (!allow) throw new Error("Allow connections from other PCs first.");
-  const open = currentInvite();
-  if (open && !open.pairedWith) return open;
-  await identity(dir);
-  await startListening();
-  const code = await must(["invite", dir]);
-  const [, , host, token] = code.split(":");
-  invite = {
-    code,
-    expires: Date.now() + INVITE_MS,
-    host: Buffer.from(host, "hex"),
-    digest: createHash("sha256").update(Buffer.from(token, "hex")).digest(),
-  };
-  return { code, expires: invite.expires };
+export function createPairingInvite(): Promise<PairingInvite> {
+  return change(async () => {
+    if (!allow) throw new Error("Allow connections from other PCs first.");
+    const open = currentInvite();
+    if (open?.code) return open;
+    await identity(dir);
+    await startListening();
+    const code = await must(["invite", dir]);
+    const [, , host, token] = code.split(":");
+    invite = {
+      code,
+      expires: Date.now() + INVITE_MS,
+      host: Buffer.from(host, "hex"),
+      digest: createHash("sha256").update(Buffer.from(token, "hex")).digest(),
+    };
+    return { code, expires: invite.expires };
+  });
 }
 
-export async function cancelPairingInvite() {
-  invite = undefined;
+async function cancelInvite() {
   await must(["cancel", dir]);
+  invite = undefined;
+}
+export function cancelPairingInvite() {
+  return change(cancelInvite);
 }
 
 export async function revokePairingDevice(id: string) {
@@ -414,19 +439,27 @@ export function connectPairing(code: string) {
     if (host === own) return fail("self");
     job.step = 1;
     const profile = join(hostsDir, host);
-    await identity(profile);
-    const result = await run(["pair", profile], code.trim(), (line) => {
+    try {
+      await identity(profile);
+    } catch {
+      return fail("storage");
+    }
+    const progress = (line: string) => {
       if (line === "pig-remote: connected") job.step = 2;
       if (line === "pig-remote: registering") job.step = 3;
-    });
-    if (!result.ok) {
-      // A lost reply need not mean rejection; preserve the peer key for a new invite.
+    };
+    const result = await run(["pair", profile], code.trim(), progress);
+    if (
+      !result.ok &&
+      !(await run(["recover", profile, host], undefined, progress)).ok
+    ) {
+      if (job.step === 3) return fail("storage");
       return fail(
         result.out.includes('"ok":false') ? "rejected" : "unreachable",
       );
     }
     job.step = 3;
-    await writeFile(join(profile, "last-seen"), "");
+    await writeFile(join(profile, "last-seen"), "").catch(() => {});
     reach.set(host, { online: true, checked: Date.now() });
     job.host = (
       await readFile(join(profile, "host-name"), "utf8").catch(() => "")
