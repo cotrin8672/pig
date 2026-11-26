@@ -91,6 +91,8 @@ export class DesktopStateStore {
       if (
         (patch.chatWidth === undefined ||
           patch.chatWidth === current.chatWidth) &&
+        (patch.sidebarWidth === undefined ||
+          patch.sidebarWidth === current.sidebarWidth) &&
         (patch.recentModels === undefined ||
           (patch.recentModels.length === current.recentModels?.length &&
             patch.recentModels.every(

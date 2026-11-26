@@ -69,6 +69,7 @@ test("queues preference and session merges, persists them, and removes cleared o
     store.setUiPreferences({ chatWidth: 900 }),
     store.setSession("first", { pinned: true }),
     store.setUiPreferences({ recentModels: ["provider/model"] }),
+    store.setUiPreferences({ sidebarWidth: 340 }),
     store.setSession("first", { archived: true }),
     store.setSession("second", { pinned: true }),
     store.setSession("first", { pinned: false }),
@@ -76,6 +77,7 @@ test("queues preference and session merges, persists them, and removes cleared o
   const expected = {
     chatWidth: 900,
     recentModels: ["provider/model"],
+    sidebarWidth: 340,
     sessions: { first: { archived: true }, second: { pinned: true } },
   };
   expect(store.value).toEqual(expected);
