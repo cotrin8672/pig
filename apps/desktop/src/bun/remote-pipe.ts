@@ -11,6 +11,8 @@ export function startRemotePipe(
   exe: string,
   dir: string,
   dispatch: (peer: string, q: unknown, check: () => void) => Promise<unknown>,
+  ready: () => void,
+  exited: () => void,
 ) {
   const child = Bun.spawn([exe, "serve", dir], {
     stdin: "pipe",
@@ -27,7 +29,12 @@ export function startRemotePipe(
   lines.on("line", (line) => {
     void (async () => {
       const [seq, host, peer, request] = JSON.parse(line);
+      if (seq === "ready") {
+        if (!stopped) ready();
+        return;
+      }
       const check = () => {
+        if (stopped) throw new Error("Remote listener stopped");
         if (!/^[a-f0-9]{64}$/.test(host) || !/^[a-f0-9]{64}$/.test(peer))
           throw new Error("invalid key");
         db ??= new Database(join(dir, "paired.sqlite"), { readonly: true });
@@ -69,7 +76,11 @@ export function startRemotePipe(
   void child.exited.then((code) => {
     process.off("exit", stop);
     db?.close();
-    if (code && !stopped) console.error("Remote transport stopped", code);
+    if (!stopped) {
+      stopped = true;
+      console.error("Remote transport stopped", code);
+      exited();
+    }
   });
   return stop;
 }

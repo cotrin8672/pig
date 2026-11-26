@@ -17,11 +17,40 @@ export function RemoteConversation() {
   );
 }
 function Thread({ target }: { target: Target }) {
-  const { host, view } = target;
+  const { host } = target;
+  const [view, setView] = useState(target.view);
+  const storageKey = `pig.remote.draft:${host}:${target.chat}`;
+  const [saved] = useState(() => {
+    try {
+      return JSON.parse(sessionStorage.getItem(storageKey) ?? "{}") as {
+        text?: string;
+        pending?: { view: string; id: string };
+      };
+    } catch {
+      return {};
+    }
+  });
   const [page, setPage] = useState<RemoteTranscript>();
   const [past, setPast] = useState<RemoteTranscript[]>([]);
-  const [draft, setDraft] = useState("");
-  const [pending, setPending] = useState<string>();
+  const [draft, setDraft] = useState(saved.text ?? "");
+  const [pending, setPending] = useState(saved.pending);
+  const mounted = useRef(true);
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
+  function save(text: string, unresolved?: { view: string; id: string }) {
+    if (text || unresolved)
+      sessionStorage.setItem(
+        storageKey,
+        JSON.stringify({ text, pending: unresolved }),
+      );
+    else sessionStorage.removeItem(storageKey);
+    setDraft(text);
+    setPending(unresolved);
+  }
   const [busy, setBusy] = useState(false);
   const [olderBusy, setOlderBusy] = useState(false);
   const [offline, setOffline] = useState(false);
@@ -38,6 +67,10 @@ function Thread({ target }: { target: Target }) {
         const next = await remote(host, { op: "read", view });
         if (!active) return;
         setPage(next);
+        if (next.view && next.view !== view) {
+          setPast([]);
+          setView(next.view);
+        }
         setOffline(false);
         delay = next.running ? 1500 : 5000;
       } catch {
@@ -63,11 +96,13 @@ function Thread({ target }: { target: Target }) {
     lock.current = true;
     setBusy(true);
     try {
+      save(draft, { view, id });
       await remote(host, { op: "send", view, id, text: draft });
-      setDraft("");
+      if (!mounted.current) return;
+      save("");
       setRefresh((x) => x + 1);
-    } catch {
-      setPending(id);
+    } catch (e) {
+      if (mounted.current) showError(e);
     } finally {
       lock.current = false;
       setBusy(false);
@@ -77,13 +112,13 @@ function Thread({ target }: { target: Target }) {
     if (!pending || busy) return;
     setBusy(true);
     try {
-      const r = await remote(host, { op: "receipt", view, id: pending });
+      const r = await remote(host, { op: "receipt", ...pending });
+      if (!mounted.current) return;
       if (r.state === "accepted") {
-        setDraft("");
-        setPending(undefined);
+        save("");
         setRefresh((x) => x + 1);
       } else if (r.state === "rejected") {
-        setPending(undefined);
+        save(draft);
         showError("送信は受け付けられませんでした。");
       } else showError("受付はまだ確認できません。会話を確認してください。");
     } catch (e) {
@@ -145,9 +180,14 @@ function Thread({ target }: { target: Target }) {
                         : ""}
           </span>
           {pending && (
-            <Button disabled={busy} onClick={() => void receipt()}>
-              受付を確認
-            </Button>
+            <>
+              <Button disabled={busy} onClick={() => void receipt()}>
+                受付を確認
+              </Button>
+              <Button disabled={busy} onClick={() => save(draft)}>
+                再送せず下書きに戻す
+              </Button>
+            </>
           )}
           <textarea
             aria-label={`${target.hostName}へのメッセージ`}
@@ -156,7 +196,7 @@ function Thread({ target }: { target: Target }) {
             maxLength={16000}
             value={draft}
             disabled={busy || !!pending}
-            onChange={(e) => setDraft(e.target.value)}
+            onChange={(e) => save(e.target.value)}
           />
           <Button
             type="submit"

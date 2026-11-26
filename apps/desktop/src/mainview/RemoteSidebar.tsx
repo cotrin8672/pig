@@ -72,6 +72,7 @@ function ProjectChats({
       if (seq !== openSequence || !alive.current) return;
       useStore.setState({
         remoteThread: {
+          chat: result.chat ?? chat?.chat ?? result.view,
           host: host.id,
           hostName: host.name,
           project: project.id,

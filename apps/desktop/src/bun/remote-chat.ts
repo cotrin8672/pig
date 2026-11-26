@@ -15,6 +15,9 @@ type Host = Pick<
   | "prompt"
   | "getPromptReceipt"
   | "broker"
+  | "sessionAddress"
+  | "isSuspended"
+  | "wakeSession"
 >;
 const fail = (): never => {
   throw new Error("Invalid remote operation");
@@ -65,6 +68,10 @@ export function remoteChat(
   register?: (cwd: string) => Promise<void>,
 ) {
   const catalog = new Map<string, SessionInfo>();
+  const chatKey = (cwd: string, id: string) =>
+    createHash("sha256")
+      .update(JSON.stringify([cwd, id]))
+      .digest("hex");
   const folders = new Map<string, { cwd: string; root: string }>();
   const projectKey = (cwd: string) =>
     createHash("sha256").update(cwd).digest("hex");
@@ -87,6 +94,13 @@ export function remoteChat(
     string,
     { address: SessionAddress; cwd: string; peer: string }
   >();
+  function issueView(address: SessionAddress, cwd: string, peer: string) {
+    const token = crypto.randomUUID();
+    const oldest = views.keys().next().value;
+    if (views.size >= 256 && oldest) views.delete(oldest);
+    views.set(token, { address, cwd, peer });
+    return token;
+  }
   return async (peer: string, raw: unknown, check: () => void) => {
     check();
     if (!raw || typeof raw !== "object" || Array.isArray(raw)) return fail();
@@ -133,9 +147,7 @@ export function remoteChat(
         for (const [id, info] of catalog)
           if (info.cwd === cwd) catalog.delete(id);
         for (const chat of await host.listSessions(cwd)) {
-          const key = createHash("sha256")
-            .update(JSON.stringify([cwd, chat.id]))
-            .digest("hex");
+          const key = chatKey(cwd, chat.id);
           next.set(key, { ...chat, cwd });
           catalog.set(key, { ...chat, cwd });
         }
@@ -165,25 +177,39 @@ export function remoteChat(
         cwd: info.cwd,
         openId: crypto.randomUUID(),
       });
-      const view = crypto.randomUUID();
-      const oldest = views.keys().next().value;
-      if (views.size >= 256 && oldest) views.delete(oldest);
-      views.set(view, { address: snapshot.address, cwd: info.cwd, peer });
-      return { view, ...page(snapshot.transcript) };
+      return {
+        view: issueView(snapshot.address, info.cwd, peer),
+        chat: chatKey(info.cwd, snapshot.info.id),
+        ...page(snapshot.transcript),
+      };
     }
     const view = views.get(string(q.view, 64));
     if (!view || view.peer !== peer || !scopes().includes(view.cwd))
       return fail();
     const addr = view.address;
     if (q.op === "read") {
-      const snapshot = await host.readSessionSnapshot(addr);
+      const current = host.sessionAddress(addr.sessionId);
+      const snapshot = host.isSuspended(current)
+        ? await host.wakeSession(current)
+        : await host.readSessionSnapshot(current);
+      if (
+        snapshot.info.cwd !== view.cwd ||
+        snapshot.address.hostId !== addr.hostId
+      )
+        return fail();
+      const replaced = snapshot.address.epoch !== addr.epoch;
       return {
         ...page(snapshot.transcript),
+        ...(replaced
+          ? { view: issueView(snapshot.address, view.cwd, peer) }
+          : {}),
         failed: !!snapshot.failure,
         waitingForHost: host.broker
           .pending()
           .some(
-            (p) => p.sessionId === addr.sessionId && p.epoch === addr.epoch,
+            (p) =>
+              p.sessionId === addr.sessionId &&
+              p.epoch === snapshot.address.epoch,
           ),
       };
     }

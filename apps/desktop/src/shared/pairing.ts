@@ -43,6 +43,7 @@ export interface PairingStatus {
   /** False outside the Windows Tauri build, which ships the transport. */
   available: boolean;
   allow: boolean;
+  listener?: "starting" | "ready" | "failed";
   devices: PairingDevice[];
   hosts: PairingHost[];
   invite?: PairingInvite;

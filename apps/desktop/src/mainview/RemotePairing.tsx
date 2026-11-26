@@ -85,7 +85,11 @@ export function RemotePairing() {
               ? "読み込み中…"
               : !status.available
                 ? "PCのペアリングは Windows Tauri 版で利用できます。"
-                : undefined
+                : status.listener === "failed"
+                  ? "待ち受けが停止しました。再起動を試しています。"
+                  : status.listener === "starting"
+                    ? "待ち受けを開始しています…"
+                    : undefined
         }
         rows={[
           ...(status?.hosts ?? []).map((h) => ({

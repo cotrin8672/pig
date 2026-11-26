@@ -46,6 +46,9 @@ type Dispatch = (
 ) => Promise<unknown>;
 let dispatch: Dispatch | undefined;
 let stopPipe: (() => void) | undefined;
+let listener: PairingStatus["listener"];
+let generation = 0;
+let retry: ReturnType<typeof setTimeout> | undefined;
 const seen = new Map<string, number>();
 let invite:
   | { code: string; expires: number; digest: Buffer; host: Buffer }
@@ -104,14 +107,44 @@ async function identity(profile: string) {
 }
 
 async function startListening() {
-  if (stopPipe || !exe || !available() || !dispatch || !allow) return;
-  await must(["id", dir]); // Never enroll or replace a missing key on startup.
-  if (!allow || stopPipe) return;
-  const forward = dispatch;
-  stopPipe = startRemotePipe(exe, dir, (peer, request, check) => {
-    seen.set(peer, Date.now());
-    return forward(peer, request, check);
-  });
+  if (
+    stopPipe ||
+    listener === "starting" ||
+    !exe ||
+    !available() ||
+    !dispatch ||
+    !allow
+  )
+    return;
+  clearTimeout(retry);
+  const gen = ++generation;
+  listener = "starting";
+  const failed = () => {
+    if (gen !== generation || !allow) return;
+    stopPipe = undefined;
+    listener = "failed";
+    retry = setTimeout(() => void startListening(), 5000);
+    retry.unref();
+  };
+  try {
+    await must(["id", dir]); // Never enroll or replace a missing key on startup.
+    if (!allow || gen !== generation) return;
+    const forward = dispatch;
+    stopPipe = startRemotePipe(
+      exe,
+      dir,
+      (peer, request, check) => {
+        seen.set(peer, Date.now());
+        return forward(peer, request, check);
+      },
+      () => {
+        if (gen === generation) listener = "ready";
+      },
+      failed,
+    );
+  } catch {
+    failed();
+  }
 }
 
 /** Called once by the app with the remote chat handler. */
@@ -302,6 +335,7 @@ export async function pairingStatus(): Promise<PairingStatus> {
   return {
     available: true,
     allow,
+    listener,
     devices: list,
     hosts: await hosts(),
     invite: currentInvite(),
@@ -319,6 +353,9 @@ export async function setPairingAllowed(next: boolean) {
   }
   await rm(enabledFile, { force: true });
   allow = false;
+  generation++;
+  clearTimeout(retry);
+  listener = undefined;
   stopPipe?.();
   stopPipe = undefined;
   if (existsSync(join(dir, "paired.sqlite"))) await cancelPairingInvite();

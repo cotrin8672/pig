@@ -120,6 +120,22 @@ try {
   const invite = await cli("invite", host);
   await cli("pair", client, invite);
   await cli("pair", client, invite, undefined, false);
+  if (!publicRelay) {
+    // Kill ONLY this isolated fixture host's transport. No user app is targeted.
+    const stop = Bun.spawnSync([
+      "powershell.exe",
+      "-NoProfile",
+      "-NonInteractive",
+      "-Command",
+      `$p=@(Get-CimInstance Win32_Process -Filter "ParentProcessId=${child.pid} AND Name='pig-remote.exe'"); if($p.Count -ne 1){exit 1}; Stop-Process -Id $p[0].ProcessId -Force -ErrorAction Stop`,
+    ]);
+    assert.equal(stop.exitCode, 0);
+    // Remove the old marker before waiting for the replacement listener's address.
+    await (await import("node:fs/promises")).unlink(addr);
+    for (let i = 0; i < 200 && !(await Bun.file(addr).exists()); i++)
+      await Bun.sleep(100);
+    env.PIG_REMOTE_TEST_ADDR = (await Bun.file(addr).text()).trim();
+  }
   const call = async (q: unknown, ok = true) =>
     JSON.parse(await cli("call", client, JSON.stringify(q), undefined, ok))
       .value;

@@ -8,6 +8,8 @@ export interface RemoteChatItem {
   title: string;
 }
 export interface RemoteTranscript {
+  /** Replacement capability after idle suspension; never retarget an old send. */
+  view?: string;
   messages: { id: string; role: "assistant" | "user"; text: string }[];
   running: boolean;
   truncated: boolean;
@@ -32,8 +34,8 @@ export interface RemoteResults {
   folders: RemoteProject[];
   addFolder: RemoteProject;
   list: { total: number; chats: RemoteChatItem[] };
-  open: RemoteTranscript & { view: string };
-  new: RemoteTranscript & { view: string };
+  open: RemoteTranscript & { view: string; chat: string };
+  new: RemoteTranscript & { view: string; chat: string };
   read: RemoteTranscript;
   history: RemoteTranscript;
   send: { disposition: string };

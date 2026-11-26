@@ -110,6 +110,7 @@ export const useStore = create<{
     | "pairing"
     | "remoteChat";
   remoteThread?: {
+    chat: string;
     host: string;
     hostName: string;
     project: string;

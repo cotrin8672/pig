@@ -92,6 +92,7 @@ async fn handle(
 }
 async fn serve(dir: PathBuf) -> Result<()> {
     let ep = endpoint(&dir).await?;
+    println!("[\"ready\"]");
     if local() {
         fs::write(dir.join("loopback"), ep.bound_sockets()[0].to_string())?;
     }

@@ -52,6 +52,7 @@ const ui = [
   "statistics-ui",
   "transcript-ui",
   "annotation-selection-ui",
+  "remote-recovery-ui",
   "grep-ui",
   "sidebar-update-dot-ui",
   "sidebar-resize-ui",
