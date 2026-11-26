@@ -1,0 +1,79 @@
+/* Remote Pairing settings page: one table for both directions. */
+.layout-wide {
+  --content-page-max-width: 1040px;
+}
+.layout-switch {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--ds-text-secondary);
+  font-size: var(--text-md);
+  cursor: pointer;
+}
+.table-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+.table-search {
+  width: 240px;
+}
+.table-spacer {
+  flex: 1;
+}
+.table-card {
+  padding: 4px 8px;
+  --scrollbar-inset: var(--radius-sm);
+  overflow-x: auto;
+}
+.pairing-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--text-md);
+  & th {
+    padding: 10px 10px 8px;
+    color: var(--ds-text-faint);
+    font-size: var(--text-xs);
+    font-weight: var(--font-weight-semibold);
+    text-align: left;
+  }
+  & td {
+    padding: 8px 10px;
+    border-top: 1px solid var(--ds-bg-chip);
+    white-space: nowrap;
+  }
+  & tbody tr {
+    transition: opacity var(--snappy-mid) var(--snappy-ease);
+    &:hover {
+      background: var(--ds-bg-hover);
+    }
+    &[data-leaving] {
+      opacity: 0;
+    }
+  }
+  & .mac-row-actions {
+    justify-content: flex-end;
+  }
+}
+.table-name {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: var(--font-weight-medium);
+}
+.table-dir {
+  padding: 2px 8px;
+  border-radius: var(--radius-full);
+  background: var(--ds-bg-chip);
+  color: var(--ds-text-secondary);
+  font-size: var(--text-xs);
+  &[data-out] {
+    background: var(--ds-bg-active);
+    color: var(--ds-accent);
+  }
+}
+.table-muted {
+  color: var(--ds-text-muted);
+}

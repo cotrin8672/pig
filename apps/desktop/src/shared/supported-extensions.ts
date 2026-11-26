@@ -1,4 +1,5 @@
 export const CODEX_SUBAGENT_COMPLETION = "pi-codex-subagent-completion";
+export const ARCHIMEDES_SESSION_NAME = "@pi-archimedes/session-name";
 
 /** pi packages verified with pig. `verified` is the version tested with pig, not a pin. */
 export const SUPPORTED_EXTENSIONS: readonly {
@@ -15,6 +16,7 @@ export const SUPPORTED_EXTENSIONS: readonly {
   },
   { name: "pi-ask-user", verified: "0.17.2" },
   { name: "pi-schedule-prompt", verified: "0.5.1" },
+  { name: ARCHIMEDES_SESSION_NAME, verified: "2.15.0" },
   { name: "pi-lens", verified: "4.5.1" },
   { name: "context-mode", verified: "2.2.1" },
   { name: "pi-codex-search", verified: "0.1.6" },

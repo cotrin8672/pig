@@ -26,7 +26,7 @@ export function ModelSelect({
   /** Search palette target id, see settings-search.ts. */
   setting?: string;
   models: UtilityModelInfo[];
-  value: Selection;
+  value: Selection | string;
   onChange: (value: Selection) => void;
   emptyLabel?: string;
 }) {
@@ -34,7 +34,8 @@ export function ModelSelect({
   const id = useId();
   const providers = useStore((s) => s.bootstrap.providers);
   const [query, setQuery] = useState("");
-  const key = selectionKey(value);
+  const key =
+    typeof value === "string" ? JSON.stringify(value) : selectionKey(value);
   const available =
     !value || models.some((model) => selectionKey(model) === key);
   const q = query.trim().toLowerCase();
@@ -70,7 +71,10 @@ export function ModelSelect({
         <option value="">{emptyLabel ?? t.None}</option>
         {!available && value && (
           <option value={key} disabled>
-            {name(value.provider)} / {value.id} — {t["Model unavailable"]}
+            {typeof value === "string"
+              ? value
+              : `${name(value.provider)} / ${value.id}`}{" "}
+            — {t["Model unavailable"]}
           </option>
         )}
         {groups.map((provider) => (
@@ -85,7 +89,7 @@ export function ModelSelect({
           </optgroup>
         ))}
       </Select>
-      {!available && (
+      {!available && typeof value !== "string" && (
         <p className="settings-hint" role="status">
           {t["Reconnect the provider to use the saved model."]}
         </p>

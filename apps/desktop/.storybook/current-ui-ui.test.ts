@@ -101,6 +101,89 @@ test("the actual App and its feature components render in isolated Storybook pre
           ),
         ).toEqual([]);
         await navigate(
+          "settings-remote-pairing--table",
+          "document.querySelectorAll('.pairing-table tbody tr').length === 3",
+        );
+        expect(
+          await browser.evaluate(
+            "document.querySelectorAll('.pairing-table .thread-more').length",
+          ),
+        ).toBe(0);
+        const remove =
+          ".pairing-table .mac-remove[aria-description='研究室PC']";
+        await browser.evaluate(`document.querySelector("${remove}").click()`);
+        await waitFor(
+          `!!document.querySelector("${remove}.armed") && document.querySelectorAll('.pairing-table tbody tr').length === 3`,
+        );
+        await browser.evaluate(`document.querySelector("${remove}").click()`);
+        await waitFor(`!document.querySelector("${remove}")`);
+        await browser.evaluate(
+          "[...document.querySelectorAll('.table-toolbar button')].find(button => button.textContent === 'PCに接続…').click()",
+        );
+        const connect = "dialog[open][aria-labelledby]";
+        await waitFor(
+          `document.querySelectorAll('${connect} .mac-connect-segments span:not([data-current],[data-done])').length === 4`,
+        );
+        await browser.evaluate(
+          `document.querySelector('${connect} input').focus()`,
+        );
+        await browser.command("Input.insertText", { text: "demo" });
+        await browser.evaluate(
+          `document.querySelector('${connect} button[type=submit]').click()`,
+        );
+        await waitFor(
+          `!!document.querySelector('${connect} .mac-connect-segments [data-current=error]')`,
+        );
+        await browser.evaluate(`(() => {
+          const input = document.querySelector('${connect} input');
+          input.select();
+          input.focus();
+        })()`);
+        await browser.command("Input.insertText", { text: "pig-pair:1:demo" });
+        await browser.evaluate(
+          `document.querySelector('${connect} button[type=submit]').click()`,
+        );
+        await waitFor(
+          `document.querySelectorAll('${connect} .mac-connect-segments [data-done]').length === 4`,
+        );
+        await browser.command("Emulation.setDeviceMetricsOverride", {
+          width: 390,
+          height: 480,
+          deviceScaleFactor: 1,
+          mobile: false,
+        });
+        await navigate(
+          "settings-remote-pairing--invite-dialog",
+          "!!document.querySelector('dialog[open] .mac-invite-status')",
+        );
+        const fitsDialog = `(() => {
+          const panel = document.querySelector('dialog[open]');
+          const footer = panel.querySelector('.dialog-actions').getBoundingClientRect();
+          return panel.scrollHeight <= panel.clientHeight + 1 && panel.scrollWidth <= panel.clientWidth + 1
+            && footer.bottom <= innerHeight;
+        })()`;
+        expect(await browser.evaluate(fitsDialog), "invite fits").toBe(true);
+        const inviteStatus = "dialog[open] .mac-invite-status[role=status]";
+        expect(
+          await browser.evaluate(
+            `document.querySelector('${inviteStatus}').textContent`,
+          ),
+        ).toContain("招待の準備ができました");
+        await browser.evaluate(
+          "document.querySelector('dialog[open] [aria-label=\"招待コードをコピー\"]').click()",
+        );
+        await waitFor(
+          `document.querySelector('${inviteStatus}').textContent.includes('待っています')`,
+        );
+        await waitFor(
+          `document.querySelector('${inviteStatus}').textContent.includes('を追加しました') && !document.querySelector('dialog[open] .mac-invite-code-line code')`,
+        );
+        expect(
+          await browser.evaluate(fitsDialog),
+          "completed invite fits without scrolling",
+        ).toBe(true);
+        await browser.command("Emulation.clearDeviceMetricsOverride", {});
+        await navigate(
           "prototypes-desktop-motion--playground",
           "!!document.querySelector('.desktop-motion-stage .model-picker')",
         );

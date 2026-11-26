@@ -34,6 +34,7 @@ import { SearchField } from "./primitives/SearchField";
 import { SegmentedControl } from "./primitives/SegmentedControl";
 import { Select } from "./primitives/Select";
 import { updateAppearance, updateSettings } from "./rpc";
+import { SessionTitleSettings } from "./SessionTitleSettings";
 import { revealTarget } from "./search-target";
 import { actionLabels, settingsCategories } from "./settings-search";
 import { type SettingsCategory, useStore } from "./store";
@@ -106,7 +107,12 @@ export function Settings() {
           aria-labelledby={`settings-category-${category}`}
         >
           <h2>{categories.find(({ id }) => id === category)?.label}</h2>
-          {category === "general" && <DefaultModelSettings />}
+          {category === "general" && (
+            <>
+              <DefaultModelSettings />
+              <SessionTitleSettings />
+            </>
+          )}
           {category === "general" && (
             <SettingsCard>
               <SettingsRow

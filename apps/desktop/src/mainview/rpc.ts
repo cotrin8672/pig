@@ -94,6 +94,7 @@ import {
   overlayProjects,
   overlaySessionInfo,
   publishProvider,
+  sessionTitlePreference,
   settleRead,
 } from "./ui-mutations";
 
@@ -592,6 +593,9 @@ export async function refresh() {
   bootstrap.models = bootstrap.models.map(overlayDefaultEffort);
   const desiredDefault = defaultModelPreference.value("default");
   if (desiredDefault !== undefined) bootstrap.defaultModel = desiredDefault;
+  const desiredTitleModel = sessionTitlePreference.value("session-title-model");
+  if (desiredTitleModel !== undefined)
+    bootstrap.sessionTitleModel = desiredTitleModel;
   bootstrap.desktop = overlayDesktop(bootstrap.desktop);
   const workspace = useStore.getState().initialized
     ? undefined
@@ -609,6 +613,11 @@ export async function refresh() {
       : {}),
     bootstrap: {
       ...bootstrap,
+      sessionTitleModel:
+        desiredTitleModel !== undefined ||
+        s.bootstrap.sessionTitleModel === before.bootstrap.sessionTitleModel
+          ? bootstrap.sessionTitleModel
+          : s.bootstrap.sessionTitleModel,
       desktop: {
         ...bootstrap.desktop,
         sessions:

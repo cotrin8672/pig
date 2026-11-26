@@ -121,6 +121,10 @@ import { revealPath } from "./reveal-path";
 import { agentDir, agentDirSource } from "./runtime-profile";
 import { defaultSessionDir, SearchIndex } from "./search-index";
 import { sessionDirFor } from "./session-files";
+import {
+  readSessionTitleModel,
+  writeSessionTitleModel,
+} from "./session-title-model";
 import { loadSettings, saveSettings } from "./settings";
 import { TerminalRouter } from "./terminal-router";
 import {
@@ -370,6 +374,11 @@ const terminals = new TerminalRouter(
       type: "cancel",
     }),
 );
+async function settingsModelChoices() {
+  return (await availableModels()).filter((model) =>
+    isModelEnabled(model, modelPreferences.disabled),
+  );
+}
 /** Window-independent API: identical for every UI client. */
 const hostRequests = {
   getAppUpdate: () =>
@@ -453,15 +462,20 @@ const hostRequests = {
   listFontFamilies,
   bootstrap: async () => {
     for (const message of modelErrors.splice(0)) report(message);
-    const [providers, models, utilities, modelOverrides] = await Promise.all([
-      listProviders(),
-      availableModels(),
-      utilityModels(),
-      readModelOverrides().catch((error) => {
-        report(error);
-        return {};
-      }),
-    ]);
+    const [providers, models, utilities, modelOverrides, sessionTitleModel] =
+      await Promise.all([
+        listProviders(),
+        availableModels(),
+        utilityModels(),
+        readModelOverrides().catch((error) => {
+          report(error);
+          return {};
+        }),
+        readSessionTitleModel().catch((error) => {
+          report(error);
+          return null;
+        }),
+      ]);
     const accountCatalogs = Object.fromEntries([
       ...providers.map(
         (provider) =>
@@ -509,6 +523,7 @@ const hostRequests = {
       ...utilities,
       models: allModels,
       accountCatalogs,
+      sessionTitleModel,
       defaultModel: (() => {
         try {
           return readDefaultModel();
@@ -621,12 +636,9 @@ const hostRequests = {
   refreshProviderModels: ({ provider }) => refreshProviderModels(provider),
   setModel: (input) => withRuntime(input, setSessionModel),
   setDefaultModel: async ({ model }) =>
-    writeDefaultModel(
-      model,
-      (await availableModels()).filter((candidate) =>
-        isModelEnabled(candidate, modelPreferences.disabled),
-      ),
-    ),
+    writeDefaultModel(model, await settingsModelChoices()),
+  setSessionTitleModel: async ({ model }) =>
+    writeSessionTitleModel(model, await settingsModelChoices()),
   setModelEnabled: async ({ provider, id, enabled }) => {
     if (
       typeof enabled !== "boolean" ||

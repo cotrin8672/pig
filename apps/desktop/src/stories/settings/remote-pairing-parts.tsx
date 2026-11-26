@@ -21,9 +21,7 @@ import {
   useRef,
   useState,
 } from "react";
-import { ActionsMenu } from "../../mainview/patterns/ActionsMenu";
 import { ConfirmButton } from "../../mainview/patterns/ConfirmButton";
-import { SettingsRow } from "../../mainview/patterns/SettingsRow";
 import { Button } from "../../mainview/primitives/Button";
 import { Checkbox } from "../../mainview/primitives/Checkbox";
 import { IconButton } from "../../mainview/primitives/IconButton";
@@ -42,7 +40,7 @@ import "../../mainview/model-dividers.css";
 import "./remote-pairing-story.css";
 
 /*
- * Shared by every Remote Pairing proposal. 構成の根拠（2026-11 調査）:
+ * Shared by the Remote Pairing stories. 構成の根拠（2026-11 調査）:
  * - Codex（ChatGPT desktop）: Settings > Connections の「Control other devices」で接続先PCを登録し、
  *   サイドバーの「Add project → Remote」で接続先PC上のフォルダーを選ぶと Remote Project として並ぶ。
  * - openai/codex#24295: 「接続先 → Project → チャット」のまとまりが強く要望されている。
@@ -132,7 +130,7 @@ export const INVITE =
   "pig-pair:1:8f3c91a4e0b7d2654c19f83a7e20b4d1c58a9e3f27b604d1e8c3a5f7b290a91e:4d7e1b90c3a25f84e61d20b9a7c3f5821e4d9a6c0b7f382e5a1d9c4b6e80f213";
 const INVITE_SECONDS = 12 * 60 * 60;
 const DEMO_PAIR_MS = 2500;
-const DEMO_CONNECT_MS = 1200;
+const CONNECT_STEP_MS = 450;
 // Collapse time of `.snappy-collapse`; the row is removed after it closes.
 const COLLAPSE_MS = 120;
 
@@ -143,6 +141,61 @@ export const clock = (seconds: number) => {
 export const leaf = (path: string) => path.split("/").pop() ?? path;
 export const projectName = (cwd: string) =>
   leaf(hostProjects.find((p) => p.cwd === cwd)?.path ?? cwd);
+
+export const CONNECT_STEPS = [
+  "コードを確認",
+  "接続先のPCを探す",
+  "暗号化した接続を確立",
+  "このPCを登録",
+];
+export type ConnectState = "input" | "connecting" | "connected" | "error";
+
+/** Storybook simulation only; no device is contacted. */
+export function useConnect(initial = "", initiallyFailed = false) {
+  const [value, setValue] = useState(initial);
+  const [step, setStep] = useState(initiallyFailed ? 0 : -1);
+  const [failed, setFailed] = useState(initiallyFailed);
+  const timer = useRef<ReturnType<typeof setInterval>>(undefined);
+  useEffect(() => () => clearInterval(timer.current), []);
+  const state: ConnectState = failed
+    ? "error"
+    : step >= CONNECT_STEPS.length
+      ? "connected"
+      : step >= 0
+        ? "connecting"
+        : "input";
+  function clear(next = "") {
+    clearInterval(timer.current);
+    setValue(next);
+    setStep(-1);
+    setFailed(false);
+  }
+  return {
+    value,
+    step,
+    state,
+    setValue: clear,
+    submit(onConnected?: () => void) {
+      if (!value.trim() || state === "connecting" || state === "connected")
+        return;
+      setStep(0);
+      const valid = value.trim().startsWith("pig-pair:1:");
+      setFailed(!valid);
+      if (!valid) return;
+      let next = 0;
+      timer.current = setInterval(() => {
+        setStep(++next);
+        if (next >= CONNECT_STEPS.length) {
+          clearInterval(timer.current);
+          onConnected?.();
+        }
+      }, CONNECT_STEP_MS);
+    },
+    reset: () => clear(),
+    cancel: () => clearInterval(timer.current),
+  };
+}
+export type Connect = ReturnType<typeof useConnect>;
 
 /** Puts the host's chats into the preview store so the production lists render them. */
 function useHostSessions() {
@@ -175,17 +228,16 @@ export function usePairing(args: PairingArgs) {
   const [hosts, setHosts] = useState(args.hosts);
   const [leaving, setLeaving] = useState<string[]>([]);
   const [open, setOpen] = useState<Dialog | undefined>(args.dialog);
-  const [paired, setPaired] = useState(false);
+  const [inviteStage, setInviteStage] = useState<InviteStage>("idle");
+  const paired = inviteStage === "paired";
   const [expires, setExpires] = useState<number | undefined>(
     args.dialog === "invite" ? Date.now() + INVITE_SECONDS * 1000 : undefined,
   );
   const [now, setNow] = useState(Date.now());
-  const [code, setCode] = useState(
-    args.connectError ? "pig-pair:1:5c1e04a7…" : "",
+  const connection = useConnect(
+    args.connectError ? "無効なコード" : "",
+    args.connectError,
   );
-  const [connect, setConnect] = useState<
-    "input" | "connecting" | "connected" | "error"
-  >(args.connectError ? "error" : "input");
   const pairTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
   useEffect(() => {
     if (!expires) return;
@@ -213,10 +265,10 @@ export function usePairing(args: PairingArgs) {
     leaving,
     open,
     paired,
+    inviteStage,
     expires,
     left: expires ? Math.max(0, Math.round((expires - now) / 1000)) : 0,
-    code,
-    connect,
+    connection,
     setOpen,
     setAllow(next: boolean) {
       setAllowState(next);
@@ -228,7 +280,7 @@ export function usePairing(args: PairingArgs) {
       later(id, () => setHosts((list) => list.filter((h) => h.id !== id))),
     openInvite() {
       if (!expires) setExpires(Date.now() + INVITE_SECONDS * 1000);
-      setPaired(false);
+      setInviteStage("idle");
       setOpen("invite");
     },
     cancelInvite,
@@ -238,8 +290,9 @@ export function usePairing(args: PairingArgs) {
     },
     copied() {
       clearTimeout(pairTimer.current);
+      if (!paired) setInviteStage("waiting");
       pairTimer.current = setTimeout(() => {
-        setPaired(true);
+        setInviteStage("paired");
         setDevices((list) => [
           { id: `pc-${Date.now()}`, name: NEW_DEVICE, online: true, seen: "" },
           ...list,
@@ -247,19 +300,15 @@ export function usePairing(args: PairingArgs) {
       }, DEMO_PAIR_MS);
     },
     openConnect() {
-      setCode("");
-      setConnect("input");
+      connection.reset();
       setOpen("connect");
     },
-    setCode(value: string) {
-      setCode(value);
-      if (connect === "error") setConnect("input");
+    closeConnect() {
+      connection.cancel();
+      setOpen(undefined);
     },
     submitCode() {
-      if (!code.trim().startsWith("pig-pair:1:")) return setConnect("error");
-      setConnect("connecting");
-      setTimeout(() => {
-        setConnect("connected");
+      connection.submit(() => {
         setHosts((list) =>
           list.length
             ? list
@@ -273,7 +322,7 @@ export function usePairing(args: PairingArgs) {
                 },
               ],
         );
-      }, DEMO_CONNECT_MS);
+      });
     },
     /** Shows or hides one host item (a project cwd, or HOST_CHATS) in the sidebar. */
     toggleShown(hostId: string, item: string, shown: boolean) {
@@ -367,7 +416,7 @@ export function Sheet({
   );
 }
 
-export function Tile({
+function Tile({
   children,
   tone,
   size,
@@ -384,7 +433,7 @@ export function Tile({
 }
 
 /** Grows in and collapses out, so lists never jump. */
-export function Grow({
+function Grow({
   leaving,
   children,
 }: {
@@ -399,35 +448,6 @@ export function Grow({
     >
       <div>{children}</div>
     </div>
-  );
-}
-
-export function ListRow({
-  icon,
-  title,
-  detail,
-  children,
-}: {
-  icon: ReactNode;
-  title: ReactNode;
-  detail?: ReactNode;
-  children?: ReactNode;
-}) {
-  return (
-    <SettingsRow
-      className="mac-row"
-      label={
-        <span className="mac-row-label">
-          {icon}
-          <span>
-            <span className="mac-row-title">{title}</span>
-            {detail && <span className="mac-row-detail">{detail}</span>}
-          </span>
-        </span>
-      }
-    >
-      {children && <span className="mac-row-actions">{children}</span>}
-    </SettingsRow>
   );
 }
 
@@ -453,7 +473,7 @@ export function AddRow({
   );
 }
 
-export function RemoveMenu({
+export function RemoveButton({
   name,
   onRemove,
 }: {
@@ -461,21 +481,14 @@ export function RemoveMenu({
   onRemove: () => void;
 }) {
   return (
-    <ActionsMenu label={`${name}の操作`}>
-      {(close) => (
-        <ConfirmButton
-          role="menuitem"
-          className="session-menu-delete"
-          onConfirm={() => {
-            close();
-            onRemove();
-          }}
-        >
-          <Trash2 size={13} aria-hidden="true" />
-          削除
-        </ConfirmButton>
-      )}
-    </ActionsMenu>
+    <ConfirmButton
+      className="mac-remove"
+      aria-description={name}
+      onConfirm={onRemove}
+    >
+      <Trash2 size={13} aria-hidden="true" />
+      削除
+    </ConfirmButton>
   );
 }
 
@@ -496,11 +509,6 @@ export function Presence({
   );
 }
 
-export const hostSummary = (host: Host) =>
-  host.projects.length || host.chats
-    ? `Project ${host.projects.length}件${host.chats ? "とチャット" : ""}を表示中`
-    : "サイドバーには未追加";
-
 export function CopyButton({
   text,
   onCopy,
@@ -515,8 +523,8 @@ export function CopyButton({
       {failed && (
         <span className="mac-row-detail">選択してコピーしてください</span>
       )}
-      <Button
-        variant="primary"
+      <IconButton
+        aria-label={copied ? "コピー済み" : "招待コードをコピー"}
         onClick={async () => {
           onCopy();
           try {
@@ -538,11 +546,7 @@ export function CopyButton({
         ) : (
           <Copy size={14} aria-hidden="true" />
         )}
-        <span className="mac-swap">
-          <span aria-hidden={!!copied}>コピー</span>
-          <span aria-hidden={!copied}>コピー済み</span>
-        </span>
-      </Button>
+      </IconButton>
     </span>
   );
 }
@@ -808,17 +812,17 @@ function PairingSheets({ p }: { p: Pairing }) {
           )
         }
       >
-        <InviteBody left={p.left} paired={p.paired} onCopy={p.copied} />
+        <InviteBody left={p.left} stage={p.inviteStage} onCopy={p.copied} />
       </Sheet>
 
       <Sheet
         open={p.open === "connect"}
         title="PCに接続"
-        onClose={() => p.setOpen(undefined)}
+        onClose={p.closeConnect}
         footer={
-          p.connect === "connected" ? (
+          p.connection.state === "connected" ? (
             <>
-              <Button onClick={() => p.setOpen(undefined)}>あとで</Button>
+              <Button onClick={p.closeConnect}>あとで</Button>
               <Button variant="primary" onClick={() => p.setOpen("add")}>
                 Projectを選ぶ…
               </Button>
@@ -826,12 +830,7 @@ function PairingSheets({ p }: { p: Pairing }) {
           ) : undefined
         }
       >
-        <ConnectBody
-          code={p.code}
-          connect={p.connect}
-          setCode={p.setCode}
-          submit={p.submitCode}
-        />
+        <ConnectBody c={p.connection} submit={p.submitCode} />
       </Sheet>
 
       <AddFromHost
@@ -845,64 +844,115 @@ function PairingSheets({ p }: { p: Pairing }) {
   );
 }
 
-/** Body of the invite sheet: steps, the code, its expiry and the pairing state. */
+export type InviteStage = "idle" | "waiting" | "paired";
+/** Adopted invite sheet: the status line changes, the code row stays put. */
 export function InviteBody({
   left,
-  paired,
+  stage,
   onCopy,
 }: {
   left: number;
-  paired: boolean;
+  stage: InviteStage;
   onCopy: () => void;
 }) {
+  const paired = stage === "paired";
   return (
     <>
-      <ol className="mac-steps">
-        <li>このコードをコピーして、追加するPCに渡す</li>
-        <li>追加するPCのpigで「Pairing → PCに接続…」に貼り付ける</li>
-      </ol>
-      <div className="mac-code-box">
-        <code className="mac-code">{INVITE}</code>
-        <div className="mac-code-footer">
-          <span className="mac-row-detail" role="timer">
-            残り {clock(left)} · 1回限り
-          </span>
-          <CopyButton text={INVITE} onCopy={onCopy} />
-        </div>
-      </div>
-      <div className="mac-status" role="status">
-        <SpinnerCheck done={paired} />
-        {paired
-          ? `${NEW_DEVICE} を追加しました`
-          : "追加するPCでの貼り付けを待っています…"}
+      <div className="mac-invite-status" role="status">
+        <span className="mac-invite-glyph" aria-hidden="true">
+          {stage === "idle" ? (
+            <Link2 size={16} />
+          ) : (
+            <SpinnerCheck done={paired} />
+          )}
+        </span>
+        <strong>
+          {paired
+            ? `${NEW_DEVICE} を追加しました`
+            : stage === "waiting"
+              ? "追加するPCを待っています…"
+              : "招待の準備ができました"}
+        </strong>
       </div>
       <p className="mac-note">
-        追加したPCは、このPCのProjectとチャットを開き、このPCでモデルとツールを実行できます。
+        別のPCの「PCに接続…」に招待コードを貼り付けます。
+      </p>
+      <div className="mac-invite-token">
+        <div className="mac-invite-token-head">
+          <strong>招待コード</strong>
+          <span className="mac-row-detail" role="timer">
+            {paired ? "使用済み" : `残り ${clock(left)} · 1回限り`}
+          </span>
+        </div>
+        <div className="mac-invite-code-line">
+          {paired ? (
+            <span className="mac-row-detail">この招待はもう使えません</span>
+          ) : (
+            <>
+              <code>{INVITE}</code>
+              <CopyButton text={INVITE} onCopy={onCopy} />
+            </>
+          )}
+        </div>
+      </div>
+      <p className="mac-note">
+        追加したPCはチャットを開き、このPCでモデルやツールを実行できます。
       </p>
     </>
   );
 }
 
-export type ConnectState = "input" | "connecting" | "connected" | "error";
-/** Body of the connect sheet: steps, the code field and the connection state. */
-export function ConnectBody({
-  code,
-  connect,
-  setCode,
-  submit,
-}: {
-  code: string;
-  connect: ConnectState;
-  setCode: (value: string) => void;
-  submit: () => void;
-}) {
-  const p = { code, connect, setCode };
+function connectStatus(c: Connect) {
+  if (c.state === "connected") return `${HOST_NAME} に接続しました`;
+  if (c.state === "connecting") return `${CONNECT_STEPS[c.step]}…`;
+  if (c.state === "error") return `${CONNECT_STEPS[c.step]}に失敗`;
+  return "招待コードを入力してください";
+}
+
+function ConnectProgressLine({ c }: { c: Connect }) {
+  return (
+    <div className="mac-connect-status" data-state={c.state}>
+      <span aria-hidden="true">
+        {c.state === "error" ? (
+          <CircleAlert size={16} />
+        ) : c.state === "input" ? (
+          <Link2 size={16} />
+        ) : (
+          <SpinnerCheck done={c.state === "connected"} />
+        )}
+      </span>
+      {c.state === "connected" ? "すべての手順が完了" : connectStatus(c)}
+    </div>
+  );
+}
+
+function ConnectSegmentedProgress({ c }: { c: Connect }) {
+  return (
+    <div className="mac-connect-progress">
+      <div className="mac-connect-progress-heading">
+        <ConnectProgressLine c={c} />
+        <span className="mac-connect-count">
+          {Math.max(0, c.step)} / {CONNECT_STEPS.length} 完了
+        </span>
+      </div>
+      <div className="mac-connect-segments" aria-hidden="true">
+        {CONNECT_STEPS.map((label, index) => (
+          <span
+            key={label}
+            data-done={index < c.step || undefined}
+            data-current={index === c.step ? c.state : undefined}
+          />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/** Code input with the segmented connection progress. */
+function ConnectBody({ c, submit }: { c: Connect; submit: () => void }) {
+  const locked = c.state === "connecting" || c.state === "connected";
   return (
     <>
-      <ol className="mac-steps">
-        <li>接続先のPCのpigで「Pairing → PCを追加…」を押す</li>
-        <li>表示された招待コードをここに貼り付ける</li>
-      </ol>
       <form
         className="input-row"
         onSubmit={(event) => {
@@ -916,34 +966,30 @@ export function ConnectBody({
           placeholder="pig-pair:1:…"
           autoComplete="off"
           spellCheck={false}
-          value={p.code}
-          disabled={p.connect === "connecting" || p.connect === "connected"}
-          onChange={(event) => p.setCode(event.target.value)}
+          value={c.value}
+          disabled={locked}
+          aria-invalid={c.state === "error" || undefined}
+          onChange={(event) => c.setValue(event.target.value)}
         />
         <Button
           type="submit"
           variant="primary"
-          disabled={
-            !p.code.trim() ||
-            p.connect === "connecting" ||
-            p.connect === "connected"
-          }
+          disabled={!c.value.trim() || locked}
         >
           接続
         </Button>
       </form>
-      {p.connect === "error" && (
+      <ConnectSegmentedProgress c={c} />
+      <span
+        className={c.state === "connected" ? "mac-row-detail" : "sr-only"}
+        role="status"
+      >
+        {locked ? connectStatus(c) : ""}
+      </span>
+      {c.state === "error" && (
         <div className="oauth-error" role="alert">
           <CircleAlert size={16} aria-hidden="true" />
           このコードは使用済みか期限切れです。接続先のPCで新しいコードを作ってください。
-        </div>
-      )}
-      {(p.connect === "connecting" || p.connect === "connected") && (
-        <div className="mac-status" role="status">
-          <SpinnerCheck done={p.connect === "connected"} />
-          {p.connect === "connected"
-            ? `${HOST_NAME} に接続しました。サイドバーに表示するProjectを選べます。`
-            : "接続しています…"}
         </div>
       )}
     </>

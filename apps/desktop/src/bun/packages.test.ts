@@ -632,6 +632,24 @@ test("Git-distributed supported card does not depend on npm", async () => {
   }
 });
 
+test("the verified Archimedes title extension is listed even if npm is unavailable", async () => {
+  const original = globalThis.fetch;
+  globalThis.fetch = (async () =>
+    new Response(null, { status: 503 })) as unknown as typeof fetch;
+  try {
+    const { items } = await searchPackages({
+      query: "@pi-archimedes/session-name",
+      supported: true,
+      page: 0,
+    });
+    expect(items).toMatchObject([
+      { name: "@pi-archimedes/session-name", version: "2.15.0" },
+    ]);
+  } finally {
+    globalThis.fetch = original;
+  }
+});
+
 test("Marketplace installs and removes the configured Git tag through SDK settings", async () => {
   const agentDir = await mkdtemp(join(tmpdir(), "pig-git-package-"));
   try {

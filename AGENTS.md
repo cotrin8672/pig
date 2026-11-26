@@ -29,8 +29,9 @@ UIを追加・変更する前に [docs/ui-guidelines.md](docs/ui-guidelines.md) 
 - アイコン列は上下の余白を揃える。状態変化で周囲のレイアウトを動かさない。
 - 共通部品の問題は同種の表示も調べて共通処理で直し、実描画で検証する。
 
-`pnpm lint` はCSS/JSXのUI専用Lintも実行する。UI変更後は `mise exec -- pnpm test:ui`
-も実行する（ブラウザがなければ失敗する）。新しい通常Cardは `*-card` / `ui-card` クラス、
+`pnpm lint` はCSS/JSXのUI専用Lintも実行する。ローカルのUIテスト（`mise exec -- pnpm test:ui`）は
+プッシュ直前の最終確認でのみ実行し、作業途中や個々のUI変更後には実行しない。
+新しい通常Cardは `*-card` / `ui-card` クラス、
 または `data-ui-surface="card"` で検査対象を明示する。
 新しい共通の指摘は、文書だけでなく可能な限りLintか描画テストに追加する。
 

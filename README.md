@@ -124,6 +124,14 @@ Choose **Settings → General → Default model** to set the model for new chats
 This saves pi's shared default; existing chats keep their saved model.
 Choose **Automatic** to reset the preference.
 
+For automatic chat titles, install `@pi-archimedes/session-name` from
+**Extensions → Marketplace → Supported by pig**. Then choose **Settings → General →
+Session title model**, or leave it as **Use the chat model**. The extension sends
+part of the first exchange to that model and leaves manually named chats
+unchanged. The picker edits `"archimedes.sessionName": { "model": "provider/model-id" }`
+in Pi's shared `~/.pi/agent/settings.json` (or `$PI_CODING_AGENT_DIR/settings.json`).
+Model choice does not change the extension's prompt or enforce a title language.
+
 Each chat's **…** menu provides Rename, Pin/Unpin, Archive/Restore, Copy link,
 and Delete. Rename updates the pi session name; pins and archive flags are
 Desktop-only. Archived chats remain available from **Archived chats**. Delete

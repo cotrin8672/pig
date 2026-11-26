@@ -25,8 +25,8 @@ export const RunningIndicator = memo(function RunningIndicator({
   const t = useT();
   return (
     <p className="muted running" role="status">
-      {symbol ? symbol : <TurnSpinner variant={variantFor(turnKey)} />}{" "}
-      {message ?? t["Working…"]}
+      {symbol || <TurnSpinner variant={variantFor(turnKey)} />}
+      <span>{message ?? t["Working…"]}</span>
     </p>
   );
 });

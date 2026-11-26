@@ -225,6 +225,12 @@ export const en = {
   "Image generation": "Image generation",
   Classification: "Classification",
   "Default model": "Default model",
+  sessionTitleModel: "Session title model",
+  sessionTitleChatModel: "Use the chat model",
+  sessionTitleInstall:
+    "Install @pi-archimedes/session-name from Extensions → Marketplace → Supported by pig to choose a model for automatic titles.",
+  sessionTitleDisclosure:
+    "Archimedes sends part of the first exchange to this model to generate a short title. It leaves manually named chats unchanged.",
   Automatic: "Automatic",
   "Used for new chats. Existing chats keep their model.":
     "Used for new chats. Existing chats keep their model.",
@@ -1194,6 +1200,12 @@ export const ja: Dictionary = {
   "Image generation": "画像生成",
   Classification: "Classification（分類）",
   "Default model": "デフォルトモデル",
+  sessionTitleModel: "セッションタイトルの生成モデル",
+  sessionTitleChatModel: "会話と同じモデルを使う",
+  sessionTitleInstall:
+    "「拡張機能 → Marketplace → pig対応」で @pi-archimedes/session-name を導入すると、タイトルの生成モデルを選べます。",
+  sessionTitleDisclosure:
+    "Archimedes は最初のやり取りの一部をこのモデルに送り、短いタイトルを生成します。手動で付けた名前は変更しません。",
   Automatic: "自動",
   "Used for new chats. Existing chats keep their model.":
     "新規チャットに適用します。既存のチャットのモデルは変更しません。",

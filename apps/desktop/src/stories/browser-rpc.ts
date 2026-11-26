@@ -198,6 +198,13 @@ const marketPackages: MarketPackage[] = [
     "Schedule one-shot and recurring prompts into the chat.",
   ],
   [
+    "@pi-archimedes/session-name",
+    "2.15.0",
+    "archimedes-codes",
+    0,
+    "Auto-generate session names after the first exchange.",
+  ],
+  [
     "pi-mcp-adapter",
     "2.1.0",
     "nicobailon",

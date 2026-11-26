@@ -195,6 +195,8 @@ export interface Bootstrap {
   accountCatalogs?: Record<string, ModelInfo[]>;
   /** Global pi default; existing chats retain their saved model. */
   defaultModel?: DefaultModel;
+  /** Archimedes' raw reference in the shared Pi settings. */
+  sessionTitleModel?: string | null;
   imageModels: UtilityModelInfo[];
   classificationModels: UtilityModelInfo[];
   classificationProviders: string[];
@@ -476,6 +478,10 @@ export type RPCSchema = {
       setDefaultModel: {
         params: { model: DefaultModel };
         response: DefaultModel;
+      };
+      setSessionTitleModel: {
+        params: { model: DefaultModel };
+        response: string | null;
       };
       setModelEnabled: {
         params: { provider: string; id: string; enabled: boolean };

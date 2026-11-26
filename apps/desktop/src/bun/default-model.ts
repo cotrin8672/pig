@@ -26,11 +26,10 @@ export function readDefaultModel(directory = agentDir): DefaultModel {
     : null;
 }
 
-export async function writeDefaultModel(
+export function validateSettingsModel(
   model: DefaultModel,
   enabledModels: readonly Exclude<DefaultModel, null>[],
-  directory = agentDir,
-): Promise<DefaultModel> {
+) {
   if (
     model !== null &&
     (!model ||
@@ -41,6 +40,14 @@ export async function writeDefaultModel(
       ))
   )
     throw new Error("Choose an available, enabled model.");
+}
+
+export async function writeDefaultModel(
+  model: DefaultModel,
+  enabledModels: readonly Exclude<DefaultModel, null>[],
+  directory = agentDir,
+): Promise<DefaultModel> {
+  validateSettingsModel(model, enabledModels);
   const settings = globalSettings(directory);
   // Empty defaults restore the SDK's automatic model selection.
   settings.setDefaultModelAndProvider(model?.provider ?? "", model?.id ?? "");

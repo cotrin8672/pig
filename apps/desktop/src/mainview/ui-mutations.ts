@@ -43,6 +43,9 @@ export function publishProvider(id: string, patch: Partial<ProviderInfo>) {
 export const defaultModelPreference = new OptimisticValue<DefaultModel>(
   showError,
 );
+export const sessionTitlePreference = new OptimisticValue<string | null>(
+  showError,
+);
 export const defaultEfforts = new OptimisticValue<Effort | null>(showError);
 /** A pending reset keeps the inherited level until the host recomputes it. */
 export function overlayDefaultEffort(model: ModelInfo): ModelInfo {
