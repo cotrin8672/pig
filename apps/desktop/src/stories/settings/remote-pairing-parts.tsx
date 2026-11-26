@@ -346,22 +346,6 @@ export function usePairing(args: PairingArgs) {
 }
 export type Pairing = ReturnType<typeof usePairing>;
 
-function Tile({
-  children,
-  tone,
-  size,
-}: {
-  children: ReactNode;
-  tone?: "neutral";
-  size?: "large";
-}) {
-  return (
-    <span className="mac-tile" data-tone={tone} data-size={size}>
-      {children}
-    </span>
-  );
-}
-
 /** Grows in and collapses out, so lists never jump. */
 function Grow({
   leaving,
@@ -545,9 +529,7 @@ function AddFromHost({
               disabled={host.chats}
               onChange={(event) => setChats(event.target.checked)}
             />
-            <Tile tone="neutral">
-              <MessageSquare size={14} aria-hidden="true" />
-            </Tile>
+            <MessageSquare size={14} aria-hidden="true" />
             <span>
               <span className="mac-row-title">Projectなしのチャット</span>
               <span className="mac-row-detail">
@@ -567,9 +549,7 @@ function AddFromHost({
                 disabled={added(project.cwd)}
                 onChange={() => toggle(project.cwd)}
               />
-              <Tile tone="neutral">
-                <Folder size={14} aria-hidden="true" />
-              </Tile>
+              <Folder size={14} aria-hidden="true" />
               <span>
                 <span className="mac-row-title">{leaf(project.path)}</span>
                 <span className="mac-row-detail mac-path">{project.path}</span>
@@ -634,13 +614,6 @@ function AddFromHost({
           })}
         </div>
       )}
-      <p className="mac-note">
-        {tab === "existing"
-          ? `ファイルと実行は${host.name}に残ります。このPCには一覧と会話だけが表示されます。`
-          : selected
-            ? `選択中: ${selected}`
-            : `${host.name}上のフォルダーを選ぶと、新しいProjectとして追加します。`}
-      </p>
     </Sheet>
   );
 }

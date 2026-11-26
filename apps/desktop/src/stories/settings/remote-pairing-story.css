@@ -37,30 +37,6 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-/* Solid rounded-square icons, as in System Settings. */
-.mac-tile {
-  display: grid;
-  flex: none;
-  place-items: center;
-  width: 28px;
-  height: 28px;
-  border-radius: var(--radius-xs);
-  background: linear-gradient(
-    180deg,
-    color-mix(in oklab, var(--ds-accent) 92%, white),
-    color-mix(in oklab, var(--ds-accent) 72%, black)
-  );
-  color: var(--ds-on-accent);
-  box-shadow: inset 0 0.5px 0 #ffffff40;
-  &[data-tone="neutral"] {
-    background: linear-gradient(
-      180deg,
-      color-mix(in oklab, var(--ds-text-faint) 55%, transparent),
-      color-mix(in oklab, var(--ds-text-faint) 28%, transparent)
-    );
-    color: var(--ds-text-primary);
-  }
-}
 
 /* "+ Add…" as the last row of a list, aligned with the row titles. */
 .mac-add-row {
@@ -96,7 +72,7 @@
 
 /* Picker lists inside the "add from host" sheet. */
 .mac-pick {
-  --mac-inset: 84px;
+  --mac-inset: 70px;
   --scrollbar-inset: var(--radius-md);
   max-height: 300px;
   overflow: auto;
@@ -112,6 +88,9 @@
   gap: 12px;
   padding: 8px 12px;
   cursor: pointer;
+  & > svg {
+    color: var(--ds-text-muted);
+  }
   &:hover {
     background: var(--ds-tile-hover);
   }

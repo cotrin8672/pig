@@ -24,6 +24,11 @@
   background: var(--ds-border-strong);
 }
 .chat-target-label {
+  /* Center the letters, not the line box, on the 13px icon. The symmetric
+     padding keeps that center while giving kana tops and descenders room
+     inside the ellipsis clip. */
+  text-box: trim-both cap alphabetic;
+  padding-block: 0.3em;
   max-width: 200px;
   color: var(--ds-text-primary);
   font-weight: var(--font-weight-medium);

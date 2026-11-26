@@ -147,9 +147,7 @@ export function RemoteProjectPicker({
         {error ||
           (!items
             ? "読み込み中…"
-            : !items.length
-              ? "選択できる項目はありません。"
-              : "ファイルと実行は接続先のPCに残ります。")}
+            : !items.length && "選択できる項目はありません。")}
       </p>
     </Sheet>
   );
