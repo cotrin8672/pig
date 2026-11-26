@@ -138,6 +138,11 @@ h2 {
 p {
   margin: 8px 0;
 }
+.running[role="status"] {
+  display: flex;
+  align-items: center;
+  gap: 0.25em;
+}
 .muted {
   color: var(--ds-text-muted);
 }
@@ -301,6 +306,9 @@ p {
 .project-toggle svg {
   flex: none;
 }
+.project-chevron {
+  transition: transform var(--motion-duration-collapse) var(--motion-ease-out);
+}
 .project-toggle[aria-expanded="true"] .project-chevron,
 .project-renaming[data-expanded] .project-chevron {
   transform: rotate(90deg);
@@ -350,6 +358,28 @@ p {
 .project-heading:hover .project-actions,
 .project-heading:focus-within .project-actions {
   opacity: 1;
+}
+/* Height moves through grid rows, so the heading stays put and later rows slide. */
+.sidebar-collapse {
+  display: grid;
+  grid-template-rows: 1fr;
+  transition: grid-template-rows var(--motion-duration-collapse)
+    var(--motion-ease-out);
+}
+.sidebar-collapse:is([data-motion="closing"], [data-motion="closed"]) {
+  grid-template-rows: 0fr;
+}
+.sidebar-collapse > * {
+  min-height: 0;
+}
+.sidebar-collapse:not([data-motion="open"]) > * {
+  overflow: hidden;
+}
+@media (prefers-reduced-motion: reduce) {
+  .sidebar-collapse,
+  .project-chevron {
+    transition: none;
+  }
 }
 .project-threads {
   margin-left: 12px;

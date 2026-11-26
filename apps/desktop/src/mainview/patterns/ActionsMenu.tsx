@@ -52,10 +52,13 @@ export function ActionsMenu({
             const popup = menu.current,
               button = trigger.current;
             if (!popup?.matches(":popover-open") || !button) return;
+            // offset* ignores the opening scale, so the menu lands at its full size.
             const anchor = button.getBoundingClientRect(),
-              panel = popup.getBoundingClientRect();
+              panel = { width: popup.offsetWidth, height: popup.offsetHeight },
+              below = anchor.bottom + panel.height + 4 <= innerHeight - 8;
             popup.style.left = `${Math.max(8, Math.min(innerWidth - panel.width - 8, anchor.right - panel.width))}px`;
-            popup.style.top = `${Math.max(8, Math.min(innerHeight - panel.height - 8, anchor.bottom + panel.height + 4 <= innerHeight - 8 ? anchor.bottom + 4 : anchor.top - panel.height - 4))}px`;
+            popup.style.top = `${Math.max(8, Math.min(innerHeight - panel.height - 8, below ? anchor.bottom + 4 : anchor.top - panel.height - 4))}px`;
+            popup.style.transformOrigin = below ? "top right" : "bottom right";
             popup
               .querySelector<HTMLButtonElement>("button:not(:disabled)")
               ?.focus();

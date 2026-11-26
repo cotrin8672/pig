@@ -90,11 +90,26 @@ export const SidebarSessions = memo(function SidebarSessions({
   );
 });
 
+type Collapse = "open" | "opening" | "closing" | "closed";
+
 export function ProjectSessions({ cwd }: { cwd: string }) {
   const t = useT();
   const projectFlags = useStore((s) => s.bootstrap.desktop.projects?.[cwd]);
   const displayName = projectFlags?.name || basename(cwd);
-  const [expanded, setExpanded] = useState(true);
+  // Rows stay mounted while the list closes, then unmount like a collapsed list;
+  // they are clipped only while the height moves, so focus rings stay visible.
+  const [motion, setMotion] = useState<Collapse>("open");
+  const expanded = motion === "open" || motion === "opening";
+  const expand = (next: boolean) =>
+    setMotion(
+      matchMedia("(prefers-reduced-motion: reduce)").matches
+        ? next
+          ? "open"
+          : "closed"
+        : next
+          ? "opening"
+          : "closing",
+    );
   const [renaming, setRenaming] = useState(false);
   const listId = useId();
   const selectActivity = useMemo(createProjectActivitySelector, []);
@@ -140,7 +155,7 @@ export function ProjectSessions({ cwd }: { cwd: string }) {
             aria-expanded={expanded}
             aria-controls={listId}
             aria-description={cwd}
-            onClick={() => setExpanded(!expanded)}
+            onClick={() => expand(!expanded)}
           >
             <ChevronRight
               className="project-chevron"
@@ -176,7 +191,7 @@ export function ProjectSessions({ cwd }: { cwd: string }) {
             type="button"
             aria-label={t.newChatIn(displayName)}
             onClick={() => {
-              setExpanded(true);
+              expand(true);
               void openChat(cwd);
             }}
           >
@@ -189,8 +204,28 @@ export function ProjectSessions({ cwd }: { cwd: string }) {
           />
         </div>
       </div>
-      <div id={listId} className="project-threads" hidden={!expanded}>
-        <SessionList cwd={cwd} expanded={expanded} />
+      <div
+        id={listId}
+        className="sidebar-collapse"
+        data-motion={motion}
+        inert={!expanded}
+        onTransitionEnd={(event) => {
+          if (
+            event.target === event.currentTarget &&
+            event.propertyName === "grid-template-rows"
+          )
+            setMotion((state) =>
+              state === "opening"
+                ? "open"
+                : state === "closing"
+                  ? "closed"
+                  : state,
+            );
+        }}
+      >
+        <div className="project-threads">
+          <SessionList cwd={cwd} expanded={motion !== "closed"} />
+        </div>
       </div>
     </section>
   );

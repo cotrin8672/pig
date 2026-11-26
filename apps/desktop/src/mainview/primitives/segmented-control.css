@@ -1,4 +1,6 @@
 .segmented-control {
+  position: relative;
+  isolation: isolate;
   display: flex;
   gap: 4px;
   min-width: 0;
@@ -8,12 +10,35 @@
   border-radius: var(--radius-sm);
   background: var(--ds-field-inset-bg);
 }
+/* The selection highlight, placed from the pressed option by SegmentedControl.tsx. */
+.segmented-control::before {
+  content: "";
+  position: absolute;
+  z-index: -1;
+  top: 4px;
+  bottom: 4px;
+  left: var(--segment-x, 0);
+  width: var(--segment-w, 0);
+  border-radius: var(--radius-xs);
+  background: var(--ds-bg-active);
+  box-shadow: var(--ds-elevation-stroke);
+}
+.segmented-control[data-slide]::before {
+  transition:
+    left var(--motion-duration-popover) var(--motion-ease-out),
+    width var(--motion-duration-popover) var(--motion-ease-out);
+}
 .segmented-control button {
   min-width: 64px;
   font-size: var(--text-sm);
 }
 .segmented-control button[aria-pressed="true"] {
-  background: var(--ds-bg-active);
+  background: transparent;
   color: var(--ds-accent);
-  box-shadow: var(--ds-elevation-stroke);
+  transition: color var(--motion-duration-popover) var(--motion-ease-out);
+}
+@media (prefers-reduced-motion: reduce) {
+  .segmented-control[data-slide]::before {
+    transition: none;
+  }
 }

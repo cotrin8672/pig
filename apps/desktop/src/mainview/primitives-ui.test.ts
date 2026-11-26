@@ -71,6 +71,8 @@ test(
     const key=getComputedStyle(document.querySelector('kbd'));
     const track=document.querySelector('.model-switch'),off=getComputedStyle(track).backgroundColor;
     document.querySelector('#toggle').click();await wait();
+    // Compare settled colors; a just-started transition can still paint the old one.
+    for(const animation of track.getAnimations({subtree:true}))animation.finish();
     check(track.offsetWidth===26&&document.querySelector('#toggle input').checked&&off!==getComputedStyle(track).backgroundColor,'label toggles a visible switch');
     check(document.querySelector('#partial').indeterminate && document.querySelector('#partial').offsetWidth<30,'partial checkbox stays compact');
     check(filled(getComputedStyle(document.querySelector('select')))&&document.querySelector('select').value==='ja','select surface and value');
@@ -80,7 +82,8 @@ test(
     check(primary.type==='button' && filled(getComputedStyle(primary)) && getComputedStyle(primary).backgroundColor!==getComputedStyle(secondary).backgroundColor && secondary.disabled,'button emphasis and disabled state');
     check(icon.offsetWidth===32 && icon.offsetHeight===32,'square icon target');
     const segments=[...document.querySelectorAll('.segmented-control button')];
-    check(segments[0].getAttribute('aria-pressed')==='true' && filled(getComputedStyle(segments[0])) && !filled(getComputedStyle(segments[1])),'selected segment is raised');
+    const highlight=getComputedStyle(segments[0].parentElement,'::before');
+    check(segments[0].getAttribute('aria-pressed')==='true' && filled(highlight) && Math.abs(parseFloat(highlight.left)-segments[0].offsetLeft)<1 && Math.abs(parseFloat(highlight.width)-segments[0].offsetWidth)<1 && !filled(getComputedStyle(segments[1])),'selected segment is raised by the sliding highlight');
     segments[0].click();segments[1].click();segments[2].click();
     check(picks.join(',')==='b' && segments[2].disabled,'only a new, enabled segment reports a change');
     const field=document.querySelector('#search').closest('.ui-search-field');

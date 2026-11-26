@@ -14,7 +14,7 @@
   flex: none;
   border-radius: 999px;
   background: #ffffff26;
-  transition: background var(--motion-duration-fast) var(--motion-ease-out);
+  transition: background var(--motion-duration-xfast) var(--motion-ease-out);
 }
 .model-switch::after {
   content: "";
@@ -25,7 +25,7 @@
   height: 11px;
   border-radius: 50%;
   background: #fff;
-  transition: transform var(--motion-duration-fast) var(--motion-ease-out);
+  transition: transform var(--motion-duration-xfast) var(--motion-ease-out);
 }
 .ui-switch-input:checked + .model-switch,
 .model-switch[data-mixed] {

@@ -187,6 +187,8 @@ test.skipIf(!existsSync(edge) && !process.env.PIG_REQUIRE_UI_TESTS)(
     const variant=initial?.dataset.turnSpinner;
     const sameSpinner=()=>spinner()===initial && spinner()?.dataset.turnSpinner===variant;
     check(variant && initial.getAttribute('aria-hidden')==='true' && label()==='処理中…','decorative spinner with a localized status');
+    const centerY=el=>{const r=el.getBoundingClientRect();return r.top+r.height/2;};
+    check(Math.abs(centerY(initial)-centerY(line.lastElementChild))<1,'spinner and Japanese label share a vertical center');
     await new Promise(resolve=>setTimeout(resolve,2900));
     check(sameSpinner() && label()==='処理中…','turn spinner and default label stay stable while waiting');
     flushSync(()=>useStore.setState(s=>({settings:{...s.settings,language:'en'}})));
@@ -254,6 +256,26 @@ test.skipIf(!existsSync(edge) && !process.env.PIG_REQUIRE_UI_TESTS)(
     check(more.getAttribute('aria-label')==='Show fewer chats','offer collapse when no older chats remain');
     more.click();await wait();
     check(JSON.stringify(measure())===JSON.stringify(baseline),'collapsing must restore the fixed recent slots');
+    const toggle=project.querySelector('.project-toggle'),settle=()=>new Promise(r=>setTimeout(r,300));
+    toggle.click();await wait();
+    const closing=measure();
+    check(closing.project===7&&closing.height<baseline.height&&closing.nextTop<baseline.nextTop,'closing slides later projects up while rows stay mounted');
+    await settle();
+    check(measure().project===0&&project.querySelector('.sidebar-collapse').inert,'closed project unmounts its rows and is inert');
+    toggle.click();await wait();
+    const opening=measure();
+    check(opening.project===7&&opening.nextTop<baseline.nextTop,'opening grows the list instead of jumping');
+    await settle();
+    check(JSON.stringify(measure())===JSON.stringify(baseline),'reopened project restores its height');
+    const trigger=project.querySelector('.thread-more:not(:disabled)'),menu=document.getElementById(trigger.getAttribute('popovertarget'));
+    trigger.click();await wait();
+    check(menu.matches(':popover-open')&&getComputedStyle(menu).transform!=='none','menu opens with a scale from the trigger');
+    await settle();
+    check(getComputedStyle(menu).opacity==='1'&&getComputedStyle(menu).transform==='none','menu settles at full size');
+    menu.hidePopover();await wait();
+    check(getComputedStyle(menu).display!=='none'&&getComputedStyle(menu).pointerEvents==='none','closing menu fades without taking input');
+    await settle();
+    check(getComputedStyle(menu).display==='none','closed menu leaves the page');
   `,
     ),
   60_000,
@@ -1573,6 +1595,8 @@ test.skipIf(!existsSync(edge) && !process.env.PIG_REQUIRE_UI_TESTS)(
         const height=toggle.getBoundingClientRect().height;
         await click(toggle);
         check(toggle.getAttribute("aria-expanded")==="true","chat list must expand");checkCentered();
+        const shownRows=[...document.querySelectorAll(".thread-row")];
+        check(shownRows.length===8&&shownRows.slice(5).every(row=>row.getAnimations().length===1)&&shownRows.slice(0,5).every(row=>!row.getAnimations().length),"only rows revealed by the toggle grow in");
         check(toggle.getBoundingClientRect().height===height,"toggle height must not change on expansion");
         await click(toggle);checkCentered();
       }

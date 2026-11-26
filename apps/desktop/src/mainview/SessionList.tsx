@@ -10,7 +10,7 @@ import {
   RotateCcw,
   Trash2,
 } from "lucide-react";
-import { memo, useState } from "react";
+import { memo, useLayoutEffect, useRef, useState } from "react";
 import { useShallow } from "zustand/react/shallow";
 import type { SessionFlags } from "../shared/desktop-state";
 import type { SessionInfo } from "../shared/rpc-schema";
@@ -58,6 +58,18 @@ export function relativeTime(time: number, language: string, now = Date.now()) {
   return format.format(0, "second");
 }
 
+/** Rows revealed by "show older chats" grow in like an opening project list. */
+function revealRow(node: HTMLElement | null) {
+  if (!node || matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+  node.animate(
+    [
+      { height: "0px", overflow: "clip" },
+      { height: `${node.offsetHeight}px`, overflow: "clip" },
+    ],
+    { duration: 120, easing: "cubic-bezier(0.22, 1, 0.36, 1)" },
+  );
+}
+
 /** Unpinned chats, including the selected chat, shown before expanding. */
 export const RECENT_CHAT_LIMIT = 5;
 
@@ -79,6 +91,11 @@ export const SessionList = memo(function SessionList({
   const activeId = useStore((s) => (s.page === "chat" ? s.active : undefined));
   const [archived, setArchived] = useState(false);
   const [extra, setExtra] = useState(0);
+  // Rows on screen before "show older chats"; only rows outside it animate in.
+  const before = useRef<Set<string> | undefined>(undefined);
+  useLayoutEffect(() => {
+    before.current = undefined;
+  });
   if (!expanded) return null;
   const sessions = mergeLiveSessions(cwd, listed, live, deleting);
   const startingRows: { openId: string; title: string }[] = [];
@@ -124,7 +141,12 @@ export const SessionList = memo(function SessionList({
         <StartingRow key={row.openId} {...row} />
       ))}
       {rows.map((session) => (
-        <SessionRow key={session.id} session={session} cwd={cwd} />
+        <SessionRow
+          key={session.id}
+          session={session}
+          cwd={cwd}
+          reveal={!!before.current && !before.current.has(session.id)}
+        />
       ))}
       {(hasMore || showingExtra) && (
         <button
@@ -132,9 +154,10 @@ export const SessionList = memo(function SessionList({
           className="thread more-chats"
           aria-expanded={showingExtra}
           aria-label={hasMore ? t["Show older chats"] : t["Show fewer chats"]}
-          onClick={() =>
-            setExtra((count) => (hasMore ? count + RECENT_CHAT_LIMIT : 0))
-          }
+          onClick={() => {
+            if (hasMore) before.current = new Set(rows.map((row) => row.id));
+            setExtra((count) => (hasMore ? count + RECENT_CHAT_LIMIT : 0));
+          }}
         >
           {hasMore ? (
             <MoreHorizontal size={14} aria-hidden="true" />
@@ -193,7 +216,15 @@ function StartingRow({ openId, title }: { openId: string; title: string }) {
   );
 }
 
-function SessionRow({ session, cwd }: { session: SessionInfo; cwd: string }) {
+function SessionRow({
+  session,
+  cwd,
+  reveal,
+}: {
+  session: SessionInfo;
+  cwd: string;
+  reveal?: boolean;
+}) {
   const t = useT();
   const active = useStore((s) => s.active === session.id && s.page === "chat");
   const flags = useStore((s) => s.bootstrap.desktop.sessions[session.id]);
@@ -289,7 +320,10 @@ function SessionRow({ session, cwd }: { session: SessionInfo; cwd: string }) {
     }
   }
   return (
-    <div className={`thread-row ${active ? "active" : ""}`}>
+    <div
+      ref={reveal ? revealRow : undefined}
+      className={`thread-row ${active ? "active" : ""}`}
+    >
       {renaming ? (
         <InlineRename
           value={session.title}

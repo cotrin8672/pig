@@ -67,7 +67,13 @@
   --ds-toolbar-height: 46px;
   --ds-composer-radius: var(--radius-lg-plus);
   --font-scale: 1;
+  --motion-duration-exit: 80ms;
+  --motion-duration-xfast: 100ms;
+  --motion-duration-collapse: 120ms;
+  --motion-duration-popover: 140ms;
   --motion-duration-fast: 150ms;
+  --motion-press-scale: 0.96;
+  --motion-popover-scale: 0.97;
   --motion-duration-normal: 200ms;
   --motion-duration-slow: 300ms;
   --motion-ease-out: cubic-bezier(0.22, 1, 0.36, 1);
