@@ -135,6 +135,11 @@ export function App() {
     };
   }, [fontFamily, codeFontFamily]);
   const [sidebarOpen, setSidebarOpen] = useState(true);
+  // Collapsed sidebar slides over the content while the pointer rests on the
+  // left edge, like the turn rail; it never resizes the conversation.
+  const [peek, setPeek] = useState(false);
+  const peekTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
+  useEffect(() => () => clearTimeout(peekTimer.current), []);
   const savedSidebarWidth = useStore(
     (s) => s.bootstrap.desktop.sidebarWidth ?? SIDEBAR_WIDTH.default,
   );
@@ -194,7 +199,7 @@ export function App() {
     <button
       type="button"
       className={
-        sidebarOpen
+        sidebarOpen || peek
           ? "sidebar-toggle electrobun-webkit-app-region-no-drag"
           : undefined
       }
@@ -203,7 +208,10 @@ export function App() {
       aria-controls="app-sidebar"
       hidden={!state.sidebarReady}
       style={liveSidebar}
-      onClick={() => setSidebarOpen((open) => !open)}
+      onClick={() => {
+        setSidebarOpen((open) => !open);
+        setPeek(false);
+      }}
     >
       <PanelLeft size={16} aria-hidden="true" />
     </button>
@@ -213,6 +221,7 @@ export function App() {
       {/* biome-ignore lint/a11y/noStaticElementInteractions: Native drag handles; maximize is also available as a keyboard-accessible button. */}
       <div
         className={`app-shell${sidebarOpen ? "" : " sidebar-collapsed"}`}
+        data-peek={(!sidebarOpen && peek) || undefined}
         data-backdrop={state.backdrop}
         onMouseDown={(event) => {
           // Do not start a second native move while double-clicking a drag handle.
@@ -231,12 +240,31 @@ export function App() {
         }
       >
         <DynamicTheme />
-        {sidebarOpen && sidebarToggle}
+        {(sidebarOpen || peek) && sidebarToggle}
+        {!sidebarOpen && state.sidebarReady && (
+          <div
+            className="sidebar-peek-zone"
+            aria-hidden="true"
+            onPointerEnter={() => {
+              clearTimeout(peekTimer.current);
+              // A short rest, so reaching for the window edge does not open it.
+              peekTimer.current = setTimeout(() => setPeek(true), 150);
+            }}
+            onPointerLeave={() => clearTimeout(peekTimer.current)}
+          />
+        )}
         <aside
           id="app-sidebar"
           className="sidebar"
-          inert={!sidebarOpen}
+          inert={!sidebarOpen && !peek}
           style={liveSidebar}
+          onPointerLeave={(event) => {
+            // Keep it while a row menu is open or a name is being edited.
+            if (
+              !event.currentTarget.querySelector(":popover-open, input:focus")
+            )
+              setPeek(false);
+          }}
         >
           <header className="electrobun-webkit-app-region-drag">
             <strong className="sidebar-brand">
@@ -322,7 +350,7 @@ export function App() {
           onSplit={createPane}
           splitDisabled={!state.initialized || state.page !== "chat"}
         >
-          {!sidebarOpen && (
+          {!sidebarOpen && !peek && (
             <div className="window-controls window-sidebar-controls electrobun-webkit-app-region-no-drag">
               {sidebarToggle}
             </div>

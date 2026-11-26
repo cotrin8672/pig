@@ -211,6 +211,32 @@ p {
 }
 .sidebar-collapsed .sidebar {
   margin-left: calc(-1 * var(--ds-sidebar-width));
+  /* Peeking floats over the content, so it needs its own glass. */
+  z-index: 14;
+  background: var(--ds-bg-popover);
+  backdrop-filter: blur(var(--ds-popover-blur));
+  border-radius: 0 var(--radius-md) var(--radius-md) 0;
+  transition:
+    margin-left var(--motion-duration-normal) var(--motion-ease-out),
+    transform var(--motion-duration-normal) var(--motion-ease-out),
+    box-shadow var(--motion-duration-normal) var(--motion-ease-out);
+}
+/* Slides over the content without changing its layout width. */
+.app-shell[data-peek] .sidebar {
+  transform: translateX(var(--ds-sidebar-width));
+  box-shadow: var(--ds-shadow-dialog);
+}
+.app-shell[data-peek] .sidebar-toggle {
+  z-index: 15;
+}
+/* The gap left of the collapsed content is the reveal zone. */
+.sidebar-peek-zone {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  z-index: 13;
+  width: 8px;
 }
 /* Sits in the gap between the sidebar and the content, like a pane divider. */
 .sidebar-resizer {
@@ -486,6 +512,7 @@ main > *,
 }
 @media (prefers-reduced-motion: reduce) {
   .sidebar,
+  .sidebar-collapsed .sidebar,
   .sidebar-toggle,
   .app-shell main,
   .main-clip {
