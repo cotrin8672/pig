@@ -442,6 +442,7 @@ test.skipIf(!existsSync(edge) && !process.env.PIG_REQUIRE_UI_TESTS)(
       import {MessageQueue} from ${source("./MessageQueue.tsx")};
       import {AnnotationPopover} from ${source("./AnnotationPopover.tsx")};
       import {AnnotationDrafts} from ${source("./AnnotationCards.tsx")};
+      import {TooltipLayer} from ${source("./Tooltip.tsx")};
       import {rememberAnnotationRange} from ${source("./annotation-highlights.ts")};
       import {drafts} from ${source("./draft-store.ts")};
       import {addressKey,newerSnapshot} from ${source("./chat-snapshot.ts")};
@@ -1417,9 +1418,9 @@ test.skipIf(!existsSync(edge) && !process.env.PIG_REQUIRE_UI_TESTS)(
       flushSync(()=>useStore.setState(state=>({settings:{...state.settings,language:"ja"}})));
       function AnnotationFixture(){
         const [items,setItems]=useState([]);
-        return <><article className="message assistant"><p>Repeated passage</p><p>Repeated passage</p></article>
+        return <TooltipLayer><article className="message assistant"><p>Repeated passage</p><p>Repeated passage</p></article>
           <AnnotationPopover onAdd={(annotation,range)=>{const id=crypto.randomUUID();rememberAnnotationRange(id,range);setItems(items=>[...items,{id,...annotation}]);}}/>
-          <AnnotationDrafts annotations={items} onRemove={id=>setItems(items=>items.filter(item=>item.id!==id))}/></>;
+          <AnnotationDrafts annotations={items} onRemove={id=>setItems(items=>items.filter(item=>item.id!==id))}/></TooltipLayer>;
       }
       await render(<AnnotationFixture/>);
       const paragraphs=document.querySelectorAll("article.message.assistant p");
@@ -1455,15 +1456,22 @@ test.skipIf(!existsSync(edge) && !process.env.PIG_REQUIRE_UI_TESTS)(
       const savedRange=[...CSS.highlights.get("pig-annotation-saved")][0];
       check(savedRange.toString()==="Repeated passage" && paragraphs[1].contains(savedRange.startContainer),"the mark must use the exact selected occurrence, not the first matching text");
       check(getComputedStyle(paragraphs[1],"::highlight(pig-annotation-saved)").backgroundColor!==getComputedStyle(paragraphs[1],"::selection").backgroundColor,"annotation markers must differ from selection blue");
-      const firstCard=document.querySelector(".composer-annotations li");
-      firstCard.dispatchEvent(new MouseEvent("mouseenter"));
-      check(CSS.highlights.get("pig-annotation-active")?.has(savedRange),"hovering a card must emphasize its source");
-      firstCard.dispatchEvent(new MouseEvent("mouseleave"));
-      check(!CSS.highlights.has("pig-annotation-active"),"leaving a card must soften its source");
+      const firstChip=document.querySelector(".composer-annotation");
+      check(firstChip.textContent==="Repeated passage","the draft chip must show only the quote, not the comment");
+      firstChip.dispatchEvent(new MouseEvent("mouseenter"));
+      firstChip.dispatchEvent(new PointerEvent("pointerover",{bubbles:true,pointerType:"mouse"}));
+      check(CSS.highlights.get("pig-annotation-active")?.has(savedRange),"hovering a chip must emphasize its source");
+      await until(()=>document.querySelector(".ui-tooltip:popover-open"),"hovering a chip must open the shared tooltip");
+      const quoteTip=document.querySelector(".ui-tooltip:popover-open");
+      check(quoteTip.textContent.includes("Repeated passage")&&quoteTip.textContent.includes("Second occurrence only"),"the tooltip must preview the quote and its comment");
+      firstChip.dispatchEvent(new MouseEvent("mouseleave"));
+      firstChip.dispatchEvent(new PointerEvent("pointerout",{bubbles:true,pointerType:"mouse"}));
+      await until(()=>!document.querySelector(".ui-tooltip:popover-open"),"leaving the chip must dismiss the tooltip");
+      check(!CSS.highlights.has("pig-annotation-active"),"leaving a chip must soften its source");
       getSelection().removeAllRanges();
       const sourceRect=savedRange.getClientRects()[0];
       paragraphs[1].dispatchEvent(new MouseEvent("click",{bubbles:true,clientX:sourceRect.left+2,clientY:sourceRect.top+2}));
-      check(document.activeElement===firstCard && CSS.highlights.has("pig-annotation-active"),"clicking marked text must focus the corresponding card and emphasize its source");
+      check(document.activeElement===firstChip && CSS.highlights.has("pig-annotation-active"),"clicking marked text must focus the corresponding chip and emphasize its source");
       await selectPassage(0);
       await click(document.querySelector(".annotation-popover > button"));
       await click(document.querySelector('.annotation-popover button[type="submit"]'));
@@ -1472,6 +1480,15 @@ test.skipIf(!existsSync(edge) && !process.env.PIG_REQUIRE_UI_TESTS)(
       check(CSS.highlights.get("pig-annotation-saved")?.size===1 && !CSS.highlights.has("pig-annotation-active"),"removing a card must clear only its mark and active state");
       await render(<div/>);
       check(!CSS.highlights.has("pig-annotation-saved") && !CSS.highlights.has("pig-annotation-active"),"leaving the draft must clean up all source marks");
+      const manyQuotes=Array.from({length:12},(_,i)=>({id:String(i),quote:"Long selection ".repeat(8)+i}));
+      await render(<div className="composer" style={{width:260}}><AnnotationDrafts annotations={manyQuotes} onRemove={()=>{}}/><textarea/></div>);
+      const chips=document.querySelector(".composer-annotations");
+      const chipBox=chips.querySelector("li").getBoundingClientRect();
+      check(chips.children.length===12&&chips.scrollHeight>chips.clientHeight&&chips.scrollWidth===chips.clientWidth,"many quotes must scroll inside the composer without overflowing horizontally");
+      check(chips.clientHeight===Math.round(chipBox.height*2+12),"the quote list must reserve at most two rows");
+      chips.lastElementChild.focus();
+      await wait();
+      check(chips.scrollTop>0&&chips.lastElementChild.getBoundingClientRect().bottom<=chips.getBoundingClientRect().bottom,"keyboard focus must reveal quotes below the fold");
       flushSync(()=>useStore.setState(state=>({settings:{...state.settings,language:"en"}})));
       metrics.annotations=true;
       metrics.stage="annotation-targets";
@@ -1540,11 +1557,11 @@ test.skipIf(!existsSync(edge) && !process.env.PIG_REQUIRE_UI_TESTS)(
         check(!tool.open && source.isConnected && marked.toString()===quote,"an annotated body must keep its exact source range while closed");
         if(grouped){await click(document.querySelector(".tool-group > summary"));check(source.isConnected && marked.toString()===quote,"closing an ancestor group must protect annotated child ranges");await click(document.querySelector(".tool-group > summary"));}
         await click(tool.querySelector("summary"));
-        const card=document.querySelector(".annotation-card");card.dispatchEvent(new MouseEvent("mouseenter"));
+        const chip=document.querySelector(".composer-annotation");chip.dispatchEvent(new MouseEvent("mouseenter"));
         check(visible(source) && CSS.highlights.get("pig-annotation-active")?.has(marked),"reopened tool annotations must still highlight the original source");
-        card.dispatchEvent(new MouseEvent("mouseleave"));getSelection().removeAllRanges();
+        chip.dispatchEvent(new MouseEvent("mouseleave"));getSelection().removeAllRanges();
         const rect=marked.getClientRects()[0];source.dispatchEvent(new MouseEvent("click",{bubbles:true,clientX:rect.left+2,clientY:rect.top+2}));
-        check(document.activeElement===card && CSS.highlights.has("pig-annotation-active"),"reopened source clicks must still focus their annotation card");
+        check(document.activeElement===chip && CSS.highlights.has("pig-annotation-active"),"reopened source clicks must still focus their annotation chip");
         await click(tool.querySelector("summary"));
         if(grouped)await click(document.querySelector(".tool-group > summary"));
         await click(document.querySelector(".annotation-remove"));

@@ -32,7 +32,7 @@ const annotationUI = [
 function responseSelection(root?: HTMLElement | null) {
   const selection = document.getSelection();
   if (!selection || selection.isCollapsed || !selection.rangeCount) return;
-  const range = selection.getRangeAt(0);
+  const range = trimEnd(selection.getRangeAt(0).cloneRange());
   const owner = (node: Node) =>
     (node instanceof Element ? node : node.parentElement)?.closest(
       "article.message.assistant",
@@ -48,7 +48,29 @@ function responseSelection(root?: HTMLElement | null) {
     )
   )
     return;
-  return { range: range.cloneRange(), quote };
+  return { range, quote };
+}
+
+/** Triple-click ends the range at offset 0 of the next block (e.g. the footer); pull it back to the last selected text. */
+function trimEnd(range: Range) {
+  const end = range.endContainer;
+  if (range.collapsed || range.endOffset !== 0) return range;
+  const walker = document.createTreeWalker(
+    range.commonAncestorContainer,
+    NodeFilter.SHOW_TEXT,
+  );
+  let last: Text | undefined;
+  for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+    const text = node as Text;
+    if (
+      text.data.trim() &&
+      end.compareDocumentPosition(text) & Node.DOCUMENT_POSITION_PRECEDING &&
+      range.comparePoint(text, text.length) === 0
+    )
+      last = text;
+  }
+  if (last) range.setEnd(last, last.length);
+  return range;
 }
 
 type Target = { range: Range; quote: string };

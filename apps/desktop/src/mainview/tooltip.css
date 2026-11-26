@@ -173,6 +173,7 @@
 .tooltip-desc {
   color: var(--ds-text-muted);
   font-size: var(--text-xs);
+  overflow-wrap: anywhere;
 }
 .tooltip-rows {
   display: grid;

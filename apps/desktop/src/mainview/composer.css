@@ -3,25 +3,50 @@
 }
 
 .composer-annotations {
+  --annotation-chip-height: max(24px, calc(1lh + 6px));
   display: flex;
-  flex-direction: column;
-  gap: 6px;
+  flex-wrap: wrap;
+  align-content: start;
+  gap: 4px;
+  max-block-size: calc(2 * var(--annotation-chip-height) + 12px);
+  overflow-y: auto;
   margin: 0;
-  padding: 4px 12px 0;
+  padding: 4px;
   list-style: none;
+  font-size: var(--text-sm);
+  line-height: var(--leading-normal);
 }
-.composer-annotations .annotation-card {
-  position: relative;
-  padding-right: 30px;
+.composer-annotation {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-inline-size: 0;
+  max-inline-size: 100%;
+  block-size: var(--annotation-chip-height);
+  padding-inline: 8px 2px;
+  border-radius: var(--radius-full);
+  background: var(--ds-bg-chip);
+  color: var(--ds-text-secondary);
+}
+.composer-annotation:hover,
+.composer-annotation:focus-within {
+  background: var(--ds-bg-hover);
+}
+.composer-annotation > svg {
+  flex: none;
+  color: var(--ds-accent-soft);
+}
+.composer-annotation-label {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
 }
 .annotation-remove {
-  position: absolute;
-  top: 4px;
-  right: 4px;
   display: grid;
+  flex: none;
   place-items: center;
-  width: 22px;
-  height: 22px;
+  width: 20px;
+  height: 20px;
   padding: 0;
   border-radius: var(--radius-full);
   background: transparent;

@@ -1,12 +1,13 @@
-import { X } from "lucide-react";
+import { Quote, X } from "lucide-react";
 import { useState } from "react";
 import type { DraftAnnotation } from "../shared/annotations";
 import { useAnnotationHighlight } from "./annotation-highlights";
 import { useT } from "./i18n";
+import { clipTooltipText, useTooltip } from "./Tooltip";
 
 type Card = Omit<DraftAnnotation, "id">;
 
-function DraftCard({
+function DraftChip({
   id,
   quote,
   comment,
@@ -14,14 +15,27 @@ function DraftCard({
 }: DraftAnnotation & { onRemove(id: string): void }) {
   const t = useT();
   const ref = useAnnotationHighlight(id);
+  const tip = useTooltip();
+  const summary = clipTooltipText(quote, 48);
   return (
-    <li className="annotation-card" ref={ref} tabIndex={-1}>
-      <blockquote aria-description={quote}>{quote}</blockquote>
-      {comment && <p aria-description={comment}>{comment}</p>}
+    <li
+      className="composer-annotation"
+      ref={ref}
+      // biome-ignore lint/a11y/noNoninteractiveTabindex: Keyboard users can preview the quote and see its source highlight.
+      tabIndex={0}
+      {...tip(() => ({
+        tier: "detail",
+        side: "top",
+        label: clipTooltipText(quote, 400),
+        description: comment ? clipTooltipText(comment, 300) : undefined,
+      }))}
+    >
+      <Quote size={13} aria-hidden="true" />
+      <span className="composer-annotation-label">{summary}</span>
       <button
         type="button"
         className="annotation-remove"
-        aria-label={t["Remove comment"]}
+        aria-label={`${t["Remove comment"]}: ${summary}`}
         onClick={() => onRemove(id)}
       >
         <X size={14} />
@@ -48,7 +62,7 @@ export function AnnotationCard({ quote, comment }: Card) {
   );
 }
 
-/** Annotations waiting above the composer, each removable before sending. */
+/** Unsent quotes above the editor, each removable before sending. */
 export function AnnotationDrafts({
   annotations,
   onRemove,
@@ -60,7 +74,7 @@ export function AnnotationDrafts({
   return (
     <ul className="composer-annotations">
       {annotations.map((annotation) => (
-        <DraftCard key={annotation.id} {...annotation} onRemove={onRemove} />
+        <DraftChip key={annotation.id} {...annotation} onRemove={onRemove} />
       ))}
     </ul>
   );

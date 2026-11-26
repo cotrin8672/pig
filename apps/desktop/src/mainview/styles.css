@@ -2772,7 +2772,7 @@ details[open] > summary .tool-chevron,
   text-decoration: underline;
   text-decoration-color: var(--ds-warning);
 }
-.composer-annotations .annotation-card:focus {
+.composer-annotation:focus:not(:focus-visible) {
   outline: 1px solid var(--ds-warning);
   outline-offset: 2px;
 }

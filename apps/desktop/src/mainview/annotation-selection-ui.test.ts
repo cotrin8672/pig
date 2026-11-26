@@ -17,11 +17,12 @@ test.skipIf(!existsSync(fixtureEdge) && !process.env.PIG_REQUIRE_UI_TESTS)(
       const {flushSync}=await import(${fixtureImport(import.meta.resolve("react-dom"))});
       const {AnnotationPopover}=await import(${fixtureImport(new URL("./AnnotationPopover.tsx", import.meta.url))});
       await import(${fixtureImport(new URL("./styles.css", import.meta.url))});
-      await import(${fixtureImport(new URL("./turn-rail.css", import.meta.url))});
+      const {TurnRail}=await import(${fixtureImport(new URL("./TurnRail.tsx", import.meta.url))});
       ${fixtureHelpers}
       const root=createFixtureRoot(createRoot);
       const text='The quick brown fox jumps over the lazy dog and keeps running far away. '.repeat(4);
-      flushSync(()=>root.render(<div style={{position:'relative',width:620,padding:'36px 24px',height:470,boxSizing:'border-box'}}><article className="message assistant"><p>{text}</p></article><nav className="turn-rail"><div className="turn-rail-ticks"><button className="turn-rail-tick"/></div></nav><AnnotationPopover onAdd={()=>{}}/></div>));
+      const records=['one','two'].map(id=>({id,kind:'message',message:{role:'user',content:id}}));
+      flushSync(()=>root.render(<div style={{position:'relative',width:620,padding:'36px 24px',height:470,boxSizing:'border-box'}}><article className="message assistant"><p>{text}</p><div className="response-footer">done</div></article><TurnRail sessionId="fixture" records={records} thread={{current:null}}/><AnnotationPopover onAdd={()=>{}}/></div>));
       await wait();
       const node=document.querySelector('p').firstChild;
       const point=offset=>{const r=document.createRange();r.setStart(node,offset);r.setEnd(node,offset+1);const b=r.getBoundingClientRect();return {x:b.left+1,y:b.top+b.height/2};};
@@ -36,6 +37,15 @@ test.skipIf(!existsSync(fixtureEdge) && !process.env.PIG_REQUIRE_UI_TESTS)(
       };
       const selected=()=>{const r=getSelection().getRangeAt(0);return r.startOffset+'-'+r.endOffset;};
       const bubble=()=>document.querySelector('.annotation-popover > button');
+      const tick=document.querySelector('.turn-rail-tick').getBoundingClientRect();
+      const move=y=>input({type:'mouseMoved',button:'none',buttons:0,x:tick.left+2,y});
+      const card=()=>document.querySelector('.turn-rail-card');
+      await move(tick.top-12);
+      check(!card(),'extra margin must not open the rail');
+      await move(tick.top+4);await until(card,'hover opens preview');
+      await move(tick.top-12);
+      check(card()&&!document.elementFromPoint(tick.left+2,tick.top-12)?.closest('.turn-rail'),'retain preview without a hit target');
+      await move(tick.top-120);await until(()=>!card(),'leaving the margin closes preview');
       await drag(0,5);
       check(selected()==='0-5','the transparent turn rail must not take the first letter');
       await drag(10,60);
@@ -50,6 +60,31 @@ test.skipIf(!existsSync(fixtureEdge) && !process.env.PIG_REQUIRE_UI_TESTS)(
       check(getSelection().toString().trim()==='dog','double-click inside a response must still select a word');
       const end=await press(100,{modifiers:8});await release(end,{modifiers:8});
       check(selected()==='40-102'&&bubble(),'shift+click must still extend the selection');
+      for(const clickCount of [1,2,3]){await press(42,{clickCount});await release(word,{clickCount});}
+      check(bubble(),'triple-click on the paragraph above the footer must still show the bubble');
+      const many=Array.from({length:96},(_,i)=>({id:String(i),kind:'message',message:{role:'user',content:'Turn '+i}}));
+      flushSync(()=>root.render(<div style={{position:'relative',marginLeft:50,width:620,height:560,'--chat-width':'480px'}}><TurnRail sessionId="long" records={many} thread={{current:null}}/></div>));
+      const list=document.querySelector('.turn-rail-ticks'),bounds=list.getBoundingClientRect();
+      const center=i=>{const r=list.children[i].getBoundingClientRect();return r.top+r.height/2;};
+      const hover=(x,y)=>input({type:'mouseMoved',button:'none',buttons:0,x,y});
+      await hover(bounds.left+2,center(4));
+      await hover(bounds.left-12,center(8));
+      const selectedTick=()=>list.querySelector('[data-open]');
+      await until(()=>selectedTick()===list.children[8]&&card()?.querySelector('.turn-rail-card-title').textContent==='Turn 8','selection and preview follow in the margin');
+      check(getComputedStyle(selectedTick(),'::before').height==='4px' && getComputedStyle(list.children[7],'::before').height==='2px','only the selected tick thickens');
+      await until(()=>getComputedStyle(selectedTick(),'::before').width==='44px','selected tick reaches full width');
+      const idle=list.children[0], cs=getComputedStyle(idle);
+      const idleLeft=(idle.clientWidth+parseFloat(cs.paddingLeft)-parseFloat(getComputedStyle(idle,'::before').width))/2;
+      const selectedLeft=parseFloat(getComputedStyle(selectedTick(),'::before').left);
+      check(Math.abs(selectedLeft-idleLeft)<1 && selectedLeft+44<=list.clientWidth,'selection grows from the idle left edge toward the card without clipping');
+      list.style.setProperty('--ds-accent','#64b589');
+      const tickColor=t=>getComputedStyle(t,'::before').backgroundColor;
+      await until(()=>tickColor(selectedTick())==='rgb(100, 181, 137)','selection follows theme accent');
+      check(tickColor(list.children[7])!==tickColor(selectedTick()),'neighbour stays neutral');
+      check(getComputedStyle(list).scrollbarWidth==='none' && list.offsetWidth===list.clientWidth,'no visible scrollbar or gutter');
+      await hover(bounds.left+2,center(8));
+      await input({type:'mouseWheel',button:'none',buttons:0,x:bounds.left+2,y:center(8),deltaX:0,deltaY:200});
+      await until(()=>list.scrollTop>0 && Number(selectedTick()?.dataset.index)>8,'wheel moves the index without a scrollbar');
       `,
       { viewport: { width: 900, height: 700 } },
     ),

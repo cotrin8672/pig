@@ -10,6 +10,7 @@ import { Markdown, UserMessage } from "../mainview/MessageContent";
 import { LazyDetails } from "../mainview/patterns/LazyDetails";
 import { ResponseFooter } from "../mainview/ResponseFooter";
 import { ThinkingBlock, WorkToggle } from "../mainview/ToolBlock";
+import { TooltipLayer } from "../mainview/Tooltip";
 import { type DraftAnnotation, withAnnotations } from "../shared/annotations";
 
 import { designData } from "./design-data";
@@ -80,7 +81,7 @@ const annotated = designData.annotations;
 export const Annotations = () => {
   const [annotations, setAnnotations] = useState<DraftAnnotation[]>([]);
   return (
-    <>
+    <TooltipLayer>
       <AnnotationPopover
         onAdd={(annotation, range) => {
           const id = crypto.randomUUID();
@@ -88,13 +89,13 @@ export const Annotations = () => {
           setAnnotations((current) => [...current, { id, ...annotation }]);
         }}
       />
-      <div className="prose">
+      <article className="message assistant prose">
         <Markdown
           text={
             '### Findings\n\nI traced every import of the greeting across the workspace. Select any passage below and comment on it — the bubble opens above your selection.\n\nThe **greeting** module exports one value:\n\n```ts\nexport const greeting = "Hello, world!";\n```\n\nEvery caller reads it from the barrel file rather than the source module, so renaming the export means touching the barrel too.\n\nAll checks passed.'
           }
         />
-      </div>
+      </article>
       <div className="composer">
         <AnnotationDrafts
           annotations={annotations}
@@ -106,11 +107,11 @@ export const Annotations = () => {
         />
         <p className="composer-hint">
           {annotations.length
-            ? `${annotations.length} 件の注釈。カードにカーソルを合わせると本文の対応箇所を強調します。本文のマーカーをクリックするとカードへ移動します。`
+            ? `${annotations.length} 件の注釈。チップにカーソルを合わせると引用をプレビューし、本文の対応箇所を強調します。本文のマーカーをクリックするとチップへ移動します。`
             : "本文を範囲選択して注釈をつけてみてください。追加した箇所にはオレンジ色のマーカーが残ります。"}
         </p>
       </div>
-    </>
+    </TooltipLayer>
   );
 };
 
