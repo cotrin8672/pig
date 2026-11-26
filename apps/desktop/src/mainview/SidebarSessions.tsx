@@ -1,5 +1,5 @@
 import { Archive, ChevronRight, Folder, Pin, SquarePen } from "lucide-react";
-import { memo, useId, useMemo, useState } from "react";
+import { memo, type ReactNode, useId, useMemo, useState } from "react";
 import { useShallow } from "zustand/react/shallow";
 import { visibleProjects } from "../shared/projects";
 import { useT } from "./i18n";
@@ -19,7 +19,12 @@ import {
 const basename = (path: string) =>
   path.split(/[\\/]/).filter(Boolean).pop() || path;
 
-export const SidebarSessions = memo(function SidebarSessions() {
+/** `after` holds sections that share the scroll area, e.g. remote PCs. */
+export const SidebarSessions = memo(function SidebarSessions({
+  after,
+}: {
+  after?: ReactNode;
+}) {
   const t = useT();
   const projects = useStore((s) => s.bootstrap.projects);
   const projectFlags = useStore((s) => s.bootstrap.desktop.projects);
@@ -80,11 +85,12 @@ export const SidebarSessions = memo(function SidebarSessions() {
           <p className="sidebar-empty">{t["No projects yet"]}</p>
         )}
       </section>
+      {after}
     </div>
   );
 });
 
-function ProjectSessions({ cwd }: { cwd: string }) {
+export function ProjectSessions({ cwd }: { cwd: string }) {
   const t = useT();
   const projectFlags = useStore((s) => s.bootstrap.desktop.projects?.[cwd]);
   const displayName = projectFlags?.name || basename(cwd);

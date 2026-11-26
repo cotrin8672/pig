@@ -7,6 +7,7 @@ import {
   X,
 } from "lucide-react";
 import {
+  type ReactNode,
   type RefObject,
   useEffect,
   useId,
@@ -79,9 +80,12 @@ async function reloadAdapters() {
 export function Composer({
   snapshot,
   annotationRoot,
+  above,
 }: {
   snapshot: Snapshot;
   annotationRoot?: RefObject<HTMLElement | null>;
+  /** A tray resting on the composer, e.g. where a new chat runs. */
+  above?: ReactNode;
 }) {
   const t = useT();
   const selectPicker = useMemo(createModelPickerSelector, []);
@@ -457,6 +461,7 @@ export function Composer({
           }}
         />
       )}
+      {above}
       <MessageQueue
         steering={sends
           .pendingSteering(address, transcript.running)
