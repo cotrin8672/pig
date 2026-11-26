@@ -34,6 +34,9 @@
   font-size: var(--text-lg);
   font-weight: var(--font-weight-semibold);
 }
+.settings-content > :is(.settings-card, .settings-hint) + .settings-card {
+  margin-block-start: 20px;
+}
 .settings-group-title {
   margin: 28px 0 10px;
   color: var(--ds-text-muted);
@@ -246,6 +249,7 @@
 }
 .utility-model-select .settings-hint {
   margin: 0;
+  overflow-wrap: anywhere;
 }
 .utility-provider-link {
   margin-top: 12px;

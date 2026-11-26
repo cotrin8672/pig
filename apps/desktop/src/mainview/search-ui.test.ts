@@ -36,6 +36,7 @@ test.skipIf(!existsSync(edge) && !process.env.PIG_REQUIRE_UI_TESTS)(
       import {useStore} from ${source("./store.ts")};
       import {settingTargets,settingsCategories} from ${source("./settings-search.ts")};
       import {en,ja} from ${source("../shared/i18n.ts")};
+      import {ARCHIMEDES_SESSION_NAME} from ${source("../shared/supported-extensions.ts")};
       import ${source("./styles.css")};
       (async () => { try {
         const check=(ok,message)=>{if(!ok)throw Error(message)};
@@ -147,6 +148,37 @@ test.skipIf(!existsSync(edge) && !process.env.PIG_REQUIRE_UI_TESTS)(
         flushSync(()=>useStore.setState({searchOpen:true}));await wait();
         document.querySelector('.search-palette-backdrop').dispatchEvent(new MouseEvent('mousedown',{bubbles:true}));await wait();
         check(!document.querySelector('.search-palette')&&!document.querySelector('.search-palette-backdrop'),'outside click removes both palette and backdrop');
+
+        const titleSetting='session-title-model';
+        const titleCard=()=>document.querySelector('[data-setting="'+titleSetting+'"]');
+        const checkModelLayout=()=>{
+          const def=document.querySelector('[data-setting="default-model"]');
+          const title=titleCard(),box=title.getBoundingClientRect(),aligned=def.getBoundingClientRect();
+          const next=title.nextElementSibling;
+          const titleEnd=next.matches('.settings-hint')?next.getBoundingClientRect().bottom:box.bottom;
+          const preferences=document.querySelector('[data-setting="language"]').closest('.settings-card').getBoundingClientRect();
+          check(box.top-def.nextElementSibling.getBoundingClientRect().bottom>=16&&preferences.top-titleEnd>=16,'model cards leave room between notes and neighboring cards');
+          check(box.left===aligned.left&&box.right===aligned.right,'model card edges align');
+          const label=title.firstElementChild.getBoundingClientRect(),last=title.lastElementChild.getBoundingClientRect();
+          check(label.left-box.left>=16&&label.top-box.top>=16&&box.bottom-last.bottom>=16&&title.scrollWidth<=title.clientWidth,'title card content is inset and does not overflow');
+        };
+        flushSync(()=>useStore.setState(s=>({settingsCategory:'general',settingsFocus:titleSetting,settings:{...s.settings,language:'ja'}})));
+        await until(()=>titleCard()?.classList.contains('search-target'),'install note is a search target');
+        checkModelLayout();
+        const note=titleCard();
+        check(document.activeElement===note&&getComputedStyle(note).outlineStyle==='solid','install note receives focus and a temporary highlight');
+        const settingsPage=document.querySelector('.settings-page');
+        settingsPage.style.maxWidth='360px';
+        checkModelLayout();
+        await until(()=>!note.classList.contains('search-target'),'install note highlight expires');
+        check(document.activeElement===note&&getComputedStyle(note).outlineStyle==='none','read-only note has no persistent focus ring');
+        flushSync(()=>useStore.setState({settingsFocus:titleSetting,installed:[{source:'npm:'+ARCHIMEDES_SESSION_NAME,scope:'user',types:['extension'],updateAvailable:false}]}));
+        await until(()=>titleCard()?.classList.contains('search-target'),'installed title picker is a search target');
+        checkModelLayout();
+        check(document.activeElement===titleCard().querySelector('input[aria-label]'),'search focuses the title picker model search when installed');
+        settingsPage.style.removeProperty('max-width');
+        checkModelLayout();
+        flushSync(()=>useStore.setState(s=>({installed:[],settings:{...s.settings,language:'en'}})));
 
         const record=(id,order)=>({id,entryId:id,parentId:null,branchId:'b',order,kind:'message',message:{role:'user',content:'Question '+order+' '+'words '.repeat(30),timestamp:order}});
         const page=(from,to,before)=>({records:Array.from({length:to-from},(_,i)=>record('r'+(from+i),from+i)),tools:{},history:{revision:'b',...(before?{before}:{})},current:null,running:false,liveToEntry:{}});

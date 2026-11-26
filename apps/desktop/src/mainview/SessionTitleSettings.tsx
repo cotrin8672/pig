@@ -23,9 +23,17 @@ export function SessionTitleSettings() {
   );
   if (!installed)
     return (
-      <SettingsCard data-setting={setting} tabIndex={-1}>
-        <strong>{t.sessionTitleModel}</strong>
-        <p className="settings-hint">{t.sessionTitleInstall}</p>
+      <SettingsCard
+        className="utility-model-select"
+        data-setting={setting}
+        tabIndex={-1}
+        aria-labelledby={`${setting}-label`}
+        aria-describedby={`${setting}-hint`}
+      >
+        <strong id={`${setting}-label`}>{t.sessionTitleModel}</strong>
+        <p id={`${setting}-hint`} className="settings-hint">
+          {t.sessionTitleInstall}
+        </p>
       </SettingsCard>
     );
 

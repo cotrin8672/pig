@@ -106,7 +106,8 @@ pre[tabindex]:focus-visible {
    already marks them, so no ring. */
 .response-turn:focus,
 [data-content-index]:focus,
-.annotation-card:focus {
+.annotation-card:focus,
+.settings-card[tabindex="-1"]:focus:not(.search-target) {
   outline: none;
 }
 /* Text fields show the caret; a focus ring adds nothing there. */
