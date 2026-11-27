@@ -140,14 +140,21 @@ export function ChatLayout({
   );
 }
 
-export function ChatEmpty({ cwd }: { cwd?: string }) {
+export function ChatEmpty({
+  cwd,
+  remoteProject,
+}: {
+  cwd?: string;
+  remoteProject?: string;
+}) {
   const t = useT();
   const { generalCwd, models, disabledModels, desktop } = useStore(
     (s) => s.bootstrap,
   );
-  const enabled = filterModels(models, disabledModels);
-  const project =
-    cwd && generalCwd !== cwd
+  const remote = remoteProject !== undefined;
+  const project = remote
+    ? remoteProject
+    : cwd && generalCwd !== cwd
       ? projectLabel(cwd, desktop.projects?.[cwd])
       : undefined;
   return (
@@ -163,12 +170,14 @@ export function ChatEmpty({ cwd }: { cwd?: string }) {
         </p>
       ) : (
         <p className="muted">
-          {generalCwd === cwd
-            ? t["Chat without a project"]
-            : t["Opening chat…"]}
+          {remote
+            ? t.chatTargetChooseProject
+            : generalCwd === cwd
+              ? t["Chat without a project"]
+              : t["Opening chat…"]}
         </p>
       )}
-      {!enabled.length && (
+      {!remote && !filterModels(models, disabledModels).length && (
         <Button variant="primary" onClick={() => navigate("providers")}>
           <Settings2 size={14} />
           {models.length ? t["Enable models"] : t["Connect a provider"]}

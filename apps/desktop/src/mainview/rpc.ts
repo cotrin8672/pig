@@ -1083,7 +1083,7 @@ export async function openChat(
     const state = useStore.getState();
     const paneOpenId = state.panes[state.activePane]?.openId;
     const target = paneOpenId && state.pendingOpens[paneOpenId];
-    if (target && !target.id && target.cwd === cwd) {
+    if (target && !target.id && !target.remote && target.cwd === cwd) {
       if (selection) queueOpeningSelection(paneOpenId, selection);
       showOpening(paneOpenId, push);
       return;
@@ -1166,6 +1166,14 @@ export async function openChat(
   };
   void promise.then(settled, settled);
   return promise;
+}
+export function openRemoteDraft(remote: NonNullable<OpeningTarget["remote"]>) {
+  const state = useStore.getState();
+  const [openId, draft] = createLocalChat(state.bootstrap.generalCwd);
+  useStore.setState({
+    pendingOpens: { ...state.pendingOpens, [openId]: { ...draft, remote } },
+  });
+  showOpening(openId, true);
 }
 export async function openChatLink(url: string) {
   const id = sessionIdFromLink(url);

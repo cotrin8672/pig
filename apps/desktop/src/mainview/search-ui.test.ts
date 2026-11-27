@@ -231,7 +231,7 @@ test.skipIf(!existsSync(edge) && !process.env.PIG_REQUIRE_UI_TESTS)(
           const noop=()=>{};export const rpc={request:new Proxy({},{get:(_,method)=>async params=>window.__requests?.[method]?window.__requests[method](params):{}}),send:new Proxy({},{get:()=>noop})};
           export const sends={subscribe:()=>noop,getTick:()=>0,read:()=>undefined,optimistic:()=>[],pendingSteering:()=>[],queued:()=>[],retained:()=>[],send:async()=>{}};
           export const ensureSessionRuntime=()=>Promise.resolve();
-          export const updateAppearance=noop,updateSettings=noop,updateUiPreferences=noop,refreshSessions=noop,refresh=()=>Promise.resolve(),requestSelection=(_address,request)=>request(),connectRuntime=noop,initRuntimeConnection=noop,cancelOpening=noop,openChat=noop,startOpeningChat=noop,showPendingOpen=noop,openChatLink=noop,forkChat=noop,regenerate=noop,initSessionLinks=noop,initSessionReadTracking=noop,reconnectRuntime=noop;
+          export const updateAppearance=noop,updateSettings=noop,updateUiPreferences=noop,refreshSessions=noop,refresh=()=>Promise.resolve(),requestSelection=(_address,request)=>request(),connectRuntime=noop,initRuntimeConnection=noop,cancelOpening=noop,openChat=noop,openRemoteDraft=noop,startOpeningChat=noop,showPendingOpen=noop,openChatLink=noop,forkChat=noop,regenerate=noop,initSessionLinks=noop,initSessionReadTracking=noop,reconnectRuntime=noop;
         `,
               }));
             },

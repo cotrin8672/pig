@@ -43,6 +43,7 @@ if (process.env.PIG_CHAT_OPENING_CHILD !== "1") {
       optimistic: () => [],
     },
     openChat: async () => {},
+    openRemoteDraft: () => {},
     startOpeningChat: async () => {},
     showPendingOpen: () => {},
     openChatLink: async () => {},

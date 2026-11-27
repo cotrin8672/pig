@@ -16,6 +16,17 @@ type State = ReturnType<typeof useStore.getState>;
 export function selectPaneHeading(s: State, paneId: number) {
   const pane = s.panes[paneId];
   const opening = pane?.openId ? s.pendingOpens[pane.openId] : undefined;
+  if (opening?.remote) {
+    const { host, hostName, project } = opening.remote;
+    return {
+      project:
+        s.remoteHosts
+          .find((pc) => pc.id === host)
+          ?.projects?.find((p) => p.id === project)?.name ?? hostName,
+      general: false,
+      title: undefined,
+    };
+  }
   const sessionId = pane?.sessionId ?? opening?.id;
   const snapshot = sessionId ? s.snapshots[sessionId] : undefined;
   const cwd = snapshot?.info.cwd ?? opening?.cwd;

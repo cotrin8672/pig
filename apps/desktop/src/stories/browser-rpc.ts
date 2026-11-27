@@ -55,6 +55,7 @@ export const openChat = async (_cwd: string, id?: string) => {
   return snapshot;
 };
 export const showPendingOpen = () => {};
+export const openRemoteDraft = () => void openChat("");
 export function updateAppearance(change: (current: Appearance) => Appearance) {
   if (previewActive)
     useStore.setState((state) => ({ appearance: change(state.appearance) }));

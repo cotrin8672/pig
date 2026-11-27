@@ -7,7 +7,7 @@ import { Button } from "./primitives/Button";
 import { RemoteProjectPicker } from "./RemoteProjectPicker";
 import { refreshRemoteSidebar } from "./remote-workspace";
 import { rpc } from "./rpc";
-import { showError } from "./store";
+import { showError, useStore } from "./store";
 
 const errors = {
   storage:
@@ -22,6 +22,7 @@ const errors = {
 export function RemotePairing() {
   const [status, setStatus] = useState<PairingStatus>();
   const [dialog, setDialog] = useState<"connect" | "invite">();
+  const connectRequested = useStore((s) => s.pairingConnectRequested);
   const [picker, setPicker] = useState<string>();
   const [value, setValue] = useState("");
   const [jobId, setJobId] = useState<number>();
@@ -29,6 +30,20 @@ export function RemotePairing() {
   const [busy, setBusy] = useState(false);
   const [failed, setFailed] = useState(false);
   const revision = useRef(0);
+  useEffect(() => {
+    if (connectRequested && status) {
+      useStore.setState({ pairingConnectRequested: false });
+      if (status.available) {
+        setJobId(
+          status.connect?.state === "connecting"
+            ? status.connect.id
+            : undefined,
+        );
+        setValue("");
+        setDialog("connect");
+      }
+    }
+  }, [connectRequested, status]);
   const refresh = useCallback(async () => {
     const ticket = ++revision.current;
     const next = await rpc.request.pairingStatus();

@@ -3,7 +3,12 @@ import type { RemoteTranscript } from "../shared/remote-workspace";
 import { ChatLayout } from "./ChatLayout";
 import { navigate } from "./navigation";
 import { Button } from "./primitives/Button";
-import { remote } from "./remote-workspace";
+import {
+  type RemotePending,
+  remote,
+  remoteDraftKey,
+  saveRemoteDraft,
+} from "./remote-workspace";
 import { showError, useStore } from "./store";
 import "./remote-workspace.css";
 
@@ -19,7 +24,7 @@ export function RemoteConversation() {
 function Thread({ target }: { target: Target }) {
   const { host } = target;
   const [view, setView] = useState(target.view);
-  const storageKey = `pig.remote.draft:${host}:${target.chat}`;
+  const storageKey = remoteDraftKey(host, target.chat);
   const outbox = `${storageKey}:pending:`;
   const [saved] = useState(() => {
     try {
@@ -32,7 +37,7 @@ function Thread({ target }: { target: Target }) {
           "{}",
       ) as {
         text?: string;
-        pending?: { view: string; id: string };
+        pending?: RemotePending;
       };
     } catch {
       return {};
@@ -51,30 +56,36 @@ function Thread({ target }: { target: Target }) {
   }, []);
   function save(
     text: string,
-    unresolved?: { view: string; id: string },
+    unresolved?: RemotePending,
     settled = pending?.id,
   ) {
-    if (unresolved)
-      localStorage.setItem(
-        outbox + unresolved.id,
-        JSON.stringify({ text, pending: unresolved }),
-      );
-    else if (settled) localStorage.removeItem(outbox + settled);
-    if (text || unresolved)
-      sessionStorage.setItem(
-        storageKey,
-        JSON.stringify({ text, pending: unresolved }),
-      );
-    else sessionStorage.removeItem(storageKey);
+    saveRemoteDraft(storageKey, text, unresolved, settled);
     setDraft(text);
     setPending(unresolved);
   }
-  const [busy, setBusy] = useState(false);
+  const [firstSend] = useState(target.firstSend);
+  const [busy, setBusy] = useState(!!firstSend);
   const [olderBusy, setOlderBusy] = useState(false);
   const [offline, setOffline] = useState(false);
   const [refresh, setRefresh] = useState(0);
   const thread = useRef<HTMLElement>(null);
   const lock = useRef(false);
+  useEffect(() => {
+    if (!firstSend) return;
+    let active = true;
+    void firstSend.then((accepted) => {
+      if (!active) return;
+      setBusy(false);
+      if (accepted) {
+        setDraft("");
+        setPending(undefined);
+        setRefresh((x) => x + 1);
+      }
+    });
+    return () => {
+      active = false;
+    };
+  }, [firstSend]);
   // biome-ignore lint/correctness/useExhaustiveDependencies: refresh requests an immediate snapshot after an accepted send.
   useEffect(() => {
     let active = true,
@@ -105,6 +116,7 @@ function Thread({ target }: { target: Target }) {
   async function send() {
     if (
       lock.current ||
+      busy ||
       pending ||
       !draft.trim() ||
       /^[!/]/.test(draft.trimStart())
@@ -198,7 +210,7 @@ function Thread({ target }: { target: Target }) {
             {target.hostName} · {target.projectName}
           </strong>
           <span role="status">
-            {pending
+            {pending && !busy
               ? "受付不明です。自動再送はしません。"
               : offline
                 ? "接続できません。ホストを確認し、必要なら会話を開き直してください。"
@@ -212,7 +224,7 @@ function Thread({ target }: { target: Target }) {
                         ? "通常のテキストのみ送信できます。"
                         : ""}
           </span>
-          {pending && (
+          {pending && !busy && (
             <>
               <Button disabled={busy} onClick={() => void receipt()}>
                 受付を確認

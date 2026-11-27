@@ -1,15 +1,15 @@
-/* New-chat target tray: the queue tray's surface (.message-queue) with two
-   shared pickers. Values follow the Snappy profile. */
+/* Reuse the queue tray's surface and entry motion. */
 .chat-target {
-  --snappy-mid: 120ms;
-  --snappy-ease: var(--motion-ease-out);
-  --snappy-rise: 4px;
+  position: relative;
   display: flex;
   align-items: center;
   gap: 2px;
   min-width: 0;
   padding: 4px 6px;
-  animation: snappy-rise var(--snappy-mid) var(--snappy-ease);
+}
+.chat-target .chat-target-picker {
+  position: static;
+  min-width: 0;
 }
 .chat-target-group {
   min-width: 0;
@@ -33,9 +33,11 @@
   color: var(--ds-text-primary);
   font-weight: var(--font-weight-medium);
 }
-.chat-target-pc {
+.chat-target .picker-trigger > .chat-target-pc {
   position: relative;
   display: inline-flex;
+  flex: none;
+  overflow: visible;
 }
 /* The status sits on the icon's corner, like the sidebar's provider dot. */
 .chat-target-dot {
@@ -56,25 +58,33 @@
   align-items: center;
   gap: 4px;
   min-width: 0;
-  animation: snappy-fade var(--snappy-mid) var(--snappy-ease);
+  animation: chat-target-fade var(--motion-duration-collapse)
+    var(--motion-ease-out);
 }
-/* Opens upward from the tray, aligned to its chip. */
+.chat-target-swap .chat-target-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+/* The tray, not the trigger, bounds the popup inside narrow panes. */
 .chat-target .picker-panel {
   right: auto;
   left: 0;
-  width: 320px;
+  width: min(320px, 100%);
 }
 .chat-target-results {
-  max-height: 220px;
+  height: min(168px, max(56px, calc(100dvh - 200px)));
 }
 .chat-target-action {
   margin-top: 4px;
-  border-top: 1px solid #ffffff0c;
-  border-radius: 0 0 5px 5px;
+  border-top: 1px solid var(--ds-border-default);
   color: var(--ds-accent);
 }
+@keyframes chat-target-fade {
+  from {
+    opacity: 0;
+  }
+}
 @media (prefers-reduced-motion: reduce) {
-  .chat-target,
   .chat-target-swap {
     animation: none;
   }

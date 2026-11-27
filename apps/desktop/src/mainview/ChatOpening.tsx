@@ -3,6 +3,7 @@ import {
   useCallback,
   useContext,
   useRef,
+  useState,
   useSyncExternalStore,
 } from "react";
 import type { DraftFile } from "../shared/attachments";
@@ -23,6 +24,8 @@ import { useT } from "./i18n";
 import { UserMessage } from "./MessageContent";
 import { MessageQueue, usePendingArrival } from "./MessageQueue";
 import { ModelPicker } from "./ModelPicker";
+import { NewChatTarget } from "./NewChatTarget";
+import { navigate, navigationRevision } from "./navigation";
 import {
   openingDraftKey,
   openingSends,
@@ -33,6 +36,7 @@ import {
   steerOpeningSend,
   withdrawOpeningSend,
 } from "./opening-sends";
+import { remote, remoteDraftKey, saveRemoteDraft } from "./remote-workspace";
 import { openChat, rpc, startOpeningChat } from "./rpc";
 import { showError, useStore } from "./store";
 import "./composer.css";
@@ -51,7 +55,13 @@ export function OpeningComposer({ preview }: { preview?: Snapshot }) {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const paneOpenId = useContext(OpeningId);
   const currentOpenId = () => paneOpenId ?? useStore.getState().openId;
+  const openId = useStore((s) => paneOpenId ?? s.openId);
+  const deferred = useStore(
+    (s) => !!(openId && s.pendingOpens[openId]?.deferred),
+  );
   const target = useOpeningTarget();
+  const remoteLock = useRef(false);
+  const [remoteSending, setRemoteSending] = useState(false);
   const stored = useStore((s) =>
     target?.id ? s.snapshots[target.id] : undefined,
   );
@@ -178,13 +188,32 @@ export function OpeningComposer({ preview }: { preview?: Snapshot }) {
     }
   }
   function send(delivery: PromptDelivery = "steer") {
-    if (!hasContent) return;
+    if (!hasContent || remoteLock.current) return;
     if (!currentOpenId() && preview)
       void openChat(preview.info.cwd, preview.info.id);
     const state = useStore.getState();
     const id = currentOpenId();
     const opening = id && state.pendingOpens[id];
     if (!id || !opening) return;
+    if (opening.remote) {
+      if (
+        images.length ||
+        files.length ||
+        text.length > 16000 ||
+        /^[!/]/.test(text.trimStart())
+      )
+        return showError(t.chatTargetRemoteText);
+      const host = state.remoteHosts.find(
+        (pc) => pc.id === opening.remote?.host,
+      );
+      const project = host?.projects?.find(
+        (p) => p.id === opening.remote?.project,
+      );
+      if (!host || host.online === false || !project)
+        return showError(t.chatTargetUnavailable);
+      void sendRemote(id, host, project);
+      return;
+    }
     const content = snapshot
       ? { ...drafts.read(snapshot.address).content, text }
       : { ...emptyContent(), text, images, files };
@@ -197,13 +226,90 @@ export function OpeningComposer({ preview }: { preview?: Snapshot }) {
     }));
     void startOpeningChat(id);
   }
+  async function sendRemote(
+    openId: string,
+    host: { id: string; name: string },
+    project: { id: string; name: string },
+  ) {
+    const revision = navigationRevision;
+    const { activePane } = useStore.getState();
+    const stillHere = () => {
+      const s = useStore.getState();
+      return (
+        revision === navigationRevision &&
+        s.page === "chat" &&
+        s.activePane === activePane &&
+        (paneOpenId ? s.panes[activePane]?.openId : s.openId) === openId
+      );
+    };
+    remoteLock.current = true;
+    setRemoteSending(true);
+    try {
+      const { view, chat } = await remote(host.id, {
+        op: "new",
+        project: project.id,
+      });
+      if (!stillHere()) return;
+      const key = remoteDraftKey(host.id, chat);
+      const id = crypto.randomUUID();
+      saveRemoteDraft(key, text, { view, id });
+      const draftKey = target && openingDraftKey(target);
+      if (draftKey)
+        useStore.setState((s) =>
+          s.newChatDrafts[draftKey] === text
+            ? { newChatDrafts: { ...s.newChatDrafts, [draftKey]: "" } }
+            : s,
+        );
+      const firstSend = remote(host.id, { op: "send", view, id, text })
+        .then(() => {
+          saveRemoteDraft(key, "", undefined, id);
+          return true;
+        })
+        .catch((e) => {
+          // The send may have arrived. Leave its receipt and text for RemoteConversation.
+          showError(e);
+          return false;
+        });
+      useStore.setState({
+        remoteThread: {
+          chat,
+          view,
+          host: host.id,
+          hostName: host.name,
+          project: project.id,
+          projectName: project.name,
+          title: t["New chat"],
+          firstSend,
+        },
+      });
+      navigate("remoteChat");
+      void firstSend.then(() => {
+        window.dispatchEvent(new Event("remote-chat-created"));
+        useStore.setState((s) =>
+          s.remoteThread?.firstSend === firstSend
+            ? { remoteThread: { ...s.remoteThread, firstSend: undefined } }
+            : s,
+        );
+      });
+    } catch (e) {
+      showError(e);
+    } finally {
+      remoteLock.current = false;
+      setRemoteSending(false);
+    }
+  }
   const viewKey = snapshot
     ? addressKey(snapshot.address)
     : target?.id
       ? `opening:${target.id}`
       : `new:${target?.draftId ?? target?.cwd}`;
   return (
-    <ComposerFrame onFiles={imageKey || snapshot ? attach : undefined}>
+    <ComposerFrame
+      onFiles={!target?.remote && (imageKey || snapshot) ? attach : undefined}
+    >
+      {openId && deferred && (
+        <NewChatTarget openId={openId} busy={remoteSending} />
+      )}
       <MessageQueue
         items={openingSends(target).filter(
           (send) => send.delivery === "followUp",
@@ -261,17 +367,31 @@ export function OpeningComposer({ preview }: { preview?: Snapshot }) {
           aria-label={t.Message}
           placeholder={t["Ask anything, or describe what to build…"]}
           value={text}
+          readOnly={remoteSending}
           pastes={
             snapshot ? drafts.read(snapshot.address).content.pastes : undefined
           }
-          onRestore={(edit) => changeText(edit.text, edit.pastes)}
+          onRestore={(edit) => {
+            if (!remoteLock.current) changeText(edit.text, edit.pastes);
+          }}
           messageHistory={() =>
             snapshot ? composerHistory(snapshot.transcript.records) : []
           }
           onChange={(event) => changeText(event.currentTarget.value)}
           onPaste={(event) => {
-            if (!imageKey && !snapshot) return;
+            if (remoteLock.current) {
+              event.preventDefault();
+              return;
+            }
             const pasted = Array.from(event.clipboardData.files);
+            if (target?.remote) {
+              if (pasted.length) {
+                event.preventDefault();
+                showError(t.chatTargetRemoteText);
+              }
+              return;
+            }
+            if (!imageKey && !snapshot) return;
             if (pasted.length) {
               event.preventDefault();
               attach(pasted);
@@ -289,7 +409,12 @@ export function OpeningComposer({ preview }: { preview?: Snapshot }) {
             }
           }}
           onKeyDown={(event) => {
-            if (event.nativeEvent.isComposing || event.keyCode === 229) return;
+            if (
+              remoteLock.current ||
+              event.nativeEvent.isComposing ||
+              event.keyCode === 229
+            )
+              return;
             const action = composerAction(event, keybindings);
             if (!action) return;
             event.preventDefault();
@@ -310,16 +435,20 @@ export function OpeningComposer({ preview }: { preview?: Snapshot }) {
             </span>
           )}
           <div className="composer-pickers">
-            <ContextIndicator usage={snapshot?.contextUsage} />
-            <ModelPicker
-              selection={target?.selection ?? snapshot}
-              onSelect={selectModel}
-            />
+            {!target?.remote && (
+              <>
+                <ContextIndicator usage={snapshot?.contextUsage} />
+                <ModelPicker
+                  selection={target?.selection ?? snapshot}
+                  onSelect={selectModel}
+                />
+              </>
+            )}
           </div>
           <div className="send-controls">
             <ComposerSubmit
               busy={false}
-              waiting={queued}
+              waiting={queued || remoteSending}
               hasContent={hasContent}
               disabled={!hasContent}
               onStop={() => {
@@ -380,6 +509,13 @@ function OpeningView() {
         ? s.pendingOpens[s.openId]?.deferred
         : false,
   );
+  const remoteProject = useStore((s) =>
+    target?.remote
+      ? (s.remoteHosts
+          .find((host) => host.id === target.remote?.host)
+          ?.projects?.find((p) => p.id === target.remote?.project)?.name ?? "")
+      : undefined,
+  );
   return (
     <ChatLayout loading={!deferred} composer={<OpeningComposer />}>
       {message && (
@@ -387,7 +523,9 @@ function OpeningView() {
           {message}
         </p>
       )}
-      {!target?.id && <ChatEmpty cwd={target?.cwd} />}
+      {!target?.id && (
+        <ChatEmpty cwd={target?.cwd} remoteProject={remoteProject} />
+      )}
       <OpeningMessages />
     </ChatLayout>
   );

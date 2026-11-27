@@ -14,6 +14,7 @@ import {
   type NoticeRecord,
   newNoticeRecord,
 } from "../shared/notification-history";
+import type { PairingHost } from "../shared/pairing";
 import type { AccountTarget } from "../shared/provider-accounts";
 import type { ProviderUsage } from "../shared/provider-usage";
 import type {
@@ -58,9 +59,10 @@ export interface LoginState {
   prompt?: AuthPrompt;
 }
 export interface OpeningTarget {
-  /** Local new-chat identity; no SDK session exists until the first send. */
+  /** New-chat draft identity; no SDK session exists until the first send. */
   draftId?: string;
   cwd: string;
+  remote?: { host: string; hostName: string; project?: string };
   id?: string;
   selection?: ModelSelection;
   /** Sends and selection changes made before startup, replayed in click order. */
@@ -109,6 +111,8 @@ export const useStore = create<{
     | "statistics"
     | "pairing"
     | "remoteChat";
+  remoteHosts: PairingHost[];
+  pairingConnectRequested?: boolean;
   remoteThread?: {
     chat: string;
     host: string;
@@ -117,6 +121,7 @@ export const useStore = create<{
     projectName: string;
     title: string;
     view: string;
+    firstSend?: Promise<boolean>;
   };
   searchOpen: boolean;
   settingsCategory: SettingsCategory;
@@ -197,6 +202,7 @@ export const useStore = create<{
   extensionNotices: {},
   capabilities: {},
   page: "chat",
+  remoteHosts: [],
   searchOpen: false,
   settingsCategory: "general",
   chatHistoryImporting: false,

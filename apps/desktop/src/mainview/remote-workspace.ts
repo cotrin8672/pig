@@ -12,3 +12,24 @@ export async function remote<Q extends RemoteQuery>(
 }
 export const refreshRemoteSidebar = () =>
   window.dispatchEvent(new Event("remote-sidebar-changed"));
+
+export const remoteDraftKey = (host: string, chat: string) =>
+  `pig.remote.draft:${host}:${chat}`;
+export type RemotePending = { view: string; id: string };
+
+export function saveRemoteDraft(
+  key: string,
+  text: string,
+  pending?: RemotePending,
+  settled?: string,
+) {
+  if (pending)
+    localStorage.setItem(
+      `${key}:pending:${pending.id}`,
+      JSON.stringify({ text, pending }),
+    );
+  else if (settled) localStorage.removeItem(`${key}:pending:${settled}`);
+  if (text || pending)
+    sessionStorage.setItem(key, JSON.stringify({ text, pending }));
+  else sessionStorage.removeItem(key);
+}

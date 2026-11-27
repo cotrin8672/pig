@@ -7,7 +7,7 @@ import { Button } from "./primitives/Button";
 import { IconButton } from "./primitives/IconButton";
 import { RemoteProjectPicker } from "./RemoteProjectPicker";
 import { remote } from "./remote-workspace";
-import { rpc } from "./rpc";
+import { openRemoteDraft, rpc } from "./rpc";
 import { showError, useStore } from "./store";
 
 let openSequence = 0;
@@ -55,37 +55,31 @@ function ProjectChats({
       .finally(() => {
         if (active) setBusy(false);
       });
+    const refresh = () => setRetry((n) => n + 1);
+    window.addEventListener("remote-chat-created", refresh);
     return () => {
       active = false;
+      window.removeEventListener("remote-chat-created", refresh);
     };
   }, [host.id, project.id, expanded, offset, retry]);
-  async function open(chat?: RemoteChatItem) {
+  async function open(chat: RemoteChatItem) {
     const seq = ++openSequence;
     setOpening(true);
     try {
-      const result = await remote(
-        host.id,
-        chat
-          ? { op: "open", chat: chat.chat }
-          : { op: "new", project: project.id },
-      );
+      const result = await remote(host.id, { op: "open", chat: chat.chat });
       if (seq !== openSequence || !alive.current) return;
       useStore.setState({
         remoteThread: {
-          chat: result.chat ?? chat?.chat ?? result.view,
+          chat: result.chat,
           host: host.id,
           hostName: host.name,
           project: project.id,
           projectName: project.name,
-          title: chat?.title || "新しいチャット",
+          title: chat.title || "新しいチャット",
           view: result.view,
         },
       });
       navigate("remoteChat");
-      if (!chat) {
-        setOffset(0);
-        setRetry((n) => n + 1);
-      }
     } catch (e) {
       showError(e);
     } finally {
@@ -110,7 +104,14 @@ function ProjectChats({
         <IconButton
           disabled={opening || host.online === false}
           aria-label={`${host.name}の${project.name}で新しいチャット`}
-          onClick={() => void open()}
+          onClick={() => {
+            ++openSequence;
+            openRemoteDraft({
+              host: host.id,
+              hostName: host.name,
+              project: project.id,
+            });
+          }}
         >
           <SquarePen size={13} />
         </IconButton>
@@ -147,7 +148,7 @@ function ProjectChats({
   );
 }
 export function RemoteSidebar() {
-  const [hosts, setHosts] = useState<PairingHost[]>([]);
+  const hosts = useStore((s) => s.remoteHosts);
   const [picker, setPicker] = useState<string>();
   useEffect(() => {
     let active = true,
@@ -156,7 +157,8 @@ export function RemoteSidebar() {
       const ticket = ++revision;
       void rpc.request.remoteHosts({}).then(
         (next) => {
-          if (active && ticket === revision) setHosts(next);
+          if (active && ticket === revision)
+            useStore.setState({ remoteHosts: next });
         },
         () => {},
       );

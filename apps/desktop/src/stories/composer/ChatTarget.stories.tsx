@@ -1,6 +1,11 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { useState } from "react";
 import { ChatEmpty, ChatLayout } from "../../mainview/ChatLayout";
+import {
+  type ChatPC,
+  type ChatTarget,
+  ChatTargetTray,
+} from "../../mainview/ChatTargetTray";
 import { Composer } from "../../mainview/Composer";
 import { useStore } from "../../mainview/store";
 import { installPreview, previewDefaults } from "../current-ui/fixtures";
@@ -14,7 +19,6 @@ import {
   sampleDevices,
   sampleHome,
 } from "../settings/remote-pairing-parts";
-import { type ChatPC, type ChatTarget, ChatTargetTray } from "./ChatTargetTray";
 
 function NewChat({ p }: { p: Pairing }) {
   const snapshot = useStore((s) => s.snapshots[s.active ?? ""]);
