@@ -1,6 +1,6 @@
 import type { ImageContent, TextContent } from "@earendil-works/pi-ai";
 import type { ChatRendererProps } from "@pig/chat-renderers";
-import { math } from "@streamdown/math";
+import { createMathPlugin } from "@streamdown/math";
 import type { Root } from "hast";
 import { Check, Copy, Pencil } from "lucide-react";
 import {
@@ -231,7 +231,9 @@ export const markdownComponents: Components = {
     ) : null,
 };
 
-const answerPlugins = { math };
+const answerPlugins = {
+  math: createMathPlugin({ singleDollarTextMath: true }),
+};
 const answerComponents = {
   ...markdownComponents,
   strong: ({ children }: React.ComponentProps<"strong">) => (

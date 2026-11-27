@@ -7,6 +7,38 @@ import {
 } from "../../scripts/ui-fixture";
 
 test(
+  "assistant answers typeset single-dollar and LaTeX inline math",
+  () =>
+    runUiFixture(
+      "answer-inline-math",
+      `
+  const {createRoot}=await import(${fixtureImport(import.meta.resolve("react-dom/client"))});
+  const {flushSync}=await import(${fixtureImport(import.meta.resolve("react-dom"))});
+  const {AnswerMarkdown}=await import(${fixtureImport(new URL("./MessageContent.tsx", import.meta.url))});
+  await import(${fixtureImport(new URL("./styles.css", import.meta.url))});
+  await import(${fixtureImport(import.meta.resolve("katex/dist/katex.min.css"))});
+  ${fixtureHelpers}
+  const root=createFixtureRoot(createRoot);
+  const text=${JSON.stringify(
+    "**FW と BW を独立な $2\\times\n2$ ブロック**、各 \\(m\\) について。\n\n" +
+      "入力例: `$x$`、金額: \\$5 と \\$10。",
+  )};
+  for (const streaming of [true,false]) {
+    flushSync(()=>root.render(<div className="prose"><AnswerMarkdown text={text} streaming={streaming}/></div>));
+    await until(()=>document.querySelectorAll('.katex').length===2,'both inline math delimiters render');
+    const inline=document.querySelector('strong .katex');
+    check(inline?.querySelector('annotation')?.textContent==='2\\\\times\\n2','the line break within the formula is accepted');
+    check(inline.querySelector('.katex-html').getBoundingClientRect().width>0,'the formula is visibly laid out');
+    check(document.querySelector('code')?.textContent==='$x$','math in code remains literal');
+    check(document.querySelector('.prose').textContent.includes('$5 と $10'),'escaped currency remains literal');
+  }
+  root.unmount();
+  `,
+    ),
+  60_000,
+);
+
+test(
   "code headers, Mermaid, GitHub alerts and footnotes render in Markdown",
   () =>
     runUiFixture(
