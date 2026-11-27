@@ -4,6 +4,7 @@ mod bridge;
 mod syntax;
 mod input_queue;
 mod native;
+mod notifications;
 mod updates;
 mod widget;
 
@@ -103,6 +104,8 @@ fn pig_smoke_done(window: WebviewWindow, failure: Option<String>) {
                 None
             }
         });
+        #[cfg(debug_assertions)]
+        let failure = failure.or_else(|| notifications::check_activation(app, &window).err());
         if let Some(error) = &failure {
             eprintln!("pig-tauri-smoke: {error}");
             app.state::<Bridge>().exiting.store(true, Ordering::Release);
@@ -136,10 +139,14 @@ fn main() {
         .register_uri_scheme_protocol("pig-widget", |_, request| widget::serve(request))
         .plugin(tauri_plugin_dialog::init())
         .manage(updates::Prepared::default())
-        .plugin(tauri_plugin_notification::init())
         .setup(|app| {
             Bridge::start(app.handle())?;
             create_window(app.handle(), "pig-initial", 0.0)?;
+            if !smoke() {
+                if let Err(error) = notifications::register(app.handle()) {
+                    eprintln!("Could not register Windows notifications: {error}");
+                }
+            }
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![

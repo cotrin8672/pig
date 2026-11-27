@@ -7,9 +7,7 @@ use tauri::{
 use tauri_plugin_dialog::{
     DialogExt, MessageDialogButtons, MessageDialogKind, MessageDialogResult,
 };
-use tauri_plugin_notification::NotificationExt;
-
-fn focused(app: &AppHandle) -> Option<WebviewWindow> {
+pub(super) fn focused(app: &AppHandle) -> Option<WebviewWindow> {
     let windows = app.webview_windows();
     windows
         .values()
@@ -133,14 +131,7 @@ pub fn call(app: &AppHandle, method: &str, args: &[Value]) -> Result<Value, Stri
                 .map_err(|error| error.to_string())?
                 .map(|action| json!(action));
         }
-        "notify" => {
-            app.notification()
-                .builder()
-                .title("pig")
-                .body(string(0)?)
-                .show()
-                .map_err(|error| error.to_string())?;
-        }
+        "notify" => crate::notifications::show(app, string(0)?)?,
         "clipboardRead" => {
             let mut clipboard = arboard::Clipboard::new().map_err(|error| error.to_string())?;
             return match clipboard.get_text() {
