@@ -65,6 +65,7 @@ const ui = [
   "pane-updates-ui",
   "work-folding-ui",
   "history-paging-ui",
+  "turn-rail-ui",
   "provider-usage-ui",
   "provider-usage-hover-ui",
   "provider-accounts-ui",

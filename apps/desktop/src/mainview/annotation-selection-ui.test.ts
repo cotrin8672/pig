@@ -71,13 +71,6 @@ test.skipIf(!existsSync(fixtureEdge) && !process.env.PIG_REQUIRE_UI_TESTS)(
       await hover(bounds.left-12,center(8));
       const selectedTick=()=>list.querySelector('[data-open]');
       await until(()=>selectedTick()===list.children[8]&&card()?.querySelector('.turn-rail-card-title').textContent==='Turn 8','selection and preview follow in the margin');
-      check(getComputedStyle(selectedTick(),'::before').height==='4px' && getComputedStyle(list.children[7],'::before').height==='2px','only the selected tick thickens');
-      await until(()=>getComputedStyle(selectedTick(),'::before').width==='44px','selected tick reaches full width');
-      const selectedLeft=parseFloat(getComputedStyle(selectedTick(),'::before').left);
-      const neighbor=getComputedStyle(list.children[7],'::before'),idle=getComputedStyle(list.children[0],'::before');
-      const axis=parseFloat(neighbor.left);
-      check(axis===parseFloat(idle.left) && neighbor.translate.startsWith('-50%') && parseFloat(neighbor.width)>parseFloat(idle.width),'unselected ticks swell on both sides of their original axis');
-      check(Math.abs(axis-selectedLeft-13)<1 && selectedLeft+44<=list.clientWidth,'selected mark keeps its full left half and adds length toward the card');
       list.style.setProperty('--ds-accent','#64b589');
       const tickColor=t=>getComputedStyle(t,'::before').backgroundColor;
       await until(()=>tickColor(selectedTick())==='rgb(100, 181, 137)','selection follows theme accent');

@@ -101,6 +101,10 @@ describe("UI style policy", () => {
     expect(
       css(".list { scrollbar-width: auto; scrollbar-color: auto }"),
     ).toEqual([]);
+    expect(css(".turn-rail-ticks { scrollbar-width: none }")).toEqual([]);
+    expect(css(".turn-rail-ticks, .list { scrollbar-width: none }")).toEqual([
+      "native-scrollbar-override",
+    ]);
     expect(css(".list::-webkit-scrollbar-track { margin: 0 }")).toEqual([
       "shared-scrollbar-geometry",
     ]);

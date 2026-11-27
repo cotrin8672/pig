@@ -37,8 +37,12 @@ function swell(ticks: Element | null, y?: number) {
     for (const tick of children) tick.style.removeProperty("--swell");
     return;
   }
-  const values = children.map((tick) => {
-    const distance = (tick.offsetTop + tick.offsetHeight / 2 - y) / 26;
+  const first = children[0];
+  if (!first) return;
+  const height = first.offsetHeight;
+  const start = first.offsetTop + height / 2;
+  const values = children.map((_, index) => {
+    const distance = (start + index * height - y) / 16;
     return Math.exp(-distance * distance).toFixed(3);
   });
   children.forEach((tick, i) => {
@@ -63,20 +67,37 @@ export function TurnRail({
 }) {
   const t = useT();
   const turns = useMemo(() => collectTurns(records), [records]);
+  const hasRail = turns.length >= 2;
   const [branching, setBranching] = useState(false);
   const [active, setActive] = useState(0);
   const [open, setOpen] = useState<{ index: number; top: number }>();
+  const [selecting, setSelecting] = useState(false);
   const ticksRef = useRef<HTMLDivElement>(null);
   const cardRef = useRef<HTMLDivElement>(null);
+  const previewTick = useRef<HTMLElement>(null);
   const pointer = useRef<number | "card">(undefined);
-  const previewVisible = !!open && !!turns[open.index] && turns.length >= 2;
+  const previewVisible = !selecting && !!open && !!turns[open.index] && hasRail;
+  const close = useCallback(() => {
+    pointer.current = undefined;
+    swell(ticksRef.current);
+    previewTick.current?.removeAttribute("data-open");
+    previewTick.current = null;
+    setOpen(undefined);
+  }, []);
 
-  const openTick = useCallback((tick: HTMLElement) => {
+  const openTick = useCallback((tick: HTMLElement, y: number) => {
     const nav = tick.closest(".turn-rail");
     if (!nav) return;
     const box = tick.getBoundingClientRect();
     const index = Number(tick.dataset.index);
     const top = box.top - nav.getBoundingClientRect().top + box.height / 2;
+    // Commit geometry and accent together, before React renders the card.
+    swell(tick.parentElement, y);
+    if (previewTick.current !== tick) {
+      previewTick.current?.removeAttribute("data-open");
+      tick.setAttribute("data-open", "");
+      previewTick.current = tick;
+    }
     setOpen((old) =>
       old?.index === index && old.top === top ? old : { index, top },
     );
@@ -102,19 +123,49 @@ export function TurnRail({
         ),
       );
     const tick = ticks.children[Math.floor(y / first.offsetHeight)];
-    if (tick instanceof HTMLElement) {
-      swell(ticks, y);
-      openTick(tick);
-    }
+    if (tick instanceof HTMLElement) openTick(tick, y);
   }, [openTick]);
 
   useEffect(() => {
-    if (!previewVisible) return;
-    const close = () => {
-      pointer.current = undefined;
-      swell(ticksRef.current);
-      setOpen(undefined);
+    const element = thread.current;
+    if (!element || !hasRail) return;
+    const listeners = new AbortController();
+    const options = { capture: true, signal: listeners.signal };
+    let dragging = false;
+    let hidden = false;
+    const sync = () => {
+      const selection = document.getSelection();
+      const next =
+        dragging ||
+        (!!selection &&
+          !selection.isCollapsed &&
+          selection.getRangeAt(0).intersectsNode(element));
+      if (next === hidden) return;
+      hidden = next;
+      setSelecting(next);
+      if (next) close();
     };
+    const down = (event: PointerEvent) => {
+      if (event.isPrimary && event.button === 0) {
+        dragging = true;
+        sync();
+      }
+    };
+    const up = () => {
+      dragging = false;
+      sync();
+    };
+    element.addEventListener("pointerdown", down, options);
+    document.addEventListener("pointerup", up, options);
+    document.addEventListener("pointercancel", up, options);
+    document.addEventListener("selectionchange", sync, options);
+    window.addEventListener("blur", up, options);
+    sync();
+    return () => listeners.abort();
+  }, [close, hasRail, thread]);
+
+  useEffect(() => {
+    if (!previewVisible) return;
     // Pointer and wheel share the retention zone without capturing text clicks.
     const zone = (event: MouseEvent) => {
       if (
@@ -187,7 +238,7 @@ export function TurnRail({
       document.documentElement.removeEventListener("pointerleave", close);
       window.removeEventListener("blur", close);
     };
-  }, [previewVisible, follow]);
+  }, [close, previewVisible, follow]);
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: Re-measure when the tick list changes.
   useLayoutEffect(() => {
@@ -231,14 +282,14 @@ export function TurnRail({
     return () => element.removeEventListener("scroll", update);
   }, [thread, turns]);
 
-  if (turns.length < 2) return null;
+  if (!hasRail) return null;
   const jump = (turn: Turn) => {
     if (turn.entryId)
       useStore.setState({
         jump: { sessionId, entryId: turn.entryId, nonce: Date.now() },
       });
   };
-  const shown = open && turns[open.index];
+  const shown = previewVisible && open && turns[open.index];
   const branch = (entryId: string) => {
     if (branching) return;
     setBranching(true);
@@ -250,13 +301,13 @@ export function TurnRail({
     <nav
       className="turn-rail"
       data-preview={previewVisible || undefined}
+      data-selecting={selecting || undefined}
       aria-label={t["Conversation turns"]}
       onBlur={(event) => {
-        if (!event.currentTarget.contains(event.relatedTarget))
-          setOpen(undefined);
+        if (!event.currentTarget.contains(event.relatedTarget)) close();
       }}
       onKeyDown={(event) => {
-        if (event.key === "Escape") setOpen(undefined);
+        if (event.key === "Escape") close();
       }}
     >
       <div
@@ -272,8 +323,7 @@ export function TurnRail({
           const focus = (event: { currentTarget: HTMLElement }) => {
             const tick = event.currentTarget;
             tick.scrollIntoView({ block: "nearest" });
-            openTick(tick);
-            swell(tick.parentElement, tick.offsetTop + tick.offsetHeight / 2);
+            openTick(tick, tick.offsetTop + tick.offsetHeight / 2);
           };
           return (
             <button
@@ -283,7 +333,6 @@ export function TurnRail({
               data-index={index}
               style={{ "--i": index } as React.CSSProperties}
               data-active={index === active || undefined}
-              data-open={index === open?.index || undefined}
               aria-current={index === active ? "location" : undefined}
               aria-label={turn.title || t.Image}
               onFocus={focus}
