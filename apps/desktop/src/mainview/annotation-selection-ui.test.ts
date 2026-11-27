@@ -73,17 +73,18 @@ test.skipIf(!existsSync(fixtureEdge) && !process.env.PIG_REQUIRE_UI_TESTS)(
       await until(()=>selectedTick()===list.children[8]&&card()?.querySelector('.turn-rail-card-title').textContent==='Turn 8','selection and preview follow in the margin');
       check(getComputedStyle(selectedTick(),'::before').height==='4px' && getComputedStyle(list.children[7],'::before').height==='2px','only the selected tick thickens');
       await until(()=>getComputedStyle(selectedTick(),'::before').width==='44px','selected tick reaches full width');
-      const idle=list.children[0], cs=getComputedStyle(idle);
-      const idleLeft=(idle.clientWidth+parseFloat(cs.paddingLeft)-parseFloat(getComputedStyle(idle,'::before').width))/2;
       const selectedLeft=parseFloat(getComputedStyle(selectedTick(),'::before').left);
-      check(Math.abs(selectedLeft-idleLeft)<1 && selectedLeft+44<=list.clientWidth,'selection grows from the idle left edge toward the card without clipping');
+      const neighbor=getComputedStyle(list.children[7],'::before'),idle=getComputedStyle(list.children[0],'::before');
+      const axis=parseFloat(neighbor.left);
+      check(axis===parseFloat(idle.left) && neighbor.translate.startsWith('-50%') && parseFloat(neighbor.width)>parseFloat(idle.width),'unselected ticks swell on both sides of their original axis');
+      check(Math.abs(axis-selectedLeft-13)<1 && selectedLeft+44<=list.clientWidth,'selected mark keeps its full left half and adds length toward the card');
       list.style.setProperty('--ds-accent','#64b589');
       const tickColor=t=>getComputedStyle(t,'::before').backgroundColor;
       await until(()=>tickColor(selectedTick())==='rgb(100, 181, 137)','selection follows theme accent');
       check(tickColor(list.children[7])!==tickColor(selectedTick()),'neighbour stays neutral');
       check(getComputedStyle(list).scrollbarWidth==='none' && list.offsetWidth===list.clientWidth,'no visible scrollbar or gutter');
-      await hover(bounds.left+2,center(8));
-      await input({type:'mouseWheel',button:'none',buttons:0,x:bounds.left+2,y:center(8),deltaX:0,deltaY:200});
+      await hover(bounds.left-12,center(8));
+      await input({type:'mouseWheel',button:'none',buttons:0,x:bounds.left-12,y:center(8),deltaX:0,deltaY:200});
       await until(()=>list.scrollTop>0 && Number(selectedTick()?.dataset.index)>8,'wheel moves the index without a scrollbar');
       `,
       { viewport: { width: 900, height: 700 } },

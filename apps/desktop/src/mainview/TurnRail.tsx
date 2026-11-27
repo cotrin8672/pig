@@ -115,16 +115,14 @@ export function TurnRail({
       swell(ticksRef.current);
       setOpen(undefined);
     };
-    // Only retain a pointer-opened preview; the extra space is never a hit target.
-    const track = (event: PointerEvent) => {
-      if (pointer.current === undefined) return;
+    // Pointer and wheel share the retention zone without capturing text clicks.
+    const zone = (event: MouseEvent) => {
       if (
         event.target instanceof Element &&
         event.target.closest(".turn-rail-card") ===
           cardRef.current?.firstElementChild
       ) {
-        pointer.current = "card";
-        return;
+        return cardRef.current;
       }
       for (const element of [ticksRef.current, cardRef.current]) {
         if (!element) continue;
@@ -135,22 +133,57 @@ export function TurnRail({
           event.clientY >= r.top - 24 &&
           event.clientY <= r.bottom + 24
         ) {
-          if (element === ticksRef.current) {
-            if (event.target instanceof Node && element.contains(event.target))
-              return; // handled by the rail
-            pointer.current = event.clientY;
-            follow();
-          } else pointer.current = "card";
-          return;
+          return element;
         }
       }
-      close();
+      return null;
+    };
+    const track = (event: PointerEvent) => {
+      if (pointer.current === undefined) return;
+      const element = zone(event);
+      if (!element) return close();
+      if (element !== ticksRef.current) {
+        pointer.current = "card";
+        return;
+      }
+      if (event.target instanceof Node && element.contains(event.target))
+        return;
+      pointer.current = event.clientY;
+      follow();
+    };
+    const wheel = (event: WheelEvent) => {
+      const ticks = ticksRef.current;
+      if (
+        !ticks ||
+        !event.deltaY ||
+        event.ctrlKey ||
+        event.defaultPrevented ||
+        !event.cancelable ||
+        !zone(event)
+      )
+        return;
+      if (event.target instanceof Node && ticks.contains(event.target)) return; // native scrolling
+      event.preventDefault(); // also at either end: don't scroll the chat
+      const unit =
+        event.deltaMode === 1
+          ? (ticks.firstElementChild?.clientHeight ?? 10)
+          : event.deltaMode === 2
+            ? ticks.clientHeight
+            : 1;
+      pointer.current = event.clientY;
+      ticks.scrollTop += event.deltaY * unit;
+      follow();
     };
     document.addEventListener("pointermove", track, true);
+    document.addEventListener("wheel", wheel, {
+      capture: true,
+      passive: false,
+    });
     document.documentElement.addEventListener("pointerleave", close);
     window.addEventListener("blur", close);
     return () => {
       document.removeEventListener("pointermove", track, true);
+      document.removeEventListener("wheel", wheel, true);
       document.documentElement.removeEventListener("pointerleave", close);
       window.removeEventListener("blur", close);
     };

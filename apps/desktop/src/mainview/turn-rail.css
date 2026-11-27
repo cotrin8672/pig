@@ -46,10 +46,13 @@
 }
 /* The hit area stays full width. */
 .turn-rail-tick {
+  --tick-inset: min(27%, 13px);
+  --tick-center: calc(50% + min(13.5%, 6.5px));
+  position: relative;
   pointer-events: auto;
   flex: none;
   height: 10px;
-  padding: 0 0 0 min(27%, 13px);
+  padding: 0;
   border: 0;
   background: none;
   display: flex;
@@ -60,7 +63,13 @@
    `--swell` (0–1, set from the pointer) lengthens and lightens the mound. */
 .turn-rail-tick::before {
   content: "";
-  width: calc(8px + var(--swell, 0) * 18px);
+  position: absolute;
+  left: var(--tick-center);
+  translate: -50% 0;
+  width: min(
+    calc(100% - var(--tick-inset)),
+    calc(8px + var(--swell, 0) * 18px)
+  );
   height: 2px;
   border-radius: var(--radius-full);
   background: color-mix(
@@ -69,7 +78,7 @@
     var(--ds-text-faint)
   );
   opacity: 0;
-  transform: translateX(-6px) scaleX(0.4);
+  transform: scaleX(0.4);
   transform-origin: left center;
   transition:
     width 160ms var(--motion-ease-out),
@@ -90,15 +99,12 @@
   opacity: 0.9;
 }
 /* Only the previewed turn uses the theme accent. */
-.turn-rail-tick[data-open] {
-  position: relative;
-}
 .turn-rail:is(:hover, :focus-within, [data-preview])
-  .turn-rail-tick[data-open]::before {
+.turn-rail-tick[data-open]::before {
   pointer-events: none;
-  position: absolute;
-  /* Start at the left end of an idle 8px mark; extend only toward the card. */
-  left: calc(50% + min(13.5%, 6.5px) - 4px);
+  /* Keep the left half of a fully swollen 26px tick; add the rest on the right. */
+  left: max(var(--tick-inset), calc(var(--tick-center) - 13px));
+  translate: none;
   width: min(44px, 100%);
   height: 4px;
   opacity: 1;
