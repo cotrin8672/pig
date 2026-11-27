@@ -49,19 +49,19 @@ test.skipIf(!existsSync(fixtureEdge) && !process.env.PIG_REQUIRE_UI_TESTS)(
       await until(()=>!ticks.getAnimations({subtree:true}).length,"tick transitions settle");
 
       const pixels=await capturePixels();
-      const line=i=>{
+      const line=(i,sample=pixels)=>{
         const tick=ticks.children[i];
         const {left}=tick.getBoundingClientRect(),{right}=ticks.getBoundingClientRect();
         const {y}=center(tick);
         const painted=[];
-        for(let x=Math.ceil(left);x<right;x++) if(pixels(x,y)[0]>30) painted.push(x);
+        for(let x=Math.ceil(left);x<right;x++) if(sample(x,y)[0]>30) painted.push(x);
         return {length:painted.length,left:painted[0],right:painted.at(-1)};
       };
       const peak=line(14),near=line(15),far=line(16);
       check(peak.length>near.length&&near.length-far.length>=7,"the mound falls off steeply");
       const rest=line(9);
       const leftGrowth=rest.left-peak.left,rightGrowth=peak.right-rest.right;
-      check(leftGrowth>=3&&rightGrowth-leftGrowth>=8,"the peak extends a little to the left and farther to the right");
+      check(leftGrowth>=5&&rightGrowth-leftGrowth>=8,"the peak extends a little to the left and farther to the right");
       const tinted=i=>{
         const {left,right}=line(i),{y}=center(ticks.children[i]);
         const [r,,b]=pixels((left+right)/2,y);
@@ -71,6 +71,19 @@ test.skipIf(!existsSync(fixtureEdge) && !process.env.PIG_REQUIRE_UI_TESTS)(
       const [r,g,b]=pixels((peak.left+peak.right)/2,point.y);
       check(Math.abs(r-98)<=10&&Math.abs(g-229)<=10&&Math.abs(b-255)<=10,"the previewed tick paints the accent without fading it into the background");
 
+      rail.style.setProperty("--chat-width","768px");
+      const narrowPoint=center(ticks.children[14]);
+      check(rail.clientWidth===12,"exercise the minimum hit area");
+      await input("mouseMoved",narrowPoint);
+      await until(()=>!ticks.getAnimations({subtree:true}).length,"narrow tick transitions settle");
+      const narrowPixels=await capturePixels();
+      const narrowPeak=line(14,narrowPixels),narrowRest=line(9,narrowPixels);
+      const narrowLeft=narrowRest.left-narrowPeak.left,narrowRight=narrowPeak.right-narrowRest.right;
+      check(narrowLeft>=5&&narrowRight-narrowLeft>=8,"the narrow peak still extends on both sides without clipping");
+      rail.style.removeProperty("--chat-width");
+      await input("mouseMoved",point);
+      await until(()=>!ticks.getAnimations({subtree:true}).length,"restored tick transitions settle");
+
       const before=open();
       window.__fixtureInput={method:"Input.dispatchMouseEvent",params:{type:"mouseWheel",x:ticks.getBoundingClientRect().left-8,y:point.y,deltaX:0,deltaY:50}};
       await until(()=>{
@@ -78,7 +91,7 @@ test.skipIf(!existsSync(fixtureEdge) && !process.env.PIG_REQUIRE_UI_TESTS)(
         if(!after||after===before)return false;
         const transitions=[before,after].flatMap(tick=>{
           const animations=tick.getAnimations({subtree:true});
-          return ["width","translate","background-color"].map(property=>animations.find(animation=>animation.transitionProperty===property));
+          return ["width","left","background-color"].map(property=>animations.find(animation=>animation.transitionProperty===property));
         });
         return transitions.every(animation=>animation&&animation.startTime===transitions[0]?.startTime&&animation.effect.getTiming().duration===transitions[0].effect.getTiming().duration);
       },"the previous and next preview tick animate color, width and offset together");

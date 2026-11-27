@@ -8,6 +8,7 @@
   z-index: 8;
   /* Never put an invisible hit target over the first column of text. */
   width: clamp(12px, calc((100% - var(--chat-width, 768px)) / 2), 48px);
+  --rail-paint-extra: max(50%, 22px);
   pointer-events: none;
   display: flex;
   align-items: center;
@@ -22,7 +23,7 @@
   pointer-events: none;
   flex: none;
   box-sizing: content-box;
-  padding-right: 50%;
+  padding-right: var(--rail-paint-extra);
   --fade-top: 0px;
   --fade-bottom: 0px;
   position: relative;
@@ -49,7 +50,7 @@
 }
 /* The hit area stays full width. */
 .turn-rail-tick {
-  --tick-center: calc(50% + min(13.5%, 6.5px));
+  --tick-center: max(11px, calc(50% + min(13.5%, 6.5px)));
   position: relative;
   pointer-events: auto;
   flex: none;
@@ -61,14 +62,13 @@
   align-items: center;
   cursor: pointer;
 }
-/* The swell adds 4px on the left and 14px on the right at full size. */
+/* The swell adds 6px on the left and 14px on the right at full size. */
 .turn-rail-tick::before {
   content: "";
   position: absolute;
   pointer-events: none;
-  left: var(--tick-center);
-  translate: calc(-50% + var(--swell, 0) * 5px + var(--tick-extra, 0px) / 2);
-  width: min(100%, calc(8px + var(--swell, 0) * 18px + var(--tick-extra, 0px)));
+  left: calc(var(--tick-center) - 4px - var(--swell, 0) * 6px);
+  width: calc(8px + var(--swell, 0) * 20px + var(--tick-extra, 0px));
   height: 2px;
   border-radius: var(--radius-full);
   --tick-base: color-mix(
@@ -85,7 +85,7 @@
   transform-origin: left center;
   transition:
     width var(--motion-duration-xfast) var(--motion-ease-out),
-    translate var(--motion-duration-xfast) var(--motion-ease-out),
+    left var(--motion-duration-xfast) var(--motion-ease-out),
     opacity var(--motion-duration-fast) var(--motion-ease-out),
     transform var(--motion-duration-fast) var(--motion-ease-out),
     background-color var(--motion-duration-xfast) var(--motion-ease-out);
@@ -116,7 +116,7 @@
 .turn-rail-card-anchor {
   pointer-events: auto;
   position: absolute;
-  left: 150%;
+  left: calc(100% + var(--rail-paint-extra));
   padding-left: 6px;
   translate: 0 -50%;
   transition: top 140ms var(--motion-ease-out);
