@@ -1,5 +1,5 @@
 diff --git a/dist/extensions/mcp/index.d.ts b/dist/extensions/mcp/index.d.ts
-index 2ee96fad28b6b73c84a3a9410e56cc78c16ab807..4a738253e9fa719a4dc754e57a8f959c2a148138 100644
+index 2ee96fa..4a73825 100644
 --- a/dist/extensions/mcp/index.d.ts
 +++ b/dist/extensions/mcp/index.d.ts
 @@ -31,6 +31,18 @@ import type { McpOAuthCredentialStore } from "./oauth.ts";
@@ -22,10 +22,10 @@ index 2ee96fad28b6b73c84a3a9410e56cc78c16ab807..4a738253e9fa719a4dc754e57a8f959c
      loadConfig?: (ctx: ExtensionContext) => LoadedMcpConfig;
      /** Defaults to stdio and streamable HTTP transports built from the server config. */
 diff --git a/dist/extensions/mcp/index.js b/dist/extensions/mcp/index.js
-index 69edd29690f5a1513723e842e2ea4933658082e2..688246b22ff31d42b8295eab0f1452bc8f5f11e0 100644
+index 073dcb0..e3a2b68 100644
 --- a/dist/extensions/mcp/index.js
 +++ b/dist/extensions/mcp/index.js
-@@ -332,6 +332,24 @@ export function createMcpExtension(options = {}) {
+@@ -329,6 +329,24 @@ export function createMcpExtension(options = {}) {
                          return client;
                      },
                      readableResources: () => resourceServers().some((current) => current.name === server),
@@ -51,18 +51,18 @@ index 69edd29690f5a1513723e842e2ea4933658082e2..688246b22ff31d42b8295eab0f1452bc
                  definitions.set(definition.name, definition);
                  pi.registerTool(definition);
 diff --git a/dist/extensions/mcp/tools.d.ts b/dist/extensions/mcp/tools.d.ts
-index becb9cf884f1d63604edcd3d8c7371a9dbb80501..5e58aaa287e18c42a6a7aba5ab151b5f509b60a8 100644
+index 6ba4ea9..a2abeb4 100644
 --- a/dist/extensions/mcp/tools.d.ts
 +++ b/dist/extensions/mcp/tools.d.ts
-@@ -33,6 +33,7 @@ export interface McpToolDetails {
+@@ -32,6 +32,7 @@ export interface McpToolDetails {
  export declare function saveToTempFile(data: string | Uint8Array, extension: string): Promise<string>;
  export interface McpToolCaller {
      callTool(name: string, args: Record<string, unknown>, options: McpRequestOptions): Promise<CallToolResult>;
 +    readResource?(uri: string, options: McpRequestOptions): Promise<import("@earendil-works/pi-mcp").ReadResourceResult>;
  }
- /**
-  * Output schema of every MCP tool: the `CallToolResult` scripts receive (without `_meta`, which
-@@ -59,6 +60,12 @@ export declare function createMcpToolDefinition(options: {
+ export interface ConvertMcpResultOptions {
+     /** Saves truncated text and binary resources. Default: a temp file. */
+@@ -51,6 +52,12 @@ export declare function createMcpToolDefinition(options: {
      getClient: () => Promise<McpToolCaller>;
      /** Whether `read_mcp_resource` can read the server's resources. */
      readableResources?: () => boolean;
@@ -76,10 +76,10 @@ index becb9cf884f1d63604edcd3d8c7371a9dbb80501..5e58aaa287e18c42a6a7aba5ab151b5f
  /** Renderers of calls to an MCP tool, labeled `server/tool`, also used before the tool is registered. */
  export declare function createMcpToolRenderers(label: string): ToolRenderers;
 diff --git a/dist/extensions/mcp/tools.js b/dist/extensions/mcp/tools.js
-index 67aa2b865615914fa39c3c8edbace40ee1bed325..a94f110927dbd366b3754ab44c8204e4668b42f1 100644
+index f506a04..280f96c 100644
 --- a/dist/extensions/mcp/tools.js
 +++ b/dist/extensions/mcp/tools.js
-@@ -200,7 +200,7 @@ export function createMcpToolDefinition(options) {
+@@ -84,7 +84,7 @@ export function createMcpToolDefinition(options) {
          namespace: options.namespace,
          ...(annotations ? { annotations } : {}),
          ...createMcpToolRenderers(label),
@@ -88,7 +88,7 @@ index 67aa2b865615914fa39c3c8edbace40ee1bed325..a94f110927dbd366b3754ab44c8204e4
              const client = await options.getClient();
              const result = await client.callTool(tool.name, (params ?? {}), {
                  signal,
-@@ -211,7 +211,17 @@ export function createMcpToolDefinition(options) {
+@@ -95,7 +95,17 @@ export function createMcpToolDefinition(options) {
                      onUpdate?.({ content: [{ type: "text", text }], details: { server, tool: tool.name } });
                  },
              });

@@ -1,5 +1,5 @@
 diff --git a/dist/api/openai-codex-responses.js b/dist/api/openai-codex-responses.js
-index e64cc029276fdb45c8ebf6d16a7d9573df223798..70359f752de284cc5067f1e7bfdfede7cbda1ab4 100644
+index 255f14d..de9f6a9 100644
 --- a/dist/api/openai-codex-responses.js
 +++ b/dist/api/openai-codex-responses.js
 @@ -7,6 +7,7 @@ import { AssistantMessageEventStream } from "../utils/event-stream.js";
@@ -7,10 +7,10 @@ index e64cc029276fdb45c8ebf6d16a7d9573df223798..70359f752de284cc5067f1e7bfdfede7
  import { getIdentityHeaders } from "../utils/identity.js";
  import { resolveHttpProxyUrlForTarget } from "../utils/node-http-proxy.js";
 +import { isProviderLimitError } from "../utils/retry.js";
- import { getSystemMessageText } from "../utils/text.js";
- import { getDeclaredTools, getInitialSystemMessage, normalizeContext, resolveTranscript, resolveTranscriptTools, } from "../utils/transcript.js";
+ import { SseDecoder } from "../utils/sse.js";
+ import { getDeclaredTools, normalizeContext, resolveTranscript } from "../utils/transcript.js";
  import { uuidv7 } from "../utils/uuid.js";
-@@ -49,17 +50,11 @@ function assertSuccessfulOutput(output) {
+@@ -51,17 +52,11 @@ function assertSuccessfulOutput(output) {
  // ============================================================================
  // Retry Helpers
  // ============================================================================
@@ -30,7 +30,7 @@ index e64cc029276fdb45c8ebf6d16a7d9573df223798..70359f752de284cc5067f1e7bfdfede7
  }
  function getRetryAfterDelayMs(headers) {
      const retryAfterMs = headers.get("retry-after-ms");
-@@ -259,7 +254,7 @@ export const stream = (model, context, options) => {
+@@ -263,7 +258,7 @@ export const stream = (model, context, options) => {
                  sseHeaders.set("content-encoding", "zstd");
              }
              const sseBody = compressedBody ?? bodyJson;
@@ -39,7 +39,7 @@ index e64cc029276fdb45c8ebf6d16a7d9573df223798..70359f752de284cc5067f1e7bfdfede7
              let response;
              let lastError;
              const maxRetries = options?.maxRetries ?? DEFAULT_MAX_RETRIES;
-@@ -267,6 +262,7 @@ export const stream = (model, context, options) => {
+@@ -271,6 +266,7 @@ export const stream = (model, context, options) => {
                  if (options?.signal?.aborted) {
                      throw new Error("Request was aborted");
                  }
@@ -47,7 +47,7 @@ index e64cc029276fdb45c8ebf6d16a7d9573df223798..70359f752de284cc5067f1e7bfdfede7
                  try {
                      const headerTimeoutSignal = httpTimeoutMs !== undefined && httpTimeoutMs > 0 ? AbortSignal.timeout(httpTimeoutMs) : undefined;
                      const combinedSignal = combineAbortSignals([options?.signal, headerTimeoutSignal]);
-@@ -292,7 +288,8 @@ export const stream = (model, context, options) => {
+@@ -296,7 +292,8 @@ export const stream = (model, context, options) => {
                          break;
                      }
                      const errorText = await response.text();
@@ -57,7 +57,7 @@ index e64cc029276fdb45c8ebf6d16a7d9573df223798..70359f752de284cc5067f1e7bfdfede7
                          const retryAfterDelayMs = getRetryAfterDelayMs(response.headers);
                          const delayMs = retryAfterDelayMs === undefined
                              ? BASE_DELAY_MS * 2 ** attempt
-@@ -306,7 +303,7 @@ export const stream = (model, context, options) => {
+@@ -310,7 +307,7 @@ export const stream = (model, context, options) => {
                          statusText: response.statusText,
                      });
                      const info = await parseErrorResponse(fakeResponse);
@@ -66,7 +66,7 @@ index e64cc029276fdb45c8ebf6d16a7d9573df223798..70359f752de284cc5067f1e7bfdfede7
                  }
                  catch (error) {
                      if (error instanceof Error) {
-@@ -318,7 +315,8 @@ export const stream = (model, context, options) => {
+@@ -322,7 +319,8 @@ export const stream = (model, context, options) => {
                      // Network errors are retryable
                      if (attempt < maxRetries &&
                          !(lastError instanceof RetryDelayExceededError) &&
@@ -77,15 +77,16 @@ index e64cc029276fdb45c8ebf6d16a7d9573df223798..70359f752de284cc5067f1e7bfdfede7
                          await sleep(delayMs, options?.signal);
                          continue;
 diff --git a/dist/utils/provider-retry.js b/dist/utils/provider-retry.js
-index 5960cf7f5e992eef7d1b96530cea66c6f616a6d2..730f9def5890a923497090af4c6dcb60c10bf200 100644
+index 649a6a9..f29a230 100644
 --- a/dist/utils/provider-retry.js
 +++ b/dist/utils/provider-retry.js
-@@ -1,3 +1,4 @@
+@@ -1,4 +1,5 @@
+ import { headersToRecord } from "./headers.js";
 +import { isProviderLimitError } from "./retry.js";
  const DEFAULT_MAX_RETRY_DELAY_MS = 60_000;
  function isProviderError(error) {
      if (!(error instanceof Error) || !("status" in error) || !("headers" in error))
-@@ -5,8 +6,10 @@ function isProviderError(error) {
+@@ -6,8 +7,10 @@ function isProviderError(error) {
      return ((error.status === undefined || typeof error.status === "number") &&
          (error.headers === undefined || error.headers instanceof Headers));
  }
@@ -97,7 +98,7 @@ index 5960cf7f5e992eef7d1b96530cea66c6f616a6d2..730f9def5890a923497090af4c6dcb60
      const shouldRetry = error.headers?.get("x-should-retry");
      if (shouldRetry === "true")
          return true;
-@@ -16,7 +19,6 @@ function isRetryableProviderError(error) {
+@@ -17,7 +20,6 @@ function isRetryableProviderError(error) {
          return true;
      return (error.status === 408 ||
          error.status === 409 ||
@@ -106,22 +107,24 @@ index 5960cf7f5e992eef7d1b96530cea66c6f616a6d2..730f9def5890a923497090af4c6dcb60
  }
  function validateServerRetryDelayMs(delayMs, maxRetryDelayMs, providerErrorMessage) {
 diff --git a/dist/utils/retry.js b/dist/utils/retry.js
-index dae863cfd9f141d27f781754ef0ada914dd45c5f..9e5ba77ceb45da871c7e310a0a6c762cb8d36129 100644
+index a2b1fd3..01d174a 100644
 --- a/dist/utils/retry.js
 +++ b/dist/utils/retry.js
-@@ -2,6 +2,11 @@ function buildProviderErrorPattern(patterns) {
+@@ -2,6 +2,13 @@ function buildProviderErrorPattern(patterns) {
      return new RegExp(patterns.join("|"), "i");
  }
  const NON_RETRYABLE_PROVIDER_LIMIT_ERROR_PATTERN = buildProviderErrorPattern([
 +    // Do not spend the automatic retry budget on a provider's rate limit.
 +    "^\\s*(?:Error:\\s*)?(?:HTTP\\s+)?429\\b",
 +    "\\b(?:HTTP|status(?:_?code)?)[\"']?[\\s:=]+429\\b",
-+    "\\brate[_ -]?limit",
++    "\\brate.?limit",
 +    "\\btoo many requests\\b",
++    "slow_down",
++    "rate increased too quickly",
      // OpenCode Go/free-tier limits returned as 429 JSON error types by OpenCode's
      // Zen API. These are subscription/account limits, not transient throttles.
      "GoUsageLimitError",
-@@ -14,8 +19,13 @@ const NON_RETRYABLE_PROVIDER_LIMIT_ERROR_PATTERN = buildProviderErrorPattern([
+@@ -14,8 +21,13 @@ const NON_RETRYABLE_PROVIDER_LIMIT_ERROR_PATTERN = buildProviderErrorPattern([
      // quota/billing error code; the other strings cover common gateway wording.
      "insufficient_quota",
      "out of budget",
@@ -136,7 +139,7 @@ index dae863cfd9f141d27f781754ef0ada914dd45c5f..9e5ba77ceb45da871c7e310a0a6c762c
      // Sign in with ChatGPT: the subscription's shared usage limit, which resets
      // after hours rather than seconds.
      "subscription_sharing_usage_limit_exceeded",
-@@ -26,6 +36,9 @@ const NON_RETRYABLE_PROVIDER_LIMIT_ERROR_PATTERN = buildProviderErrorPattern([
+@@ -26,6 +38,9 @@ const NON_RETRYABLE_PROVIDER_LIMIT_ERROR_PATTERN = buildProviderErrorPattern([
      // reached, sent as HTTP 429. It resets after hours, not seconds (#11537).
      '"code"\\s*:\\s*"?1308(?![0-9])',
  ]);
@@ -146,19 +149,23 @@ index dae863cfd9f141d27f781754ef0ada914dd45c5f..9e5ba77ceb45da871c7e310a0a6c762c
  const RETRYABLE_PROVIDER_ERROR_PATTERN = buildProviderErrorPattern([
      // Generic provider load, HTTP status, and server-side transient failures.
      "overloaded",
-@@ -33,10 +46,8 @@ const RETRYABLE_PROVIDER_ERROR_PATTERN = buildProviderErrorPattern([
-     "servers are currently busy",
-     "currently experiencing high demand",
-     "model is at capacity",
+@@ -36,14 +51,10 @@ const RETRYABLE_PROVIDER_ERROR_PATTERN = buildProviderErrorPattern([
+     // A request that waited too long in the provider's queue, e.g. sference's "waited 73.4s in
+     // queue, reaching this model's admission ceiling of 60s; retry after the hinted delay".
+     "admission ceiling",
 -    "rate.?limit",
 -    "too many requests",
+-    // OpenAI 429 `slow_down` (Codex) and Alibaba Qwen throttle wording (#12240, #2952).
+-    "rate increased too quickly",
      // Status codes must not be part of a longer word or number, e.g. a request id or byte count (#11057).
--    "(?<![a-z0-9])(?:429|500|502|503|504|520|524)(?![a-z0-9])",
-+    "(?<![a-z0-9])(?:500|502|503|504|520|524)(?![a-z0-9])",
+     // 520, 524 and 525 are Cloudflare's: an unknown error, a timeout, and a failed TLS
+     // handshake between Cloudflare and the provider's origin, usually while it restarts.
+-    "(?<![a-z0-9])(?:429|500|502|503|504|520|524|525)(?![a-z0-9])",
++    "(?<![a-z0-9])(?:500|502|503|504|520|524|525)(?![a-z0-9])",
      // Also matches "The service is temporarily unavailable" (#10965).
      "service.?(?:is.?)?(?:temporarily.?)?unavailable",
-     "server.?error",
-@@ -209,7 +220,7 @@ export function isRetryableAssistantError(message) {
+     // Gateway wording such as "The provider is temporarily unavailable. Retry shortly." (#12227).
+@@ -255,7 +266,7 @@ export function isRetryableAssistantError(message) {
      if (message.stopReason !== "error" || !message.errorMessage)
          return false;
      const errorMessage = message.errorMessage;

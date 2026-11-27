@@ -1,7 +1,7 @@
 # Pi SDK MCP host hook
 
-`@earendil-works__pi-coding-agent@1.5.2.patch` adds the synchronous
-`McpExtensionOptions.onToolResult` host hook missing from SDK 1.5.2.
+`@earendil-works__pi-coding-agent@1.6.1.patch` adds the synchronous
+`McpExtensionOptions.onToolResult` host hook missing from SDK 1.6.1.
 It is a local compatibility patch, not an upstream API or a claim of full MCP Apps support.
 
 - Supplies the executing tool call ID, original tool metadata, error flag and a
@@ -25,7 +25,7 @@ For edits, use `pnpm patch` / `pnpm patch-commit` through `mise exec --`.
 
 ## Pi SDK model retry policy
 
-`@earendil-works__pi-ai@1.5.2.patch` makes both the provider HTTP and assistant
+`@earendil-works__pi-ai@1.6.1.patch` makes both the provider HTTP and assistant
 retry paths stop on rate limits (including HTTP 429) and exhausted quotas.
 Transient network and server failures remain retryable. On upgrade, run
 `session-host-model-error.test.ts`.
