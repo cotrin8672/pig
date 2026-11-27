@@ -1,19 +1,14 @@
 import { expect, test } from "bun:test";
-import { mkdtemp, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 import { fixture } from "./fixtures";
 import { statisticsRange } from "./queries";
 import { StatisticsStore } from "./store";
 
-test("statistics aggregates known tokens, exact time boundaries, tool outcomes and mean per-request speed", async () => {
-  const root = await mkdtemp(join(tmpdir(), "pig-statistics-query-"));
-  const file = join(root, "stats.sqlite");
+test("statistics aggregates known tokens, exact time boundaries, tool outcomes and mean per-request speed", () => {
   const now = new Date(2026, 10, 13, 12).getTime();
   const start = statisticsRange("today", now).start;
   const { events } = fixture();
   const event = events[0];
-  const store = new StatisticsStore(file);
+  const store = new StatisticsStore(":memory:");
   try {
     const model = (
       id: string,
@@ -151,16 +146,14 @@ test("statistics aggregates known tokens, exact time boundaries, tool outcomes a
     expect(store.snapshot("today", now).initialContext.parts).toHaveLength(0);
   } finally {
     store.close();
-    await rm(root, { recursive: true, force: true });
   }
 });
 
-test("shell commands derive outcomes from exit codes, separately from SDK errors", async () => {
-  const root = await mkdtemp(join(tmpdir(), "pig-statistics-commands-"));
+test("shell commands derive outcomes from exit codes, separately from SDK errors", () => {
   const now = new Date(2026, 10, 13, 12).getTime();
   const start = statisticsRange("today", now).start;
   const { events } = fixture();
-  const store = new StatisticsStore(join(root, "stats.sqlite"));
+  const store = new StatisticsStore(":memory:");
   let n = 0;
   const end = (
     tool: string,
@@ -248,13 +241,11 @@ test("shell commands derive outcomes from exit codes, separately from SDK errors
     expect(store.snapshot("today", now).commands.rows).toEqual([]);
   } finally {
     store.close();
-    await rm(root, { recursive: true, force: true });
   }
 });
 
-test("empty databases and all-period ranges remain bounded", async () => {
-  const root = await mkdtemp(join(tmpdir(), "pig-statistics-empty-"));
-  const store = new StatisticsStore(join(root, "stats.sqlite"));
+test("empty databases and all-period ranges remain bounded", () => {
+  const store = new StatisticsStore(":memory:");
   try {
     const snapshot = store.snapshot("all");
     expect(snapshot.days.length).toBeLessThanOrEqual(366);
@@ -269,6 +260,5 @@ test("empty databases and all-period ranges remain bounded", async () => {
     });
   } finally {
     store.close();
-    await rm(root, { recursive: true, force: true });
   }
 });

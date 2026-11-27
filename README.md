@@ -187,7 +187,8 @@ Before releases or changes to SDK/storage/UI behavior, run the relevant suites
 locally or dispatch `Regression` against the intended revision. UI changes still
 require `pnpm test:ui`; separating CI is not permission to skip that validation.
 
-Unit tests run in isolated Bun workers, using the available CPU count up to eight.
+Unit tests run in isolated Bun workers, using the available CPU count up to eight
+locally or two on GitHub Actions to limit contention on the Windows runners.
 Override the count with `PIG_TEST_WORKERS` (a positive integer) for comparisons or
 resource-constrained environments. For example, in PowerShell:
 

@@ -112,8 +112,13 @@ export function testFiles(suite: TestSuite): string[] {
   ).map((file) => resolve(desktop, file));
 }
 
-export function unitTestWorkers(cpuCount: number, override?: string): number {
-  if (override === undefined) return Math.min(cpuCount, 8);
+export function unitTestWorkers(
+  cpuCount: number,
+  override?: string,
+  githubActions = false,
+): number {
+  // SQLite flushes and child SDK starts contend on hosted Windows runners.
+  if (override === undefined) return Math.min(cpuCount, githubActions ? 2 : 8);
   const workers = Number(override);
   if (!/^[1-9]\d*$/.test(override) || !Number.isSafeInteger(workers))
     throw new Error("PIG_TEST_WORKERS must be a positive integer.");
@@ -124,7 +129,11 @@ export async function runTests(suite: TestSuite): Promise<number> {
   const env = { ...process.env };
   const workers =
     suite === "unit"
-      ? unitTestWorkers(availableParallelism(), env.PIG_TEST_WORKERS)
+      ? unitTestWorkers(
+          availableParallelism(),
+          env.PIG_TEST_WORKERS,
+          env.GITHUB_ACTIONS === "true",
+        )
       : undefined;
   let browser: string | undefined;
   if (suite === "ui") {

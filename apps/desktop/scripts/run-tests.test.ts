@@ -35,6 +35,12 @@ test("unit workers follow the CPU budget up to eight without oversubscribing sma
     expect(unitTestWorkers(cpuCount)).toBe(Math.min(cpuCount, 8));
 });
 
+test("GitHub Actions limits concurrent unit workers unless explicitly overridden", () => {
+  expect(unitTestWorkers(1, undefined, true)).toBe(1);
+  expect(unitTestWorkers(4, undefined, true)).toBe(2);
+  expect(unitTestWorkers(4, "3", true)).toBe(3);
+});
+
 test("unit workers can be overridden explicitly for local and CI comparisons", () => {
   expect(unitTestWorkers(16, "4")).toBe(4);
   expect(unitTestWorkers(16, "8")).toBe(8);

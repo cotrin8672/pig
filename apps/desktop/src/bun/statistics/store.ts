@@ -11,7 +11,7 @@ const retentionMs = 365 * 24 * 60 * 60 * 1000;
 export class StatisticsStore {
   private readonly db: Database;
   constructor(file: string) {
-    mkdirSync(dirname(file), { recursive: true });
+    if (file !== ":memory:") mkdirSync(dirname(file), { recursive: true });
     const db = new Database(file, { create: true, strict: true });
     try {
       const version = db.query("PRAGMA user_version").get() as {
