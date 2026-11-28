@@ -10,6 +10,61 @@ import {
 const local = (path: string) => fixtureImport(new URL(path, import.meta.url));
 
 test.skipIf(!existsSync(fixtureEdge) && !process.env.PIG_REQUIRE_UI_TESTS)(
+  "virtual chat follows the full transcript during simultaneous layout changes",
+  () =>
+    runUiFixture(
+      "virtual-chat-tail",
+      `
+    const {createRoot}=await import(${fixtureImport(import.meta.resolve("react-dom/client"))});
+    const {flushSync}=await import(${fixtureImport(import.meta.resolve("react-dom"))});
+    const {Chat}=await import(${local("./App.tsx")});
+    await import(${local("./styles.css")});
+    ${fixtureHelpers}
+    const root=createFixtureRoot(createRoot);
+    const records=Array.from({length:50},(_,i)=>({id:'u'+i,order:i,kind:'message',message:{role:'user',content:'Question '+i,timestamp:i}}));
+    records.push({id:'live',order:50,kind:'message',message:{role:'assistant',provider:'fixture',model:'fixture',stopReason:'toolUse',timestamp:50,
+      content:[{type:'toolCall',id:'shell',name:'bash',arguments:{command:'echo fixture'}}]}});
+    flushSync(()=>root.render(<div className="app-shell"><main className="main-clip"><Chat snapshot={{
+      address:{hostId:'fixture',sessionId:'tail',epoch:1},info:{id:'tail',cwd:'fixture',title:'Fixture'},ready:false,
+      transcript:{records,tools:{shell:{status:'running',result:{content:[{type:'text',text:'output line\\n'.repeat(10)}]}}},
+        running:true,current:'live',liveToEntry:{}},effortLevels:[],
+    }}/></main></div>));
+    const thread=document.querySelector('.thread-scroll');
+    const gap=()=>thread.scrollHeight-thread.clientHeight-thread.scrollTop;
+    const jump=()=>document.querySelector('.thread-scroll-to-bottom');
+    check(thread.querySelector('[data-virtual-turns]'),'the long transcript must be virtualized');
+    await until(()=>gap()<=1&&thread.querySelector('.tool-term[open]'),'starts at the bottom with expanded shell output');
+    await wait();await wait();
+    const terminal=thread.querySelector('.tool-term');
+    const running=thread.querySelector('.running[role="status"]');
+    const height=thread.scrollHeight;
+    // A row shrinks while content outside the virtual list grows in the same frame.
+    terminal.open=false;
+    running.style.minHeight='380px';
+    await wait();await wait();
+    check(thread.scrollHeight>height,'the full transcript grew despite the shrinking virtual row');
+    check(gap()<=1&&!jump(),'layout must not break tail following: '+gap());
+    const point=thread.getBoundingClientRect();
+    window.__fixtureInput={method:'Input.dispatchMouseEvent',params:{type:'mouseWheel',x:point.left+12,y:point.top+100,deltaX:0,deltaY:-320}};
+    await until(()=>jump(),'native wheel must be able to leave the tail');
+    await wait();
+    const top=thread.scrollTop;
+    running.style.minHeight='440px';
+    await wait();
+    check(Math.abs(thread.scrollTop-top)<=1&&jump(),'later growth must keep the reader in place');
+    jump().click();
+    await until(()=>gap()<=1&&!jump(),'return to bottom');
+    terminal.open=true;
+    await wait();await wait();
+    check(gap()<=1&&!jump(),'reopening the terminal must keep following after the jump');
+    root.unmount();
+  `,
+      { virtualTurns: true },
+    ),
+  60_000,
+);
+
+test.skipIf(!existsSync(fixtureEdge) && !process.env.PIG_REQUIRE_UI_TESTS)(
   "multiple panes reflow during drag without publishing sizes or losing the reader",
   () =>
     runUiFixture(

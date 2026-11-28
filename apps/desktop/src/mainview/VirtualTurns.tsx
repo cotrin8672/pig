@@ -60,8 +60,10 @@ export function VirtualTurns({
     estimateSize: () => 160,
     getItemKey: key,
     overscan: 5,
-    anchorTo: virtual ? "end" : "start",
-    followOnAppend: virtual,
+    // ChatLayout owns tail following for the full transcript. Keep the
+    // virtualizer's keyed anchor for readers, not for a following viewport.
+    anchorTo: virtual && !follow?.follow ? "end" : "start",
+    followOnAppend: virtual && !follow,
     rangeExtractor(range) {
       const visible = defaultRangeExtractor(range);
       if (anchor < 0) return visible;
@@ -88,7 +90,7 @@ export function VirtualTurns({
     },
   });
   list.shouldAdjustScrollPositionOnItemSizeChange = (item, _delta, instance) =>
-    virtual && item.end <= (instance.scrollOffset ?? 0);
+    virtual && !follow?.follow && item.end <= (instance.scrollOffset ?? 0);
   useLayoutEffect(() => {
     if (!scrollElement || !virtual) return;
     const old = scrollElement.style.overflowAnchor;
