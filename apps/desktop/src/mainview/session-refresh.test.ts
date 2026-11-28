@@ -31,33 +31,28 @@ if (process.env.PIG_SESSION_REFRESH_CHILD !== "1") {
   }[] = [];
   let runtimeEvent: (event: RuntimeEvent) => void;
   let publicationSeq = 0;
-  mock.module("electrobun/view", () => ({
-    Electroview: class {
-      constructor(readonly options: unknown) {}
-      static defineRPC(config: {
-        handlers: {
-          messages: {
-            runtimeEvent: (event: RuntimePublication<RuntimeEvent>) => void;
-          };
-        };
-      }) {
-        runtimeEvent = (event) =>
-          config.handlers.messages.runtimeEvent({
-            hostId: "refresh",
-            publicationSeq: ++publicationSeq,
-            event,
-          });
-        return {
-          send: {},
-          request: {
-            listSessions: ({ cwd }: { cwd: string }) => {
-              const result = Promise.withResolvers<SessionInfo[]>();
-              calls.push({ cwd, result });
-              return result.promise;
-            },
+  mock.module("./rpc-transport", () => ({
+    createRendererRpc(handlers: {
+      messages: {
+        runtimeEvent: (event: RuntimePublication<RuntimeEvent>) => void;
+      };
+    }) {
+      runtimeEvent = (event) =>
+        handlers.messages.runtimeEvent({
+          hostId: "refresh",
+          publicationSeq: ++publicationSeq,
+          event,
+        });
+      return {
+        send: {},
+        request: {
+          listSessions: ({ cwd }: { cwd: string }) => {
+            const result = Promise.withResolvers<SessionInfo[]>();
+            calls.push({ cwd, result });
+            return result.promise;
           },
-        };
-      }
+        },
+      };
     },
   }));
   const { refreshSessions, initSessionReadTracking } = await import("./rpc");

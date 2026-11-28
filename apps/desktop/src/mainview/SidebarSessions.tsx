@@ -1,12 +1,13 @@
-import { Archive, ChevronRight, Folder, Pin, SquarePen } from "lucide-react";
+import { ChevronRight, Folder, Pin, SquarePen } from "lucide-react";
 import { memo, type ReactNode, useId, useMemo, useState } from "react";
 import { useShallow } from "zustand/react/shallow";
 import { visibleProjects } from "../shared/projects";
+import { ArchiveToggle } from "./ArchiveToggle";
+import { IndicatorDot } from "./IndicatorDot";
 import { useT } from "./i18n";
 import { FolderPlusCorner } from "./icons";
 import { ProjectMenu, renameProject } from "./ProjectMenu";
 import { InlineRename } from "./patterns/InlineRename";
-import { IndicatorDot } from "./primitives/IndicatorDot";
 import { openChat, rpc } from "./rpc";
 import { SessionList } from "./SessionList";
 import { type SessionStatus, sessionStatusLabels } from "./session-status";
@@ -68,19 +69,13 @@ export const SidebarSessions = memo(function SidebarSessions({
             <ProjectSessions key={cwd} cwd={cwd} />
           ),
         )}
-        {(archivedCount > 0 || archived) && (
-          <button
-            type="button"
-            className="archived-chats"
-            aria-pressed={archived}
-            onClick={() => setArchived(!archived)}
-          >
-            <Archive size={12} />
-            {archived
-              ? t["Back to projects"]
-              : `${t["Archived projects"]} (${archivedCount})`}
-          </button>
-        )}
+        <ArchiveToggle
+          active={archived}
+          count={archivedCount}
+          archiveLabel={t["Archived projects"]}
+          backLabel={t["Back to projects"]}
+          onToggle={() => setArchived(!archived)}
+        />
         {!projects.length && (
           <p className="sidebar-empty">{t["No projects yet"]}</p>
         )}

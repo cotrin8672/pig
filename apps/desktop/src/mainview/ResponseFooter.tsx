@@ -1,8 +1,6 @@
 import {
-  Check,
   CircleAlert,
   CircleStop,
-  Copy,
   RefreshCw,
   Sparkles,
   Split,
@@ -11,6 +9,7 @@ import { memo, type ReactNode, useState } from "react";
 import { useShallow } from "zustand/react/shallow";
 import type { Message, ResponseStats } from "../shared/transcript";
 import { useT } from "./i18n";
+import { CopyButton } from "./patterns/CopyButton";
 import { Chip } from "./primitives/Chip";
 import { forkChat, regenerate } from "./rpc";
 import { showError, useStore } from "./store";
@@ -87,7 +86,6 @@ export const ResponseFooter = memo(function ResponseFooter({
 }) {
   const t = useT();
   const language = useStore((s) => s.settings.language);
-  const [copied, setCopied] = useState(false);
   const tooltip = useTooltip();
   const address = useStore(useShallow((s) => s.snapshots[sessionId]?.address));
   const ready = useStore((s) => s.snapshots[sessionId]?.ready !== false);
@@ -156,19 +154,12 @@ export const ResponseFooter = memo(function ResponseFooter({
         <time dateTime={new Date(stats.endedAt).toISOString()}>
           {new Date(stats.endedAt).toLocaleTimeString(language)}
         </time>
-        <button
-          type="button"
-          aria-label={t["Copy response"]}
+        <CopyButton
+          label={t["Copy response"]}
           disabled={!stats.text}
-          onClick={() =>
-            void navigator.clipboard.writeText(stats.text).then(() => {
-              setCopied(true);
-              setTimeout(() => setCopied(false), 1500);
-            }, showError)
-          }
-        >
-          {copied ? <Check size={14} /> : <Copy size={14} />}
-        </button>
+          copy={() => navigator.clipboard.writeText(stats.text)}
+          onError={showError}
+        />
         <button
           type="button"
           aria-label={t["Branch into new chat"]}

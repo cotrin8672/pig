@@ -1,10 +1,6 @@
 import { expect, test } from "bun:test";
 import type { TranscriptRecord } from "../shared/transcript";
-import {
-  customPresentation,
-  dataText,
-  rendererOrFallback,
-} from "./custom-data";
+import { customPresentation, dataText } from "./custom-data";
 
 const base = {
   id: "saved-entry",
@@ -44,13 +40,7 @@ test("RND-01 saved/live custom message, custom-entry.data, details and unknown s
     },
   ];
   for (const record of records) {
-    const basic = () => dataText(customPresentation(record));
-    expect(rendererOrFallback(undefined, basic)).toContain("content");
-    expect(
-      rendererOrFallback(() => {
-        throw new Error("broken renderer");
-      }, basic),
-    ).toBe(basic());
+    expect(dataText(customPresentation(record))).toContain("content");
     expect(dataText(record)).toContain(
       record.kind === "message"
         ? "retained"

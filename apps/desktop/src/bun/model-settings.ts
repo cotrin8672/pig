@@ -3,6 +3,7 @@ import { dirname, join } from "node:path";
 import type { ModelOverride } from "../shared/model-overrides";
 import { modelKey } from "../shared/models";
 import type { Effort } from "../shared/rpc-schema";
+import { writeAtomicJson } from "./atomic-json";
 import { desktopConfigDir } from "./desktop-config";
 import { agentDir } from "./runtime-profile";
 
@@ -127,10 +128,7 @@ export function writeDefaultEffort(
     const key = modelKey({ provider, id });
     if (effort) next[key] = effort;
     else delete next[key];
-    await mkdir(desktopConfigDir, { recursive: true });
-    const temporary = `${effortFile}.${crypto.randomUUID()}.tmp`;
-    await writeFile(temporary, JSON.stringify(next));
-    await rename(temporary, effortFile);
+    await writeAtomicJson(effortFile, next);
     efforts = next;
   });
   queue = run.catch(() => {});

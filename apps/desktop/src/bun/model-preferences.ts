@@ -1,6 +1,6 @@
-import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
-import { dirname } from "node:path";
+import { readFile } from "node:fs/promises";
 import { modelKey } from "../shared/models";
+import { writeAtomicJson } from "./atomic-json";
 
 export class ModelPreferences {
   disabled: string[] = [];
@@ -30,10 +30,7 @@ export class ModelPreferences {
     const save = this.queue.then(async () => {
       const next = this.disabled.filter((entry) => !keys.has(entry));
       if (!enabled) next.push(...keys);
-      await mkdir(dirname(this.file), { recursive: true });
-      const temporary = `${this.file}.${crypto.randomUUID()}.tmp`;
-      await writeFile(temporary, JSON.stringify(next));
-      await rename(temporary, this.file);
+      await writeAtomicJson(this.file, next);
       this.disabled = next;
       return next;
     });

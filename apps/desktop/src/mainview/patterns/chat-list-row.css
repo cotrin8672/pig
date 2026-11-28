@@ -1,0 +1,61 @@
+.session-status-slot {
+  width: 12px;
+  flex: none;
+  display: inline-flex;
+  justify-content: center;
+}
+.thread {
+  display: block;
+  text-align: left;
+  width: 100%;
+  padding: 5px 4px 5px 6px;
+  font-size: var(--text-md);
+  line-height: var(--leading-row);
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.thread-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  align-items: center;
+  border-radius: var(--radius-full);
+}
+.thread-row[data-actions] {
+  grid-template-columns: minmax(0, 1fr) 26px;
+}
+.thread-row.active {
+  background: var(--ds-bg-active);
+}
+.thread-row:not(.active):hover {
+  background: var(--ds-bg-hover);
+}
+.thread-row .thread {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 6px;
+  min-width: 0;
+  padding-right: 4px;
+}
+.thread-row .thread:hover {
+  background: transparent;
+}
+.thread-title {
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.thread .lucide-pin {
+  flex: none;
+  color: var(--ds-text-muted);
+}
+.thread-row:hover .thread-more,
+.thread-row:focus-within .thread-more {
+  opacity: 1;
+}
+.thread-row .thread-more:disabled {
+  opacity: 0;
+}

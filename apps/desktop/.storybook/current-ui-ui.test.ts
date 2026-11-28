@@ -41,8 +41,18 @@ test("the actual App and its feature components render in isolated Storybook pre
         "design-system-features-composer-submit--composer-actions",
         "Design System/Domain/ComposerSubmit",
       ],
-      ["domain-sidebar--notification-center", "Design System/Domain/Sidebar"],
-      ["domain-chat-screen--session-panel", "Design System/Domain/ChatScreen"],
+      [
+        "design-system-domain-notificationcenter--states",
+        "Design System/Domain/NotificationCenter",
+      ],
+      [
+        "design-system-domain-notifications--states",
+        "Design System/Domain/Notifications",
+      ],
+      [
+        "design-system-domain-sessionpanel--states",
+        "Design System/Domain/SessionPanel",
+      ],
     ])
       expect(index.entries[id]?.title).toBe(title);
     const server = Bun.serve({
@@ -203,11 +213,21 @@ test("the actual App and its feature components render in isolated Storybook pre
             `document.querySelector('${inviteStatus}').textContent`,
           ),
         ).toContain("招待の準備ができました");
-        await browser.evaluate(
-          "document.querySelector('dialog[open] [aria-label=\"招待コードをコピー\"]').click()",
-        );
+        // Exercise the invite flow without relying on Edge's OS clipboard permission.
+        const inviteCode = await browser.evaluate<string>(`(() => {
+          const sheet = document.querySelector('dialog[open]');
+          Object.defineProperty(navigator, 'clipboard', {
+            value: { writeText: async (text) => { window.__copiedInvite = text; } },
+            configurable: true,
+          });
+          sheet.querySelector('[aria-label="招待コードをコピー"]').click();
+          return sheet.querySelector('.mac-invite-code-line code').textContent;
+        })()`);
         await waitFor(
           `document.querySelector('${inviteStatus}').textContent.includes('待っています')`,
+        );
+        expect(await browser.evaluate("window.__copiedInvite")).toBe(
+          inviteCode,
         );
         await waitFor(
           `document.querySelector('${inviteStatus}').textContent.includes('を追加しました') && !document.querySelector('dialog[open] .mac-invite-code-line code')`,
@@ -217,6 +237,43 @@ test("the actual App and its feature components render in isolated Storybook pre
           "completed invite fits without scrolling",
         ).toBe(true);
         await browser.command("Emulation.clearDeviceMetricsOverride", {});
+        const options = "dialog[open] .remote-project-options";
+        await navigate(
+          "settings-remote-pairing--add-projects",
+          `document.querySelectorAll('${options} input[type=checkbox]').length === 5`,
+        );
+        await browser.evaluate(`(() => {
+          const project = [...document.querySelectorAll('${options} label')]
+            .find(label => label.textContent.trim() === 'pig').querySelector('input');
+          if (!project.checked || project.disabled)
+            throw new Error('A selected project must be removable');
+          project.click();
+        })()`);
+        await browser.evaluate(
+          "document.querySelector('dialog[open] button.primary').click()",
+        );
+        await waitFor(
+          "!document.querySelector('dialog[open]') && document.querySelector('.pairing-table').textContent.includes('1 Project')",
+        );
+        await navigate(
+          "settings-remote-pairing--add-folder",
+          `!!document.querySelector('${options} [aria-label="pigを開く"]')`,
+        );
+        await browser.evaluate(
+          `document.querySelector('${options} [aria-label="pigを開く"]').click()`,
+        );
+        const selectChild = `[...document.querySelectorAll('${options} button')].find(button => button.textContent.trim() === 'apps')`;
+        await waitFor(`!!${selectChild}`);
+        await browser.evaluate(`${selectChild}.click()`);
+        await waitFor(
+          "!!document.querySelector('dialog[open] button.primary:not(:disabled)')",
+        );
+        await browser.evaluate(
+          "document.querySelector('dialog[open] button.primary').click()",
+        );
+        await waitFor(
+          "!document.querySelector('dialog[open]') && document.querySelector('.pairing-table').textContent.includes('3 Project')",
+        );
         await navigate(
           "prototypes-desktop-motion--playground",
           "!!document.querySelector('.desktop-motion-stage .model-picker')",
@@ -466,6 +523,10 @@ test("the actual App and its feature components render in isolated Storybook pre
           await waitFor(
             `document.querySelector('.pane-view')?.clientWidth === ${size === "small" ? 280 : 380} && !!document.querySelector('.model-source-rail')`,
           );
+          // Pane width commits before ResizeObserver positions the picker.
+          await browser.evaluate(
+            "new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))",
+          );
           expect(
             await browser.evaluate(`(() => {
               const pane = document.querySelector('.pane-view').getBoundingClientRect();
@@ -489,14 +550,25 @@ test("the actual App and its feature components render in isolated Storybook pre
             await browser.screenshot(),
           );
         }
+        await browser.command("Emulation.setDeviceMetricsOverride", {
+          width: 390,
+          height: 850,
+          deviceScaleFactor: 1,
+          mobile: false,
+        });
         await navigate(
-          "domain-sidebar--notification-center",
+          "design-system-domain-notificationcenter--states",
           "!!document.querySelector('.notification-center')",
         );
         await browser.evaluate(
           "document.querySelector('.notification-center summary').click()",
         );
         await waitFor("document.querySelector('.notification-center').open");
+        expect(
+          await browser.evaluate(
+            "document.querySelector('.notification-panel').getBoundingClientRect().right<=innerWidth",
+          ),
+        ).toBe(true);
         expect(
           await browser.evaluate(
             "document.querySelectorAll('.notification-entry').length",
@@ -517,7 +589,7 @@ test("the actual App and its feature components render in isolated Storybook pre
         );
         await waitFor("!document.querySelector('.notification-entry')");
         await navigate(
-          "domain-chat-screen--session-panel",
+          "design-system-domain-sessionpanel--states",
           "!!document.querySelector('.session-panel')",
         );
         await browser.evaluate(
@@ -530,7 +602,35 @@ test("the actual App and its feature components render in isolated Storybook pre
         await browser.evaluate(
           "document.querySelector('.session-task-main').click()",
         );
-        await waitFor("!!document.querySelector('.session-task-output pre')");
+        await waitFor("!!document.querySelector('pre.session-task-log')");
+        await browser.evaluate(
+          "document.querySelector('[aria-label=\"予約プロンプトの見本を表示\"]').click()",
+        );
+        await waitFor(
+          "document.querySelector('.session-panel:popover-open')?.textContent.includes('check-ci') === true",
+        );
+        await navigate(
+          "design-system-domain-notifications--states",
+          "document.querySelectorAll('.notifications .toast').length===3",
+        );
+        expect(
+          await browser.evaluate(
+            "!!document.querySelector('.toast.success .notification-session') && document.querySelector('.toast.error').getAttribute('role')==='alert'",
+          ),
+        ).toBe(true);
+        await browser.evaluate(
+          "document.querySelector('.toast.error > button').click()",
+        );
+        await waitFor(
+          "document.querySelectorAll('.notifications .toast').length===2",
+        );
+        await browser.evaluate(
+          "document.querySelector('.ds-specimen-variants figure:last-child button').click()",
+        );
+        await waitFor(
+          "document.querySelector('.toast.warning .notification-content > div')?.getAttribute('aria-description').includes('最後に取得できた値') === true",
+        );
+        await browser.command("Emulation.clearDeviceMetricsOverride", {});
         await navigate(
           "current-ui-screen--conversation",
           "!!document.querySelector('form.composer')",
@@ -570,12 +670,12 @@ test("the actual App and its feature components render in isolated Storybook pre
         );
         await waitFor("!!document.querySelector('.settings-page')");
         await navigate(
-          "chat-activity-response-footer--files",
-          "document.querySelectorAll('.response-meta').length===3",
+          "chatrenderer-activity-responsefooter--states",
+          "document.querySelectorAll('.ds-specimen-variants .response-meta').length===3",
         );
         expect(
           await browser.evaluate(
-            "[...document.querySelectorAll('.response-meta')].map(row=>row.querySelector('.response-delta')?.textContent ?? null)",
+            "[...document.querySelectorAll('.ds-specimen-variants .response-meta')].map(row=>row.querySelector('.response-delta')?.textContent ?? null)",
           ),
         ).toEqual(["+42−9", "+50−13", null]);
         await browser.evaluate(
@@ -584,6 +684,21 @@ test("the actual App and its feature components render in isolated Storybook pre
         await waitFor(
           "document.querySelectorAll('[role=tooltip]:popover-open .tooltip-rows dt').length===5",
         );
+        await browser.command("Emulation.setDeviceMetricsOverride", {
+          width: 390,
+          height: 850,
+          deviceScaleFactor: 1,
+          mobile: false,
+        });
+        await navigate(
+          "chatrenderer-extensions-subagentrenderer--states",
+          "!!document.querySelector('.agent-lanes button')",
+        );
+        expect(
+          await browser.evaluate(
+            "[...document.querySelectorAll('.agent-lanes button')].every(row=>row.getBoundingClientRect().right<=row.closest('.agent-lanes').getBoundingClientRect().right+1)",
+          ),
+        ).toBe(true);
         passed = true;
       } finally {
         await browser.close();

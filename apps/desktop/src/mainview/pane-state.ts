@@ -1,3 +1,4 @@
+import { discardOpeningAttachments } from "./composer-attachments";
 import { navigate } from "./navigation";
 import { openingDraftKey } from "./opening-sends";
 import {
@@ -91,6 +92,7 @@ export function closePane(id = useStore.getState().activePane) {
   }
   delete panes[id];
   useStore.setState({ paneTree, panes, pendingOpens, newChatDrafts });
+  if (pending?.deferred) discardOpeningAttachments(openingDraftKey(pending));
   if (state.activePane === id) {
     const next = paneGeometry(paneTree).panes[0].id;
     focusPane(next);

@@ -3,13 +3,11 @@
   --snappy-fast: 100ms;
   --snappy-open: 140ms;
   --snappy-mid: 120ms;
-  --snappy-exit: 80ms;
   --snappy-ease: var(--motion-ease-out);
   --snappy-press: 0.97;
   --snappy-push: 0.96;
   --snappy-press-time: 150ms;
   --snappy-lift: 1px;
-  --snappy-pop: 0.6;
   --snappy-rise: 4px;
   flex: 1;
   min-width: 0;
@@ -160,41 +158,6 @@
   color: var(--color-text-muted);
 }
 
-/* Always mounted so rapid toggles reverse from the current frame. */
-.snappy-anchor {
-  position: relative;
-}
-.snappy-popover {
-  position: absolute;
-  top: calc(100% + 4px);
-  left: 0;
-  z-index: 1;
-  min-width: 160px;
-  padding: 4px;
-  border-radius: var(--radius-sm);
-  background: var(--ds-bg-popover);
-  backdrop-filter: blur(24px);
-  box-shadow: 0 8px 24px #0006;
-  transform-origin: top left;
-  opacity: 0;
-  transform: scale(var(--snappy-press))
-    translateY(calc(-1 * var(--snappy-rise)));
-  visibility: hidden;
-  transition:
-    opacity var(--snappy-exit) var(--snappy-ease),
-    transform 0ms var(--snappy-exit),
-    visibility 0ms var(--snappy-exit);
-  &[data-open] {
-    opacity: 1;
-    transform: none;
-    visibility: visible;
-    transition:
-      opacity var(--snappy-open) var(--snappy-ease),
-      transform var(--snappy-open) var(--snappy-ease),
-      visibility 0ms;
-  }
-}
-
 .snappy-page {
   padding: 12px;
   border-radius: var(--radius-xs);
@@ -300,10 +263,6 @@
   transition-duration: var(--snappy-fast);
 }
 
-.snappy-pop {
-  animation: snappy-pop var(--snappy-mid) var(--snappy-ease);
-}
-
 .snappy-messages {
   display: flex;
   flex-direction: column;
@@ -400,11 +359,6 @@
     opacity: 0;
   }
 }
-@keyframes snappy-pop {
-  from {
-    transform: scale(var(--snappy-pop));
-  }
-}
 @keyframes snappy-rise {
   from {
     opacity: 0;
@@ -416,13 +370,11 @@
   .snappy-motion {
     --snappy-fast: 0ms;
     --snappy-open: 0ms;
-    --snappy-exit: 0ms;
     --snappy-mid: 0ms;
     --snappy-press: 1;
     --snappy-push: 1;
     --snappy-press-time: 0ms;
     --snappy-lift: 0px;
-    --snappy-pop: 1;
     --snappy-rise: 0px;
   }
   .snappy-spin-check .snappy-spin-arc {

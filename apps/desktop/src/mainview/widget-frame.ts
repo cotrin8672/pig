@@ -1,12 +1,6 @@
 import type { WidgetBlock } from "../shared/widget";
 
-/**
- * Script execution for widgets. Off until Electrobun stops starting WebView2 with
- * `--disable-web-security` (blackboardsh/electrobun#611): with it, even a
- * `sandbox="allow-scripts"` frame reaches the parent document and its RPC key.
- * Turning this on is safe either way: scripts still only run once `widgetIsolation()`
- * proves a sandboxed frame cannot reach this document.
- */
+/** Browser fixtures can request script execution only after the isolation probe passes. */
 export const widgetScriptPolicy = { requested: false };
 
 // Only the Tauri Windows app serves the separate widget origin.

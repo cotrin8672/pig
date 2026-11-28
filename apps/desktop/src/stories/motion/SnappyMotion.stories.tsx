@@ -2,7 +2,6 @@ import type { Meta, StoryObj } from "@storybook/react-vite";
 import {
   Check,
   ChevronRight,
-  Copy,
   ListEnd,
   MessageSquare,
   SendHorizontal,
@@ -16,10 +15,12 @@ import {
   useRef,
   useState,
 } from "react";
+import { CopyButton } from "../../mainview/patterns/CopyButton";
 import { Button } from "../../mainview/primitives/Button";
 import { Checkbox } from "../../mainview/primitives/Checkbox";
 import { IconButton } from "../../mainview/primitives/IconButton";
 import { SegmentedControl } from "../../mainview/primitives/SegmentedControl";
+import { Select } from "../../mainview/primitives/Select";
 import { Spinner } from "../../mainview/primitives/Spinner";
 import { Switch } from "../../mainview/primitives/Switch";
 import "./snappy-motion.css";
@@ -111,51 +112,17 @@ function Disclosure() {
   );
 }
 
-function Popover() {
-  const [open, setOpen] = useState(false);
-  const root = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    if (!open) return;
-    const close = (e: Event) => {
-      if (
-        (e instanceof KeyboardEvent && e.key === "Escape") ||
-        (e instanceof PointerEvent && !root.current?.contains(e.target as Node))
-      )
-        setOpen(false);
-    };
-    addEventListener("pointerdown", close);
-    addEventListener("keydown", close);
-    return () => {
-      removeEventListener("pointerdown", close);
-      removeEventListener("keydown", close);
-    };
-  }, [open]);
+function Dropdown() {
   return (
     <Demo
-      title="ポップオーバー"
-      rule="開く: 140msで透明度とscale(0.97→1)、起点は押したボタン。閉じる: 80msの透明度のみ。連打しても途中から戻る。"
+      title="ドロップダウン"
+      rule="本番のSelect。開くときは140msで透明度と拡大（0.97→1）、閉じるときは80msの透明度だけ。"
     >
-      <div className="snappy-anchor" ref={root}>
-        <Button aria-expanded={open} onClick={() => setOpen(!open)}>
-          モデル: Opus
-        </Button>
-        <div
-          className="snappy-popover"
-          data-open={open || undefined}
-          inert={!open}
-        >
-          {["Opus", "Sonnet", "Haiku"].map((m) => (
-            <button
-              key={m}
-              type="button"
-              className="snappy-row"
-              onClick={() => setOpen(false)}
-            >
-              {m}
-            </button>
-          ))}
-        </div>
-      </div>
+      <Select aria-label="モデル" defaultValue="Opus">
+        <option>Opus</option>
+        <option>Sonnet</option>
+        <option>Haiku</option>
+      </Select>
     </Demo>
   );
 }
@@ -244,27 +211,18 @@ function Toggles() {
 }
 
 function CopyFeedback() {
-  const [copied, setCopied] = useState(0);
-  useEffect(() => {
-    if (!copied) return;
-    const id = setTimeout(() => setCopied(0), 1200);
-    return () => clearTimeout(id);
-  }, [copied]);
   return (
     <Demo
       title="完了の合図"
-      rule="押した瞬間にアイコンを差し替え、120msで小さく弾ませる。戻すときは動かさない。"
+      rule="本番のCopyButton。成功時だけチェックを120msで拡大する。戻すときは動かさない。"
     >
-      <IconButton
-        aria-label={copied ? "コピーしました" : "コピー"}
-        onClick={() => setCopied(Date.now())}
-      >
-        {copied ? (
-          <Check key={copied} size={16} className="snappy-pop" />
-        ) : (
-          <Copy size={16} />
-        )}
-      </IconButton>
+      <CopyButton
+        variant="icon"
+        label="コピー"
+        copiedLabel="コピーしました"
+        copy={async () => {}}
+        onError={() => {}}
+      />
     </Demo>
   );
 }
@@ -542,7 +500,7 @@ function SnappyMotion() {
         <Press />
         <Hover />
         <Disclosure />
-        <Popover />
+        <Dropdown />
         <Tabs />
         <Toggles />
         <CopyFeedback />

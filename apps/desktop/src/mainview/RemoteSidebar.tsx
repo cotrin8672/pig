@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import type { PairingHost } from "../shared/pairing";
 import type { RemoteChatItem, RemoteProject } from "../shared/remote-workspace";
 import { navigate } from "./navigation";
+import { ChatListRow } from "./patterns/ChatListRow";
 import { Button } from "./primitives/Button";
 import { IconButton } from "./primitives/IconButton";
 import { RemoteProjectPicker } from "./RemoteProjectPicker";
@@ -26,6 +27,13 @@ function ProjectChats({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(false);
   const [opening, setOpening] = useState(false);
+  const activeChat = useStore((s) =>
+    s.page === "remoteChat" &&
+    s.remoteThread?.host === host.id &&
+    s.remoteThread.project === project.id
+      ? s.remoteThread.chat
+      : undefined,
+  );
   const alive = useRef(false);
   useEffect(() => {
     alive.current = true;
@@ -119,15 +127,13 @@ function ProjectChats({
       {expanded && (
         <div className="project-threads">
           {rows.map((c) => (
-            <button
+            <ChatListRow
               key={c.chat}
-              className="remote-chat-row"
-              type="button"
+              label={c.title || "無題"}
+              active={activeChat === c.chat}
               disabled={opening}
               onClick={() => void open(c)}
-            >
-              {c.title || "無題"}
-            </button>
+            />
           ))}
           {busy ? (
             <p className="sidebar-empty">読み込み中…</p>

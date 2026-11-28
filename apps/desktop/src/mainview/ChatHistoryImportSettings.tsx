@@ -6,10 +6,10 @@ import type {
   LocalHistorySource,
 } from "../shared/chat-history-import";
 import { useT } from "./i18n";
+import { ProviderIcon } from "./ProviderIcon";
 import { SettingsCard } from "./patterns/SettingsCard";
 import { Button } from "./primitives/Button";
 import { Checkbox } from "./primitives/Checkbox";
-import { ProviderIcon } from "./primitives/ProviderIcon";
 import { SearchField } from "./primitives/SearchField";
 import { SegmentedControl } from "./primitives/SegmentedControl";
 import { Select } from "./primitives/Select";

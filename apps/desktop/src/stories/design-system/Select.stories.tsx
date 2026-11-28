@@ -19,7 +19,7 @@ export const States = {
   render: () => (
     <PrimitiveSpecimen
       title="Select"
-      intro="候補からひとつを選びます。"
+      intro="候補からひとつを選びます。候補一覧は140msでフェードインしながら拡大し、閉じるときは80msでフェードアウトします。"
       context="表示設定"
       variants={[
         {

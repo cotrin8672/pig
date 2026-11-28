@@ -20,11 +20,8 @@ test("every source test belongs to exactly one suite; packaging checks stay on t
     source.sort(),
   );
   expect(unit).toContain("scripts/sdk-runtime-assets.test.ts");
-  expect(unit).toContain("scripts/post-build.test.ts");
-  expect(unit).toContain("src/bun/app-update.test.ts");
   expect(integration).toContain("src/bun/session-adapters.test.ts");
-  expect(integration).toContain("src/bun/app-update-windows.test.ts");
-  expect(integration).toContain("src/bun/install-windows.test.ts");
+  expect(integration).toContain("src/bun/tauri-host.test.ts");
   expect(ui).toContain("src/mainview/transcript-ui.test.ts");
   expect(ui).toContain("src/mainview/widget-ui.test.ts");
   expect(ui).not.toContain("src/mainview/sdk-ui.test.ts");

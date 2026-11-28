@@ -1,10 +1,10 @@
 import type { Meta } from "@storybook/react-vite";
 import { Bell } from "lucide-react";
-import { CountBadge } from "../../mainview/primitives/CountBadge";
+import { CountBadge } from "../../mainview/CountBadge";
 import { PrimitiveSpecimen } from "./PrimitiveSpecimen";
 
 export default {
-  title: "Design System/Primitives/CountBadge",
+  title: "Design System/Domain/CountBadge",
   component: CountBadge,
   parameters: { gallery: true },
 } satisfies Meta<typeof CountBadge>;
@@ -13,6 +13,7 @@ export const States = {
   name: "CountBadge",
   render: () => (
     <PrimitiveSpecimen
+      layer="Domain"
       title="CountBadge"
       intro="未読件数を表示します。0件なら消え、100件からは「99+」に収めます。"
       context="通知センター"

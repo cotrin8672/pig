@@ -1,7 +1,6 @@
 import type { Pointer } from "bun:ffi";
 import type { RpcHandlers } from "../shared/desktop-rpc";
 import type { Appearance } from "../shared/rpc-schema";
-import type { Settings } from "../shared/settings";
 import type { ClientSender } from "./client-hub";
 
 type MaybePromise<T> = T | Promise<T>;
@@ -31,17 +30,13 @@ export type MenuItem =
   | { type: "divider" }
   | { action: string; label: string; enabled?: boolean; accelerator?: string };
 export interface DesktopPlatform {
-  readonly userData?: string;
   readonly downloads: string;
   readonly version: string;
-  readonly usesLegacyUpdater: boolean;
   readonly installerUpdater?: {
     check(includeNightly: boolean): Promise<string | null>;
     prepare(includeNightly: boolean, version: string): Promise<void>;
     install(): Promise<void>;
   };
-  readonly interactiveWidgets?: true;
-  readonly defaultShell: Settings["shell"];
   createWindow(
     id: string,
     offset: number,
@@ -66,8 +61,6 @@ export interface DesktopPlatform {
   showItemInFolder(path: string): void;
   clipboardReadText(): MaybePromise<string | null>;
   clipboardWriteText(text: string): MaybePromise<void>;
-  clipboardReadImage(): Uint8Array | null;
-  clipboardWriteImage(png: Uint8Array): void;
 }
 
 let installed: DesktopPlatform | undefined;

@@ -7,10 +7,10 @@ export const layers = [
   },
   {
     name: "Primitives",
-    purpose: "単一の操作・入力・表示",
+    purpose: "機能に依存しない単一の操作・入力・表示",
     boundary:
-      "押す、入力する、状態を示す。モデル・セッション・通信は知らない。",
-    components: "Button / IconButton / TextField / Select / Checkbox / Badge",
+      "押す、入力する、状態を示す。会話・通知・プロバイダーなど専用の意味や見た目を持たない。",
+    components: "Button / IconButton / TextField / Select / Checkbox",
   },
   {
     name: "Patterns",
@@ -18,14 +18,14 @@ export const layers = [
     boundary:
       "設定を編集する、検索して選ぶ、確認する。pig固有の判断は持たない。",
     components:
-      "Field / SettingRow / ListRow / ActionsMenu / Dialog / OutputFrame",
+      "SettingsRow / ActionsMenu / ContentPage / Tooltip / CopyButton",
   },
   {
     name: "Domain",
     purpose: "pigの意味を持つ表示・操作",
     boundary:
-      "モデル・会話・実行・承認を知る。具体的な通信やネイティブ処理は外から渡す。",
-    components: "Composer / ModelPicker / SessionRow / ToolResult / AgentRun",
+      "モデル・会話・実行など、用途が機能に結び付く部品。表示だけの小さな部品も含む。",
+    components: "Composer / ComposerCountButton / ModelPicker / UsageMeter",
   },
   {
     name: "Screens",
@@ -54,10 +54,17 @@ export const inventory: {
   },
   {
     layer: "Foundations",
-    name: "Surface / Scroll / Motion",
+    name: "Surface / Scroll",
     evidence: "既存CSS",
     source: "styles.css・docs/ui-guidelines.md",
-    plan: "面の役割、透過、端の余白、状態変化の基準を整理する。",
+    plan: "面の役割、透過、スクロールの端の余白の基準を整理する。",
+  },
+  {
+    layer: "Foundations",
+    name: "Motion",
+    evidence: "既存CSS",
+    source: "tokens.css・patterns/copy-button.css",
+    plan: "採用済みの完了合図・ドロップダウンなどの動きから、操作できる本番部品のStoryへ案内する。",
   },
   {
     layer: "Primitives",
@@ -75,17 +82,17 @@ export const inventory: {
   },
   {
     layer: "Primitives",
-    name: "ProviderIcon / FileIcon",
+    name: "FileIcon",
     evidence: "既存部品",
     source: "mainview/primitives",
-    plan: "名称に添えるロゴ・ファイル種別と、未登録時の汎用アイコンを比較する。",
+    plan: "ファイル種別ごとのアイコンと、未知の拡張子で使う汎用アイコンを比較する。",
   },
   {
     layer: "Primitives",
-    name: "Chip / IndicatorDot / CountBadge / Keycap",
+    name: "Chip / Keycap",
     evidence: "既存部品",
     source: "mainview/primitives",
-    plan: "属性・状態点・件数・キー表記を区別し、各部品のStoryで状態を比較する。",
+    plan: "属性やキー表記を示す基本部品。",
   },
   {
     layer: "Primitives",
@@ -124,6 +131,42 @@ export const inventory: {
   },
   {
     layer: "Patterns",
+    name: "ChatListRow / MessageBubble / ComposerForm",
+    evidence: "既存部品",
+    source: "mainview/patterns",
+    plan: "基本部品を組み合わせ、ローカルとリモートで行・吹き出し・入力枠を揃える。",
+  },
+  {
+    layer: "Patterns",
+    name: "CopyButton",
+    evidence: "既存部品",
+    source: "mainview/patterns/CopyButton.tsx",
+    plan: "コード・表・会話・招待でコピー後のチェックを共有し、コピー先と成功・失敗後の処理は呼び出し側に残す。",
+  },
+  {
+    layer: "Patterns",
+    name: "ColorPicker / ContentPage / Tooltip / ImagePreview / LazyDetails / Sheet",
+    evidence: "既存部品",
+    source:
+      "ColorPicker.tsx・ContentPage.tsx・Tooltip.tsx・ImageGallery.tsx・patterns/LazyDetails.tsx・patterns/Sheet.tsx",
+    plan: "他の画面にも登場する部品として、実際の操作と状態を部品別に展示する。",
+  },
+  {
+    layer: "Patterns",
+    name: "DialogFrame / ErrorAlert",
+    evidence: "既存部品",
+    source: "mainview/patterns",
+    plan: "サインインとPC接続で非モーダルの枠と失敗表示を使う。開閉・フォーカス・通信の判断は各機能に残す。",
+  },
+  {
+    layer: "Patterns",
+    name: "PickerOption",
+    evidence: "既存部品",
+    source: "mainview/patterns/PickerOption.tsx",
+    plan: "モデルと接続先の候補行を揃える。候補・検索・確定の扱いはPickerごとに維持する。",
+  },
+  {
+    layer: "Patterns",
     name: "Popover / Dialog / SearchableSelect",
     evidence: "構成案",
     source: "Picker・UIRequestBroker等",
@@ -142,6 +185,42 @@ export const inventory: {
     evidence: "既存部品",
     source: "ComposerSubmit.tsx・EffortChip.tsx",
     plan: "小さくてもpig固有の意味を持つ部品。今回、本番実装を直接展示する。",
+  },
+  {
+    layer: "Domain",
+    name: "ComposerCountButton / ChatTextArea",
+    evidence: "既存部品",
+    source: "ComposerCountButton.tsx・ChatTextArea.tsx",
+    plan: "セッションの件数とチャットの複数行入力を共用し、パネルの開閉・入力履歴・送信は呼び出し側に残す。",
+  },
+  {
+    layer: "Domain",
+    name: "ProviderIcon / UsageMeter",
+    evidence: "既存部品",
+    source: "ProviderIcon.tsx・UsageMeter.tsx",
+    plan: "プロバイダーのロゴと、利用枠・リセットまでの時間を表示する。",
+  },
+  {
+    layer: "Domain",
+    name: "IndicatorDot / CountBadge",
+    evidence: "既存部品",
+    source: "IndicatorDot.tsx・CountBadge.tsx",
+    plan: "会話・通知・接続の状態点と通知の未読件数を表示する。",
+  },
+  {
+    layer: "Domain",
+    name: "ArchiveToggle / EffortSlider / ModelSelect / ProviderUsageView",
+    evidence: "既存部品",
+    source:
+      "ArchiveToggle.tsx・EffortSlider.tsx・UtilityModelSettings.tsx・ProviderUsageView.tsx",
+    plan: "一覧の切り替え・モデル設定・使用量の表示を接続なしで確認する。",
+  },
+  {
+    layer: "Domain",
+    name: "NotificationCenter / Notifications / SessionPanel",
+    evidence: "既存部品",
+    source: "NotificationCenter.tsx・Notifications.tsx・SessionPanel.tsx",
+    plan: "履歴とトーストを分け、活動パネルの各表示は同じページで切り替える。",
   },
   {
     layer: "Domain",

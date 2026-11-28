@@ -49,21 +49,16 @@ if (process.env.PIG_SEND_RECOVERY_CHILD !== "1") {
       address: { ...snapshot.address, epoch: snapshot.address.epoch + 1 },
     };
   });
-  mock.module("electrobun/view", () => ({
-    Electroview: class {
-      constructor(readonly options: unknown) {}
-      static defineRPC() {
-        return {
-          send: {},
-          request: {
-            abort: abortRequest,
-            forkSession: forkRequest,
-            rewindSession: rewindRequest,
-            listSessions: async () => [],
-          },
-        };
-      }
-    },
+  mock.module("./rpc-transport", () => ({
+    createRendererRpc: () => ({
+      send: {},
+      request: {
+        abort: abortRequest,
+        forkSession: forkRequest,
+        rewindSession: rewindRequest,
+        listSessions: async () => [],
+      },
+    }),
   }));
   const navigate = mock(() => {});
   mock.module("./navigation", () => ({

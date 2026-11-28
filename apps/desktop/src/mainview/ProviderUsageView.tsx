@@ -1,6 +1,5 @@
 import { ChevronDown, CircleAlert, Clock3, RefreshCw } from "lucide-react";
 import {
-  type CSSProperties,
   type FocusEvent,
   type PointerEvent,
   type ReactNode,
@@ -13,7 +12,6 @@ import {
 } from "react";
 import {
   balanceText,
-  clampPercent,
   type ProviderUsage,
   resetCountdown,
   shortUsageLabels,
@@ -26,16 +24,14 @@ import {
   usagePercent,
 } from "../shared/provider-usage";
 import { useT } from "./i18n";
-import { ProviderIcon } from "./primitives/ProviderIcon";
+import { ProviderIcon } from "./ProviderIcon";
 import { Spinner } from "./primitives/Spinner";
 import { useTooltip } from "./Tooltip";
+import { UsageMeter } from "./UsageMeter";
 import "./provider-usage.css";
 
-/**
- * One line per window: fill = quota, frame = time left until reset (it is
- * trimmed from the right as the window runs out). Resets live in the popover.
- */
-function UsageBar({
+/** Each sidebar line shows only a meter and its percentage. */
+function UsageLine({
   window,
   display,
   now,
@@ -44,23 +40,15 @@ function UsageBar({
   display: UsageDisplay;
   now: number;
 }) {
-  const time = timeRemaining(window, now);
   const percent = usagePercent(window.usedPercent, display);
+  const level = usageLevel(window.usedPercent);
   return (
-    <span
-      className="provider-usage-window"
-      data-level={usageLevel(window.usedPercent)}
-      style={
-        {
-          "--usage-quota": `${clampPercent(percent)}%`,
-          "--usage-time": `${time ?? 0}%`,
-        } as CSSProperties
-      }
-    >
-      <span className="provider-usage-bar" aria-hidden="true">
-        <span className="usage-bar-quota" />
-        {time !== undefined && <span className="usage-bar-time" />}
-      </span>
+    <span className="provider-usage-window" data-level={level}>
+      <UsageMeter
+        quotaPercent={percent}
+        timePercent={timeRemaining(window, now)}
+        tone={level}
+      />
       <span className="provider-usage-percent">{Math.round(percent)}%</span>
     </span>
   );
@@ -208,18 +196,12 @@ function UsageDetails({
         .concat(entry.data?.windows.slice(2) ?? [])
         .map((window) => {
           const percent = usagePercent(window.usedPercent, display);
-          const time = timeRemaining(window, now);
+          const level = usageLevel(window.usedPercent);
           return (
             <div
               key={window.id}
               className="usage-popover-window"
-              data-level={usageLevel(window.usedPercent)}
-              style={
-                {
-                  "--usage-quota": `${clampPercent(percent)}%`,
-                  "--usage-time": `${time ?? 0}%`,
-                } as CSSProperties
-              }
+              data-level={level}
             >
               <div className="usage-popover-figures">
                 <span>{window.label}</span>
@@ -227,10 +209,12 @@ function UsageDetails({
                   <small>{mode}</small> <strong>{Math.round(percent)}%</strong>
                 </span>
               </div>
-              <div className="usage-popover-track" aria-hidden="true">
-                <span className="usage-bar-quota" />
-                {time !== undefined && <span className="usage-bar-time" />}
-              </div>
+              <UsageMeter
+                className="usage-popover-track"
+                quotaPercent={percent}
+                timePercent={timeRemaining(window, now)}
+                tone={level}
+              />
               {window.resetsAt !== undefined && (
                 <div className="usage-popover-reset">
                   <Clock3 size={11} aria-hidden="true" />
@@ -380,7 +364,7 @@ export function ProviderUsageView({
                 {windows.length ? (
                   <span className="provider-usage-windows">
                     {windows.map((w) => (
-                      <UsageBar
+                      <UsageLine
                         key={w.id}
                         window={w}
                         now={now}

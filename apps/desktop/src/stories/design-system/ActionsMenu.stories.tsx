@@ -20,7 +20,7 @@ export const States = {
       <PrimitiveSpecimen
         layer="Patterns"
         title="ActionsMenu"
-        intro="行に対する補助的な操作を「…」にまとめます。行にホバーかフォーカスしたときだけ表示します。"
+        intro="行の補助操作を「…」にまとめます。一覧は140msでフェードインしながら拡大し、80msでフェードアウトします。"
         context="チャット一覧"
         variants={[
           {

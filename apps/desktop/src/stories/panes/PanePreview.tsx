@@ -20,11 +20,12 @@ import {
 } from "lucide-react";
 import { useRef, useState } from "react";
 import appIcon from "../../../assets/icon.svg";
+import { IndicatorDot } from "../../mainview/IndicatorDot";
 import { ProviderUsageView } from "../../mainview/ProviderUsageView";
-import { IndicatorDot } from "../../mainview/primitives/IndicatorDot";
 import "../../mainview/notifications.css";
 import { usageFixtures, usageFixtureTime } from "../providers/usage-fixtures";
 import "./panes.css";
+import { ChatTextArea } from "../../mainview/ChatTextArea";
 import {
   initialPaneTree,
   type PaneLayout,
@@ -34,8 +35,10 @@ import {
   type SplitAxis,
   splitPane,
 } from "../../mainview/pane-layout";
+import { MessageBubble } from "../../mainview/patterns/MessageBubble";
 import { ResizeDivider } from "../../mainview/ResizeDivider";
 import "../../mainview/panes.css";
+import "../../mainview/patterns/chat-list-row.css";
 
 export const paneLayouts = {
   single: {
@@ -401,7 +404,7 @@ export function PanePreview({
                 {session.prompt ? (
                   <div className="transcript">
                     <div className="message user">
-                      <div className="user-bubble">{session.prompt}</div>
+                      <MessageBubble>{session.prompt}</MessageBubble>
                     </div>
                     <div className="message assistant">
                       <p>{session.response}</p>
@@ -426,7 +429,7 @@ export function PanePreview({
               </section>
               <div className="pane-preview-composer">
                 <div className="composer">
-                  <textarea
+                  <ChatTextArea
                     aria-label={`pane ${index + 1}へのメッセージ（プレビュー）`}
                     placeholder="メッセージを入力…"
                     defaultValue={

@@ -35,6 +35,7 @@ import type {
 import { defaultSettings, type Settings } from "../shared/settings";
 import type { TerminalOpenEvent } from "../shared/terminal-ui";
 import type { Message } from "../shared/transcript";
+import type { AttachmentClaim } from "./attachment-reads";
 import type { ChatSnapshot } from "./chat-snapshot";
 import type { ExtensionNotice } from "./extension-notices";
 import type { PaneNode } from "./pane-layout";
@@ -74,6 +75,7 @@ export type OpeningOp = { id: string } & (
       content: DraftContent;
       timestamp: number;
       delivery?: PromptDelivery;
+      attachments?: AttachmentClaim;
     }
   | { kind: "select"; selection: ModelSelection }
 );
@@ -145,10 +147,6 @@ export const useStore = create<{
   openingTarget?: OpeningTarget;
   pendingOpens: Record<string, PendingOpen>;
   newChatDrafts: Record<string, string>;
-  /** Images pasted into a chat that has not been created yet. */
-  newChatImages: Record<string, DraftContent["images"]>;
-  /** Non-image files dropped into a chat that has not been created yet. */
-  newChatFiles: Record<string, NonNullable<DraftContent["files"]>>;
   /** Chats whose deletion is in flight: hidden now, restored if it fails. */
   deletingSessions: Record<string, true>;
   /**
@@ -210,8 +208,6 @@ export const useStore = create<{
   packageOps: {},
   notices: [],
   newChatDrafts: {},
-  newChatImages: {},
-  newChatFiles: {},
   deletingSessions: {},
   rewinds: {},
   noticeHistory: [],

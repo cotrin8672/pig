@@ -5,19 +5,10 @@ import { join } from "node:path";
 import { defaultAppearance, toggleBackdrop } from "../shared/appearance";
 import { defaultThemeColor } from "../shared/theme-color";
 import {
-  applyBackdrop,
   loadAppearance,
   saveAppearance,
   validateAppearance,
-  windowStyleForBackdrop,
 } from "./appearance";
-
-test("backdrop rejects a missing Windows HWND before calling native APIs", () => {
-  if (process.platform === "win32")
-    expect(() => applyBackdrop(null, defaultAppearance)).toThrow(
-      "closed window",
-    );
-});
 
 test("appearance validates backdrop and clamps finite opacity", () => {
   expect(validateAppearance({ backdrop: "none", opacity: -1 })).toEqual({
@@ -44,21 +35,6 @@ test("appearance validates backdrop and clamps finite opacity", () => {
     { backdrop: "none", opacity: "0.5" },
   ])
     expect(() => validateAppearance(value)).toThrow();
-});
-
-test("backdrop preserves caption semantics for taskbar auto-hide, resize and Snap", () => {
-  expect(windowStyleForBackdrop(0x16c40000)).toBe(0x14cf0000);
-  expect(windowStyleForBackdrop(0x37c40000)).toBe(0x35cf0000);
-  // Repair the previous captionless style as well as stock hiddenInset windows.
-  expect(windowStyleForBackdrop(0x140f0000)).toBe(0x14cf0000);
-  for (const style of [0x16c40000, 0x37c40000, 0x14cf0000, 0x150f0000]) {
-    const next = windowStyleForBackdrop(style);
-    expect(next & 0x00cf0000).toBe(0x00cf0000);
-    expect(next & 0x02000000).toBe(0);
-    // Preserve visibility, minimize/maximize state and unrelated style flags.
-    expect(next & ~0x02cf0000).toBe(style & ~0x02cf0000);
-    expect(windowStyleForBackdrop(next)).toBe(next);
-  }
 });
 
 test("corrupt appearance remains untouched until an explicit valid save", async () => {

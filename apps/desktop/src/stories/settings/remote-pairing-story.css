@@ -1,43 +1,6 @@
 /* Remote Pairing: sheets, sidebar sections and shared rows.
    Surfaces come from SettingsCard and the sign-in dialog; motion reuses the
    Snappy profile (stories/motion/snappy-motion.css). */
-/* Page: a narrow column of inset grouped lists. */
-.mac-list {
-  border-radius: var(--radius-md);
-}
-/* Hairlines start at the text, like macOS lists; the leading icon column stays clean. */
-.mac-list > * + *,
-.mac-pick > * + * {
-  position: relative;
-  &::before {
-    content: "";
-    position: absolute;
-    z-index: 1;
-    top: 0;
-    left: var(--mac-inset);
-    right: 0;
-    height: 1px;
-    background: var(--ds-bg-chip);
-    pointer-events: none;
-  }
-}
-.mac-list .settings-row + .settings-row {
-  border-top: 0;
-}
-.mac-row {
-  min-height: 56px;
-  padding: 10px 14px;
-}
-.mac-row-title {
-  display: block;
-  overflow: hidden;
-  color: var(--ds-text-primary);
-  font-size: var(--text-md);
-  font-weight: var(--font-weight-medium);
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
 /* "+ Add…" as the last row of a list, aligned with the row titles. */
 .mac-add-row {
   display: flex;
@@ -67,85 +30,6 @@
       grid-template-rows: 0fr;
       opacity: 0;
     }
-  }
-}
-
-/* Picker lists inside the "add from host" sheet. */
-.mac-pick {
-  --mac-inset: 70px;
-  --scrollbar-inset: var(--radius-md);
-  max-height: 300px;
-  overflow: auto;
-  border-radius: var(--radius-md);
-  background: var(--ds-tile);
-  box-shadow: var(--ds-elevation-stroke);
-  animation: snappy-fade var(--snappy-mid) var(--snappy-ease);
-}
-.mac-pick-row {
-  display: grid;
-  grid-template-columns: auto auto minmax(0, 1fr) auto;
-  align-items: center;
-  gap: 12px;
-  padding: 8px 12px;
-  cursor: pointer;
-  & > svg {
-    color: var(--ds-text-muted);
-  }
-  &:hover {
-    background: var(--ds-tile-hover);
-  }
-  &[data-done] {
-    cursor: default;
-    & .mac-row-title {
-      color: var(--ds-text-muted);
-    }
-  }
-}
-.mac-path {
-  display: block;
-  overflow: hidden;
-  color: var(--ds-text-faint);
-  font-size: var(--text-xs);
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.mac-crumb {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  min-width: 0;
-  padding: 6px 8px;
-  & .mac-path {
-    font-size: var(--text-sm);
-    color: var(--ds-text-secondary);
-  }
-}
-.mac-pick:has(.mac-crumb) {
-  --mac-inset: 12px;
-}
-.mac-folder-row {
-  display: flex;
-  align-items: center;
-  padding-right: 6px;
-  &[data-selected] {
-    background: var(--ds-bg-active);
-    & .mac-folder-pick {
-      color: var(--ds-accent);
-    }
-  }
-}
-.mac-folder-pick {
-  display: flex;
-  flex: 1;
-  align-items: center;
-  justify-content: flex-start;
-  gap: 10px;
-  min-width: 0;
-  padding: 9px 12px;
-  border-radius: 0;
-  text-align: left;
-  & .mac-row-detail {
-    margin-left: auto;
   }
 }
 

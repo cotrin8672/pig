@@ -4,6 +4,7 @@ import type { TranscriptRecord } from "../shared/transcript";
 import { useT } from "./i18n";
 import "./scheduled-prompt.css";
 
+import { MessageBubble } from "./patterns/MessageBubble";
 import { SenderHead } from "./SenderBubble";
 import { scheduledMarker } from "./scheduled-prompt-model";
 
@@ -36,10 +37,13 @@ export function ScheduledPromptRecord({ data }: ChatRendererProps<"custom">) {
       <div className="response-turn">
         <article className="message user">
           <div className="user-turn">
-            <div className="user-bubble sender-bubble">
-              <ScheduledHead name={marker.jobName} session={marker.model} />
+            <MessageBubble
+              sender={
+                <ScheduledHead name={marker.jobName} session={marker.model} />
+              }
+            >
               {marker.prompt}
-            </div>
+            </MessageBubble>
           </div>
         </article>
       </div>

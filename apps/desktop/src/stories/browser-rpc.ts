@@ -6,6 +6,7 @@ import type {
   ChatHistoryImportResult,
   LocalHistorySource,
 } from "../shared/chat-history-import";
+import type { RpcHandlers } from "../shared/desktop-rpc";
 import type { UIReply } from "../shared/extension-ui";
 import type {
   Appearance,
@@ -24,7 +25,7 @@ import { patchSettings, type SettingsPatch } from "../shared/settings";
 import { supportedExtension } from "../shared/supported-extensions";
 import { filePreview, localPreview } from "./settings/history-import-data";
 
-// The canvas runs in a browser without Electrobun or a real session.
+// The canvas runs in a browser without Tauri or a real session.
 export const regenerate = async () => {};
 let previewActive = false;
 export function setStoryPreviewActive(active: boolean) {
@@ -129,6 +130,17 @@ let conversationSearch: ConversationSearch = () => ({
 export function setStoryConversationSearch(search: ConversationSearch) {
   conversationSearch = search;
 }
+type RemoteProjectRequests = Pick<
+  RpcHandlers<"bun">["requests"],
+  "remoteWorkspace" | "remoteProjectsSave"
+>;
+let remoteProjectRequests: RemoteProjectRequests | undefined;
+export function setStoryRemoteProjectRequests(handlers: RemoteProjectRequests) {
+  remoteProjectRequests = handlers;
+  return () => {
+    if (remoteProjectRequests === handlers) remoteProjectRequests = undefined;
+  };
+}
 export const forkChat = async () => {};
 // History import stories answer like a local scan after a short delay.
 function answerHistory(requestId: string, source?: LocalHistorySource) {
@@ -222,6 +234,20 @@ const marketPackages: MarketPackage[] = [
   types: ["extension"],
 }));
 const request = {
+  async remoteWorkspace(
+    params: Parameters<RemoteProjectRequests["remoteWorkspace"]>[0],
+  ) {
+    return remoteProjectRequests
+      ? remoteProjectRequests.remoteWorkspace(params)
+      : unavailable();
+  },
+  async remoteProjectsSave(
+    params: Parameters<RemoteProjectRequests["remoteProjectsSave"]>[0],
+  ) {
+    return remoteProjectRequests
+      ? remoteProjectRequests.remoteProjectsSave(params)
+      : unavailable();
+  },
   async statistics() {
     return (await import("./statistics/statistics-data")).statisticsFixture;
   },
@@ -337,7 +363,7 @@ const request = {
     link.click();
   },
 };
-// Unknown host operations fail closed; native messages never reach Electrobun.
+// Unknown host operations fail closed; native messages never reach Tauri.
 export const rpc = {
   send: new Proxy(send, {
     get: (target, key) => target[key as keyof typeof target] ?? (() => {}),

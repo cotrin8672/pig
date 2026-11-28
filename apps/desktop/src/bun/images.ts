@@ -65,22 +65,16 @@ export function encodePng(bytes: Uint8Array) {
 export async function copyImage(src: unknown, owner: Pointer | null = null) {
   const { mimeType, bytes } = await loadImage(src);
   const png = mimeType === "image/png" ? bytes : encodePng(bytes);
-  if (process.platform === "win32")
-    await writeWindowsClipboardImage(png, owner);
-  else desktopPlatform().clipboardWriteImage(png);
+  await writeWindowsClipboardImage(png, owner);
 }
 
 export async function readClipboardImage() {
-  let bytes: Uint8Array | null;
-  if (process.platform === "win32") {
-    const image = await readWindowsClipboardImage();
-    bytes = image
-      ? image.format === "png"
-        ? image.bytes
-        : encodePng(dibToBmp(image.bytes))
-      : null;
-  } else bytes = desktopPlatform().clipboardReadImage();
-  if (!bytes?.length) return null;
+  if (process.platform !== "win32") return null;
+  const image = await readWindowsClipboardImage();
+  if (!image) return null;
+  const bytes =
+    image.format === "png" ? image.bytes : encodePng(dibToBmp(image.bytes));
+  if (!bytes.length) return null;
   if (bytes.length > 3.375 * 1024 * 1024)
     throw new Error("Each image must be at most 4.5 MiB of base64 data.");
   return Buffer.from(bytes).toString("base64");

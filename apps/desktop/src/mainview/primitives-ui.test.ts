@@ -8,7 +8,7 @@ import {
 const local = (path: string) => fixtureImport(new URL(path, import.meta.url));
 
 test(
-  "primitives render with design tokens alone, without any screen stylesheet",
+  "standalone components render with design tokens and no screen stylesheet",
   () =>
     runUiFixture(
       "primitives-isolated",
@@ -17,8 +17,8 @@ test(
     const {flushSync}=await import(${fixtureImport(import.meta.resolve("react-dom"))});
     await import(${local("../../scripts/fixtures/primitive-theme.css")});
     const {Chip}=await import(${local("./primitives/Chip.tsx")});
-    const {CountBadge}=await import(${local("./primitives/CountBadge.tsx")});
-    const {IndicatorDot}=await import(${local("./primitives/IndicatorDot.tsx")});
+    const {CountBadge}=await import(${local("./CountBadge.tsx")});
+    const {IndicatorDot}=await import(${local("./IndicatorDot.tsx")});
     const {Keycap}=await import(${local("./primitives/Keycap.tsx")});
     const {Button}=await import(${local("./primitives/Button.tsx")});
     const {IconButton}=await import(${local("./primitives/IconButton.tsx")});
@@ -28,7 +28,7 @@ test(
     const {Select}=await import(${local("./primitives/Select.tsx")});
     const {TextField}=await import(${local("./primitives/TextField.tsx")});
     const {FileIcon}=await import(${local("./primitives/FileIcon.tsx")});
-    const {ProviderIcon}=await import(${local("./primitives/ProviderIcon.tsx")});
+    const {ProviderIcon}=await import(${local("./ProviderIcon.tsx")});
     const {SegmentedControl}=await import(${local("./primitives/SegmentedControl.tsx")});
     const {SearchField}=await import(${local("./primitives/SearchField.tsx")});
     const {SettingsCard}=await import(${local("./patterns/SettingsCard.tsx")});
@@ -40,6 +40,7 @@ test(
       <div id="badges">{[0,1,99,100].map(n=><CountBadge key={n} count={n}/>)}</div>
       <div id="chips">{['metadata','tag','accent-tag'].map(v=><Chip key={v} variant={v}>Tag</Chip>)}</div>
       <div id="dots">{['running','waiting','completed','failed','unread'].map(s=><IndicatorDot key={s} state={s}/>)}</div>
+      <div id="connection-dots"><IndicatorDot state="connected"/><IndicatorDot state="offline"/></div>
       <Keycap>Enter</Keycap>
       <Button variant="primary">保存</Button><Button disabled>取消</Button>
       <IconButton aria-label="閉じる">×</IconButton><Spinner size={17}/>
@@ -68,6 +69,9 @@ test(
     const dots=faces('dots').map(el=>getComputedStyle(el));
     check(dots.every(s=>s.width==='6px'&&s.height==='6px'&&filled(s)),'every dot has a visible face');
     check(new Set(dots.map(s=>s.backgroundColor)).size===dots.length,'distinct state colors including unread');
+    const [connected,offline]=faces('connection-dots').map(el=>getComputedStyle(el));
+    check([connected,offline].every(s=>s.width==='6px'&&s.height==='6px'&&filled(s)&&s.boxShadow!=='none'&&s.animationName==='none'),'connection dots have a static outlined face without screen CSS');
+    check(connected.backgroundColor===dots[2].backgroundColor&&connected.backgroundColor!==offline.backgroundColor,'connected uses success color and offline is distinct');
     const key=getComputedStyle(document.querySelector('kbd'));
     const track=document.querySelector('.model-switch'),off=getComputedStyle(track).backgroundColor;
     document.querySelector('#toggle').click();await wait();

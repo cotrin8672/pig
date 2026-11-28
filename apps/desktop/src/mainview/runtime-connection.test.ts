@@ -48,26 +48,23 @@ if (process.env.PIRIS_CONNECTION_CHILD !== "1") {
   });
   let forkResponse = Promise.withResolvers<Snapshot>();
   const forkRequest = mock(() => forkResponse.promise);
-  mock.module("electrobun/view", () => ({
-    Electroview: class {
-      constructor(readonly options: unknown) {}
-      static defineRPC(config: { handlers: { messages: typeof messages } }) {
-        messages = config.handlers.messages;
-        return {
-          send: { connectUI() {}, disconnectUI() {} },
-          request: {
-            runtimeState: () => {
-              const read = Promise.withResolvers<RuntimeStateSnapshot>();
-              reads.push(read);
-              return read.promise;
-            },
-            heartbeatUI: async () => ({ connected: true }),
-            listSessions,
-            getSessionSnapshot,
-            forkSession: forkRequest,
+  mock.module("./rpc-transport", () => ({
+    createRendererRpc(handlers: { messages: typeof messages }) {
+      messages = handlers.messages;
+      return {
+        send: { connectUI() {}, disconnectUI() {} },
+        request: {
+          runtimeState: () => {
+            const read = Promise.withResolvers<RuntimeStateSnapshot>();
+            reads.push(read);
+            return read.promise;
           },
-        };
-      }
+          heartbeatUI: async () => ({ connected: true }),
+          listSessions,
+          getSessionSnapshot,
+          forkSession: forkRequest,
+        },
+      };
     },
   }));
   const { connectRuntime, reconnectRuntime, forkChat } = await import("./rpc");
@@ -112,8 +109,7 @@ if (process.env.PIRIS_CONNECTION_CHILD !== "1") {
       hub.runtime({ type: "snapshot", snapshot: snapshot(i) });
     const baseline = hub.runtimeState(() => state());
     reads[0].resolve(baseline);
-    // Like Electrobun's executeJavascript batch: response resolves first, then
-    // a newer event executes before the awaiting continuation gets a turn.
+    // Delivery can publish newer events before the awaiting continuation runs.
     for (let i = 11; i <= 60; i++)
       hub.runtime({ type: "snapshot", snapshot: snapshot(i) });
     await first;

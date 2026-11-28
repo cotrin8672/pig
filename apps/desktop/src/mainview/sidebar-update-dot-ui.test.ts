@@ -46,6 +46,7 @@ test.skipIf(!existsSync(fixtureEdge) && !process.env.PIG_REQUIRE_UI_TESTS)(
       check(document.querySelectorAll('.sidebar-update-dot').length===2,'both settings and extensions must show updates');
       for(const icon of [settings,extensions]){
         const badge=icon.querySelector('.sidebar-update-dot'),dot=badge.getBoundingClientRect(),button=icon.getBoundingClientRect();
+        check(badge.matches('.notification-unread-dot[aria-hidden="true"]'),'update badges reuse the decorative highlight dot');
         check(dot.width===peer.width&&dot.height===peer.height,'update badges must match the provider dot size');
         check(Math.abs(dot.top-button.top-3)<0.1&&Math.abs(button.right-dot.right-3)<0.1,'update badges must sit at the top right');
         check(getComputedStyle(badge).backgroundColor===getComputedStyle(probe).color,'update badges must use the highlight colour');

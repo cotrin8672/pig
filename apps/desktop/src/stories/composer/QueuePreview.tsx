@@ -1,5 +1,6 @@
 import { ArrowUp } from "lucide-react";
 import { useRef, useState } from "react";
+import { ChatTextArea } from "../../mainview/ChatTextArea";
 import { MessageQueue } from "../../mainview/MessageQueue";
 import { unfoldPastes } from "../../shared/paste";
 import type { DraftContent } from "../../shared/runtime-contract";
@@ -152,9 +153,8 @@ export function QueuePreview({ count, steering, sending }: QueueArgs) {
         onSteer={(id) => void take(id, true)}
       />
       <div className="composer">
-        <textarea
+        <ChatTextArea
           aria-label="メッセージ"
-          rows={2}
           value={draft}
           placeholder="次のメッセージ（送ると応答後に届きます）"
           onChange={(event) => setDraft(event.target.value)}

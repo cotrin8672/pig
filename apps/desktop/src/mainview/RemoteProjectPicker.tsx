@@ -2,22 +2,28 @@ import { ChevronLeft, ChevronRight, Folder } from "lucide-react";
 import { useEffect, useState } from "react";
 import type { PairingHost } from "../shared/pairing";
 import type { RemoteProject } from "../shared/remote-workspace";
-import { Sheet } from "./PairingDialogs";
+import { Sheet } from "./patterns/Sheet";
 import { Button } from "./primitives/Button";
 import { Checkbox } from "./primitives/Checkbox";
 import { IconButton } from "./primitives/IconButton";
 import { SegmentedControl } from "./primitives/SegmentedControl";
 import { refreshRemoteSidebar, remote } from "./remote-workspace";
 import { rpc } from "./rpc";
+import "./pairing-dialogs.css";
+import "./remote-workspace.css";
+
+type PickerTab = "projects" | "folders";
 
 export function RemoteProjectPicker({
   host,
   close,
+  initialTab = "projects",
 }: {
   host: PairingHost;
   close: () => void;
+  initialTab?: PickerTab;
 }) {
-  const [tab, setTab] = useState<"projects" | "folders">("projects");
+  const [tab, setTab] = useState(initialTab);
   const [trail, setTrail] = useState<RemoteProject[]>([]);
   const [items, setItems] = useState<RemoteProject[]>();
   const [selected, setSelected] = useState(host.projects ?? []);

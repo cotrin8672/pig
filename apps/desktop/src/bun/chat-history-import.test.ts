@@ -2,7 +2,7 @@ import { expect, spyOn, test } from "bun:test";
 import { mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { buildChatHistoryWorker } from "../../scripts/pre-build";
+import { buildChatHistoryWorker } from "../../scripts/build-workers";
 import { IMPORTED_HISTORY_PROVIDER } from "../shared/chat-history-import";
 import { responseStats } from "../shared/transcript";
 import { ChatHistoryImports } from "./chat-history-import";

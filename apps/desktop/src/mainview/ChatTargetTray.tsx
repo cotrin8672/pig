@@ -1,5 +1,4 @@
 import {
-  Check,
   ChevronDown,
   Folder,
   Laptop,
@@ -8,8 +7,10 @@ import {
   Plus,
 } from "lucide-react";
 import { type ReactNode, useCallback, useId, useRef, useState } from "react";
+import { IndicatorDot } from "./IndicatorDot";
 import { useT } from "./i18n";
 import { usePicker } from "./Picker";
+import { PickerOption } from "./patterns/PickerOption";
 import { SearchField } from "./primitives/SearchField";
 import "./chat-target.css";
 
@@ -28,6 +29,7 @@ type TargetGroup = { title?: string; options: TargetOption[] };
  */
 function TargetPicker({
   label,
+  description,
   trigger,
   groups,
   value,
@@ -35,6 +37,7 @@ function TargetPicker({
   action,
 }: {
   label: string;
+  description?: string;
   trigger: ReactNode;
   groups: TargetGroup[];
   value: string;
@@ -89,7 +92,11 @@ function TargetPicker({
         }
       }}
     >
-      <summary className="picker-trigger" aria-label={label}>
+      <summary
+        className="picker-trigger"
+        aria-label={label}
+        aria-description={description}
+      >
         {trigger}
         <ChevronDown size={12} aria-hidden="true" />
       </summary>
@@ -147,39 +154,24 @@ function TargetPicker({
                   <div className="picker-group-title">{group.title}</div>
                 )}
                 {group.options.map((option) => (
-                  <button
+                  <PickerOption
                     key={option.id}
                     id={
                       !option.disabled
                         ? `${listId}-${positions.get(option)}`
                         : undefined
                     }
-                    type="button"
-                    role="option"
-                    className="model-option"
-                    aria-selected={option.id === value}
+                    label={option.name}
+                    icon={option.icon}
+                    detail={option.detail && <small>{option.detail}</small>}
+                    selected={option.id === value}
                     disabled={option.disabled}
-                    data-highlighted={
-                      flat[active]?.id === option.id || undefined
-                    }
+                    highlighted={flat[active]?.id === option.id}
                     onMouseEnter={() => {
                       setActive(positions.get(option) ?? active);
                     }}
                     onClick={() => choose(option)}
-                  >
-                    {option.icon}
-                    <span className="model-option-name">{option.name}</span>
-                    {option.detail && (
-                      <span className="model-capabilities">
-                        <small>{option.detail}</small>
-                      </span>
-                    )}
-                    <span className="model-selected-mark">
-                      {option.id === value && (
-                        <Check size={13} aria-hidden="true" />
-                      )}
-                    </span>
-                  </button>
+                  />
                 ))}
               </fieldset>
             ))}
@@ -257,13 +249,14 @@ export function ChatTargetTray({
     >
       <TargetPicker
         label={`PC: ${pc.name}`}
+        description={pc.online ? t.Connected : t.chatTargetOffline}
         trigger={
           <>
             <span className="chat-target-pc">
               {pcIcon(pc)}
-              <span
-                className="chat-target-dot"
-                data-online={pc.online || undefined}
+              <IndicatorDot
+                state={pc.online ? "connected" : "offline"}
+                className="chat-target-status"
               />
             </span>
             <span className="chat-target-label">{pc.name}</span>

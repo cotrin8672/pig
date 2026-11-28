@@ -1,8 +1,10 @@
-import { Check, CircleAlert, Copy, ExternalLink, X } from "lucide-react";
+import { Check, Copy, ExternalLink, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { getT, useT } from "./i18n";
+import { ProviderIcon } from "./ProviderIcon";
+import { DialogFrame } from "./patterns/DialogFrame";
+import { ErrorAlert } from "./patterns/ErrorAlert";
 import { Button } from "./primitives/Button";
-import { ProviderIcon } from "./primitives/ProviderIcon";
 import { Spinner } from "./primitives/Spinner";
 import { TextField } from "./primitives/TextField";
 import { rpc } from "./rpc";
@@ -60,41 +62,36 @@ export function OAuthLoginDialog({ login }: { login: LoginState }) {
   }
   const status = event && "message" in event ? event.message : t["Signing in…"];
   return (
-    <dialog
+    <DialogFrame
       ref={dialog}
-      className="oauth-dialog"
-      aria-modal="false"
-      aria-labelledby="oauth-title"
-      onKeyDown={(event) => {
-        if (event.key === "Escape" && !event.nativeEvent.isComposing) {
-          event.preventDefault();
-          event.stopPropagation();
-          cancel();
-        }
-      }}
+      onDismiss={cancel}
       onCancel={(e) => {
         e.preventDefault();
         cancel();
       }}
-    >
-      <div className="dialog-heading">
-        <h2 id="oauth-title">
+      title={
+        <>
           <ProviderIcon provider={login.provider} size={22} />
           {login.method === "oauth" ? t.signIn(name) : t.setUp(name)}
-        </h2>
+        </>
+      }
+      closeAction={
         <button
           type="button"
           aria-label={t["Close sign-in dialog"]}
           onClick={cancel}
         >
-          <X size={16} />
+          <X size={16} aria-hidden="true" />
         </button>
-      </div>
+      }
+      footer={
+        <button type="button" onClick={cancel}>
+          {login.error ? t.Close : t.Cancel}
+        </button>
+      }
+    >
       {login.error ? (
-        <div className="oauth-error" role="alert">
-          <CircleAlert size={16} />
-          {login.error}
-        </div>
+        <ErrorAlert>{login.error}</ErrorAlert>
       ) : (
         <div className="oauth-status status" role="status">
           <Spinner size={14} />
@@ -235,11 +232,6 @@ export function OAuthLoginDialog({ login }: { login: LoginState }) {
           {copyError}
         </p>
       )}
-      <div className="dialog-actions">
-        <button type="button" onClick={cancel}>
-          {login.error ? t.Close : t.Cancel}
-        </button>
-      </div>
-    </dialog>
+    </DialogFrame>
   );
 }

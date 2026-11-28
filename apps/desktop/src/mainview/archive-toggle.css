@@ -1,0 +1,9 @@
+.archived-chats {
+  display: flex;
+  justify-content: flex-start;
+  gap: 6px;
+  margin-top: 3px;
+  padding: 5px 8px 5px 30px;
+  font-size: 10px;
+  color: var(--ds-text-muted);
+}

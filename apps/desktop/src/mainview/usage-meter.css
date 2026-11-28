@@ -1,0 +1,34 @@
+.usage-meter {
+  --usage-meter-tone: var(--ds-text-secondary);
+  position: relative;
+  display: block;
+  height: 8px;
+  overflow: hidden;
+  border-radius: 2px;
+  background: var(--ds-bg-chip);
+}
+.usage-meter[data-tone="warning"] {
+  --usage-meter-tone: var(--ds-warning);
+}
+.usage-meter[data-tone="critical"] {
+  --usage-meter-tone: var(--ds-error);
+}
+.usage-meter::after,
+.usage-meter-frame {
+  position: absolute;
+  inset: 0;
+  border: 1.5px solid color-mix(in srgb, var(--ds-text-muted) 22%, transparent);
+  border-radius: inherit;
+  content: "";
+}
+.usage-meter-fill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: var(--usage-quota);
+  background: color-mix(in srgb, var(--usage-meter-tone) 42%, transparent);
+}
+.usage-meter-frame {
+  z-index: 1;
+  border-color: var(--ds-text-secondary);
+  clip-path: inset(0 calc(100% - var(--usage-time)) 0 0);
+}

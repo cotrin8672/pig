@@ -12,10 +12,8 @@ const desktop = fileURLToPath(new URL("..", import.meta.url));
 const integration = [
   "chat-history-import",
   "local-chat-history",
-  "app-update-windows",
   "extension-ui",
   "fonts",
-  "install-windows",
   "mcp-apps-sdk",
   "model-runtime",
   "model-runtime-performance",
@@ -70,6 +68,7 @@ const ui = [
   "provider-usage-ui",
   "provider-usage-hover-ui",
   "provider-accounts-ui",
+  "oauth-login-ui",
   "render-workers-ui",
   "render-reuse-ui",
   "render-retention-ui",
@@ -91,11 +90,9 @@ const ui = [
 
 export function testFiles(suite: TestSuite): string[] {
   const source = [...new Bun.Glob("src/**/*.test.{ts,tsx}").scanSync(desktop)];
-  // lazy-routes.test.ts describes an obsolete loading policy; it was never in CI.
   const scripts = [
     "scripts/ui-style-rules.test.ts",
     "scripts/sdk-runtime-assets.test.ts",
-    "scripts/post-build.test.ts",
     "scripts/run-tests.test.ts",
   ];
   for (const file of [...integration, ...ui, ...scripts])

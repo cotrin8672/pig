@@ -1,12 +1,17 @@
 import { expect, test } from "bun:test";
-import { mkdir, mkdtemp, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 test.skipIf(process.platform !== "win32")(
-  "Tauri Bun host rejects stale epochs and oversized replies without losing the pipe",
+  "Tauri Bun host migrates legacy settings, rejects stale epochs and survives oversized replies",
   async () => {
     const home = await mkdtemp(join(tmpdir(), "pig-bun-wire-"));
+    const localAppData = join(home, "AppData", "Local");
+    const legacy = join(localAppData, "dev.pig.desktop", "stable");
+    await mkdir(legacy, { recursive: true });
+    const oldSettings = '{"language":"ja"}';
+    await writeFile(join(legacy, "settings.json"), oldSettings);
     const child = Bun.spawn(
       [
         process.execPath,
@@ -22,6 +27,7 @@ test.skipIf(process.platform !== "win32")(
           ...process.env,
           HOME: home,
           USERPROFILE: home,
+          LOCALAPPDATA: localAppData,
           PIG_DESKTOP_CONFIG_DIR: undefined,
           PI_CODING_AGENT_DIR: join(home, "agent"),
           PI_CODING_AGENT_SESSION_DIR: join(home, "sessions"),
@@ -129,6 +135,12 @@ test.skipIf(process.platform !== "win32")(
       ]);
       expect(replies[2].slice(0, 3)).toEqual(["reply", 23, true]);
       expect(replies[2][3]).toMatchObject({ generalCwd: cwd });
+      expect(await readFile(join(cwd, "..", "settings.json"), "utf8")).toBe(
+        oldSettings,
+      );
+      expect(await readFile(join(legacy, "settings.json"), "utf8")).toBe(
+        oldSettings,
+      );
     } finally {
       child.kill();
       await child.exited;

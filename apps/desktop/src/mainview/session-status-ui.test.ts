@@ -18,7 +18,7 @@ test.skipIf(!existsSync(fixtureEdge) && !process.env.PIG_REQUIRE_UI_TESTS)(
       const {createRoot}=await import(${fixtureImport(import.meta.resolve("react-dom/client"))});
       const {flushSync}=await import(${fixtureImport(import.meta.resolve("react-dom"))});
       await import(${local("./styles.css")});
-      const {IndicatorDot}=await import(${local("./primitives/IndicatorDot.tsx")});
+      const {IndicatorDot}=await import(${local("./IndicatorDot.tsx")});
       ${fixtureHelpers}
       const states=['running','completed','waiting','failed'];
       const root=createFixtureRoot(createRoot);

@@ -1,6 +1,7 @@
 import { AppWindow, type LucideIcon, Tag } from "lucide-react";
 import type { ExtensionStatus } from "../shared/extension-ui";
 import type { SessionAddress } from "../shared/runtime-contract";
+import { ComposerCountButton } from "./ComposerCountButton";
 import { addressKey } from "./chat-snapshot";
 import { useT } from "./i18n";
 import { useStore } from "./store";
@@ -32,22 +33,15 @@ export function SessionIndicators({ address }: { address: SessionAddress }) {
   };
   return (
     <div className="session-indicators">
-      {sections.map((key) => {
-        const Glyph = icons[key];
-        const label = t.sessionIndicator(labels[key], count(status, key));
-        return (
-          <button
-            {...trigger(key)}
-            type="button"
-            key={key}
-            className="session-indicator"
-            aria-label={label}
-          >
-            <Glyph size={13} aria-hidden="true" />
-            <span>{count(status, key)}</span>
-          </button>
-        );
-      })}
+      {sections.map((key) => (
+        <ComposerCountButton
+          {...trigger(key)}
+          key={key}
+          icon={icons[key]}
+          count={count(status, key)}
+          aria-label={t.sessionIndicator(labels[key], count(status, key))}
+        />
+      ))}
       <div
         {...panel}
         className="session-indicator-panel"

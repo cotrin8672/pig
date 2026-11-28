@@ -34,41 +34,36 @@ if (process.env.PIG_SNAPSHOT_DELTA_CHILD !== "1") {
   const reads: ReturnType<typeof Promise.withResolvers<Snapshot>>[] = [];
   let sends = 0;
   let resetBase: ((address: SessionAddress) => void) | undefined;
-  mock.module("electrobun/view", () => ({
-    Electroview: class {
-      constructor(readonly options: unknown) {}
-      static defineRPC(config: {
-        handlers: {
-          messages: {
-            runtimeEvent: (event: RuntimePublication<RuntimeWireEvent>) => void;
-          };
-        };
-      }) {
-        receive = (event) =>
-          config.handlers.messages.runtimeEvent({
-            hostId: "delta-rpc",
-            publicationSeq: ++publicationSeq,
-            event,
-          });
-        return {
-          send: {},
-          request: {
-            listSessions: async () => [],
-            prompt: () => {
-              sends++;
-            },
-            openSession: () => {
-              sends++;
-            },
-            getSessionSnapshot: (address: SessionAddress) => {
-              resetBase?.(address);
-              const read = Promise.withResolvers<Snapshot>();
-              reads.push(read);
-              return read.promise;
-            },
+  mock.module("./rpc-transport", () => ({
+    createRendererRpc(handlers: {
+      messages: {
+        runtimeEvent: (event: RuntimePublication<RuntimeWireEvent>) => void;
+      };
+    }) {
+      receive = (event) =>
+        handlers.messages.runtimeEvent({
+          hostId: "delta-rpc",
+          publicationSeq: ++publicationSeq,
+          event,
+        });
+      return {
+        send: {},
+        request: {
+          listSessions: async () => [],
+          prompt: () => {
+            sends++;
           },
-        };
-      }
+          openSession: () => {
+            sends++;
+          },
+          getSessionSnapshot: (address: SessionAddress) => {
+            resetBase?.(address);
+            const read = Promise.withResolvers<Snapshot>();
+            reads.push(read);
+            return read.promise;
+          },
+        },
+      };
     },
   }));
   await import("./rpc");

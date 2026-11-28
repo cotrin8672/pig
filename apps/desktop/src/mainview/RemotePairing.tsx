@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { PairingStatus } from "../shared/pairing";
-import { ConnectBody, InviteBody, Sheet } from "./PairingDialogs";
+import { ConnectBody, InviteBody } from "./PairingDialogs";
 import { PairingTable } from "./PairingTable";
 import { ConfirmButton } from "./patterns/ConfirmButton";
+import { Sheet } from "./patterns/Sheet";
 import { Button } from "./primitives/Button";
 import { RemoteProjectPicker } from "./RemoteProjectPicker";
 import { refreshRemoteSidebar } from "./remote-workspace";

@@ -1,16 +1,20 @@
 import { X } from "lucide-react";
 import { useMemo } from "react";
 import type { DraftContent } from "../shared/runtime-contract";
+import { attachmentReads } from "./composer-attachments";
 import { ImagePreview } from "./ImageGallery";
 import { useT } from "./i18n";
 import { FileIcon } from "./primitives/FileIcon";
+import { Spinner } from "./primitives/Spinner";
 
 export function ComposerAttachments({
   images,
   files,
+  loads,
   onRemoveImage,
   onRemoveFile,
 }: Pick<DraftContent, "images" | "files"> & {
+  loads: ReturnType<typeof attachmentReads.read>;
   onRemoveImage: (id: string) => void;
   onRemoveFile: (id: string) => void;
 }) {
@@ -52,6 +56,20 @@ export function ComposerAttachments({
           {removeButton(name, () => onRemoveFile(id))}
         </div>
       ))}
+      {loads
+        .filter((load) => load.preview)
+        .map(({ id, kind, name }) => (
+          <div
+            className={`composer-attachment pending ${kind === "file" ? "file" : ""}`}
+            key={id}
+            aria-description={name}
+            aria-busy="true"
+          >
+            <Spinner size={22} />
+            <span>{name}</span>
+            {removeButton(name, () => attachmentReads.cancel(id))}
+          </div>
+        ))}
     </>
   );
 }

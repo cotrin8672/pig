@@ -967,6 +967,23 @@ export class SessionHost {
     void open.promise.catch(() => {});
     return open.promise;
   }
+  private async reuseOpen(open: Opening, existing: Managed) {
+    const { input, controller } = open;
+    if (existing.cwd !== input.cwd)
+      throw new Error("Session does not belong to this project");
+    const history =
+      existing.resuming && input.historyOnly
+        ? this.histories.get(existing.address.sessionId)
+        : undefined;
+    if (!history && (existing.phase !== "ready" || existing.transition))
+      throw new Error("Session is already opening or closing");
+    const snapshot = history
+      ? await this.historySnapshot(history)
+      : this.snapshot(existing);
+    controller.signal.throwIfAborted();
+    open.state = { state: "ready", snapshot };
+    return snapshot;
+  }
   private async openHistoryOnly(open: Opening, id: string, file: string) {
     const { input, controller } = open;
     let history = this.histories.get(id);
@@ -978,13 +995,7 @@ export class SessionHost {
       controller.signal.throwIfAborted();
       // A live open may have claimed the session while the file was being read.
       const acquired = this.sessions.get(id);
-      if (acquired) {
-        if (acquired.cwd !== input.cwd)
-          throw new Error("Session does not belong to this project");
-        const snapshot = this.snapshot(acquired);
-        open.state = { state: "ready", snapshot };
-        return snapshot;
-      }
+      if (acquired) return this.reuseOpen(open, acquired);
       prepared = { manager: reader };
       history = this.histories.get(id);
       if (!history) {
@@ -1040,22 +1051,8 @@ export class SessionHost {
     try {
       const { input, controller, branch } = open;
       controller.signal.throwIfAborted();
-      if (input.id && this.sessions.has(input.id)) {
-        const existing = this.sessions.get(input.id) as Managed;
-        if (existing.cwd !== input.cwd)
-          throw new Error("Session does not belong to this project");
-        const history = this.histories.get(input.id);
-        if (existing.resuming && history && input.historyOnly) {
-          const snapshot = await this.historySnapshot(history);
-          open.state = { state: "ready", snapshot };
-          return snapshot;
-        }
-        if (existing.phase !== "ready")
-          throw new Error("Session is already opening or closing");
-        const snapshot = this.snapshot(existing);
-        open.state = { state: "ready", snapshot };
-        return snapshot;
-      }
+      const existing = input.id && this.sessions.get(input.id);
+      if (existing) return await this.reuseOpen(open, existing);
       const file = branch
         ? branch.manager.getSessionFile()
         : input.id
@@ -1065,13 +1062,7 @@ export class SessionHost {
       // Another openId may have acquired this persisted session while the
       // membership scan awaited. Never construct two runtimes for one SDK ID.
       const concurrent = input.id && this.sessions.get(input.id);
-      if (concurrent) {
-        if (concurrent.cwd !== input.cwd || concurrent.phase !== "ready")
-          throw new Error("Session is already opening or closing");
-        const snapshot = this.snapshot(concurrent);
-        open.state = { state: "ready", snapshot };
-        return snapshot;
-      }
+      if (concurrent) return await this.reuseOpen(open, concurrent);
       timing.mark("resolve-file");
       const known = input.id && this.histories.get(input.id);
       if (known && known.cwd !== input.cwd)

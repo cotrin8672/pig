@@ -1,5 +1,8 @@
 # Electrobun 2 Windows validation
 
+Historical record from before the Tauri-only transition. For current native
+verification, see [Tauri smoke tests](../../../docs/tauri-preview.md#検証).
+
 ## Migration decision
 
 Pinned: Electrobun **2.0.6**, paired Hutch **0.29.0**, bundled Bun **1.4.4**.

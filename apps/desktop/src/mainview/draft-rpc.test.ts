@@ -27,35 +27,28 @@ if (process.env.PIG_DRAFT_RPC_CHILD !== "1") {
   let receive!: (event: ExtensionUIEvent) => void;
   let publicationSeq = 0;
   const reads: ReturnType<typeof Promise.withResolvers<DraftState>>[] = [];
-  mock.module("electrobun/view", () => ({
-    Electroview: class {
-      constructor(readonly options: unknown) {}
-      static defineRPC(config: {
-        handlers: {
-          messages: {
-            extensionUIEvent: (
-              event: RuntimePublication<ExtensionUIEvent>,
-            ) => void;
-          };
-        };
-      }) {
-        receive = (event) =>
-          config.handlers.messages.extensionUIEvent({
-            hostId: "draft-rpc",
-            publicationSeq: ++publicationSeq,
-            event,
-          });
-        return {
-          send: {},
-          request: {
-            getSessionDraft: () => {
-              const read = Promise.withResolvers<DraftState>();
-              reads.push(read);
-              return read.promise;
-            },
+  mock.module("./rpc-transport", () => ({
+    createRendererRpc(handlers: {
+      messages: {
+        extensionUIEvent: (event: RuntimePublication<ExtensionUIEvent>) => void;
+      };
+    }) {
+      receive = (event) =>
+        handlers.messages.extensionUIEvent({
+          hostId: "draft-rpc",
+          publicationSeq: ++publicationSeq,
+          event,
+        });
+      return {
+        send: {},
+        request: {
+          getSessionDraft: () => {
+            const read = Promise.withResolvers<DraftState>();
+            reads.push(read);
+            return read.promise;
           },
-        };
-      }
+        },
+      };
     },
   }));
   await import("./rpc");

@@ -172,13 +172,13 @@ export function WindowTitlebar({
       <div className="window-titlebar-content">
         {/* biome-ignore lint/a11y/noStaticElementInteractions: Native drag handle; the maximize button provides a keyboard alternative. */}
         <div
-          className="window-titlebar-drag electrobun-webkit-app-region-drag"
+          className="window-titlebar-drag window-drag-region"
           onMouseDown={(event) => {
             if (
               event.button === 0 &&
               event.detail === 1 &&
               event.target instanceof Element &&
-              !event.target.closest(".electrobun-webkit-app-region-no-drag")
+              !event.target.closest(".window-no-drag")
             )
               hover.startDrag();
           }}
@@ -186,7 +186,7 @@ export function WindowTitlebar({
           {children}
         </div>
         {onSplit && (
-          <div className="window-controls window-pane-controls electrobun-webkit-app-region-no-drag">
+          <div className="window-controls window-pane-controls window-no-drag">
             <button
               type="button"
               aria-label={t.paneSplitColumns}
@@ -205,7 +205,7 @@ export function WindowTitlebar({
             </button>
           </div>
         )}
-        <div className="window-controls electrobun-webkit-app-region-no-drag">
+        <div className="window-controls window-no-drag">
           <button
             type="button"
             aria-label={t.Minimize}

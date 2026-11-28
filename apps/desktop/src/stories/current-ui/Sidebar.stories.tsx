@@ -5,7 +5,7 @@ import {
   previewArgTypes,
   previewDefaults,
 } from "./fixtures";
-import { NotificationPreview, PreviewTheme, SidebarPreview } from "./Previews";
+import { PreviewTheme, SidebarPreview } from "./Previews";
 
 const meta = {
   id: "domain-sidebar",
@@ -24,11 +24,3 @@ export default meta;
 type Story = StoryObj<typeof meta>;
 
 export const Default: Story = {};
-export const NotificationCenter: Story = {
-  parameters: { appPreview: false, gallery: true },
-  render: (args) => (
-    <PreviewTheme args={args}>
-      <NotificationPreview />
-    </PreviewTheme>
-  ),
-};

@@ -1,0 +1,50 @@
+.session-dot,
+.notification-unread-dot,
+.connection-dot {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  flex: none;
+  border-radius: var(--radius-round);
+}
+.notification-unread-dot {
+  background: var(--ds-highlight);
+}
+.connection-dot {
+  color: var(--ds-text-faint);
+  background: currentColor;
+  box-shadow: 0 0 0 1.5px var(--ds-bg-primary);
+}
+.session-dot {
+  background: currentColor;
+  box-shadow: 0 0 6px 1px color-mix(in srgb, currentColor 25%, transparent);
+}
+/* Running matches the running terminal (`.tool-term.running`). */
+.session-dot.running {
+  color: var(--ds-accent);
+  box-shadow:
+    0 0 4px 1px color-mix(in srgb, var(--ds-accent) 40%, transparent),
+    0 0 12px 4px color-mix(in srgb, var(--ds-accent) 20%, transparent);
+  animation: session-dot-breathe 2.4s ease-in-out infinite;
+}
+/* Only animate opacity: animating the shadow restyles every frame. */
+@keyframes session-dot-breathe {
+  50% {
+    opacity: 0.45;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .session-dot.running {
+    animation: none;
+  }
+}
+.session-dot.completed,
+.connection-dot.connected {
+  color: var(--ds-success);
+}
+.session-dot.waiting {
+  color: var(--ds-warning);
+}
+.session-dot.failed {
+  color: var(--ds-error);
+}

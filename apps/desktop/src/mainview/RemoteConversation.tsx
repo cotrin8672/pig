@@ -1,12 +1,19 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { RemoteTranscript } from "../shared/remote-workspace";
 import { ChatLayout } from "./ChatLayout";
+import { ChatTextArea } from "./ChatTextArea";
+import { ComposerFrame } from "./ComposerFrame";
 import { navigate } from "./navigation";
+import { ComposerForm } from "./patterns/ComposerForm";
+import { MessageBubble } from "./patterns/MessageBubble";
 import { Button } from "./primitives/Button";
 import {
+  acceptRemoteSend,
   type RemotePending,
+  readRemoteDraft,
   remote,
   remoteDraftKey,
+  remoteSendAccepted,
   saveRemoteDraft,
 } from "./remote-workspace";
 import { showError, useStore } from "./store";
@@ -25,24 +32,7 @@ function Thread({ target }: { target: Target }) {
   const { host } = target;
   const [view, setView] = useState(target.view);
   const storageKey = remoteDraftKey(host, target.chat);
-  const outbox = `${storageKey}:pending:`;
-  const [saved] = useState(() => {
-    try {
-      const pendingKey = Object.keys(localStorage).find((k) =>
-        k.startsWith(outbox),
-      );
-      return JSON.parse(
-        (pendingKey && localStorage.getItem(pendingKey)) ||
-          sessionStorage.getItem(storageKey) ||
-          "{}",
-      ) as {
-        text?: string;
-        pending?: RemotePending;
-      };
-    } catch {
-      return {};
-    }
-  });
+  const [saved] = useState(() => readRemoteDraft(storageKey));
   const [page, setPage] = useState<RemoteTranscript>();
   const [past, setPast] = useState<RemoteTranscript[]>([]);
   const [draft, setDraft] = useState(saved.text ?? "");
@@ -70,22 +60,36 @@ function Thread({ target }: { target: Target }) {
   const [refresh, setRefresh] = useState(0);
   const thread = useRef<HTMLElement>(null);
   const lock = useRef(false);
+  const refreshDraft = useCallback(() => {
+    const saved = readRemoteDraft(storageKey);
+    setDraft(saved.text ?? "");
+    setPending(saved.pending);
+    setRefresh((x) => x + 1);
+  }, [storageKey]);
+  useEffect(() => {
+    if (!pending || busy) return;
+    if (readRemoteDraft(storageKey).pending?.id !== pending.id) {
+      refreshDraft();
+      return;
+    }
+    const accepted = (event: Event) => {
+      if ((event as CustomEvent<string>).detail === pending.id) refreshDraft();
+    };
+    remoteSendAccepted.addEventListener(storageKey, accepted);
+    return () => remoteSendAccepted.removeEventListener(storageKey, accepted);
+  }, [busy, pending, storageKey, refreshDraft]);
   useEffect(() => {
     if (!firstSend) return;
     let active = true;
     void firstSend.then((accepted) => {
       if (!active) return;
       setBusy(false);
-      if (accepted) {
-        setDraft("");
-        setPending(undefined);
-        setRefresh((x) => x + 1);
-      }
+      if (accepted) refreshDraft();
     });
     return () => {
       active = false;
     };
-  }, [firstSend]);
+  }, [firstSend, refreshDraft]);
   // biome-ignore lint/correctness/useExhaustiveDependencies: refresh requests an immediate snapshot after an accepted send.
   useEffect(() => {
     let active = true,
@@ -128,14 +132,13 @@ function Thread({ target }: { target: Target }) {
     try {
       save(draft, { view, id });
       await remote(host, { op: "send", view, id, text: draft });
-      if (!mounted.current) return;
-      save("", undefined, id);
-      setRefresh((x) => x + 1);
+      acceptRemoteSend(storageKey, id);
+      if (mounted.current) refreshDraft();
     } catch (e) {
       if (mounted.current) showError(e);
     } finally {
       lock.current = false;
-      setBusy(false);
+      if (mounted.current) setBusy(false);
     }
   }
   async function receipt() {
@@ -143,18 +146,17 @@ function Thread({ target }: { target: Target }) {
     setBusy(true);
     try {
       const r = await remote(host, { op: "receipt", view, id: pending.id });
+      if (r.state === "accepted") acceptRemoteSend(storageKey, pending.id);
       if (!mounted.current) return;
-      if (r.state === "accepted") {
-        save("");
-        setRefresh((x) => x + 1);
-      } else if (r.state === "rejected") {
+      if (r.state === "accepted") refreshDraft();
+      else if (r.state === "rejected") {
         save(draft);
         showError("送信は受け付けられませんでした。");
       } else showError("受付はまだ確認できません。会話を確認してください。");
     } catch (e) {
-      showError(e);
+      if (mounted.current) showError(e);
     } finally {
-      setBusy(false);
+      if (mounted.current) setBusy(false);
     }
   }
   const cursor = past.length ? past[0].history : page?.history;
@@ -176,16 +178,36 @@ function Thread({ target }: { target: Target }) {
     }
   }
   const blocked = /^[!/]/.test(draft.trimStart());
+  const status =
+    pending && !busy
+      ? "受付不明です。自動再送はしません。"
+      : offline
+        ? "接続できません。ホストを確認し、必要なら会話を開き直してください。"
+        : page?.waitingForHost
+          ? "接続先で承認を待っています。"
+          : page?.failed
+            ? "接続先で処理に失敗しました。"
+            : page?.running
+              ? "接続先で応答中…"
+              : blocked
+                ? "通常のテキストのみ送信できます。"
+                : "";
   const messages = useMemo(
     () =>
       [...past, ...(page ? [page] : [])].map((p, i) => (
         <div key={p.history?.before ?? i}>
-          {p.messages.map((m) => (
-            <div key={m.id} className="remote-message">
-              <strong>{m.role === "user" ? "あなた" : target.hostName}</strong>
-              <p>{m.text}</p>
-            </div>
-          ))}
+          {p.messages.map((m) =>
+            m.role === "user" ? (
+              <article key={m.id} className="message user" aria-label="あなた">
+                <MessageBubble>{m.text}</MessageBubble>
+              </article>
+            ) : (
+              <article key={m.id} className="message remote-message">
+                <strong>{target.hostName}</strong>
+                <p>{m.text}</p>
+              </article>
+            ),
+          )}
           {p.truncated && <span>一部の本文は省略されています。</span>}
         </div>
       )),
@@ -199,60 +221,54 @@ function Thread({ target }: { target: Target }) {
           thread.current.scrollTop = thread.current.scrollHeight;
       }}
       composer={
-        <form
-          className="remote-composer"
-          onSubmit={(e) => {
-            e.preventDefault();
-            void send();
-          }}
-        >
-          <strong>
-            {target.hostName} · {target.projectName}
-          </strong>
-          <span role="status">
-            {pending && !busy
-              ? "受付不明です。自動再送はしません。"
-              : offline
-                ? "接続できません。ホストを確認し、必要なら会話を開き直してください。"
-                : page?.waitingForHost
-                  ? "接続先で承認を待っています。"
-                  : page?.failed
-                    ? "接続先で処理に失敗しました。"
-                    : page?.running
-                      ? "接続先で応答中…"
-                      : blocked
-                        ? "通常のテキストのみ送信できます。"
-                        : ""}
-          </span>
-          {pending && !busy && (
-            <>
-              <Button disabled={busy} onClick={() => void receipt()}>
-                受付を確認
+        <ComposerFrame>
+          <ComposerForm
+            onSubmit={(e) => {
+              e.preventDefault();
+              void send();
+            }}
+            submit={
+              <Button
+                type="submit"
+                variant="primary"
+                disabled={
+                  !page ||
+                  offline ||
+                  busy ||
+                  !!pending ||
+                  blocked ||
+                  !draft.trim()
+                }
+              >
+                送信
               </Button>
-              <Button disabled={busy} onClick={() => save(draft)}>
-                再送せず下書きに戻す
-              </Button>
-            </>
-          )}
-          <textarea
-            aria-label={`${target.hostName}へのメッセージ`}
-            placeholder="メッセージ"
-            rows={2}
-            maxLength={16000}
-            value={draft}
-            disabled={busy || !!pending}
-            onChange={(e) => save(e.target.value)}
-          />
-          <Button
-            type="submit"
-            variant="primary"
-            disabled={
-              !page || offline || busy || !!pending || blocked || !draft.trim()
             }
           >
-            送信
-          </Button>
-        </form>
+            <div className="remote-composer-meta">
+              <strong>
+                {target.hostName} · {target.projectName}
+              </strong>
+              {status && <span role="status">{status}</span>}
+              {pending && !busy && (
+                <div className="remote-receipt-actions">
+                  <Button onClick={() => void receipt()}>受付を確認</Button>
+                  <Button onClick={() => save(draft)}>
+                    再送せず下書きに戻す
+                  </Button>
+                </div>
+              )}
+            </div>
+            <ChatTextArea
+              aria-label={`${target.hostName}へのメッセージ`}
+              placeholder="メッセージ"
+              rows={2}
+              maxLength={16000}
+              value={draft}
+              disabled={busy || !!pending}
+              onChange={(e) => save(e.target.value)}
+            />
+          </ComposerForm>
+        </ComposerFrame>
       }
     >
       <h2>{target.title}</h2>

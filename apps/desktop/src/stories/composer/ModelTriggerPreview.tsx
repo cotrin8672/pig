@@ -1,7 +1,7 @@
 import { ArrowUp, ChevronDown } from "lucide-react";
 import { ContextIndicator } from "../../mainview/ContextIndicator";
 import { EffortChip } from "../../mainview/EffortChip";
-import { ProviderIcon } from "../../mainview/primitives/ProviderIcon";
+import { ProviderIcon } from "../../mainview/ProviderIcon";
 import { effortLabels } from "../../shared/effort";
 import type { Effort } from "../../shared/rpc-schema";
 import "./model-trigger.css";

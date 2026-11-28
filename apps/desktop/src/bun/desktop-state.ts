@@ -1,5 +1,4 @@
-import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
-import { dirname } from "node:path";
+import { readFile, rename } from "node:fs/promises";
 import {
   type DesktopState,
   validateDesktopState,
@@ -8,6 +7,7 @@ import {
 } from "../shared/desktop-state";
 import { validateProjectFlags } from "../shared/projects";
 import { validateSessionAccounts } from "../shared/provider-accounts";
+import { writeAtomicJson } from "./atomic-json";
 
 export class DesktopStateStore {
   value: DesktopState = { sessions: {} };
@@ -45,14 +45,11 @@ export class DesktopStateStore {
       const changed = change(this.value);
       if (changed === this.value) return this.value;
       const next = validateDesktopState(changed);
-      await mkdir(dirname(this.file), { recursive: true });
       if (this.corrupt) {
         await rename(this.file, `${this.file}.corrupt-${crypto.randomUUID()}`);
         this.corrupt = false;
       }
-      const temporary = `${this.file}.${crypto.randomUUID()}.tmp`;
-      await writeFile(temporary, JSON.stringify(next));
-      await rename(temporary, this.file);
+      await writeAtomicJson(this.file, next);
       this.value = next;
       this.onChange?.(next);
       return next;

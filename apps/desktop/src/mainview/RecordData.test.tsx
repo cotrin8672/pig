@@ -11,7 +11,7 @@ const entry = {
   branchId: "leaf",
   order: 1,
 };
-test("saved/live messages retain their body but not debug metadata when a renderer is absent or fails", () => {
+test("saved/live messages retain their body but not debug metadata in the standard renderer", () => {
   for (const entryId of ["saved", undefined]) {
     const record: TranscriptRecord = {
       ...entry,
@@ -28,15 +28,6 @@ test("saved/live messages retain their body but not debug metadata when a render
       },
     };
     const absent = renderToStaticMarkup(<RecordData record={record} />);
-    const failing = renderToStaticMarkup(
-      <RecordData
-        record={record}
-        renderer={() => {
-          throw new Error("renderer failed");
-        }}
-      />,
-    );
-    expect(failing).toBe(absent);
     expect(absent).not.toContain("customDetails");
     expect(absent).not.toMatch(/Raw record|Details|>saved<|>live</);
     expect(record.message.role === "custom" && record.message.details).toEqual({

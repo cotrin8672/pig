@@ -19,38 +19,23 @@
   background: var(--ds-bg-elevated-opaque);
   color: var(--ds-text-primary);
   box-shadow: 0 8px 24px #0004;
-  /* Opens with a short fade + scale from the trigger; closes with a shorter fade only.
-     The closing surface stays painted for the fade but no longer takes input. */
   opacity: 0;
   transform: scale(var(--motion-popover-scale));
   transform-origin: top right;
+  /* The closing surface stays painted for the fade but no longer takes input. */
   pointer-events: none;
-  transition:
-    opacity var(--motion-duration-exit) var(--motion-ease-out),
-    transform 0ms var(--motion-duration-exit),
-    display var(--motion-duration-exit) allow-discrete,
-    overlay var(--motion-duration-exit) allow-discrete;
+  transition: var(--motion-dropdown-exit);
 }
 .session-menu:popover-open {
   opacity: 1;
   transform: none;
   pointer-events: auto;
-  transition:
-    opacity var(--motion-duration-popover) var(--motion-ease-out),
-    transform var(--motion-duration-popover) var(--motion-ease-out),
-    display var(--motion-duration-popover) allow-discrete,
-    overlay var(--motion-duration-popover) allow-discrete;
+  transition: var(--motion-dropdown-enter);
 }
 @starting-style {
   .session-menu:popover-open {
     opacity: 0;
     transform: scale(var(--motion-popover-scale));
-  }
-}
-@media (prefers-reduced-motion: reduce) {
-  .session-menu,
-  .session-menu:popover-open {
-    transition: none;
   }
 }
 .session-menu > button {

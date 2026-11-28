@@ -1,6 +1,6 @@
 import { memo } from "react";
 import { useT } from "./i18n";
-import { TURN_SPINNERS, TurnSpinner } from "./primitives/TurnSpinner";
+import { TURN_SPINNERS, TurnSpinner } from "./running-indicator/TurnSpinner";
 
 const variants = Object.keys(TURN_SPINNERS) as (keyof typeof TURN_SPINNERS)[];
 const seed = Math.floor(Math.random() * 0x100000000);

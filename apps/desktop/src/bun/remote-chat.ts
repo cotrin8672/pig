@@ -68,7 +68,7 @@ function page(t: Transcript) {
 export function remoteChat(
   host: Host,
   scopes: () => string[],
-  register?: (cwd: string, check: () => void) => Promise<void>,
+  register?: (cwd: string, check: () => void) => Promise<string>,
 ) {
   const catalog = new Map<string, SessionInfo>();
   const chatKey = (cwd: string, id: string) =>
@@ -157,8 +157,7 @@ export function remoteChat(
       const { cwd, root } = await folderPath(q.folder);
       check();
       if (!register) return fail();
-      await register(cwd, () => scoped(root));
-      return project(cwd);
+      return project(await register(cwd, () => scoped(root)));
     }
     if (q.op === "list") {
       const next = new Map<string, SessionInfo>();

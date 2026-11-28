@@ -1,9 +1,9 @@
 import type { Meta } from "@storybook/react-vite";
-import { IndicatorDot } from "../../mainview/primitives/IndicatorDot";
+import { IndicatorDot } from "../../mainview/IndicatorDot";
 import { PrimitiveSpecimen } from "./PrimitiveSpecimen";
 
 export default {
-  title: "Design System/Primitives/IndicatorDot",
+  title: "Design System/Domain/IndicatorDot",
   component: IndicatorDot,
   parameters: { gallery: true },
 } satisfies Meta<typeof IndicatorDot>;
@@ -12,8 +12,9 @@ export const States = {
   name: "IndicatorDot",
   render: () => (
     <PrimitiveSpecimen
+      layer="Domain"
       title="IndicatorDot"
-      intro="会話の進行と未読を、タイトルのそばに小さな光で示します。"
+      intro="会話の進行、未読や更新、PCの接続状態を小さな点で示します。"
       context="会話一覧"
       variants={(
         [
@@ -21,7 +22,9 @@ export const States = {
           ["waiting", "入力待ち"],
           ["completed", "完了"],
           ["failed", "失敗"],
-          ["unread", "未読"],
+          ["unread", "未読・更新"],
+          ["connected", "接続済み"],
+          ["offline", "オフライン"],
         ] as const
       ).map(([state, label]) => ({
         label,

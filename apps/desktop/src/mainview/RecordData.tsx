@@ -1,12 +1,8 @@
-import { Component, type ReactNode } from "react";
+import type { ReactNode } from "react";
 import type { TranscriptRecord } from "../shared/transcript";
-import {
-  customPresentation,
-  dataText,
-  rendererOrFallback,
-} from "./custom-data";
+import { customPresentation, dataText } from "./custom-data";
 
-function BasicRecord({
+export function RecordData({
   record,
   images,
 }: {
@@ -39,40 +35,5 @@ function BasicRecord({
         );
       })}
     </section>
-  );
-}
-class RendererBoundary extends Component<
-  { fallback: ReactNode; children: ReactNode },
-  { failed: boolean }
-> {
-  state = { failed: false };
-  static getDerivedStateFromError() {
-    return { failed: true };
-  }
-  render() {
-    return this.state.failed ? this.props.fallback : this.props.children;
-  }
-}
-/** Renderer failures retain the message body without exposing internal records. */
-export function RecordData({
-  record,
-  renderer,
-  images,
-}: {
-  record: TranscriptRecord;
-  renderer?: (record: TranscriptRecord) => ReactNode;
-  images?: ReactNode;
-}) {
-  const fallback = <BasicRecord record={record} images={images} />;
-  return (
-    <RendererBoundary
-      key={`${record.id}:${record.rendererKey ?? "basic"}`}
-      fallback={fallback}
-    >
-      {rendererOrFallback(
-        renderer ? () => renderer(record) : undefined,
-        () => fallback,
-      )}
-    </RendererBoundary>
   );
 }

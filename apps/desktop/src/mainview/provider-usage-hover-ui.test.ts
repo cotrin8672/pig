@@ -208,18 +208,18 @@ test("usage details popover in Edge: single, bridged, unpinned, keyboard", async
         expect(
           await js<boolean>(`
             const row=[...document.querySelectorAll('.provider-usage-row')].find(r=>r.getAttribute('aria-label').startsWith('OpenAI Work'));
-            const source=[...row.querySelectorAll('.provider-usage-window')];
-            const windows=[...document.querySelectorAll('.usage-popover-window')];
-            return windows.length===2&&windows.every((w,i)=>{
-              const track=w.querySelector('.usage-popover-track'),fill=track.querySelector('.usage-bar-quota'),frame=track.querySelector('.usage-bar-time');
+            const source=[...row.querySelectorAll('.usage-meter')];
+            const tracks=[...document.querySelectorAll('.usage-popover-window .usage-meter')];
+            return tracks.length===2&&tracks.every((track,i)=>{
+              const fill=track.querySelector('.usage-meter-fill'),frame=track.querySelector('.usage-meter-frame');
               const expected=source[i];
-              return w.style.getPropertyValue('--usage-quota')===expected.style.getPropertyValue('--usage-quota')
-                &&w.style.getPropertyValue('--usage-time')===expected.style.getPropertyValue('--usage-time')
+              return track.style.getPropertyValue('--usage-quota')===expected.style.getPropertyValue('--usage-quota')
+                &&track.style.getPropertyValue('--usage-time')===expected.style.getPropertyValue('--usage-time')
                 &&track.getBoundingClientRect().height===8
-                &&Math.abs(fill.getBoundingClientRect().width/track.getBoundingClientRect().width*100-parseFloat(w.style.getPropertyValue('--usage-quota')))<1
+                &&Math.abs(fill.getBoundingClientRect().width/track.getBoundingClientRect().width*100-parseFloat(track.style.getPropertyValue('--usage-quota')))<1
                 &&parseFloat(getComputedStyle(track,'::after').borderTopWidth)>0
                 &&frame&&getComputedStyle(frame).clipPath!=='none'
-                &&getComputedStyle(fill).backgroundColor===getComputedStyle(expected.querySelector('.usage-bar-quota')).backgroundColor;
+                &&getComputedStyle(fill).backgroundColor===getComputedStyle(expected.querySelector('.usage-meter-fill')).backgroundColor;
             })`),
         ).toBe(true);
         // Anchored to the new row (clamped to the viewport when tall).
@@ -254,7 +254,7 @@ test("usage details popover in Edge: single, bridged, unpinned, keyboard", async
         expect((await state()).count).toBe(1);
         expect(
           await js<boolean>(
-            "return !!document.querySelector('.usage-popover-track .usage-bar-quota')&&!document.querySelector('.usage-popover-track .usage-bar-time')",
+            "return !!document.querySelector('.usage-popover-track .usage-meter-fill')&&!document.querySelector('.usage-popover-track .usage-meter-frame')",
           ),
         ).toBe(true);
         await js("document.querySelector('.provider-usage-list').scrollTop=40");

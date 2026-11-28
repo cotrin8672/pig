@@ -11,7 +11,7 @@ import {
   type NoticeRecord,
   newNoticeRecord,
 } from "../shared/notification-history";
-import { knownProject, withoutProject } from "../shared/projects";
+import { knownProject } from "../shared/projects";
 import type {
   InstalledPackage,
   PackageOpStatus,
@@ -24,7 +24,6 @@ import type {
 } from "../shared/runtime-contract";
 import { sessionIdFromLink } from "../shared/session-links";
 import { patchSettings } from "../shared/settings";
-import { AppUpdater } from "./app-update";
 import {
   loadAppearance,
   saveAppearance,
@@ -149,10 +148,7 @@ import { setUsageObserver } from "./usage/observation";
 import { UsageService } from "./usage/service";
 
 const platform = desktopPlatform();
-await Promise.all([
-  prepareDesktopConfig(platform.userData),
-  addMiseNodeToPath(),
-]);
+await Promise.all([prepareDesktopConfig(), addMiseNodeToPath()]);
 /** Every open window's UI; publications go to all of them. */
 const hub = new ClientHub(sessionHost.hostId);
 sessionHost.onConfigApplied = () => {
@@ -190,6 +186,7 @@ const modelPreferences = new ModelPreferences(
 const projectStore = new ProjectStore(
   join(desktopConfigDir, "projects.json"),
   generalCwd,
+  (projects) => hub.broadcast("projects", projects),
 );
 await Promise.all([
   desktopState.load(),
@@ -201,27 +198,17 @@ const validateScope = (cwd: string) => projectStore.validateScope(cwd);
 export const remoteRequest = remoteChat(
   sessionHost,
   () => [generalCwd, ...projectStore.value],
-  async (cwd, check) => {
-    await projectStore.save((current) => {
-      check();
-      return current.includes(cwd) ? current : [...current, cwd];
-    });
-    hub.broadcast("projects", projectStore.value);
-  },
+  (cwd, check) => projectStore.register(cwd, check),
 );
-const samePath = (a: string, b: string) =>
-  process.platform === "win32"
-    ? resolve(a).toLowerCase() === resolve(b).toLowerCase()
-    : resolve(a) === resolve(b);
 /**
  * Imported chats go back to their original folder, registering it as a project
  * when needed. Like addProject this grants no trust; the first new chat asks.
  * Chats without a folder that still exists go to general chat.
  */
 async function importScope(workspace?: string) {
-  if (!workspace || samePath(workspace, generalCwd)) return generalCwd;
-  const known = () => projectStore.value.find((p) => samePath(p, workspace));
-  if (known()) return known() as string;
+  if (!workspace) return generalCwd;
+  const known = projectStore.find(workspace);
+  if (known) return known;
   const folder = resolve(workspace);
   if (
     !(await stat(folder).then(
@@ -230,11 +217,7 @@ async function importScope(workspace?: string) {
     ))
   )
     return generalCwd;
-  await projectStore.save((current) =>
-    current.some((p) => samePath(p, folder)) ? current : [...current, folder],
-  );
-  hub.broadcast("projects", projectStore.value);
-  return known() ?? folder;
+  return projectStore.register(folder);
 }
 async function resolveSession(input: SessionTarget) {
   if (
@@ -295,7 +278,7 @@ async function withRuntime<T extends SessionAddress, R>(
 const settingsFile = join(desktopConfigDir, "settings.json");
 const appearanceFile = join(desktopConfigDir, "appearance.json");
 let [settings, appearance] = await Promise.all([
-  loadSettings(settingsFile, platform.defaultShell),
+  loadSettings(settingsFile, "powershell"),
   loadAppearance(appearanceFile),
 ]);
 let settingsQueue = Promise.resolve();
@@ -420,7 +403,6 @@ const hostRequests = {
       version: platform.version,
       method: "disabled",
       status: "idle",
-      reason: "development",
     } satisfies AppUpdateState),
   getPiData: () => piDataReport(),
   importLegacyAuth: async ({ file, providers }) => {
@@ -449,10 +431,7 @@ const hostRequests = {
   getSessionSnapshot: async (input) =>
     fullSnapshot(await sessionHost.readSessionSnapshot(input)),
   getMcpAppPreview: (input) =>
-    sessionHost.getMcpAppPreview(
-      input,
-      platform.interactiveWidgets === true && input?.interactive === true,
-    ),
+    sessionHost.getMcpAppPreview(input, input?.interactive === true),
   wakeSession: async (input) =>
     fullSnapshot(await sessionHost.wakeSession(input)),
   getSessionHistory: async (input) =>
@@ -637,8 +616,7 @@ const hostRequests = {
     fullSnapshot(await withRuntime(input, rewindSession)),
   forkSession: async (input) =>
     fullSnapshot(await withRuntime(input, forkSession)),
-  removeProject: (input) =>
-    projectStore.save((current) => withoutProject(current, input?.cwd)),
+  removeProject: (input) => projectStore.remove(input?.cwd),
   setProjectState: (input) =>
     desktopState.setProject(
       knownProject(input?.cwd, projectStore.value),
@@ -752,8 +730,7 @@ const hostMessages = {
         const channelChanged = next.includeNightly !== settings.includeNightly;
         settings = next;
         hub.broadcast("settings", settings);
-        if (channelChanged && appUpdater instanceof InstallerUpdater)
-          void appUpdater.check();
+        if (channelChanged) void appUpdater?.check();
       })
       .catch((error) => {
         report(error);
@@ -761,18 +738,11 @@ const hostMessages = {
       });
   },
   setAppearance: (value) => updateAppearance(value),
-  // Windows folder dialogs can stall inside RPC requests (Electrobun #156).
   addProject: () => {
     void (async () => {
       const folder = await platform.choosePath("folder");
-      if (folder && !projectStore.value.includes(folder)) {
-        // Adding a folder does not grant trust or load its resources.
-        // SessionHost asks through the app's UIRequestBroker on first open.
-        await projectStore.save((current) =>
-          current.includes(folder) ? current : [...current, folder],
-        );
-      }
-      hub.broadcast("projects", projectStore.value);
+      // Registration grants no trust; SessionHost asks on first open.
+      if (folder) await projectStore.register(folder);
     })().catch(report);
   },
   startLogin: ({ provider, method, loginId, accountId, addAccount }) => {
@@ -1109,7 +1079,7 @@ function createWindow() {
     releasePage(target);
     hub.remove(id);
     windows.delete(id);
-    // Closing the last window quits the app (Electrobun exitOnLastWindowClosed).
+    // Closing the last window quits the app.
     if (!windows.size) dispose();
   });
   return target;
@@ -1180,31 +1150,30 @@ platform.onBeforeQuit(() => {
 });
 process.on("exit", dispose);
 
-const shutdownForUpdate: ConstructorParameters<typeof AppUpdater>[3] = async (
-  handoff,
-) => {
-  if (quitting) return false;
-  quitting = true;
-  try {
-    const t = dictionary(settings.language);
-    const response = await platform.showMessageBox({
-      title: t.appUpdateTitle,
-      message: t.appUpdateConfirm,
-      buttons: [t.cancel, t.appUpdateRestart],
-      defaultId: 0,
-      cancelId: 0,
-    });
-    if (response !== 1 || !(await confirmDraftsBeforeClose())) return false;
-    const commit = await handoff();
-    await disposeSessions();
-    await commit();
-    quitReady = true;
-    platform.quit();
-    return true;
-  } finally {
-    quitting = false;
-  }
-};
+const shutdownForUpdate: ConstructorParameters<typeof InstallerUpdater>[4] =
+  async (handoff) => {
+    if (quitting) return false;
+    quitting = true;
+    try {
+      const t = dictionary(settings.language);
+      const response = await platform.showMessageBox({
+        title: t.appUpdateTitle,
+        message: t.appUpdateConfirm,
+        buttons: [t.cancel, t.appUpdateRestart],
+        defaultId: 0,
+        cancelId: 0,
+      });
+      if (response !== 1 || !(await confirmDraftsBeforeClose())) return false;
+      const commit = await handoff();
+      await disposeSessions();
+      await commit();
+      quitReady = true;
+      platform.quit();
+      return true;
+    } finally {
+      quitting = false;
+    }
+  };
 const notifyUpdate = (state: AppUpdateState) =>
   hub.broadcast("appUpdate", state);
 const appUpdater = platform.installerUpdater
@@ -1215,14 +1184,7 @@ const appUpdater = platform.installerUpdater
       notifyUpdate,
       shutdownForUpdate,
     )
-  : platform.usesLegacyUpdater
-    ? new AppUpdater(
-        process.execPath,
-        join(desktopConfigDir, "app-update-result.json"),
-        notifyUpdate,
-        shutdownForUpdate,
-      )
-    : undefined;
+  : undefined;
 // Lazy: well after startup work settles, check once quietly; never on the startup path.
 const lazyUpdateCheck =
   appUpdater &&

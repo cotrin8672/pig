@@ -6,22 +6,26 @@
   gap: 24px;
   color: var(--ds-text-primary);
 }
-.ds-specimen :is(h1, h2, p, figure) {
+.ds-specimen > header > :is(h1, p),
+.ds-specimen > figure,
+.ds-specimen > section > h2,
+.ds-specimen-variants > figure {
   margin: 0;
 }
-.ds-specimen :where(header) small,
-.ds-specimen figcaption {
+.ds-specimen > :where(header) > small,
+.ds-specimen > :where(figure) > figcaption,
+.ds-specimen-variants > :where(figure) > figcaption {
   font-size: var(--text-sm);
   color: var(--ds-text-secondary);
 }
-.ds-specimen h1 {
+.ds-specimen > header > h1 {
   margin-block: 6px;
   font-size: clamp(2rem, 5vw, 3rem);
   line-height: 1.1;
   letter-spacing: -0.04em;
   overflow-wrap: anywhere;
 }
-.ds-specimen p {
+.ds-specimen > header > p {
   color: var(--ds-text-secondary);
 }
 .ds-specimen .ds-specimen-stage {
@@ -64,7 +68,7 @@
   margin-inline-start: auto;
   color: var(--ds-text-muted);
 }
-.ds-specimen h2 {
+.ds-specimen > section > h2 {
   margin-bottom: 12px;
   font-size: var(--text-lg);
 }
@@ -73,8 +77,9 @@
   grid-template-columns: repeat(auto-fit, minmax(min(100%, 110px), 1fr));
   gap: 6px;
 }
-.ds-specimen-variants figure {
+.ds-specimen-variants > figure {
   min-width: 0;
+  min-height: 80px;
   display: grid;
   grid-template-rows: 64px auto;
   justify-items: center;
@@ -91,4 +96,24 @@
   place-items: center;
   width: 100%;
   min-width: 0;
+}
+.ds-specimen[data-wide] .ds-specimen-example,
+.ds-specimen[data-wide] .ds-specimen-variants {
+  width: 100%;
+}
+.ds-specimen[data-wide] .ds-specimen-stage,
+.ds-specimen[data-wide] .ds-specimen-variants,
+.ds-specimen[data-wide] .ds-specimen-variants > figure,
+.ds-specimen[data-wide] .ds-specimen-sample {
+  grid-template-columns: minmax(0, 1fr);
+}
+.ds-specimen[data-wide] .ds-specimen-variants > figure {
+  grid-template-rows: auto auto;
+  justify-items: stretch;
+  gap: 8px;
+  padding: 12px;
+  text-align: start;
+}
+.ds-specimen[data-wide] .ds-specimen-sample {
+  justify-items: stretch;
 }

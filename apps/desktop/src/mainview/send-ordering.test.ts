@@ -284,7 +284,7 @@ test("attachments still loading travel with their message, never into the next d
   const reads = new AttachmentReads(f.drafts, () => {}, r.create);
   reads.start(address, new File(["x"], "a.png", { type: "image/png" }));
   f.drafts.edit(address, () => text("with image"));
-  const sent = f.sends.send(address, undefined, reads.claim(address));
+  const sent = f.sends.send(address, undefined, reads.claim(address)?.result);
   f.drafts.edit(address, () => text("next"));
   expect(reads.read(address)).toHaveLength(0);
   await Bun.sleep(0);
@@ -323,7 +323,7 @@ test("a failed attachment fails its message and restores everything to the edito
     throw new Error("disk full");
   });
   f.drafts.edit(address, () => text("see file"));
-  const sent = sends.send(address, undefined, reads.claim(address));
+  const sent = sends.send(address, undefined, reads.claim(address)?.result);
   r.finish(0, "body");
   await sent;
   expect(f.drafts.read(address).content.text).toBe("see file");

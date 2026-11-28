@@ -26,18 +26,9 @@
   color: var(--ds-text-faint);
   font-family: var(--font-sans);
 }
-.markdown-code-copy {
-  display: grid;
+.copy-button.markdown-code-copy {
   flex: none;
-  place-items: center;
-  width: 24px;
-  height: 24px;
   border-radius: var(--radius-3xs);
-  color: inherit;
-}
-.markdown-code-copy:hover:not(:disabled) {
-  background: var(--ds-bg-hover);
-  color: var(--ds-text-secondary);
 }
 .prose .markdown-table {
   position: relative;

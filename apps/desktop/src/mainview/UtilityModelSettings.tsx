@@ -1,9 +1,9 @@
 import { useId, useState } from "react";
 import type { UtilityModelInfo } from "../shared/rpc-schema";
 import { useT } from "./i18n";
+import { ProviderIcon } from "./ProviderIcon";
 import { ProviderDetail } from "./Providers";
 import { SettingsCard } from "./patterns/SettingsCard";
-import { ProviderIcon } from "./primitives/ProviderIcon";
 import { SearchField } from "./primitives/SearchField";
 import { Select } from "./primitives/Select";
 import { updateSettings } from "./rpc";

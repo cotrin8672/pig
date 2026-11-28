@@ -14,16 +14,6 @@
   min-height: 0;
   min-width: 0;
 }
-.session-activity .session-indicator[data-warning="true"] {
-  color: var(--ds-warning);
-}
-.session-activity .session-indicator[data-live="true"]::after {
-  content: "";
-  width: 5px;
-  height: 5px;
-  border-radius: var(--radius-round);
-  background: var(--ds-success);
-}
 .session-panel.session-indicator-panel {
   padding: 8px 0;
   line-height: var(--leading-body);

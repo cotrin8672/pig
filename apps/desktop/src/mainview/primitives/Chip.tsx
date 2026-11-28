@@ -11,8 +11,8 @@ export function Chip({
   return (
     <span
       {...props}
-      className={variant === "metadata" ? "chip ui-chip" : "provider-tag"}
-      data-kind={variant === "accent-tag" ? "extension" : undefined}
+      className={variant === "metadata" ? "chip ui-chip" : "ui-chip-tag"}
+      data-tone={variant === "accent-tag" ? "accent" : undefined}
     />
   );
 }

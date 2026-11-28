@@ -208,7 +208,7 @@ test("pane headings show local projects and listed titles before a snapshot exis
   expect(selectPaneHeading(state, 1).general).toBe(true);
 });
 
-test("theme previews do not invalidate the app/conversation; opacity still updates the shell", () => {
+test("color and opacity previews do not invalidate the app or broker", () => {
   const state = fixture();
   const app = selectAppView(state);
   const broker = selectBrokerView(state);
@@ -221,8 +221,8 @@ test("theme previews do not invalidate the app/conversation; opacity still updat
     ...state.appearance,
     opacity: { ...state.appearance.opacity, [state.appearance.backdrop]: 0.5 },
   };
-  expect(selectAppView(state).windowOpacity).toBe(0.5);
-  expect(shallow(selectAppView(state), app)).toBe(false);
+  expect(shallow(selectAppView(state), app)).toBe(true);
+  expect(shallow(selectBrokerView(state), broker)).toBe(true);
 });
 
 test("100 background tokens leave the app, broker, project and footer ownership selections unchanged", () => {

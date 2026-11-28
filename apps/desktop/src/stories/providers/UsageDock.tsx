@@ -8,9 +8,9 @@ import {
   Settings as SettingsIcon,
 } from "lucide-react";
 import { type CSSProperties, useState } from "react";
+import { ProviderIcon } from "../../mainview/ProviderIcon";
 import { SettingsCard } from "../../mainview/patterns/SettingsCard";
 import { SettingsRow } from "../../mainview/patterns/SettingsRow";
-import { ProviderIcon } from "../../mainview/primitives/ProviderIcon";
 import { SegmentedControl } from "../../mainview/primitives/SegmentedControl";
 import {
   byUrgency,

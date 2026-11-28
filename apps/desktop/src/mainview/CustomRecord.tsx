@@ -1,5 +1,4 @@
 import type { ChatRendererProps } from "@pig/chat-renderers";
-import type { ReactNode } from "react";
 import type { TranscriptRecord } from "../shared/transcript";
 import { ChatContent } from "./ChatContent";
 import { CompactionRecord } from "./CompactionRenderer";
@@ -18,24 +17,10 @@ export function BuiltinCustomRecord({ data }: ChatRendererProps<"custom">) {
 }
 
 /** Saved and live extension JSON use the same renderer contract. */
-export function CustomRecord({
-  record,
-  renderer,
-}: {
-  record: TranscriptRecord;
-  renderer?: (record: TranscriptRecord) => ReactNode;
-}) {
+export function CustomRecord({ record }: { record: TranscriptRecord }) {
   const view = customPresentation(record);
   if (record.kind === "session-entry" && record.entryType === "compaction")
     return <CompactionRecord record={record} />;
-  if (renderer)
-    return (
-      <RecordData
-        record={record}
-        renderer={renderer}
-        images={<ImageGallery sources={customImageSources(view.content)} />}
-      />
-    );
   return (
     <ChatContent
       kind="custom"

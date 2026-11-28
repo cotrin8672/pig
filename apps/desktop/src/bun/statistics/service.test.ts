@@ -4,7 +4,7 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { buildStatisticsWorker } from "../../../scripts/pre-build";
+import { buildStatisticsWorker } from "../../../scripts/build-workers";
 import { fixture } from "./fixtures";
 import { StatisticsService } from "./service";
 
@@ -149,7 +149,7 @@ test("bundled host and worker run relocated without source paths or package inst
       naming: "host.js",
     });
     expect(host.success).toBe(true);
-    // Same build function used by Electrobun's preBuild hook.
+    // Same build function used by the Tauri package.
     await buildStatisticsWorker(join(import.meta.dir, "../../.."));
     await Bun.write(
       join(root, "statistics-worker.js"),

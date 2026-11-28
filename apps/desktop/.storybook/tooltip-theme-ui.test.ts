@@ -10,7 +10,8 @@ test("tooltip stories theme the shell and wallpaper, not only the tooltip", asyn
     const {createRoot}=await import(${fixtureImport(import.meta.resolve("react-dom/client"))});
     const {flushSync}=await import(${fixtureImport(import.meta.resolve("react-dom"))});
     const {default:preview}=await import(${source("./preview.tsx")});
-    const {default:meta,Shapes,LighterSurface}=await import(${source("../src/stories/tooltips/Tooltips.stories.tsx")});
+    const {default:meta,States}=await import(${source("../src/stories/design-system/Tooltip.stories.tsx")});
+    const {default:comparison,LighterSurface}=await import(${source("../src/stories/tooltips/Tooltips.stories.tsx")});
     const {createThemeTokens}=await import(${source("../src/mainview/dynamic-theme.ts")});
     const root=createRoot(document.getElementById('root'));
     const check=(ok,message)=>{if(!ok)throw Error(message)};
@@ -23,9 +24,12 @@ test("tooltip stories theme the shell and wallpaper, not only the tooltip", asyn
     };
     flushSync(()=>root.render(preview.decorators[0](()=>null,{parameters:{windowPreview:true}})));
     check(getComputedStyle(document.querySelector('.glass-wallpaper')).backgroundImage!=='none','other stories keep the original wallpaper');
-    for(const story of [Shapes,LighterSurface]){
-      for(const backdrop of ['code','image','plain','text']){
-        const parameters={...meta.parameters,...story.parameters};
+    for(const [story, storyMeta, backdrops] of [
+      [States,meta,['plain']],
+      [LighterSurface,comparison,['code','image','plain','text']],
+    ]){
+      for(const backdrop of backdrops){
+        const parameters={...storyMeta.parameters,...story.parameters};
         flushSync(()=>root.render(preview.decorators[0](
           ()=>story.render({backdrop}),{parameters}
         )));
@@ -36,7 +40,7 @@ test("tooltip stories theme the shell and wallpaper, not only the tooltip", asyn
         check(wallpaper.backgroundImage==='none','no blue/purple sample wallpaper');
         check(rgba(wallpaper.backgroundColor).join()===rgba(tokens['--ds-bg-primary']).join(),'wallpaper uses theme surface');
         const tips=[...document.querySelectorAll('.ui-tooltip')];
-        check(tips.length===(story===Shapes?4:16),'all content shapes rendered');
+        check(tips.length===(story===States?4:16),'all content shapes rendered');
         for(const tip of tips){
           const style=getComputedStyle(tip);
           check(style.getPropertyValue('--ds-accent').trim()===tokens['--ds-accent'],'tooltip shares shell theme');

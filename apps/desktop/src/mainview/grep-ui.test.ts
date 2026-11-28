@@ -4,7 +4,7 @@ import {
   fixtureImport,
   runUiFixture,
 } from "../../scripts/ui-fixture";
-import { edit, grep, ls } from "../stories/proposals/data";
+import { edit, grep, ls } from "../stories/chat-renderer/tool-data";
 
 const source = (path: string) => fixtureImport(new URL(path, import.meta.url));
 

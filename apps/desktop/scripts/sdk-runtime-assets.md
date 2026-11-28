@@ -1,19 +1,16 @@
 # SDK distribution assets
 
-Electrobun's default single-file Bun bundle is not a valid SDK distribution.
+A single-file Bun bundle alone is not a valid SDK distribution.
 The SDK discovers its package version/themes from its module location; extension
 aliases resolve packages at runtime; QuickJS and code-mode need the pinned WASM
 and the worker adjacent to the original host module.
 
-`electrobun.config.ts` therefore externalizes the three public Pi package roots
-(and their subpaths) through supported `build.bun.external`. The existing host
-bundle, stock Electrobun framework/native setup, frontend copy entries and
-release-metadata postBuild hook remain in place. Do not externalize all packages indiscriminately:
-Electrobun's own framework bundling has different native path requirements.
+`stage-tauri-app.ts` uses the same package list to externalize and stage the
+three Pi SDK roots and Photon. The latter needs its adjacent WASM for native
+clipboard image conversion.
 
-The `preBuild` hook `pre-build.ts` calls `stageSdkRuntime()` in
-`sdk-runtime-assets.ts`, which stages the **installed production
-closure** of SDK/pi-ai/pi-tui in `build/sdk-runtime`. It follows dependencies,
+`stageSdkRuntime()` in `sdk-runtime-assets.ts` stages the **installed production
+closure** in `build/tauri-sdk`. It follows dependencies,
 installed optional dependencies and peers, not devDependencies; missing required
 edges fail the build. No install, registry resolution, lifecycle script or source
 patching occurs during staging. The Pi packages are installed from npm; the
@@ -41,12 +38,9 @@ Durable is forbidden even on an optional edge. The generated
 SHA256 and resolved production edges (not a signature or full-file integrity
 manifest).
 
-The same hook bundles the local statistics SQLite worker into
-`build/statistics/statistics-worker.js`; `build.copy` places it at
-`Resources/app/bun/statistics-worker.js`, beside the host bundle.
-
-`build.copy` places `node_modules` and the manifest under `Resources/app`, beside
-`bun/`, so standard resolution works from the host and unbundled SDK. No runtime
+The Tauri package places the statistics and history workers beside the host
+bundle in `host/app/bun/`. `node_modules` and the manifest go in `host/app/`,
+so standard resolution works from the host and unbundled SDK. No runtime
 `NODE_PATH`, `PI_PACKAGE_DIR`, global cache or repository path is needed. The
 stage is reused when its complete file/directory tree, manifest and dependency
 placements match the filtered installed production sources byte for byte.
@@ -60,8 +54,7 @@ On a cache miss, the hook copies into `.next` before replacing the generated
 stage. An existing interrupted `.next` blocks rebuilding until explicit
 removal/review; it is never reused as a cache. Replacement removes the old stage
 before renaming `.next`, so interruption in that window also requires manual
-recovery. A copy failure leaves the old stage intact. Electrobun 2 keeps this
-normal directory layout; do not reintroduce the removed v1 ASAR build options.
+recovery. A copy failure leaves the old stage intact.
 
 ## Verification
 
@@ -69,7 +62,7 @@ All shell commands run through RTK and the mise-managed toolchain:
 
 ```sh
 rtk proxy mise exec -- bun --no-install test apps/desktop/scripts/sdk-runtime-assets.test.ts
-rtk proxy mise exec -- pnpm exec biome check apps/desktop/electrobun.config.ts apps/desktop/scripts/sdk-runtime-assets.ts apps/desktop/scripts/sdk-runtime-assets.test.ts
+rtk proxy mise exec -- pnpm exec biome check apps/desktop/scripts/sdk-runtime-assets.ts apps/desktop/scripts/sdk-runtime-assets.test.ts
 rtk proxy mise exec -- bun --no-install apps/desktop/scripts/sdk-runtime-assets.ts
 ```
 
@@ -86,7 +79,7 @@ missing themes/aliases/WASM/package identity. Merely finding asset filenames or
 passing Vite does not prove module resolution. Network fetch traps do **not**
 disable Bun auto-install; `--no-install` is mandatory.
 
-Native prerequisite provisioning/build success, final actual Electrobun output,
+Native prerequisite provisioning/build success, final Tauri package output,
 relocated native launch/profile isolation and manual WebView/IME/security checks
 are separate release gates. Do not launch a real app to verify JavaScript package
 resolution or claim environment variables constitute an OS sandbox.

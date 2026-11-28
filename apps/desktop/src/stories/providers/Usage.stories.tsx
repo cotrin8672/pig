@@ -1,6 +1,5 @@
 import type { Meta } from "@storybook/react-vite";
 import { useState } from "react";
-import { ProviderUsageView } from "../../mainview/ProviderUsageView";
 import {
   type DockVariant,
   SidebarWithDock,
@@ -9,7 +8,6 @@ import {
 } from "./UsageDock";
 import { UsagePage } from "./UsagePreviews";
 import { type UsageDisplay, type UsageEntry, usage } from "./usage-data";
-import { usageFixtures, usageFixtureTime } from "./usage-fixtures";
 
 export default {
   title: "Providers/Usage Meter",
@@ -30,25 +28,6 @@ const displayArg = {
       name: "使用量の表示",
     },
   },
-};
-
-/** The setting drives every preview on the page, as it will in the app. */
-export const Implemented = {
-  name: "Implemented / sidebar dock",
-  ...displayArg,
-  render: ({ display }: Args) => (
-    <div
-      className="sidebar"
-      style={{ width: "var(--ds-sidebar-width)", paddingTop: 12 }}
-    >
-      <ProviderUsageView
-        entries={usageFixtures}
-        display={display}
-        now={usageFixtureTime}
-        onRefresh={() => {}}
-      />
-    </div>
-  ),
 };
 
 export const Overview = () => {

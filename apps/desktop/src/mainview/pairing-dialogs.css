@@ -1,13 +1,8 @@
 .pairing-motion,
 .remote-host {
   --snappy-fast: 100ms;
-  --snappy-open: 160ms;
   --snappy-mid: 120ms;
-  --snappy-exit: 90ms;
   --snappy-ease: var(--motion-ease-out);
-  --snappy-pop: 0.6;
-  --snappy-press: 0.97;
-  --snappy-rise: 6px;
   --mac-inset: 56px;
 }
 .pairing-motion {
@@ -88,51 +83,6 @@
   }
 }
 
-/* Sheets: same entry as Snappy popovers, the exit retraces it. */
-.mac-sheet {
-  width: min(460px, calc(100vw - 32px));
-  padding: 18px 20px 16px;
-  border: 0;
-  border-radius: var(--radius-md-plus);
-  box-shadow: var(--ds-elevation-stroke), var(--ds-shadow-dialog);
-  transform-origin: top center;
-  opacity: 0;
-  transform: translateY(calc(-1 * var(--snappy-rise)))
-    scale(var(--snappy-press));
-  transition:
-    opacity var(--snappy-exit) var(--snappy-ease),
-    transform var(--snappy-exit) var(--snappy-ease),
-    display var(--snappy-exit) allow-discrete;
-  &[data-wide] {
-    width: min(560px, calc(100vw - 32px));
-  }
-  &:not([open]) {
-    pointer-events: none;
-  }
-  &[open] {
-    gap: 14px;
-    opacity: 1;
-    transform: none;
-    transition-duration: var(--snappy-open);
-    @starting-style {
-      opacity: 0;
-      transform: translateY(calc(-1 * var(--snappy-rise)))
-        scale(var(--snappy-press));
-    }
-  }
-  & .dialog-heading h2 {
-    margin: 0;
-    font-size: var(--text-base);
-    font-weight: var(--font-weight-semibold);
-  }
-  & .dialog-actions {
-    gap: 8px;
-    margin-top: 2px;
-  }
-}
-.mac-sheet-tabs {
-  align-self: flex-start;
-}
 .mac-note {
   margin: 0;
   color: var(--ds-text-muted);
@@ -204,12 +154,7 @@
 @media (prefers-reduced-motion: reduce) {
   .pairing-motion,
   .remote-host {
-    --snappy-open: 0ms;
     --snappy-mid: 0ms;
-    --snappy-exit: 0ms;
-    --snappy-pop: 1;
-    --snappy-press: 1;
-    --snappy-rise: 0px;
   }
   .pairing-motion .snappy-spin-arc {
     animation: none;

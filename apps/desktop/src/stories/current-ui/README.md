@@ -7,8 +7,8 @@
 - **Domain / ChatScreen**：本番の `Chat`。会話履歴・応答・活動パネル・ComposerUIを含む。
 - **Domain / ComposerUI**：本番の `Composer`。入力・添付・モデル選択・送信操作を含む。
 
-`ModelPicker`はComposerUI、`NotificationCenter`はSidebar、`SessionPanel`はChatScreenの
-配下に置く。個別部品からではなく、各大枠の **Default** と全体画面から確認する。
+`ModelPicker`・`NotificationCenter`・`Notifications`・`SessionPanel` は **Domain** の
+単体ページから操作や状態を確認できる。各大枠の **Default** では画面を構成する部品の関係を確認する。
 Sidebarの枠は現在App内に直接書かれているため、Storybook側で本番の子コンポーネントを
 同じ構成に並べている。本番Appからの抽出・置換はまだ行わない。
 
@@ -44,5 +44,5 @@ mise exec -- pnpm test:ui
 ```
 
 専用描画テストはStorybookを一時ディレクトリへビルドし、独立したブラウザで画面全体と
-各まとまりを検査する。モデル選択・通知・活動パネル・テーマ変更・送信の拒否・Story間の
+各まとまりを検査する。モデル選択・通知履歴とトースト・活動パネル・テーマ変更・送信の拒否・Story間の
 状態リセットを確認し、実アプリのウィンドウやブラウザプロファイルには接続しない。

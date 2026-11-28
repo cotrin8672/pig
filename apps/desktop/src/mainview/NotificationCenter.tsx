@@ -1,10 +1,10 @@
 import { Bell, CheckCheck, CircleAlert, Trash2 } from "lucide-react";
 import { useId, useState } from "react";
 import { sessionLink } from "../shared/session-links";
+import { CountBadge } from "./CountBadge";
+import { IndicatorDot } from "./IndicatorDot";
 import { useT } from "./i18n";
 import { usePicker } from "./Picker";
-import { CountBadge } from "./primitives/CountBadge";
-import { IndicatorDot } from "./primitives/IndicatorDot";
 import { SegmentedControl } from "./primitives/SegmentedControl";
 import { openChatLink } from "./rpc";
 import {
@@ -32,10 +32,7 @@ export function NotificationCenter() {
     .filter((notice) => !unreadOnly || !notice.read)
     .reverse();
   return (
-    <details
-      ref={ref}
-      className="notification-center electrobun-webkit-app-region-no-drag"
-    >
+    <details ref={ref} className="notification-center window-no-drag">
       <summary
         className="picker-trigger notification-bell"
         aria-label={`${t.Notifications} (${unread})`}

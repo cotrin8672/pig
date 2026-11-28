@@ -69,17 +69,6 @@ export function isVisibleRecord(record: TranscriptRecord) {
     !(record.kind === "message" && record.message.role === "toolResult")
   );
 }
-export function rendererOrFallback<T>(
-  render: (() => T) | undefined,
-  fallback: () => T,
-): T {
-  try {
-    return render ? render() : fallback();
-  } catch {
-    return fallback();
-  }
-}
-
 /** Nested custom images are inert data URLs with approved raster MIME types only. */
 export function customImageSources(value: unknown): string[] {
   const pending: unknown[] = [value];

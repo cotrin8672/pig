@@ -6,11 +6,10 @@ import {
   useState,
   useSyncExternalStore,
 } from "react";
-import type { DraftFile } from "../shared/attachments";
 import { composerAction } from "../shared/keymap";
+import { editFoldedText } from "../shared/paste";
 import type { ModelSelection, Snapshot } from "../shared/rpc-schema";
 import type { DraftContent, PromptDelivery } from "../shared/runtime-contract";
-import { imageTypes, maxImageBase64 } from "./attachment-reads";
 import { ChatEmpty, ChatLayout } from "./ChatLayout";
 import { ComposerAttachments } from "./ComposerAttachments";
 import { ComposerEditor, insertEditorNewline } from "./ComposerEditor";
@@ -18,15 +17,16 @@ import { ComposerFrame } from "./ComposerFrame";
 import { ComposerSubmit } from "./ComposerSubmit";
 import { ContextIndicator } from "./ContextIndicator";
 import { addressKey } from "./chat-snapshot";
+import { attachmentReads, clipboardFiles } from "./composer-attachments";
 import { composerHistory } from "./composer-input-history";
-import { drafts, emptyContent, expandedDraft } from "./draft-store";
+import { drafts, emptyContent } from "./draft-store";
 import { useT } from "./i18n";
-import { UserMessage } from "./MessageContent";
 import { MessageQueue, usePendingArrival } from "./MessageQueue";
 import { ModelPicker } from "./ModelPicker";
 import { NewChatTarget } from "./NewChatTarget";
 import { navigate, navigationRevision } from "./navigation";
 import {
+  editOpeningSend,
   openingDraftKey,
   openingSends,
   queueOpeningSelection,
@@ -36,14 +36,20 @@ import {
   steerOpeningSend,
   withdrawOpeningSend,
 } from "./opening-sends";
-import { remote, remoteDraftKey, saveRemoteDraft } from "./remote-workspace";
+import { PendingUserMessage } from "./PendingUserMessage";
+import { ComposerForm } from "./patterns/ComposerForm";
+import {
+  acceptRemoteSend,
+  remote,
+  remoteDraftKey,
+  saveRemoteDraft,
+} from "./remote-workspace";
 import { openChat, rpc, startOpeningChat } from "./rpc";
 import { showError, useStore } from "./store";
 import "./composer.css";
 
 const OpeningId = createContext<string | undefined>(undefined);
-const noImages: DraftContent["images"] = [];
-const noFiles: DraftFile[] = [];
+const noContent = emptyContent();
 function useOpeningTarget() {
   const id = useContext(OpeningId);
   return useStore((s) => (id ? s.pendingOpens[id] : s.openingTarget));
@@ -75,41 +81,38 @@ export function OpeningComposer({ preview }: { preview?: Snapshot }) {
     },
     [preview, paneOpenId],
   );
+  const draftKey = target && openingDraftKey(target);
   const newText = useStore((s) =>
-    target ? (s.newChatDrafts[openingDraftKey(target)] ?? "") : "",
+    draftKey === undefined ? "" : (s.newChatDrafts[draftKey] ?? ""),
   );
+  const owner = snapshot?.address ?? draftKey;
   const readContent = () =>
-    snapshot ? drafts.read(snapshot.address).content : undefined;
-  const existingContent = useSyncExternalStore(
+    owner === undefined ? noContent : drafts.read(owner).content;
+  const content = useSyncExternalStore(
     drafts.subscribe,
     readContent,
     readContent,
   );
-  const existingText = existingContent?.text ?? "";
-  // Only a chat that does not exist yet holds attachments here; existing chats use their draft.
-  const imageKey = target && !snapshot ? openingDraftKey(target) : undefined;
-  const newImages = useStore((s) =>
-    imageKey ? (s.newChatImages[imageKey] ?? noImages) : noImages,
+  useSyncExternalStore(
+    attachmentReads.subscribe,
+    attachmentReads.getTick,
+    attachmentReads.getTick,
   );
-  const newFiles = useStore((s) =>
-    imageKey ? (s.newChatFiles[imageKey] ?? noFiles) : noFiles,
-  );
-  const images = existingContent ? existingContent.images : newImages;
-  const files = existingContent ? (existingContent.files ?? noFiles) : newFiles;
+  const loads = owner === undefined ? [] : attachmentReads.read(owner);
+  const { images, files } = content;
   const queued = openingSends(target).length > 0;
-  const existing = !!preview || !!target?.id;
-  const text = existing
-    ? [existingText, newText].filter(Boolean).join("\n")
-    : newText;
-  const hasContent = !!text.trim() || images.length + files.length > 0;
+  const text = [content.text, newText].filter(Boolean).join("\n");
+  const hasContent =
+    !!text.trim() || images.length > 0 || !!files?.length || loads.length > 0;
   function changeText(value: string, pastes?: DraftContent["pastes"]) {
     if (snapshot)
       drafts.edit(
         snapshot.address,
         (content) => ({
           ...content,
-          text: value,
-          pastes: pastes ?? content.pastes,
+          ...(pastes === undefined
+            ? editFoldedText(text, value, content.pastes)
+            : { text: value, pastes }),
         }),
         true,
       );
@@ -121,74 +124,26 @@ export function OpeningComposer({ preview }: { preview?: Snapshot }) {
         },
       }));
   }
-  function setImages(
-    change: (images: DraftContent["images"]) => DraftContent["images"],
-  ) {
-    if (snapshot)
-      drafts.edit(
-        snapshot.address,
-        (content) => ({ ...content, images: change(content.images) }),
-        true,
-      );
-    else if (imageKey)
-      useStore.setState((s) => ({
-        newChatImages: {
-          ...s.newChatImages,
-          [imageKey]: change(s.newChatImages[imageKey] ?? []),
-        },
-      }));
-  }
-  function setFiles(change: (files: DraftFile[]) => DraftFile[]) {
-    if (snapshot)
-      drafts.edit(
-        snapshot.address,
-        (content) => ({ ...content, files: change(content.files ?? []) }),
-        true,
-      );
-    else if (imageKey)
-      useStore.setState((s) => ({
-        newChatFiles: {
-          ...s.newChatFiles,
-          [imageKey]: change(s.newChatFiles[imageKey] ?? []),
-        },
-      }));
-  }
-  function addImage(data: string | null, mimeType: string) {
-    if (!data) return showError("No image could be read from the clipboard.");
-    if (data.length > maxImageBase64)
-      return showError(t["Each image must be at most 4.5 MiB of base64 data."]);
-    if (images.length >= 8)
-      return showError(t["You can attach up to 8 images."]);
-    setImages((current) => [
-      ...current,
-      { id: crypto.randomUUID(), image: { type: "image", data, mimeType } },
-    ]);
+  function editAttachments(change: (content: DraftContent) => DraftContent) {
+    if (owner !== undefined) drafts.edit(owner, change, true);
   }
   function attach(dropped: File[]) {
-    for (const file of dropped) {
-      const image = imageTypes.has(file.type);
-      const reader = new FileReader();
-      reader.onload = () => {
-        const data = String(reader.result).replace(/^data:[^,]*;base64,/, "");
-        if (image) return addImage(data, file.type);
-        // Non-image files go to the agent as a stored path, like the chat composer.
-        void rpc.request
-          .storeAttachment({ name: file.name, data })
-          .then(
-            (path) =>
-              setFiles((current) => [
-                ...current,
-                { id: crypto.randomUUID(), path, name: file.name },
-              ]),
-            showError,
-          );
-      };
-      reader.onerror = () => showError(`Could not read ${file.name}`);
-      reader.readAsDataURL(file);
-    }
+    if (owner !== undefined)
+      attachmentReads.startFiles(owner, dropped, (name, data) =>
+        rpc.request.storeAttachment({ name, data }),
+      );
   }
   function send(delivery: PromptDelivery = "steer") {
-    if (!hasContent || remoteLock.current) return;
+    if (owner === undefined || remoteLock.current) return;
+    const current = drafts.read(owner).content;
+    const pending = attachmentReads.pending(owner);
+    if (
+      !text.trim() &&
+      !current.images.length &&
+      !current.files?.length &&
+      !pending
+    )
+      return;
     if (!currentOpenId() && preview)
       void openChat(preview.info.cwd, preview.info.id);
     const state = useStore.getState();
@@ -197,8 +152,9 @@ export function OpeningComposer({ preview }: { preview?: Snapshot }) {
     if (!id || !opening) return;
     if (opening.remote) {
       if (
-        images.length ||
-        files.length ||
+        current.images.length ||
+        current.files?.length ||
+        pending ||
         text.length > 16000 ||
         /^[!/]/.test(text.trimStart())
       )
@@ -214,13 +170,13 @@ export function OpeningComposer({ preview }: { preview?: Snapshot }) {
       void sendRemote(id, host, project);
       return;
     }
-    const content = snapshot
-      ? { ...drafts.read(snapshot.address).content, text }
-      : { ...emptyContent(), text, images, files };
-    queueOpeningSend(id, content, delivery);
-    setImages(() => []);
-    setFiles(() => []);
-    if (snapshot) drafts.edit(snapshot.address, emptyContent, true);
+    queueOpeningSend(
+      id,
+      { ...current, text },
+      delivery,
+      attachmentReads.claim(owner),
+    );
+    drafts.edit(owner, emptyContent, true);
     useStore.setState((s) => ({
       newChatDrafts: { ...s.newChatDrafts, [openingDraftKey(opening)]: "" },
     }));
@@ -262,7 +218,7 @@ export function OpeningComposer({ preview }: { preview?: Snapshot }) {
         );
       const firstSend = remote(host.id, { op: "send", view, id, text })
         .then(() => {
-          saveRemoteDraft(key, "", undefined, id);
+          acceptRemoteSend(key, id);
           return true;
         })
         .catch((e) => {
@@ -305,7 +261,7 @@ export function OpeningComposer({ preview }: { preview?: Snapshot }) {
       : `new:${target?.draftId ?? target?.cwd}`;
   return (
     <ComposerFrame
-      onFiles={!target?.remote && (imageKey || snapshot) ? attach : undefined}
+      onFiles={!target?.remote && owner !== undefined ? attach : undefined}
     >
       {openId && deferred && (
         <NewChatTarget openId={openId} busy={remoteSending} />
@@ -329,34 +285,67 @@ export function OpeningComposer({ preview }: { preview?: Snapshot }) {
         }}
         onEdit={(id) => {
           const openId = currentOpenId();
-          const send = openId && withdrawOpeningSend(openId, id);
-          if (!send) return;
-          if (snapshot) drafts.restoreSent(snapshot.address, send.content);
-          else {
-            changeText([send.content.text, text].filter(Boolean).join("\n\n"));
-            setImages((current) => [...send.content.images, ...current]);
-            setFiles((current) => [...(send.content.files ?? []), ...current]);
-          }
+          if (openId) editOpeningSend(openId, id);
           textareaRef.current?.focus();
         }}
       />
-      <form
-        className="composer"
+      <ComposerForm
         onSubmit={(event) => {
           event.preventDefault();
           send();
         }}
+        toolbar={
+          <>
+            {(!target?.draftId || queued) && (
+              <span className="sr-only" role="status">
+                {t["Opening chat…"]}
+              </span>
+            )}
+            <div className="composer-pickers">
+              {!target?.remote && (
+                <>
+                  <ContextIndicator usage={snapshot?.contextUsage} />
+                  <ModelPicker
+                    selection={target?.selection ?? snapshot}
+                    onSelect={selectModel}
+                  />
+                </>
+              )}
+            </div>
+          </>
+        }
+        submit={
+          <ComposerSubmit
+            busy={false}
+            waiting={queued || remoteSending}
+            hasContent={hasContent}
+            disabled={!hasContent}
+            onStop={() => {
+              const id = currentOpenId();
+              if (id) restoreOpeningSends(id);
+            }}
+          />
+        }
       >
-        {images.length + files.length > 0 && (
+        {(images.length > 0 ||
+          files?.length ||
+          loads.some((load) => load.preview)) && (
           <div className="composer-attachments">
             <ComposerAttachments
               images={images}
               files={files}
+              loads={loads}
               onRemoveImage={(id) =>
-                setImages((items) => items.filter((item) => item.id !== id))
+                editAttachments((content) => ({
+                  ...content,
+                  images: content.images.filter((item) => item.id !== id),
+                }))
               }
               onRemoveFile={(id) =>
-                setFiles((items) => items.filter((item) => item.id !== id))
+                editAttachments((content) => ({
+                  ...content,
+                  files: content.files?.filter((item) => item.id !== id),
+                }))
               }
             />
           </div>
@@ -368,9 +357,7 @@ export function OpeningComposer({ preview }: { preview?: Snapshot }) {
           placeholder={t["Ask anything, or describe what to build…"]}
           value={text}
           readOnly={remoteSending}
-          pastes={
-            snapshot ? drafts.read(snapshot.address).content.pastes : undefined
-          }
+          pastes={snapshot ? content.pastes : undefined}
           onRestore={(edit) => {
             if (!remoteLock.current) changeText(edit.text, edit.pastes);
           }}
@@ -383,7 +370,7 @@ export function OpeningComposer({ preview }: { preview?: Snapshot }) {
               event.preventDefault();
               return;
             }
-            const pasted = Array.from(event.clipboardData.files);
+            const pasted = clipboardFiles(event.clipboardData);
             if (target?.remote) {
               if (pasted.length) {
                 event.preventDefault();
@@ -391,7 +378,7 @@ export function OpeningComposer({ preview }: { preview?: Snapshot }) {
               }
               return;
             }
-            if (!imageKey && !snapshot) return;
+            if (owner === undefined) return;
             if (pasted.length) {
               event.preventDefault();
               attach(pasted);
@@ -403,9 +390,9 @@ export function OpeningComposer({ preview }: { preview?: Snapshot }) {
               !event.clipboardData.getData("text/html")
             ) {
               event.preventDefault();
-              void rpc.request
-                .readClipboardImage({})
-                .then((data) => addImage(data, "image/png"), showError);
+              attachmentReads.startClipboard(owner, () =>
+                rpc.request.readClipboardImage({}),
+              );
             }
           }}
           onKeyDown={(event) => {
@@ -428,37 +415,7 @@ export function OpeningComposer({ preview }: { preview?: Snapshot }) {
               );
           }}
         />
-        <div className="composer-toolbar">
-          {(!target?.draftId || queued) && (
-            <span className="sr-only" role="status">
-              {t["Opening chat…"]}
-            </span>
-          )}
-          <div className="composer-pickers">
-            {!target?.remote && (
-              <>
-                <ContextIndicator usage={snapshot?.contextUsage} />
-                <ModelPicker
-                  selection={target?.selection ?? snapshot}
-                  onSelect={selectModel}
-                />
-              </>
-            )}
-          </div>
-          <div className="send-controls">
-            <ComposerSubmit
-              busy={false}
-              waiting={queued || remoteSending}
-              hasContent={hasContent}
-              disabled={!hasContent}
-              onStop={() => {
-                const id = currentOpenId();
-                if (id) restoreOpeningSends(id);
-              }}
-            />
-          </div>
-        </div>
-      </form>
+      </ComposerForm>
     </ComposerFrame>
   );
 }
@@ -469,22 +426,13 @@ export function OpeningMessages() {
   return openingSends(target)
     .filter((send) => send.delivery !== "followUp")
     .map((send) => (
-      <div className="response-turn" key={send.id}>
-        <article ref={arrival(send.id, send.content)} className="message user">
-          <UserMessage
-            sessionId="opening"
-            disabled
-            message={{
-              role: "user",
-              timestamp: send.timestamp,
-              content: [
-                { type: "text", text: expandedDraft(send.content) },
-                ...send.content.images.map(({ image }) => image),
-              ],
-            }}
-          />
-        </article>
-      </div>
+      <PendingUserMessage
+        key={send.id}
+        arrivalRef={arrival(send.id, send.content)}
+        sessionId="opening"
+        timestamp={send.timestamp}
+        content={send.content}
+      />
     ));
 }
 

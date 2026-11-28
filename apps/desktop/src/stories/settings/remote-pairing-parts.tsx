@@ -1,13 +1,4 @@
-import {
-  ChevronLeft,
-  ChevronRight,
-  Folder,
-  Link2,
-  MessageSquare,
-  Monitor,
-  Plus,
-  SquarePen,
-} from "lucide-react";
+import { Link2, Monitor, Plus, SquarePen } from "lucide-react";
 import {
   type ReactNode,
   useEffect,
@@ -15,28 +6,25 @@ import {
   useRef,
   useState,
 } from "react";
+import { IndicatorDot } from "../../mainview/IndicatorDot";
 import {
   CONNECT_STEPS,
   ConnectBody,
   type ConnectState,
   InviteBody,
   type InviteStage,
-  Sheet,
 } from "../../mainview/PairingDialogs";
 import { ConfirmButton } from "../../mainview/patterns/ConfirmButton";
+import { Sheet } from "../../mainview/patterns/Sheet";
 import { Button } from "../../mainview/primitives/Button";
-import { Checkbox } from "../../mainview/primitives/Checkbox";
-import { IconButton } from "../../mainview/primitives/IconButton";
-import { IndicatorDot } from "../../mainview/primitives/IndicatorDot";
-import { SegmentedControl } from "../../mainview/primitives/SegmentedControl";
+import { RemoteProjectPicker } from "../../mainview/RemoteProjectPicker";
 import { SessionList } from "../../mainview/SessionList";
 import { ProjectSessions } from "../../mainview/SidebarSessions";
 import { useStore } from "../../mainview/store";
 import { TooltipLayer, useTooltip } from "../../mainview/Tooltip";
+import { setStoryRemoteProjectRequests } from "../browser-rpc";
 import SidebarPreview from "../current-ui/SidebarPreview";
 import "../../mainview/settings.css";
-// Holds the shared centering rule of non-modal dialogs (.oauth-dialog).
-import "../../mainview/model-dividers.css";
 import "./remote-pairing-story.css";
 import "../motion/snappy-motion.css";
 
@@ -86,11 +74,9 @@ export const hostChatTitles = [
 ];
 // Folders on the host, for adding a folder that is not a project yet.
 const folderTree: Record<string, string[]> = {
-  "C:/Users/gummy": ["Desktop", "Documents", "dotfiles", "ghq", "work"],
-  "C:/Users/gummy/ghq": ["github.com"],
-  "C:/Users/gummy/ghq/github.com": ["cotrin8672"],
-  [BASE]: ["blog", "pig", "piris", "scratch", "url-product-compare"],
-  "C:/Users/gummy/work": ["lab-report", "slides"],
+  [remote(`${BASE}/pig`)]: ["apps", "docs", "packages"],
+  [remote(`${BASE}/pig/apps`)]: ["desktop"],
+  [remote(`${BASE}/piris`)]: ["src"],
 };
 
 export type Device = {
@@ -138,6 +124,10 @@ const COLLAPSE_MS = 120;
 export const leaf = (path: string) => path.split("/").pop() ?? path;
 export const projectName = (cwd: string) =>
   leaf(hostProjects.find((p) => p.cwd === cwd)?.path ?? cwd);
+const projectOption = (id: string) => ({
+  id,
+  name: id === HOST_CHATS ? "Projectなしのチャット" : projectName(id),
+});
 
 /** Storybook simulation only; no device is contacted. */
 export function useConnect(initial = "", initiallyFailed = false) {
@@ -215,6 +205,46 @@ export function usePairing(args: PairingArgs) {
   const [allow, setAllowState] = useState(args.allow);
   const [devices, setDevices] = useState(args.devices);
   const [hosts, setHosts] = useState(args.hosts);
+  useLayoutEffect(() => {
+    const registered = new Set(hostProjects.map(({ cwd }) => cwd));
+    return setStoryRemoteProjectRequests({
+      remoteWorkspace({ query }) {
+        switch (query.op) {
+          case "projects":
+            return [HOST_CHATS, ...registered].map(projectOption);
+          case "folders": {
+            const { parent } = query;
+            return (
+              parent
+                ? (folderTree[parent] ?? []).map((name) => `${parent}/${name}`)
+                : [...registered]
+            ).map(projectOption);
+          }
+          case "addFolder":
+            registered.add(query.folder);
+            return projectOption(query.folder);
+          default:
+            throw new Error("この操作はプレビューに接続していません。");
+        }
+      },
+      remoteProjectsSave({ id, projects }) {
+        setHosts((list) =>
+          list.map((host) =>
+            host.id === id
+              ? {
+                  ...host,
+                  chats: projects.some((p) => p.id === HOST_CHATS),
+                  projects: projects
+                    .filter((p) => p.id !== HOST_CHATS)
+                    .map((p) => p.id),
+                }
+              : host,
+          ),
+        );
+        return true;
+      },
+    });
+  }, []);
   const [leaving, setLeaving] = useState<string[]>([]);
   const [open, setOpen] = useState<Dialog | undefined>(args.dialog);
   const [inviteStage, setInviteStage] = useState<InviteStage>("idle");
@@ -324,23 +354,6 @@ export function usePairing(args: PairingArgs) {
         }),
       );
     },
-    addToHost(projects: string[], chats: boolean) {
-      setHosts((list) =>
-        list.map((host, index) =>
-          index
-            ? host
-            : {
-                ...host,
-                chats: host.chats || chats,
-                projects: [
-                  ...host.projects,
-                  ...projects.filter((cwd) => !host.projects.includes(cwd)),
-                ],
-              },
-        ),
-      );
-      setOpen(undefined);
-    },
   };
   return model;
 }
@@ -441,184 +454,9 @@ function RemoteHostSection({ host, onAdd }: { host: Host; onAdd: () => void }) {
   );
 }
 
-function AddFromHost({
-  open,
-  folder,
-  host,
-  onClose,
-  onAdd,
-}: {
-  open: boolean;
-  folder: boolean;
-  host?: Host;
-  onClose: () => void;
-  onAdd: (projects: string[], chats: boolean) => void;
-}) {
-  const [tab, setTab] = useState<"existing" | "folder">(
-    folder ? "folder" : "existing",
-  );
-  const [picked, setPicked] = useState<string[]>([]);
-  const [chats, setChats] = useState(false);
-  const [dir, setDir] = useState(BASE);
-  const [selected, setSelected] = useState<string>();
-  useEffect(() => {
-    if (!open) return;
-    setPicked([]);
-    setChats(false);
-    setSelected(undefined);
-  }, [open]);
-  useEffect(() => setTab(folder ? "folder" : "existing"), [folder]);
-  if (!host) return null;
-  const added = (cwd: string) => host.projects.includes(cwd);
-  const existing = (path: string) => hostProjects.find((p) => p.path === path);
-  const count = picked.length + (chats ? 1 : 0);
-  const parent = dir.slice(0, dir.lastIndexOf("/"));
-  const toggle = (cwd: string) =>
-    setPicked((list) =>
-      list.includes(cwd)
-        ? list.filter((other) => other !== cwd)
-        : [...list, cwd],
-    );
-  return (
-    <Sheet
-      open={open}
-      wide
-      title={`${host.name}から追加`}
-      onClose={onClose}
-      footer={
-        <>
-          <Button onClick={onClose}>キャンセル</Button>
-          {tab === "existing" ? (
-            <Button
-              variant="primary"
-              disabled={!count}
-              onClick={() => onAdd(picked, chats)}
-            >
-              {count ? `${count}件を追加` : "追加"}
-            </Button>
-          ) : (
-            <Button
-              variant="primary"
-              disabled={!selected}
-              onClick={() =>
-                selected &&
-                onAdd([existing(selected)?.cwd ?? remote(selected)], false)
-              }
-            >
-              このフォルダーを追加
-            </Button>
-          )}
-        </>
-      }
-    >
-      <SegmentedControl
-        className="mac-sheet-tabs"
-        aria-label="追加するもの"
-        value={tab}
-        onChange={setTab}
-        options={[
-          { value: "existing", label: "既存のProject" },
-          { value: "folder", label: "フォルダーを選択" },
-        ]}
-      />
-      {tab === "existing" ? (
-        <div key="existing" className="mac-list mac-pick">
-          <label className="mac-pick-row" data-done={host.chats || undefined}>
-            <Checkbox
-              checked={host.chats || chats}
-              disabled={host.chats}
-              onChange={(event) => setChats(event.target.checked)}
-            />
-            <MessageSquare size={14} aria-hidden="true" />
-            <span>
-              <span className="mac-row-title">Projectなしのチャット</span>
-              <span className="mac-row-detail">
-                {hostChatTitles.length}件のチャット
-              </span>
-            </span>
-            {host.chats && <span className="mac-row-detail">追加済み</span>}
-          </label>
-          {hostProjects.map((project) => (
-            <label
-              key={project.cwd}
-              className="mac-pick-row"
-              data-done={added(project.cwd) || undefined}
-            >
-              <Checkbox
-                checked={added(project.cwd) || picked.includes(project.cwd)}
-                disabled={added(project.cwd)}
-                onChange={() => toggle(project.cwd)}
-              />
-              <Folder size={14} aria-hidden="true" />
-              <span>
-                <span className="mac-row-title">{leaf(project.path)}</span>
-                <span className="mac-row-detail mac-path">{project.path}</span>
-              </span>
-              <span className="mac-row-detail">
-                {added(project.cwd) ? "追加済み" : `${project.titles.length}件`}
-              </span>
-            </label>
-          ))}
-        </div>
-      ) : (
-        <div key="folder" className="mac-list mac-pick">
-          <div className="mac-crumb">
-            <IconButton
-              aria-label="上のフォルダーへ"
-              disabled={!folderTree[parent]}
-              onClick={() => {
-                setDir(parent);
-                setSelected(undefined);
-              }}
-            >
-              <ChevronLeft size={14} aria-hidden="true" />
-            </IconButton>
-            <span className="mac-path">{dir}</span>
-          </div>
-          {(folderTree[dir] ?? []).map((name) => {
-            const path = `${dir}/${name}`;
-            const known = existing(path);
-            return (
-              <div
-                key={path}
-                className="mac-folder-row"
-                data-selected={selected === path || undefined}
-              >
-                <button
-                  type="button"
-                  className="mac-folder-pick"
-                  aria-pressed={selected === path}
-                  onClick={() => setSelected(path)}
-                >
-                  <Folder size={14} aria-hidden="true" />
-                  <span className="mac-row-title">{name}</span>
-                  {known && (
-                    <span className="mac-row-detail">
-                      {added(known.cwd) ? "追加済み" : "Project"}
-                    </span>
-                  )}
-                </button>
-                {folderTree[path] && (
-                  <IconButton
-                    aria-label={`${name}を開く`}
-                    onClick={() => {
-                      setDir(path);
-                      setSelected(undefined);
-                    }}
-                  >
-                    <ChevronRight size={14} aria-hidden="true" />
-                  </IconButton>
-                )}
-              </div>
-            );
-          })}
-        </div>
-      )}
-    </Sheet>
-  );
-}
-
 function PairingSheets({ p }: { p: Pairing }) {
+  const picker = p.open === "add" || p.open === "add-folder";
+  const host = p.hosts[0];
   return (
     <>
       <Sheet
@@ -667,13 +505,19 @@ function PairingSheets({ p }: { p: Pairing }) {
         />
       </Sheet>
 
-      <AddFromHost
-        open={p.open === "add" || p.open === "add-folder"}
-        folder={p.open === "add-folder"}
-        host={p.hosts[0]}
-        onClose={() => p.setOpen(undefined)}
-        onAdd={p.addToHost}
-      />
+      {picker && host && (
+        <RemoteProjectPicker
+          host={{
+            ...host,
+            projects: [
+              ...(host.chats ? [HOST_CHATS] : []),
+              ...host.projects,
+            ].map(projectOption),
+          }}
+          initialTab={p.open === "add-folder" ? "folders" : "projects"}
+          close={() => p.setOpen(undefined)}
+        />
+      )}
     </>
   );
 }

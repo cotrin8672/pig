@@ -38,7 +38,7 @@ export function SidebarResizer({
   };
   return (
     <hr
-      className="sidebar-resizer electrobun-webkit-app-region-no-drag"
+      className="sidebar-resizer window-no-drag"
       style={style}
       tabIndex={0}
       aria-label={t["Resize sidebar"]}

@@ -14,13 +14,13 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
-import config from "../electrobun.config";
 import {
   copySdkRuntime,
   SDK_RUNTIME_EXTERNALS,
   SDK_RUNTIME_ROOTS,
   SDK_RUNTIME_STAGE,
   sdkStageMatches,
+  stageSdkRuntime,
 } from "./sdk-runtime-assets";
 
 const fixtures: string[] = [];
@@ -67,19 +67,18 @@ function noLinks(path: string) {
 }
 
 describe("SDK runtime production packaging", () => {
-  test("Electrobun keeps Bun, external roots, closure copy and release metadata hook", () => {
-    expect(config.build.mainProcess).toBe("bun");
-    expect(config.build.bun.entrypoint).toBe("src/bun/index.ts");
-    expect(config.build.bun.external).toEqual(SDK_RUNTIME_EXTERNALS);
-    expect(config.build.copy["build/sdk-runtime/node_modules"]).toBe(
-      "node_modules",
-    );
-    expect(config.scripts.preBuild).toBe("scripts/pre-build.ts");
-    expect(config.build.copy["build/statistics/statistics-worker.js"]).toBe(
-      "bun/statistics-worker.js",
-    );
-    expect(config.scripts.postBuild).toBe("scripts/post-build.ts");
-    expect(config.build.win.bundleCEF).toBe(false);
+  test("Tauri's unbundled runtime includes Photon WASM beside the SDK", () => {
+    const f = fixture();
+    const photon = "@silvia-odwyer/photon";
+    for (const name of SDK_RUNTIME_ROOTS) pkg(join(f.installRoot, name), name);
+    const wasm = join("node_modules", photon, "photon_rs_bg.wasm");
+    writeFileSync(join(f.projectDir, wasm), "wasm bytes");
+    const stage = stageSdkRuntime(f.projectDir);
+    expect(SDK_RUNTIME_EXTERNALS).toContain(`${photon}/*`);
+    expect(readFileSync(join(stage, wasm), "utf8")).toBe("wasm bytes");
+    expect(
+      sdkStageMatches({ ...f, destination: stage, roots: SDK_RUNTIME_ROOTS }),
+    ).toBe(true);
   });
   test("stage reuse compares installed bytes, rejects extras and does not repair or follow stage links", () => {
     const f = fixture();
@@ -237,69 +236,6 @@ describe("SDK runtime production packaging", () => {
       }
     }
     expect(JSON.stringify(manifest)).not.toContain(f.projectDir);
-  });
-  test("Hutch-style import + default() stages a clean build (CopySourceMissing regression)", () => {
-    const f = fixture();
-    for (const name of SDK_RUNTIME_ROOTS) pkg(join(f.installRoot, name), name);
-    const script = join(f.projectDir, "scripts", "pre-build.ts");
-    mkdirSync(dirname(script), { recursive: true });
-    copyFileSync(join(import.meta.dir, "pre-build.ts"), script);
-    copyFileSync(
-      join(import.meta.dir, "sdk-runtime-assets.ts"),
-      join(dirname(script), "sdk-runtime-assets.ts"),
-    );
-    const workerDir = join(f.projectDir, "src/bun/statistics");
-    mkdirSync(workerDir, { recursive: true });
-    for (const name of [
-      "worker.ts",
-      "store.ts",
-      "contracts.ts",
-      "queries.ts",
-      "normalize.ts",
-      "shell-command.ts",
-    ])
-      copyFileSync(
-        join(import.meta.dir, "../src/bun/statistics", name),
-        join(workerDir, name),
-      );
-    mkdirSync(join(f.projectDir, "src/shared"), { recursive: true });
-    copyFileSync(
-      join(import.meta.dir, "../src/shared/statistics.ts"),
-      join(f.projectDir, "src/shared/statistics.ts"),
-    );
-    for (const file of [
-      "bun/chat-history-worker.ts",
-      "bun/chat-history-parser.ts",
-      "shared/chat-history-import.ts",
-    ])
-      copyFileSync(
-        join(import.meta.dir, "../src", file),
-        join(f.projectDir, "src", file),
-      );
-    const stage = join(f.projectDir, SDK_RUNTIME_STAGE);
-    // Mirrors Hutch run_hook_helper.js: import the module, call its default.
-    const hook = Bun.spawnSync(
-      [
-        process.execPath,
-        "--no-install",
-        "--eval",
-        `const m = await import(${JSON.stringify(script)}); if (typeof m.default !== "function") process.exit(3); await m.default();`,
-      ],
-      { cwd: f.projectDir, stdout: "pipe", stderr: "pipe" },
-    );
-    expect(hook.exitCode, hook.stderr.toString()).toBe(0);
-    expect(existsSync(join(stage, "node_modules"))).toBe(true);
-    expect(
-      existsSync(join(f.projectDir, "build/statistics/statistics-worker.js")),
-    ).toBe(true);
-    expect(
-      existsSync(
-        join(f.projectDir, "build/chat-history/chat-history-worker.js"),
-      ),
-    ).toBe(true);
-    expect(
-      sdkStageMatches({ ...f, destination: stage, roots: SDK_RUNTIME_ROOTS }),
-    ).toBe(true);
   });
   test("an interrupted rebuild preserves the previous stage and never trusts partial next contents", () => {
     const f = fixture();

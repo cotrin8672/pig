@@ -19,7 +19,9 @@ import {
   useState,
 } from "react";
 import "../../mainview/panes.css";
-import { IndicatorDot } from "../../mainview/primitives/IndicatorDot";
+import { ChatTextArea } from "../../mainview/ChatTextArea";
+import { IndicatorDot } from "../../mainview/IndicatorDot";
+import { MessageBubble } from "../../mainview/patterns/MessageBubble";
 import {
   dotClass,
   headline,
@@ -440,7 +442,7 @@ function MockPane({
             {info.prompt ? (
               <div className="transcript">
                 <div className="message user">
-                  <div className="user-bubble">{info.prompt}</div>
+                  <MessageBubble>{info.prompt}</MessageBubble>
                 </div>
                 <div className="message assistant">
                   <p>{info.response}</p>
@@ -477,7 +479,7 @@ function MockPane({
           <div className="composer-dock si-composer-dock">
             {variant === "dock" && <DockStrip info={info} initial={initial} />}
             <div className="composer">
-              <textarea
+              <ChatTextArea
                 aria-label="メッセージ（プレビュー）"
                 placeholder="メッセージを入力…"
               />

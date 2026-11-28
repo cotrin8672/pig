@@ -18,12 +18,14 @@ test(
       const {RemoteConversation}=await import(${fixtureImport(new URL("./RemoteConversation.tsx", import.meta.url))});
       const {openChat,openRemoteDraft}=await import(${fixtureImport(new URL("./rpc.ts", import.meta.url))});
       const {useStore}=await import(${fixtureImport(new URL("./store.ts", import.meta.url))});
+      const {drafts,emptyContent}=await import(${fixtureImport(new URL("./draft-store.ts", import.meta.url))});
       ${fixtureHelpers}
       const root=createFixtureRoot(createRoot);
       const work='Work with a very long project name';
       const host={id:'home',name:'Home PC',online:true,projects:[{id:'one',name:'First'},{id:'two',name:'Second'}]};
       useStore.setState(s=>({
         bootstrap:{...s.bootstrap,generalCwd:'general',projects:[work]},
+        settings:{...s.settings,language:'ja'},
         remoteHosts:[host,{id:'off',name:'Offline PC',online:false}],
       }));
       const calls=[];
@@ -66,19 +68,34 @@ test(
       await choose(0,'Home PC');
       await choose(1,'Second');
       check(current().remote.project==='two' && input().value==='  Keep this draft  ','remote project retains the draft');
+      const status=()=>trigger(0).querySelector('.chat-target-status.connection-dot');
+      const position=()=>JSON.stringify(status().getBoundingClientRect());
+      const connectedPosition=position();
+      const connectedColor=getComputedStyle(status()).backgroundColor;
+      check(status().matches('.connected')&&trigger(0).getAttribute('aria-description')==='接続済み','PC trigger shows the shared connected dot and describes its state');
+      const setOnline=online=>flushSync(()=>useStore.setState(s=>({
+        remoteHosts:s.remoteHosts.map(item=>item.id===host.id?{...item,online}:item),
+      })));
+      setOnline(false);
+      check(status().matches('.offline')&&trigger(0).getAttribute('aria-description')==='オフライン','selected PC going offline updates the dot and description');
+      check(position()===connectedPosition&&getComputedStyle(status()).backgroundColor!==connectedColor,'connection changes color without moving the dot');
+      setOnline(true);
       trigger(0).click();
       await until(()=>option('Offline PC'),'offline PC row');
-      check(option('Offline PC').disabled,'offline PC cannot be selected');
+      check(option('Offline PC').disabled&&!option('Offline PC').id,'offline PC cannot be selected or keyboard-highlighted');
+      const selected=option('Home PC');
+      check(selected.getAttribute('aria-selected')==='true'&&selected.querySelector('.model-selected-mark[aria-hidden=true] .lucide-check'),'selected PC exposes selection and decorates it with a check');
+      check(document.activeElement.getAttribute('aria-activedescendant')===selected.id,'picker keeps keyboard focus on the selected option through the search field');
       document.activeElement.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}));
       await until(()=>!document.querySelector('.chat-target-panel'),'escape dismisses picker');
       check(calls.length===0,'selection does not create a session');
       const form=document.querySelector('.composer');
       const submit=()=>form.dispatchEvent(new Event('submit',{bubbles:true,cancelable:true}));
-      useStore.setState({newChatFiles:{[first]:[{id:'file',path:'local-only',name:'file.txt'}]}});
+      drafts.edit(first,draft=>({...draft,files:[{id:'file',path:'local-only',name:'file.txt'}]}));
       await until(()=>document.querySelector('.composer-attachments'),'local attachment present');
       submit();
       check(calls.length===0 && input().value==='  Keep this draft  ','unsupported attachments never reach remote or lose the draft');
-      useStore.setState({newChatFiles:{}});
+      drafts.edit(first,emptyContent);
       await until(()=>!document.querySelector('.composer-attachments'),'attachment removed');
       submit();submit();
       await until(()=>reply && useStore.getState().page==='remoteChat' && !trigger(0),'first send binds to remote thread');

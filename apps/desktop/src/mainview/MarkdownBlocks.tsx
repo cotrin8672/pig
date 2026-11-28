@@ -1,7 +1,5 @@
 import type { Element, ElementContent } from "hast";
 import {
-  Check,
-  Copy,
   Info,
   Lightbulb,
   MessageSquareWarning,
@@ -26,6 +24,7 @@ import {
   sanitizeSvg,
   workerMermaid,
 } from "./mermaid-render";
+import { CopyButton } from "./patterns/CopyButton";
 import { showError } from "./store";
 import "./markdown-blocks.css";
 
@@ -90,12 +89,15 @@ function CodeBlock({
           )}
         </span>
         <CopyButton
+          className="markdown-code-copy"
           label={t["Copy code block"]}
+          copiedLabel={t.Copied}
           copy={() =>
             navigator.clipboard.writeText(
               mermaid ?? pre.current?.textContent?.replace(/\n$/, "") ?? "",
             )
           }
+          onError={showError}
         />
       </div>
       {diagram && "svg" in diagram ? (
@@ -147,7 +149,9 @@ export function MarkdownTable({ children }: ComponentProps<"table">) {
         <table ref={table}>{children}</table>
       </div>
       <CopyButton
+        className="markdown-code-copy"
         label={t["Copy table"]}
+        copiedLabel={t.Copied}
         copy={() => {
           const rows = Array.from(table.current?.rows ?? [], (r) =>
             Array.from(r.cells, (c) => c.textContent?.trim() ?? ""),
@@ -161,41 +165,9 @@ export function MarkdownTable({ children }: ComponentProps<"table">) {
             }),
           ]);
         }}
+        onError={showError}
       />
     </div>
-  );
-}
-
-function CopyButton({
-  label,
-  copy,
-}: {
-  label: string;
-  copy: () => Promise<void>;
-}) {
-  const t = useT();
-  const [copied, setCopied] = useState(false);
-  useEffect(() => {
-    if (!copied) return;
-    const timer = setTimeout(() => setCopied(false), 1500);
-    return () => clearTimeout(timer);
-  }, [copied]);
-  return (
-    <button
-      type="button"
-      className="markdown-code-copy"
-      aria-label={copied ? t.Copied : label}
-      onClick={async () => {
-        try {
-          await copy();
-          setCopied(true);
-        } catch (error) {
-          showError(error);
-        }
-      }}
-    >
-      {copied ? <Check size={14} /> : <Copy size={14} />}
-    </button>
   );
 }
 

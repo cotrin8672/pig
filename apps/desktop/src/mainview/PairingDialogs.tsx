@@ -1,9 +1,10 @@
-import { Check, CircleAlert, Copy, Link2, Trash2, X } from "lucide-react";
-import { type ReactNode, useEffect, useId, useRef, useState } from "react";
+import { Check, CircleAlert, Link2, Trash2 } from "lucide-react";
+import { type ReactNode, useState } from "react";
+import { IndicatorDot } from "./IndicatorDot";
 import { ConfirmButton } from "./patterns/ConfirmButton";
+import { CopyButton } from "./patterns/CopyButton";
+import { ErrorAlert } from "./patterns/ErrorAlert";
 import { Button } from "./primitives/Button";
-import { IconButton } from "./primitives/IconButton";
-import { IndicatorDot } from "./primitives/IndicatorDot";
 import { Spinner } from "./primitives/Spinner";
 import { TextField } from "./primitives/TextField";
 import "./pairing-dialogs.css";
@@ -24,65 +25,6 @@ export const CONNECT_STEPS = [
   "このPCを登録",
 ];
 export type ConnectState = "input" | "connecting" | "connected" | "error";
-
-/** Non-modal like the sign-in dialog; always mounted so closing plays in reverse. */
-export function Sheet({
-  open,
-  title,
-  onClose,
-  children,
-  footer,
-  wide,
-}: {
-  open: boolean;
-  title: ReactNode;
-  onClose: () => void;
-  children: ReactNode;
-  footer?: ReactNode;
-  wide?: boolean;
-}) {
-  const dialog = useRef<HTMLDialogElement>(null);
-  const opener = useRef<HTMLElement | null>(null);
-  const titleId = useId();
-  useEffect(() => {
-    const node = dialog.current;
-    if (!node) return;
-    if (open && !node.open) {
-      opener.current = document.activeElement as HTMLElement | null;
-      node.show();
-      node
-        .querySelector<HTMLElement>("input:not([type=checkbox]), .primary")
-        ?.focus();
-    } else if (!open && node.open) {
-      node.close();
-      opener.current?.focus();
-    }
-  }, [open]);
-  return (
-    <dialog
-      ref={dialog}
-      className="oauth-dialog mac-sheet"
-      data-wide={wide || undefined}
-      aria-modal="false"
-      aria-labelledby={titleId}
-      onKeyDown={(event) => {
-        if (event.key !== "Escape" || event.nativeEvent.isComposing) return;
-        event.preventDefault();
-        event.stopPropagation();
-        onClose();
-      }}
-    >
-      <div className="dialog-heading">
-        <h2 id={titleId}>{title}</h2>
-        <IconButton aria-label="閉じる" onClick={onClose}>
-          <X size={15} aria-hidden="true" />
-        </IconButton>
-      </div>
-      {children}
-      {footer && <div className="dialog-actions">{footer}</div>}
-    </dialog>
-  );
-}
 
 export function RemoveButton({
   name,
@@ -120,44 +62,31 @@ export function Presence({
   );
 }
 
-export function CopyButton({
+function InviteCodeCopy({
   text,
   onCopy,
 }: {
   text: string;
   onCopy: () => void;
 }) {
-  const [copied, setCopied] = useState(0);
   const [failed, setFailed] = useState(false);
   return (
     <span className="mac-copy">
       {failed && (
         <span className="mac-row-detail">選択してコピーしてください</span>
       )}
-      <IconButton
-        aria-label={copied ? "コピー済み" : "招待コードをコピー"}
-        onClick={async () => {
-          try {
-            await navigator.clipboard.writeText(text);
-            setFailed(false);
-            setCopied(Date.now());
-            onCopy();
-          } catch {
-            setFailed(true);
-          }
+      <CopyButton
+        variant="icon"
+        label="招待コードをコピー"
+        copiedLabel="コピー済み"
+        persistent
+        copy={async () => {
+          await navigator.clipboard.writeText(text);
+          setFailed(false);
+          onCopy();
         }}
-      >
-        {copied ? (
-          <Check
-            key={copied}
-            size={14}
-            className="snappy-pop"
-            aria-hidden="true"
-          />
-        ) : (
-          <Copy size={14} aria-hidden="true" />
-        )}
-      </IconButton>
+        onError={() => setFailed(true)}
+      />
     </span>
   );
 }
@@ -212,7 +141,7 @@ export function InviteBody({
           ) : (
             <>
               <code>{code}</code>
-              <CopyButton key={code} text={code} onCopy={onCopy} />
+              <InviteCodeCopy key={code} text={code} onCopy={onCopy} />
             </>
           )}
         </div>
@@ -318,11 +247,10 @@ export function ConnectBody({ c, submit }: { c: Connect; submit: () => void }) {
         {locked ? connectStatus(c) : ""}
       </span>
       {c.state === "error" && (
-        <div className="oauth-error" role="alert">
-          <CircleAlert size={16} aria-hidden="true" />
+        <ErrorAlert>
           {c.errorText ??
             "このコードは使用済みか期限切れです。接続先のPCで新しいコードを作ってください。"}
-        </div>
+        </ErrorAlert>
       )}
     </>
   );

@@ -243,6 +243,20 @@ test.skipIf(!existsSync(fixtureEdge) && !process.env.PIG_REQUIRE_UI_TESTS)(
       const translations=getT(),toggleLabel=translations['Toggle sidebar'];
       let shellReads=0;
       Object.defineProperty(translations,'Toggle sidebar',{configurable:true,get(){shellReads++;return toggleLabel;}});
+      const shell=document.querySelector('.app-shell');
+      const originalAppearance=useStore.getState().appearance;
+      const background=()=>getComputedStyle(shell).backgroundImage;
+      const originalBackground=background();
+      const opacity=node=>getComputedStyle(node).getPropertyValue('--window-opacity').trim();
+      for(const alpha of [0,0.37,1]){
+        flushSync(()=>useStore.setState({appearance:{
+          ...originalAppearance,opacity:{...originalAppearance.opacity,[originalAppearance.backdrop]:alpha},
+        }}));
+        check(opacity(shell)===String(alpha)&&background()!==originalBackground,'opacity must update only the shell background');
+        check(opacity(pane(1))==='0.85','window opacity must not inherit into the panes');
+      }
+      flushSync(()=>useStore.setState({appearance:originalAppearance}));await wait();
+      check(background()===originalBackground&&shellReads===0,'opacity preview and rollback must not render the app shell');
       const editorA=pane(1).querySelector('textarea'),editorB=pane(2).querySelector('textarea');
       const threadA=pane(1).querySelector('.thread-scroll'),threadB=pane(2).querySelector('.thread-scroll');
       threadA.scrollTop=160;threadA.dispatchEvent(new Event('scroll'));threadB.scrollTop=260;threadB.dispatchEvent(new Event('scroll'));

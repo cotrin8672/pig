@@ -1,7 +1,5 @@
 {
-  "extends": "./.hutch/devkit/tsconfig.json",
   "compilerOptions": {
-    "baseUrl": null,
     "target": "ES2022",
     "module": "ESNext",
     "moduleResolution": "Bundler",

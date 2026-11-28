@@ -28,7 +28,7 @@ export default function SidebarPreview({
   return (
     <div className="app-shell current-ui-screen">
       <aside id="app-sidebar" className="sidebar">
-        <header className="electrobun-webkit-app-region-drag">
+        <header className="window-drag-region">
           <strong className="sidebar-brand">
             <img src={appIcon} alt="" width={20} height={20} />
             pig

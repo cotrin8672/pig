@@ -2,7 +2,7 @@ import type { ImageContent, TextContent } from "@earendil-works/pi-ai";
 import type { ChatRendererProps } from "@pig/chat-renderers";
 import { createMathPlugin } from "@streamdown/math";
 import type { Root } from "hast";
-import { Check, Copy, Pencil } from "lucide-react";
+import { Pencil } from "lucide-react";
 import {
   createContext,
   Fragment,
@@ -32,6 +32,7 @@ import type { Message } from "../shared/transcript";
 import { editUserMessage } from "../shared/user-message";
 import { AnnotationCard } from "./AnnotationCards";
 import { ChatContent } from "./ChatContent";
+import { ChatTextArea } from "./ChatTextArea";
 import { insertEditorNewline } from "./ComposerEditor";
 import { dataText } from "./custom-data";
 import { CodeText } from "./HighlightedCode";
@@ -54,6 +55,8 @@ import {
 } from "./markdown-processing";
 import { markdownUrl } from "./markdown-url";
 import { editKey, messageEdits } from "./message-edits";
+import { CopyButton } from "./patterns/CopyButton";
+import { MessageBubble } from "./patterns/MessageBubble";
 import { positionedKatex } from "./positioned-katex";
 import { Button } from "./primitives/Button";
 import { openChatLink, regenerate, rpc } from "./rpc";
@@ -480,7 +483,6 @@ export const UserMessage = memo(function UserMessage({
   const draft = edit?.text ?? "";
   const setDraft = (text: string) =>
     messageEdits.set(key, { text, state: "editing" });
-  const [copied, setCopied] = useState(false);
   const focusEditor = useCallback((element: HTMLTextAreaElement | null) => {
     element?.focus();
   }, []);
@@ -513,8 +515,7 @@ export const UserMessage = memo(function UserMessage({
         </ul>
       )}
       {editing ? (
-        <form
-          className="user-edit user-bubble"
+        <MessageBubble
           onSubmit={(event) => {
             event.preventDefault();
             if (!entryId || disabled || (!draft.trim() && !sources.length))
@@ -532,7 +533,7 @@ export const UserMessage = memo(function UserMessage({
               });
           }}
         >
-          <textarea
+          <ChatTextArea
             aria-label={t["Edit message"]}
             value={draft}
             ref={focusEditor}
@@ -567,37 +568,28 @@ export const UserMessage = memo(function UserMessage({
               {t["Save and resend"]}
             </Button>
           </div>
-        </form>
+        </MessageBubble>
       ) : (
-        attachments.body &&
-        (scheduled ? (
-          <div className="user-bubble sender-bubble">
-            <ScheduledHead name={scheduled} />
+        attachments.body && (
+          <MessageBubble
+            sender={scheduled && <ScheduledHead name={scheduled} />}
+          >
             {attachments.body}
-          </div>
-        ) : (
-          <div className="user-bubble">{attachments.body}</div>
-        ))
+          </MessageBubble>
+        )
       )}
       <div className="response-actions user-actions">
         <time dateTime={new Date(message.timestamp).toISOString()}>
           {new Date(message.timestamp).toLocaleTimeString()}
         </time>
-        <button
-          type="button"
-          aria-label={copied ? t.Copied : t["Copy message"]}
+        <CopyButton
+          label={t["Copy message"]}
+          copiedLabel={t.Copied}
           disabled={!text}
-          onClick={async () => {
-            try {
-              await navigator.clipboard.writeText(text);
-              setCopied(true);
-            } catch (error) {
-              showError(error);
-            }
-          }}
-        >
-          {copied ? <Check size={14} /> : <Copy size={14} />}
-        </button>
+          persistent
+          copy={() => navigator.clipboard.writeText(text)}
+          onError={showError}
+        />
         <button
           type="button"
           aria-label={t["Edit message"]}

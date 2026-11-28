@@ -1,5 +1,6 @@
 import type { ModelSelection } from "../shared/rpc-schema";
 import type { DraftContent, PromptDelivery } from "../shared/runtime-contract";
+import type { AttachmentClaim } from "./attachment-reads";
 import { drafts } from "./draft-store";
 import { type OpeningOp, type OpeningTarget, useStore } from "./store";
 
@@ -28,6 +29,7 @@ export function queueOpeningSend(
   openId: string,
   content: DraftContent,
   delivery: PromptDelivery = "steer",
+  attachments?: AttachmentClaim,
 ) {
   update(openId, (target) => ({
     queued: [
@@ -38,6 +40,7 @@ export function queueOpeningSend(
         content: structuredClone(content),
         timestamp: Date.now(),
         delivery,
+        attachments,
       },
     ],
   }));
@@ -68,6 +71,38 @@ export function withdrawOpeningSend(openId: string, id: string) {
     queued: target.queued?.filter((op) => op.id !== id),
   }));
   return send;
+}
+
+function restoreDraft(
+  target: OpeningTarget,
+  send: Extract<OpeningOp, { kind: "send" }>,
+) {
+  const state = useStore.getState();
+  const key = openingDraftKey(target);
+  const address = target.id ? state.snapshots[target.id]?.address : undefined;
+  const owner = address ?? key;
+  const loaded = send.attachments?.restore(owner);
+  const content = loaded
+    ? {
+        ...send.content,
+        images: [...send.content.images, ...loaded.images],
+        files: [...(send.content.files ?? []), ...(loaded.files ?? [])],
+      }
+    : send.content;
+  drafts.restoreSent(owner, address ? content : { ...content, text: "" });
+  if (address) return;
+  useStore.setState((s) => ({
+    newChatDrafts: {
+      ...s.newChatDrafts,
+      [key]: [content.text, s.newChatDrafts[key]].filter(Boolean).join("\n\n"),
+    },
+  }));
+}
+
+export function editOpeningSend(openId: string, id: string) {
+  const target = useStore.getState().pendingOpens[openId];
+  const send = target && withdrawOpeningSend(openId, id);
+  if (send) restoreDraft(target, send);
 }
 
 /** Permutes queued follow-ups within their own slots; model choices stay in place. */
@@ -101,37 +136,11 @@ export function steerOpeningSend(openId: string, id: string) {
 }
 /** Returns unsent messages to the editor ahead of anything typed since. */
 export function restoreOpeningSends(openId: string) {
-  const state = useStore.getState();
-  const pending = state.pendingOpens[openId];
+  const pending = useStore.getState().pendingOpens[openId];
   const sends = openingSends(pending);
   if (!pending || !sends.length) return;
   update(openId, (target) => ({
     queued: target.queued?.filter((op) => op.kind !== "send"),
   }));
-  const snapshot = pending.id && state.snapshots[pending.id];
-  for (const send of [...sends].reverse()) {
-    if (snapshot) drafts.restoreSent(snapshot.address, send.content);
-    else {
-      const key = openingDraftKey(pending);
-      useStore.setState((s) => ({
-        newChatDrafts: {
-          ...s.newChatDrafts,
-          [key]: [send.content.text, s.newChatDrafts[key]]
-            .filter(Boolean)
-            .join("\n\n"),
-        },
-        newChatImages: {
-          ...s.newChatImages,
-          [key]: [...send.content.images, ...(s.newChatImages[key] ?? [])],
-        },
-        newChatFiles: {
-          ...s.newChatFiles,
-          [key]: [
-            ...(send.content.files ?? []),
-            ...(s.newChatFiles[key] ?? []),
-          ],
-        },
-      }));
-    }
-  }
+  for (const send of sends.reverse()) restoreDraft(pending, send);
 }

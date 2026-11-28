@@ -12,7 +12,7 @@ Tools、Windows SDK と、開発用の Bun・Node・pnpm が必要。
 ```powershell
 mise exec -- pnpm install --frozen-lockfile
 mise run dev
-mise exec -- pnpm --filter @pig/desktop tauri:package
+mise exec -- pnpm build
 ```
 
 ポータブル版は `apps/desktop/build/tauri-portable/pig.exe`。`host/` に Bun と Pi SDK が
@@ -20,9 +20,10 @@ mise exec -- pnpm --filter @pig/desktop tauri:package
 直接呼ぶ拡張では、従来どおりその拡張用の Node が必要（mise で見つかる場合は補う）。
 新しい Tauri プロファイルの既定シェルは Windows 標準の PowerShell。
 
-デスクトップ設定は既定で Electrobun 版と同じ `~/.config/pig` を使う。通常起動では Pi CLI と同じ
-認証・設定・セッション保存先を使う。同じ会話を Electrobun 版と Tauri 版で同時に操作しない。
-`dev` の `pnpm dev` は Tauri。stable / nightly ともに Tauri で配布する。
+デスクトップ設定は既定で `~/.config/pig` を使う。旧版から移行するときは、
+`%LOCALAPPDATA%\dev.pig.desktop` の既知の設定ファイルを、移行先にないものだけコピーする。
+通常起動では Pi CLI と同じ認証・設定・セッション保存先を使う。
+開発・ビルド・stable/nightly の配布はいずれも Tauri。
 Electrobun の Scoop Nightly から初めて切り替えるときは、終了後に
 `scoop update pig-nightly --force --no-cache` を実行する。`pig-setup.exe` 版は設定の
 「nightly ビルドも更新対象に含める」で更新対象を選べる（初期値はオフ）。
@@ -65,4 +66,3 @@ VisualizeとMCP AppsのインラインJavaScriptは、親画面のスクリプ�
 MCP Appsは初期化・元のツール入力と結果の通知のみ対応する。アプリからのツール呼び出し、
 外部リンク、リソース操作、チャットへの送信や追加権限は許可しない。
 外部ファイルや未対応機能が必要なMCP Appsは動作しない場合がある。
-Electrobunでは静的表示のまま。

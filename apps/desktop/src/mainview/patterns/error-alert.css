@@ -1,0 +1,15 @@
+.error-alert {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 12px;
+  border-radius: var(--radius-sm);
+  background: color-mix(in oklab, var(--ds-error) 12%, transparent);
+  color: var(--ds-error);
+  font-size: var(--text-md);
+  overflow-wrap: anywhere;
+}
+.error-alert svg {
+  flex-shrink: 0;
+  margin-top: 2px;
+}

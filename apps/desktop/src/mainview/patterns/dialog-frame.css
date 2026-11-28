@@ -1,0 +1,48 @@
+.dialog-frame {
+  --scrollbar-inset: var(--radius-lg);
+  max-height: min(86vh, 720px);
+  overflow: auto;
+  color: var(--ds-text-primary);
+  backdrop-filter: blur(24px);
+}
+:where(.dialog-frame) {
+  margin: auto;
+  width: min(520px, calc(100vw - 32px));
+  padding: 20px;
+  background: var(--ds-bg-elevated);
+  border: 1px solid var(--ds-border-strong);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--ds-shadow-dialog);
+}
+.dialog-frame[aria-modal="false"] {
+  position: fixed;
+  inset: 0;
+  height: fit-content;
+  z-index: 20;
+}
+.dialog-frame[open] {
+  display: flex;
+  flex-direction: column;
+}
+:where(.dialog-frame[open]) {
+  gap: 16px;
+}
+.dialog-frame::backdrop {
+  background: color-mix(in srgb, var(--ds-bg-inset) 52%, transparent);
+  backdrop-filter: blur(4px);
+}
+.dialog-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.dialog-heading h2 {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: var(--text-lg);
+}
+.dialog-heading button {
+  padding: 4px;
+}

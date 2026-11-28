@@ -1,5 +1,6 @@
 import { expect, test } from "bun:test";
-import { AttachmentReads } from "./attachment-reads";
+import { AttachmentReads, imageLimitMessage } from "./attachment-reads";
+import type { DraftAddress } from "./draft-store";
 import { DraftStore } from "./draft-store";
 
 const a = { hostId: "host", sessionId: "a", epoch: 1 };
@@ -34,7 +35,7 @@ function fixture() {
       {} as ProgressEvent<FileReader>,
     );
   };
-  const start = (address = a, name = "image.png") =>
+  const start = (address: DraftAddress = a, name = "image.png") =>
     reads.start(address, new File(["bytes"], name, { type: "image/png" }));
   return { drafts, reads, readers, notices, finish, start };
 }
@@ -46,7 +47,7 @@ test("pathless native clipboard images participate in pending sends and draft tr
   const next = { ...a, epoch: 2 };
   f.drafts.transfer(a, next);
   f.reads.transfer(a, next);
-  const claimed = f.reads.claim(next);
+  const claimed = f.reads.claim(next)?.result;
   pending.resolve("cG5n");
   expect((await claimed)?.images[0].image).toEqual({
     type: "image",
@@ -60,7 +61,7 @@ test("empty clipboard fails visibly without a flashing placeholder or an empty s
   const f = fixture();
   f.reads.startClipboard(a, async () => null);
   expect(f.reads.read(a)[0].preview).toBe(false);
-  const claimed = f.reads.claim(a);
+  const claimed = f.reads.claim(a)?.result;
   await expect(claimed).rejects.toThrow("No image could be read");
   expect(f.reads.pending(a)).toBe(0);
   expect(f.drafts.read(a).content.images).toHaveLength(0);
@@ -142,4 +143,42 @@ test("read failures notify without leaving a pending read or an inline error", (
   f.readers[0].onerror?.call(f.readers[0], {} as ProgressEvent<FileReader>);
   expect(f.reads.read(a)).toHaveLength(0);
   expect(f.notices).toEqual(["image.png: Could not read image."]);
+});
+
+test("the same eight-image limit reserves slots for unfinished files and clipboard reads", () => {
+  for (const owner of [a, "new-chat"]) {
+    const f = fixture();
+    f.start(owner);
+    f.finish(0);
+    const files = Array.from(
+      { length: 8 },
+      (_, index) => new File(["x"], `${index}.png`, { type: "image/png" }),
+    );
+    f.reads.startFiles(owner, files, async (name) => name);
+    f.reads.startClipboard(owner, async () => "unreachable");
+    expect(f.readers).toHaveLength(8);
+    expect(f.reads.pending(owner)).toBe(7);
+    expect(f.notices).toEqual([imageLimitMessage, imageLimitMessage]);
+    for (let i = 1; i < 8; i++) f.finish(i);
+    expect(f.drafts.read(owner).content.images).toHaveLength(8);
+    if (typeof owner === "string")
+      expect(f.drafts.protectedAddresses()).toEqual([]);
+  }
+});
+
+test("restoring a queued send returns loaded and still-pending attachments to its draft", async () => {
+  const f = fixture();
+  f.start("opening");
+  f.start("opening");
+  const claim = f.reads.claim("opening");
+  if (!claim) throw Error("Expected two pending reads");
+  f.finish(0);
+  const loaded = claim.restore("opening");
+  f.drafts.edit("opening", (content) => ({ ...content, ...loaded }));
+  expect(await claim.result).toBe(loaded);
+  expect(f.reads.pending("opening")).toBe(1);
+  f.reads.transfer("opening", b);
+  f.finish(1);
+  expect(f.drafts.read("opening").content.images[0].image.data).toBe("image-0");
+  expect(f.drafts.read(b).content.images[0].image.data).toBe("image-1");
 });

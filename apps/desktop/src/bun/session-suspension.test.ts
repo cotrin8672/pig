@@ -143,6 +143,26 @@ test("isolated SDK: idle suspension, cold drafts/history, single-flight wake and
       expect(browsed.suspended).toBeUndefined();
       expect(events.filter(e=>e.type==="ready" && e.openId==="racing-browser")).toHaveLength(0);
       await host.closeSession(live.address);
+      // If the winner is still starting, the history open must not report a ready result.
+      const readingSlow=Promise.withResolvers(), resumeSlow=Promise.withResolvers();
+      const slowSpy=spyOn(sessionFiles,"readSessionFile").mockImplementationOnce(async (...args)=>{
+        const result=await readHistory(...args);
+        readingSlow.resolve();await resumeSlow.promise;return result;
+      });
+      const slowBrowse=host.openSession({cwd,id,openId:"racing-slow-browser",historyOnly:true});
+      await readingSlow.promise;
+      startupGate=Promise.withResolvers();
+      const slowLive=host.openSession({cwd,id,openId:"racing-slow-live"});
+      try {
+        while(host.getOpenState({openId:"racing-slow-live"}).state==="unknown") await Bun.sleep(1);
+        expect(host.getOpenState({openId:"racing-slow-live"}).state).toBe("opening");
+        resumeSlow.resolve();
+        await expect(slowBrowse).rejects.toThrow("already opening or closing");
+        expect((await host.readOpenState({openId:"racing-slow-browser"})).state).toBe("failed");
+      } finally {
+        resumeSlow.resolve();slowSpy.mockRestore();startupGate.resolve();startupGate=undefined;
+      }
+      await host.closeSession((await slowLive).address);
       // Browsing starts no SDK and changes no history file.
       const before=await readFile(file,"utf8");
       const priorStarts=starts;
@@ -197,6 +217,9 @@ test("isolated SDK: idle suspension, cold drafts/history, single-flight wake and
       startupGate=Promise.withResolvers();
       const waking=host.wakeSession(cold.address).catch(()=>{});
       while(starts===priorStarts+1) await Bun.sleep(1);
+      const duringWake=await host.openSession({cwd,id,openId:"browse-during-wake",historyOnly:true});
+      expect(duringWake.suspended).toBe(true);
+      expect(duringWake.ready).toBeUndefined();
       const closing=host.closeSession(cold.address);
       startupGate.resolve();await waking;await closing;
       expect(host.runtimeState().sessions).toHaveLength(0);

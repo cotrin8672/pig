@@ -1,6 +1,6 @@
 import { CircleAlert, ExternalLink, RefreshCw, Ticket } from "lucide-react";
 import { createContext, useContext, useState } from "react";
-import { ProviderIcon } from "../../mainview/primitives/ProviderIcon";
+import { ProviderIcon } from "../../mainview/ProviderIcon";
 import {
   byUrgency,
   fetchable,

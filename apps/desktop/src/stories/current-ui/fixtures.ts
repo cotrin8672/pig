@@ -8,7 +8,10 @@ import type { ModelInfo, Snapshot } from "../../shared/rpc-schema";
 import { defaultSettings } from "../../shared/settings";
 import type { Message, TranscriptRecord } from "../../shared/transcript";
 import { setStoryPreviewActive } from "../browser-rpc";
-import { reviewCompletion, spawnAgent } from "../proposals/codex-agent-data";
+import {
+  reviewCompletion,
+  spawnAgent,
+} from "../chat-renderer/codex-agent-data";
 
 export const scenes = [
   "conversation",
@@ -588,7 +591,7 @@ export function createPreviewState(
       {
         id: "preview-notice-1",
         level: "success" as const,
-        message: "セッション一覧の確認が完了しました。",
+        message: "チャットの応答が完了しました。",
         createdAt: now - 120000,
         read: true,
         session: { id: secondary.info.id, cwd: otherProject },
@@ -597,14 +600,14 @@ export function createPreviewState(
       {
         id: "preview-notice-2",
         level: "info" as const,
-        message: "画面全体から共通化の範囲を検討できます。",
+        message: "新しいバージョンを利用できます。",
         createdAt: now - 60000,
         read: false,
       },
       {
         id: "preview-notice-3",
         level: "warning" as const,
-        message: "送信・ツール実行・ネイティブ操作は接続していません。",
+        message: "Providerの使用量を更新できませんでした。",
         createdAt: now - 30000,
         read: false,
       },

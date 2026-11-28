@@ -35,14 +35,6 @@ jobs:
         with:
           bun-version: 1.4.2
       - run: pnpm install --frozen-lockfile
-      - uses: actions/cache@v4
-        with:
-          path: ~/.hutch
-          key: >-
-            hutch-${{ runner.os }}-${{ runner.arch }}-${{
-            hashFiles('pnpm-lock.yaml') }}
-          restore-keys: hutch-${{ runner.os }}-${{ runner.arch }}-
-      - run: pnpm --filter @pig/desktop prepare:electrobun
       - name: Run ${{ matrix.suite }} regressions
         run: pnpm test:${{ matrix.suite }}
         env:

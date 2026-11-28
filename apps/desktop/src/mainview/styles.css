@@ -5,6 +5,7 @@
 @import "./primitives/select.css";
 @import "./primitives/spinner.css";
 @import "./tooltip.css";
+@import "./patterns/composer-form.css";
 
 * {
   box-sizing: border-box;
@@ -147,6 +148,11 @@ p {
 .muted {
   color: var(--ds-text-muted);
 }
+@property --window-opacity {
+  syntax: "<number>";
+  inherits: false;
+  initial-value: 0.85;
+}
 .app-shell {
   --window-titlebar-reveal: 0px;
   position: relative;
@@ -156,12 +162,12 @@ p {
     145deg,
     color-mix(
       in srgb,
-      var(--ds-shell-start) calc(var(--window-opacity, 0.85) * 100%),
+      var(--ds-shell-start) calc(var(--window-opacity) * 100%),
       transparent
     ),
     color-mix(
       in srgb,
-      var(--ds-shell-end) calc(var(--window-opacity, 0.85) * 100%),
+      var(--ds-shell-end) calc(var(--window-opacity) * 100%),
       transparent
     )
   );
@@ -412,23 +418,6 @@ p {
   border-left: 1px solid
     color-mix(in srgb, var(--ds-text-muted) 14%, transparent);
 }
-.session-status-slot {
-  width: 12px;
-  flex: none;
-  display: inline-flex;
-  justify-content: center;
-}
-.thread {
-  display: block;
-  text-align: left;
-  width: 100%;
-  padding: 5px 4px 5px 6px;
-  font-size: var(--text-md);
-  line-height: var(--leading-row);
-  overflow: hidden;
-  white-space: nowrap;
-  text-overflow: ellipsis;
-}
 .active {
   background: var(--ds-bg-active);
 }
@@ -518,11 +507,11 @@ main > *,
     transition: none;
   }
 }
-.electrobun-webkit-app-region-drag {
+.window-drag-region {
   app-region: drag;
   -webkit-app-region: drag;
 }
-.electrobun-webkit-app-region-no-drag {
+.window-no-drag {
   app-region: no-drag;
   -webkit-app-region: no-drag;
 }
@@ -647,8 +636,7 @@ main > *,
     .composer,
     .message-queue,
     .ask-panel,
-    .extension-dialogs,
-    .remote-composer
+    .extension-dialogs
   ) {
   --chat-width: inherit;
 }
@@ -728,13 +716,6 @@ main > *,
 .message.user {
   display: flex;
   justify-content: flex-end;
-}
-.user-bubble {
-  max-width: 85%;
-  white-space: pre-wrap;
-  background: var(--ds-bg-tertiary);
-  padding: 10px 16px;
-  border-radius: var(--radius-lg);
 }
 .prose p {
   margin: 12px 0;
@@ -1373,48 +1354,9 @@ details[open] > summary .tool-chevron,
 .composer-dock > * {
   pointer-events: auto;
 }
-.composer {
-  position: relative;
-  isolation: isolate;
-  width: min(100%, var(--chat-width, 768px));
-  border-radius: var(--ds-composer-radius);
-  padding: 8px 12px;
-  box-shadow: 0 10px 32px #1111164d;
-}
-/* The glass lives on a layer, not on .composer: an ancestor with
-   backdrop-filter becomes the backdrop root, and popovers inside the composer
-   (model picker, slash options) would no longer blur the chat behind them. */
-.sidebar-collapsed .sidebar::before,
-.composer::before {
-  content: "";
-  position: absolute;
-  inset: 0;
-  z-index: -1;
-  border-radius: inherit;
-  /* The same glass as popovers and tooltips: the theme tint shows through. */
-  background: var(--ds-bg-popover);
-  backdrop-filter: blur(var(--ds-popover-blur));
-  /* Drawn here: this layer paints over the composer's own (transparent) border. */
-  box-shadow: inset 0 0 0 1px
-    color-mix(in srgb, var(--ds-accent) 16%, transparent);
-  pointer-events: none;
-}
-.composer::before {
-  inset: -1px; /* Covers the composer's border box. */
-}
-.composer textarea {
-  display: block;
-  width: 100%;
-  background: transparent;
-  border: 0;
-  resize: none;
+.composer-editor-field > .chat-text-area {
   height: calc(1lh + 4px);
-  min-height: calc(1lh + 4px);
   max-height: 220px;
-  padding: 2px 4px;
-}
-.composer textarea::placeholder {
-  color: var(--ds-placeholder-ink);
 }
 .composer-editor-field {
   position: relative;
@@ -1459,17 +1401,6 @@ details[open] > summary .tool-chevron,
   height: 0.45em;
   border-radius: 50%;
   background: var(--ds-accent);
-}
-.composer-toolbar {
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 8px;
-  padding-top: 2px;
-}
-.send-controls {
-  display: flex;
-  gap: 8px;
 }
 .send-button {
   background: var(--ds-accent);
@@ -1735,60 +1666,10 @@ details[open] > summary .tool-chevron,
   margin: 16px 0 0;
   font-size: var(--text-sm);
 }
-.oauth-dialog {
-  --scrollbar-inset: var(--radius-lg);
-  margin: auto;
-  width: min(520px, calc(100vw - 32px));
-  max-height: min(86vh, 720px);
-  overflow: auto;
-  padding: 20px;
-  color: var(--ds-text-primary);
-  background: var(--ds-bg-elevated);
-  border: 1px solid var(--ds-border-strong);
-  border-radius: var(--radius-lg);
-  box-shadow: var(--ds-shadow-dialog);
-  backdrop-filter: blur(24px);
-}
-.oauth-dialog[open] {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-}
-.oauth-dialog::backdrop {
-  background: color-mix(in srgb, var(--ds-bg-inset) 52%, transparent);
-  backdrop-filter: blur(4px);
-}
-.dialog-heading {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-}
-.dialog-heading h2 {
-  font-size: var(--text-lg);
-}
-.dialog-heading button {
-  padding: 4px;
-}
 .oauth-status {
   color: var(--ds-text-secondary);
   font-size: var(--text-md);
   overflow-wrap: anywhere;
-}
-.oauth-error {
-  display: flex;
-  align-items: flex-start;
-  gap: 8px;
-  padding: 12px;
-  border-radius: var(--radius-sm);
-  background: color-mix(in oklab, var(--ds-error) 12%, transparent);
-  color: var(--ds-error);
-  font-size: var(--text-md);
-  overflow-wrap: anywhere;
-}
-.oauth-error svg {
-  flex-shrink: 0;
-  margin-top: 2px;
 }
 .oauth-block {
   display: flex;
@@ -1938,11 +1819,6 @@ details[open] > summary .tool-chevron,
   padding: 8px 16px;
   background: var(--ds-bg-elevated-opaque);
   border-radius: var(--radius-full);
-}
-.dialog-heading h2 {
-  display: flex;
-  align-items: center;
-  gap: 12px;
 }
 .manual-code {
   font-family: var(--font-mono);
@@ -2096,58 +1972,6 @@ details[open] > summary .tool-chevron,
   color: var(--ds-text-muted);
   font-size: 10px;
 }
-.model-option {
-  width: 100%;
-  height: 28px;
-  padding: 0 6px;
-  gap: 6px;
-  border-radius: 5px;
-  text-align: left;
-  justify-content: flex-start;
-  font-size: 12px;
-}
-.model-option[data-highlighted] {
-  background: var(--ds-bg-hover);
-}
-.model-option[aria-checked="true"] {
-  font-weight: 500;
-}
-.model-option-name {
-  flex: 1;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-/* Cut-off names of the highlighted row scroll back and forth. */
-/* Inline (not inline-block) otherwise, so the ellipsis still applies. */
-.model-option[data-highlighted] .model-option-name[data-overflow] {
-  text-overflow: clip;
-}
-.model-option[data-highlighted] .model-option-name[data-overflow] > span {
-  display: inline-block;
-  animation: model-name-marquee var(--marquee-duration, 4s) linear infinite
-    alternate;
-}
-@keyframes model-name-marquee {
-  0%,
-  20% {
-    transform: translateX(0);
-  }
-  80%,
-  100% {
-    transform: translateX(calc(-1 * var(--marquee-distance, 0px)));
-  }
-}
-@media (prefers-reduced-motion: reduce) {
-  .model-option[data-highlighted] .model-option-name[data-overflow] > span {
-    display: inline;
-    animation: none;
-  }
-  .model-option[data-highlighted] .model-option-name[data-overflow] {
-    text-overflow: ellipsis;
-  }
-}
 /* Narrow panes: the account rail collapses to icons (names in a Tooltip). */
 @container model-panel (max-width: 400px) {
   .model-source-rail button {
@@ -2160,26 +1984,6 @@ details[open] > summary .tool-chevron,
   .model-source-rail .model-source-lock {
     display: none;
   }
-}
-@container model-panel (max-width: 300px) {
-  .model-option .model-capabilities {
-    display: none;
-  }
-}
-.model-capabilities {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  flex: none;
-  color: var(--ds-text-muted);
-}
-.model-capabilities small {
-  font-size: 10px;
-}
-.model-selected-mark {
-  display: inline-flex;
-  width: 13px;
-  flex: none;
 }
 .picker-empty {
   margin: 0;
@@ -2345,10 +2149,6 @@ details[open] > summary .tool-chevron,
 .composer-dock {
   flex-direction: column;
   align-items: center;
-}
-.composer {
-  /* Keeps the 1px layout; the visible line is drawn by .composer::before. */
-  border: 1px solid transparent;
 }
 .composer-hint {
   font-size: var(--text-sm);
@@ -2629,48 +2429,12 @@ details[open] > summary .tool-chevron,
 .context-indicator svg {
   flex: none;
 }
-.thread-row {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 26px;
-  align-items: center;
-  border-radius: var(--radius-full);
-}
-.thread-row:not(.active):hover {
-  background: var(--ds-bg-hover);
-}
-.thread-row .thread {
-  display: flex;
-  align-items: center;
-  justify-content: flex-start;
-  gap: 6px;
-  min-width: 0;
-  padding-right: 4px;
-}
-.thread-row .thread:hover {
-  background: transparent;
-}
-.thread-title {
-  min-width: 0;
-  flex: 1;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.thread .lucide-pin {
-  flex: none;
-  color: var(--ds-text-muted);
-}
-.thread-row:hover .thread-more,
-.thread-row:focus-within .thread-more,
 .project-heading:hover .thread-more,
 .project-heading:focus-within .thread-more,
 .thread-more[aria-expanded="true"] {
   opacity: 1;
 }
-.thread-row .thread-more:disabled {
-  opacity: 0;
-}
-.more-chats {
+.thread.more-chats {
   display: flex;
   align-items: center;
   justify-content: center;
@@ -2684,15 +2448,6 @@ details[open] > summary .tool-chevron,
 }
 .more-chats:hover {
   color: var(--ds-text-primary);
-}
-.archived-chats {
-  display: flex;
-  justify-content: flex-start;
-  gap: 6px;
-  margin-top: 3px;
-  padding: 5px 8px 5px 30px;
-  font-size: 10px;
-  color: var(--ds-text-muted);
 }
 .message-content {
   min-width: 0;

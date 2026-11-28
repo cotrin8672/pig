@@ -100,7 +100,6 @@ let initialWindow = true;
 installDesktopPlatform({
   downloads: process.env.PIG_TAURI_DOWNLOADS ?? join(homedir(), "Downloads"),
   version: process.env.PIG_TAURI_VERSION ?? "—",
-  usesLegacyUpdater: false,
   installerUpdater:
     process.env.PIG_TAURI_INSTALLER === "1"
       ? {
@@ -110,8 +109,6 @@ installDesktopPlatform({
           install: () => native("updateInstall"),
         }
       : undefined,
-  interactiveWidgets: true,
-  defaultShell: "powershell",
   createWindow(requestedId, offset, handlers): DesktopWindow {
     const alreadyOpen = initialWindow;
     initialWindow = false;
@@ -233,10 +230,6 @@ installDesktopPlatform({
   },
   clipboardReadText: () => native<string | null>("clipboardRead"),
   clipboardWriteText: (text) => native<void>("clipboardWrite", text),
-  clipboardReadImage: () => null, // Windows images use the existing PNG/DIB path.
-  clipboardWriteImage() {
-    throw new Error("Use the Windows image clipboard.");
-  },
 });
 
 const { openWindow, remoteRequest } = await import("./app");

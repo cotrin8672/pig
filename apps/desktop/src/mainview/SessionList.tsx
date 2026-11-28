@@ -15,12 +15,14 @@ import { useShallow } from "zustand/react/shallow";
 import type { SessionFlags } from "../shared/desktop-state";
 import type { SessionInfo } from "../shared/rpc-schema";
 import { sessionLink } from "../shared/session-links";
+import { ArchiveToggle } from "./ArchiveToggle";
+import { IndicatorDot } from "./IndicatorDot";
 import { useT } from "./i18n";
 import { navigate } from "./navigation";
 import { ActionsMenu } from "./patterns/ActionsMenu";
+import { ChatListRow } from "./patterns/ChatListRow";
 import { ConfirmButton } from "./patterns/ConfirmButton";
 import { InlineRename } from "./patterns/InlineRename";
-import { IndicatorDot } from "./primitives/IndicatorDot";
 import { openChat, refreshSessions, rpc, showPendingOpen } from "./rpc";
 import { sessionStatusLabels } from "./session-status";
 import { showError, useStore } from "./store";
@@ -166,22 +168,16 @@ export const SessionList = memo(function SessionList({
           )}
         </button>
       )}
-      {(archivedCount > 0 || archived) && (
-        <button
-          type="button"
-          className="archived-chats"
-          aria-pressed={archived}
-          onClick={() => {
-            setArchived(!archived);
-            setExtra(0);
-          }}
-        >
-          <Archive size={12} />
-          {archived
-            ? t["Back to chats"]
-            : `${t["Archived chats"]} (${archivedCount})`}
-        </button>
-      )}
+      <ArchiveToggle
+        active={archived}
+        count={archivedCount}
+        archiveLabel={t["Archived chats"]}
+        backLabel={t["Back to chats"]}
+        onToggle={() => {
+          setArchived(!archived);
+          setExtra(0);
+        }}
+      />
     </>
   );
 });
@@ -194,25 +190,21 @@ function StartingRow({ openId, title }: { openId: string; title: string }) {
   );
   const tooltip = useTooltip();
   return (
-    <div className={`thread-row ${active ? "active" : ""}`}>
-      <button
-        type="button"
-        className="thread"
-        aria-current={active ? "page" : undefined}
-        onClick={() => showPendingOpen(openId)}
-        {...tooltip({
-          tier: "detail",
-          side: "right",
-          label: clipTooltipText(title),
-        })}
-      >
-        <span className="session-status-slot" />
-        <span className="thread-title">{title}</span>
-      </button>
-      <ActionsMenu label={`${t["Chat actions"]}: ${title}`} disabled>
-        {() => null}
-      </ActionsMenu>
-    </div>
+    <ChatListRow
+      label={title}
+      active={active}
+      onClick={() => showPendingOpen(openId)}
+      {...tooltip({
+        tier: "detail",
+        side: "right",
+        label: clipTooltipText(title),
+      })}
+      actions={
+        <ActionsMenu label={`${t["Chat actions"]}: ${title}`} disabled>
+          {() => null}
+        </ActionsMenu>
+      }
+    />
   );
 }
 
@@ -319,118 +311,108 @@ function SessionRow({
       setDeleting(false);
     }
   }
-  return (
-    <div
-      ref={reveal ? revealRow : undefined}
-      className={`thread-row ${active ? "active" : ""}`}
+  const actions = (
+    <ActionsMenu
+      label={`${t["Chat actions"]}: ${session.title}`}
+      onOpen={() => setCopied(false)}
     >
-      {renaming ? (
-        <InlineRename
-          value={session.title}
-          label={t["Chat name"]}
-          onCommit={rename}
-          onDone={() => setRenaming(false)}
-        />
-      ) : (
-        <button
-          type="button"
-          className="thread"
-          aria-current={active ? "page" : undefined}
-          onClick={() => void openChat(cwd, session.id)}
-          {...tooltip(details)}
-        >
-          <span className="session-status-slot">
-            {status && (
-              <IndicatorDot
-                state={status}
-                label={t[sessionStatusLabels[status]]}
-              />
-            )}
-          </span>
-          <span className="thread-title">{session.title}</span>
-          {flags?.pinned && <Pin size={11} aria-label={t.Pin} />}
-        </button>
+      {(closeMenu) => (
+        <>
+          <button
+            type="button"
+            role="menuitem"
+            onClick={() => {
+              closeMenu();
+              setRenaming(true);
+            }}
+          >
+            <Pencil size={13} />
+            {t.Rename}
+          </button>
+          <button
+            type="button"
+            role="menuitem"
+            onClick={() => {
+              closeMenu();
+              void setFlags({ pinned: !flags?.pinned });
+            }}
+          >
+            {flags?.pinned ? <PinOff size={13} /> : <Pin size={13} />}
+            {flags?.pinned ? t.Unpin : t.Pin}
+          </button>
+          <button
+            type="button"
+            role="menuitem"
+            onClick={() => {
+              closeMenu();
+              void setFlags({ archived: !flags?.archived });
+            }}
+          >
+            {flags?.archived ? <RotateCcw size={13} /> : <Archive size={13} />}
+            {flags?.archived ? t["Restore chat"] : t.Archive}
+          </button>
+          <button
+            type="button"
+            role="menuitem"
+            aria-description={
+              t["Paste in pig outside a text field to open this local link."]
+            }
+            onClick={() => {
+              if (!navigator.clipboard) {
+                showError(t["Clipboard is unavailable."]);
+                return;
+              }
+              void navigator.clipboard
+                .writeText(sessionLink(session.id))
+                .then(() => setCopied(true))
+                .catch(showError);
+            }}
+          >
+            {copied ? <Check size={13} /> : <Link2 size={13} />}
+            {copied ? t.Copied : t["Copy link"]}
+          </button>
+          <ConfirmButton
+            role="menuitem"
+            className="session-menu-delete"
+            aria-description={
+              t["This permanently deletes this chat’s local history."]
+            }
+            onConfirm={() => {
+              closeMenu();
+              void remove();
+            }}
+          >
+            <Trash2 size={13} />
+            {t.Delete}
+          </ConfirmButton>
+        </>
       )}
-      <ActionsMenu
-        label={`${t["Chat actions"]}: ${session.title}`}
-        onOpen={() => setCopied(false)}
-      >
-        {(closeMenu) => (
-          <>
-            <button
-              type="button"
-              role="menuitem"
-              onClick={() => {
-                closeMenu();
-                setRenaming(true);
-              }}
-            >
-              <Pencil size={13} />
-              {t.Rename}
-            </button>
-            <button
-              type="button"
-              role="menuitem"
-              onClick={() => {
-                closeMenu();
-                void setFlags({ pinned: !flags?.pinned });
-              }}
-            >
-              {flags?.pinned ? <PinOff size={13} /> : <Pin size={13} />}
-              {flags?.pinned ? t.Unpin : t.Pin}
-            </button>
-            <button
-              type="button"
-              role="menuitem"
-              onClick={() => {
-                closeMenu();
-                void setFlags({ archived: !flags?.archived });
-              }}
-            >
-              {flags?.archived ? (
-                <RotateCcw size={13} />
-              ) : (
-                <Archive size={13} />
-              )}
-              {flags?.archived ? t["Restore chat"] : t.Archive}
-            </button>
-            <button
-              type="button"
-              role="menuitem"
-              aria-description={
-                t["Paste in pig outside a text field to open this local link."]
-              }
-              onClick={() => {
-                if (!navigator.clipboard) {
-                  showError(t["Clipboard is unavailable."]);
-                  return;
-                }
-                void navigator.clipboard
-                  .writeText(sessionLink(session.id))
-                  .then(() => setCopied(true))
-                  .catch(showError);
-              }}
-            >
-              {copied ? <Check size={13} /> : <Link2 size={13} />}
-              {copied ? t.Copied : t["Copy link"]}
-            </button>
-            <ConfirmButton
-              role="menuitem"
-              className="session-menu-delete"
-              aria-description={
-                t["This permanently deletes this chat’s local history."]
-              }
-              onConfirm={() => {
-                closeMenu();
-                void remove();
-              }}
-            >
-              <Trash2 size={13} />
-              {t.Delete}
-            </ConfirmButton>
-          </>
-        )}
-      </ActionsMenu>
-    </div>
+    </ActionsMenu>
+  );
+  return (
+    <ChatListRow
+      label={session.title}
+      active={active}
+      rowRef={reveal ? revealRow : undefined}
+      onClick={() => void openChat(cwd, session.id)}
+      {...tooltip(details)}
+      indicator={
+        status && (
+          <IndicatorDot state={status} label={t[sessionStatusLabels[status]]} />
+        )
+      }
+      trailing={flags?.pinned && <Pin size={11} aria-label={t.Pin} />}
+      editor={
+        renaming ? (
+          <InlineRename
+            value={session.title}
+            label={t["Chat name"]}
+            onCommit={rename}
+            onDone={() => setRenaming(false)}
+          />
+        ) : undefined
+      }
+      actions={actions}
+    />
   );
 }

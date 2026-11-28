@@ -1,5 +1,12 @@
 import { afterEach, expect, test } from "bun:test";
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import {
+  mkdir,
+  mkdtemp,
+  readdir,
+  readFile,
+  rm,
+  writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { ModelPreferences } from "./model-preferences";
@@ -65,6 +72,23 @@ test("failed writes preserve current state and do not poison queue", async () =>
   await rm(blocker);
   await preferences.setEnabled("anthropic", "b", false);
   expect(preferences.disabled).toEqual(["anthropic/b"]);
+});
+
+test("failed final replacement cleans the temporary file and preserves the destination", async () => {
+  const file = await fixture();
+  const original = join(file, "keep");
+  await mkdir(file, { recursive: true });
+  await writeFile(original, "unchanged");
+  const preferences = new ModelPreferences(file);
+  await expect(
+    preferences.setEnabled("anthropic", "a", false),
+  ).rejects.toThrow();
+  expect(await readdir(join(file, ".."))).toEqual(["disabled-models.json"]);
+  expect(await readFile(original, "utf8")).toBe("unchanged");
+  expect(preferences.disabled).toEqual([]);
+  await rm(file, { recursive: true });
+  await preferences.setEnabled("anthropic", "b", false);
+  expect(JSON.parse(await readFile(file, "utf8"))).toEqual(["anthropic/b"]);
 });
 
 test("bulk visibility updates are atomic and preserve other providers", async () => {

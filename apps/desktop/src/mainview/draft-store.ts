@@ -17,6 +17,11 @@ export const emptyContent = (): DraftContent => ({
   pastes: [],
   images: [],
 });
+/** A string is a local opening draft key, not an address the host knows. */
+export type DraftAddress = SessionAddress | string;
+const draftKey = (address: DraftAddress) =>
+  typeof address === "string" ? `opening:${address}` : addressKey(address);
+
 export type EditorDraft = {
   content: DraftContent;
   revision: number;
@@ -131,9 +136,9 @@ export class DraftStore {
       this.listeners.delete(listener);
     };
   };
-  read(address: SessionAddress): EditorDraft {
-    const key = addressKey(address);
-    this.owners.set(key, address);
+  read(address: DraftAddress): EditorDraft {
+    const key = draftKey(address);
+    if (typeof address !== "string") this.owners.set(key, address);
     let draft = this.entries.get(key);
     if (!draft) {
       draft = {
@@ -146,13 +151,19 @@ export class DraftStore {
     }
     return draft;
   }
-  private put(address: SessionAddress, draft: EditorDraft) {
-    this.entries.set(addressKey(address), draft);
+  private changed() {
     this.tick++;
     for (const listener of this.listeners) listener();
   }
+  private put(address: DraftAddress, draft: EditorDraft) {
+    this.entries.set(draftKey(address), draft);
+    this.changed();
+  }
+  forgetOpening(key: string) {
+    if (this.entries.delete(draftKey(key))) this.changed();
+  }
   edit(
-    address: SessionAddress,
+    address: DraftAddress,
     change: (content: DraftContent) => DraftContent,
     allowRetired = false,
   ) {
@@ -314,7 +325,7 @@ export class DraftStore {
       ...(deleted ? { retired: true } : {}),
     });
   }
-  restoreSent(address: SessionAddress, sent: DraftContent) {
+  restoreSent(address: DraftAddress, sent: DraftContent) {
     const draft = this.read(address);
     // The replacement owner receives forwarded results; never strand a copy here.
     if (draft.transferred) return;

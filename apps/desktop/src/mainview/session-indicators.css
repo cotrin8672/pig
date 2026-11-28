@@ -16,26 +16,6 @@
   flex: none;
   min-width: 0;
 }
-.session-indicator {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  flex: none;
-  height: 24px;
-  padding: 0 8px;
-  border-radius: var(--radius-full);
-  color: var(--ds-text-secondary);
-  font-size: var(--text-xs);
-  font-variant-numeric: tabular-nums;
-}
-.session-indicator:hover {
-  background: var(--ds-bg-hover);
-  color: var(--ds-text-primary);
-}
-.session-indicator[aria-expanded="true"] {
-  background: var(--ds-bg-active);
-  color: var(--ds-accent);
-}
 /* Top layer: placed by JS above the composer with the same left/right edges. */
 .session-indicator-panel {
   --scrollbar-inset: var(--radius-md);

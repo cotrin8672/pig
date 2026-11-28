@@ -111,7 +111,7 @@ for (const variant of variants) {
     JSON.stringify({
       bun: Bun.version,
       variant: variant.name,
-      scope: "synthetic build only; not an Electrobun packaging/runtime test",
+      scope: "synthetic build only; not a Tauri packaging/runtime test",
       outputs: await Promise.all(
         result.outputs.map(async (output) => {
           const code = await output.text();

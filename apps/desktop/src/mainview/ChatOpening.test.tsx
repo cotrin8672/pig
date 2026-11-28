@@ -156,9 +156,7 @@ if (process.env.PIG_CHAT_OPENING_CHILD !== "1") {
       expect(bar).toContain('aria-label="Split pane left/right"');
       expect(bar).toContain('aria-label="Split pane top/bottom"');
       expect(bar).not.toContain('aria-label="Close pane (keep session)"');
-      expect(main).not.toContain(
-        'class="pane-close electrobun-webkit-app-region-no-drag"',
-      );
+      expect(main).not.toContain('class="pane-close window-no-drag"');
 
       state.opening = true;
       state.openingViewRevision = navigationRevision;

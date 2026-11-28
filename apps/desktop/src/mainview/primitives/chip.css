@@ -4,7 +4,7 @@
   background: var(--ds-bg-hover);
   font-variant-numeric: tabular-nums;
 }
-.provider-tag {
+.ui-chip-tag {
   flex: none;
   padding: 1px 5px;
   border-radius: 4px;
@@ -12,6 +12,6 @@
   color: var(--ds-text-muted);
   font-size: 10px;
 }
-.provider-tag[data-kind="extension"] {
+.ui-chip-tag[data-tone="accent"] {
   color: var(--ds-accent);
 }

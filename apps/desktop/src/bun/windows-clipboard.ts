@@ -1,7 +1,6 @@
 import { dlopen, type Pointer, ptr, toArrayBuffer } from "bun:ffi";
 
-// Electrobun 1.18 writes registered PNG, but its Windows reader only reads
-// CF_DIB (and returns it without PNG conversion). Keep both formats explicit.
+// Keep registered PNG and the native DIB formats explicit.
 const user =
   process.platform === "win32"
     ? dlopen("user32.dll", {

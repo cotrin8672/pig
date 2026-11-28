@@ -1,5 +1,9 @@
 import { test } from "bun:test";
-import { fixtureImport, runUiFixture } from "../scripts/ui-fixture";
+import {
+  fixtureHelpers,
+  fixtureImport,
+  runUiFixture,
+} from "../scripts/ui-fixture";
 
 const source = (path: string) => fixtureImport(new URL(path, import.meta.url));
 
@@ -14,15 +18,17 @@ for (const viewport of [
         const {createRoot}=await import(${fixtureImport(import.meta.resolve("react-dom/client"))});
         const {flushSync}=await import(${fixtureImport(import.meta.resolve("react-dom"))});
         const foundations=await import(${source("../src/stories/design-system/Foundations.stories.tsx")});
+        const {Overview:motion}=await import(${source("../src/stories/design-system/Motion.stories.tsx")});
         const button=await import(${source("../src/stories/design-system/Button.stories.tsx")});
         const {States:buttonStory}=button;
         const buttonPage={render:()=> <buttonStory.render/>};
         const iconButton=await import(${source("../src/stories/design-system/IconButton.stories.tsx")});
         const spinner=await import(${source("../src/stories/design-system/Spinner.stories.tsx")});
+        const {States:select}=await import(${source("../src/stories/design-system/Select.stories.tsx")});
         const controls=[
           (await import(${source("../src/stories/design-system/Switch.stories.tsx")})).States,
           (await import(${source("../src/stories/design-system/Checkbox.stories.tsx")})).States,
-          (await import(${source("../src/stories/design-system/Select.stories.tsx")})).States,
+          select,
           (await import(${source("../src/stories/design-system/TextField.stories.tsx")})).States,
         ];
         const newStories=[
@@ -41,12 +47,36 @@ for (const viewport of [
         const count=await import(${source("../src/stories/design-system/CountBadge.stories.tsx")});
         const keycap=await import(${source("../src/stories/design-system/Keycap.stories.tsx")});
         const patterns=await import(${source("../src/stories/design-system/patterns-ui-fixture.tsx")});
-        const domain=await import(${source("../src/stories/design-system/Domain.stories.tsx")});
+        const {ComposerActions}=await import(${source("../src/stories/composer/ComposerSubmit.stories.tsx")});
+        const {States:usageMeter}=await import(${source("../src/stories/design-system/UsageMeter.stories.tsx")});
+        const {States:copyButton}=await import(${source("../src/stories/design-system/CopyButton.stories.tsx")});
+        const {InviteBody}=await import(${source("../src/mainview/PairingDialogs.tsx")});
+        const {States:archiveToggle}=await import(${source("../src/stories/design-system/ArchiveToggle.stories.tsx")});
+        const {States:countButton}=await import(${source("../src/stories/design-system/ComposerCountButton.stories.tsx")});
+        const {States:pickerOption}=await import(${source("../src/stories/design-system/PickerOption.stories.tsx")});
+        const {States:dialogFrame}=await import(${source("../src/stories/design-system/DialogFrame.stories.tsx")});
+        const {States:errorAlert}=await import(${source("../src/stories/design-system/ErrorAlert.stories.tsx")});
+        const {States:sheet}=await import(${source("../src/stories/design-system/Sheet.stories.tsx")});
+        const catalog=[
+          usageMeter,copyButton,archiveToggle,countButton,pickerOption,dialogFrame,errorAlert,sheet,
+          (await import(${source("../src/stories/design-system/ContentPage.stories.tsx")})).States,
+          (await import(${source("../src/stories/design-system/ColorPicker.stories.tsx")})).States,
+          (await import(${source("../src/stories/design-system/LazyDetails.stories.tsx")})).States,
+          (await import(${source("../src/stories/design-system/Tooltip.stories.tsx")})).States,
+          (await import(${source("../src/stories/design-system/ImagePreview.stories.tsx")})).States,
+          (await import(${source("../src/stories/design-system/EffortSlider.stories.tsx")})).States,
+          (await import(${source("../src/stories/design-system/ModelSelect.stories.tsx")})).States,
+          (await import(${source("../src/stories/design-system/ProviderUsageView.stories.tsx")})).States,
+          (await import(${source("../src/stories/design-system/ChatListRow.stories.tsx")})).States,
+          (await import(${source("../src/stories/design-system/MessageBubble.stories.tsx")})).States,
+          (await import(${source("../src/stories/design-system/ChatTextArea.stories.tsx")})).States,
+          (await import(${source("../src/stories/design-system/ComposerForm.stories.tsx")})).States,
+          (await import(${source("../src/stories/design-system/ComposerEditor.stories.tsx")})).States,
+        ];
         await import(${source("../src/mainview/styles.css")});
         await import(${source("../src/stories/glass-stage.css")});
-        const check=(condition,message)=>{if(!condition)throw Error(message)};
-        const wait=()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));
-        const root=createRoot(document.getElementById('root'));
+        ${fixtureHelpers}
+        const root=createFixtureRoot(createRoot);
         let generation=0;
         const render=async story=>{
           flushSync(()=>root.render(
@@ -59,11 +89,11 @@ for (const viewport of [
           await wait();
         };
         const pages=[
-          foundations.ColorAndTypography,foundations.SurfacesAndOutput,
+          foundations.ColorAndTypography,foundations.SurfacesAndOutput,motion,
           buttonPage,iconButton.States,spinner.States,patterns.Settings,patterns.Interactions,
           providers.Providers,files.FileTypes,...controls,
           chip.States,dot.States,count.States,keycap.States,...newStories,
-          domain.ComposerActions,domain.DomainBoundary,
+          ComposerActions,...catalog,
         ];
         const canvas=document.createElement('canvas'),context=canvas.getContext('2d');
         for(const scale of [1,1.3]){
@@ -74,7 +104,10 @@ for (const viewport of [
             check(page&&page.querySelector('h1'),'page title');
             const variants=page.querySelector('.ds-specimen-variants');
             if(story===count.States)check([...variants.querySelectorAll('.notification-badge')].map(el=>el.textContent).join(',')==='1,99,99+','zero hidden; counts capped after 99');
-            if(story===dot.States)check(variants.querySelectorAll('span[aria-hidden="true"]').length===5,'labelled rows have decorative dots');
+            if(story===dot.States){
+              const dots=[...variants.querySelectorAll('figure')];
+              check(dots.length>=5&&dots.every(cell=>cell.querySelector('span[aria-hidden="true"]')),'labelled rows have decorative dots');
+            }
             if(story===keycap.States){
               check([...variants.querySelectorAll('kbd')].map(el=>el.textContent).join(',')==='K,Enter,Esc,←,↓','key names and arrows');
               for(const key of page.querySelectorAll('kbd')){
@@ -83,11 +116,13 @@ for (const viewport of [
                 check(rect.width>=rect.height-1 && rect.height>=1.75*parseFloat(style.fontSize),'key face fits a single glyph at current text scale');
               }
             }
-            if([...controls,...newStories,providers.Providers,files.FileTypes,buttonPage,iconButton.States,spinner.States,chip.States,dot.States,count.States,keycap.States].includes(story)){
+            if([...controls,...newStories,...catalog,providers.Providers,files.FileTypes,buttonPage,iconButton.States,spinner.States,chip.States,dot.States,count.States,keycap.States].includes(story)){
               const stage=page.querySelector('.ds-specimen-stage').getBoundingClientRect();
               check(stage.height>=180 && stage.bottom<=variants.getBoundingClientRect().top,'usage example precedes states');
               check(!page.querySelector('.ds-review-boundary'),'no proposal notice on shipped components');
               for(const cell of variants.querySelectorAll('figure'))check(cell.querySelector('figcaption')?.textContent&&cell.getBoundingClientRect().height>=80,'each variant has space and a caption');
+            }else if(story===motion){
+              check(page.querySelectorAll('.ds-review-table a').length===6&&!page.querySelector('button,select'),'motion links to live components without duplicating them');
             }else check(page.textContent.includes('Storybookで方針を確認する段階'),'review-only notice');
             check(page.scrollWidth<=page.clientWidth+1,story.name+': catalogue horizontal overflow');
             check(scroll.scrollWidth<=scroll.clientWidth+1,story.name+': stage horizontal overflow');
@@ -121,6 +156,24 @@ for (const viewport of [
         const primary=document.querySelector('.ds-specimen-example button.primary:not(:disabled)');
         primary.click();await wait();
         check(document.querySelector('output').textContent.includes('1'),'button changes only local counter');
+        const dispatch=async(method,params)=>{
+          window.__fixtureInput={method,params};
+          await until(()=>!window.__fixtureInput,'native input was dispatched');
+        };
+        const durations=(element,pseudo)=>getComputedStyle(element,pseudo).transitionDuration.split(', ').slice(0,2).join(' ');
+        await render(select);
+        const selectField=document.querySelector('.ds-specimen-example select');
+        const selectRect=selectField.getBoundingClientRect();
+        const center={x:selectRect.x+selectRect.width/2,y:selectRect.y+selectRect.height/2,button:'left',clickCount:1};
+        await dispatch('Input.dispatchMouseEvent',{...center,type:'mousePressed'});
+        await dispatch('Input.dispatchMouseEvent',{...center,type:'mouseReleased'});
+        await until(()=>selectField.matches(':open'),'native select opens');
+        check(durations(selectField,'::picker(select)')==='0.14s 0.14s','select opens with opacity and scale');
+        const escapeKey={key:'Escape',code:'Escape',windowsVirtualKeyCode:27};
+        await dispatch('Input.dispatchKeyEvent',{...escapeKey,type:'keyDown'});
+        await dispatch('Input.dispatchKeyEvent',{...escapeKey,type:'keyUp'});
+        await until(()=>!selectField.matches(':open'),'Escape closes the native select');
+        check(durations(selectField,'::picker(select)')==='0.08s 0s','select closes with the shorter fade only');
         await render(patterns.Interactions);
         const confirm=document.querySelector('.confirm-button'),width=confirm.getBoundingClientRect().width;
         confirm.click();await wait();
@@ -135,8 +188,10 @@ for (const viewport of [
         trigger.click();await wait();
         const menu=document.querySelector('[role="menu"]');
         check(menu.matches(':popover-open'),'production actions menu opens');
+        check(durations(menu)==='0.14s 0.14s','actions menu opens with the same opacity and scale timings');
         menu.querySelector('button').click();await wait();
         check(!menu.matches(':popover-open'),'menu selection closes popover');
+        check(durations(menu)==='0.08s 0s'&&getComputedStyle(menu).pointerEvents==='none','actions menu fades out without taking input');
         check([...document.querySelectorAll('output')].some(node=>node.textContent==='編集を選択'),'menu selection is local');
         const rename=[...document.querySelectorAll('button')].find(node=>node.textContent==='サンプルの名前を変更');
         rename.click();await wait();
@@ -152,7 +207,86 @@ for (const viewport of [
         check(dialog.open&&dialog.matches(':modal'),'native confirmation dialog opens');
         dialog.querySelector('button').click();await wait();
         check(!dialog.open&&document.activeElement===openDialog,'dialog closes and restores focus');
-        await render(domain.ComposerActions);
+        await render(copyButton);
+        const copy=document.querySelector('.ds-specimen-example .copy-button');
+        const beforeCopy=copy.getBoundingClientRect();
+        check(copy.querySelector('.lucide-copy'),'copy starts idle');
+        copy.focus();
+        copy.click();await wait();
+        const tick=copy.querySelector('.lucide-check');
+        check(copy.getAttribute('aria-label')==='コピー済み'&&tick,'success announces copied');
+        check(getComputedStyle(tick).animationName==='completion-pop'&&getComputedStyle(tick).animationDuration==='0.12s','the success check plays the 120ms completion motion');
+        copy.click();await wait();
+        check(!tick.isConnected&&copy.querySelector('.completion-pop')&&document.activeElement===copy,'another success replays only the icon, retaining button focus');
+        const afterCopy=copy.getBoundingClientRect();
+        check(['x','y','width','height'].every(key=>beforeCopy[key]===afterCopy[key]),'copy feedback does not shift layout');
+        const [persistent,disabled,failing]=document.querySelectorAll('.ds-specimen-variants button');
+        check(persistent.matches('.settings-icon-button')&&persistent.offsetWidth===32,'standalone copy keeps the shared icon-button face');
+        check(disabled.disabled,'copy is disabled without content');
+        persistent.click();failing.click();await wait();
+        check(failing.querySelector('.lucide-copy')&&document.querySelector('[role="alert"]'),'failure reports error without showing success');
+        await new Promise(resolve=>setTimeout(resolve,1600));await wait();
+        check(copy.getAttribute('aria-label')==='コマンドをコピー'&&copy.querySelector('.lucide-copy'),'transient feedback resets');
+        check(getComputedStyle(copy.querySelector('.lucide-copy')).animationName==='none','the idle icon returns without motion');
+        check(persistent.querySelector('.lucide-check'),'persistent feedback stays visible');
+        let rejectCopy=true,written,inviteCopies=0;
+        Object.defineProperty(navigator,'clipboard',{configurable:true,value:{
+          writeText:async text=>{if(rejectCopy)throw Error('Clipboard denied');written=text},
+        }});
+        await render({render:()=> <InviteBody code="example-invite" left={60} stage="idle" onCopy={()=>inviteCopies++}/>});
+        const invite=document.querySelector('.mac-copy button');
+        invite.click();
+        await until(()=>document.querySelector('.mac-copy .mac-row-detail'),'invite shows the clipboard error');
+        check(inviteCopies===0&&invite.querySelector('.lucide-copy'),'failed copy does not advance pairing or show success');
+        rejectCopy=false;
+        invite.click();
+        await until(()=>!!invite.querySelector('.completion-pop'),'invite plays the shared completion motion');
+        check(inviteCopies===1&&written==='example-invite'&&!document.querySelector('.mac-copy .mac-row-detail'),'only successful copy advances pairing and clears its error');
+        await render(archiveToggle);
+        const archive=document.querySelector('.ds-specimen-example button');
+        check(archive.getAttribute('aria-pressed')==='false'&&archive.textContent.endsWith('(3)'),'archive button shows count');
+        archive.click();await wait();
+        check(archive.getAttribute('aria-pressed')==='true'&&archive.textContent==='チャット一覧に戻る','archive shows return action');
+        check(!document.querySelector('.ds-specimen-variants figure:last-child button'),'empty archive is hidden');
+        await render(countButton);
+        const counter=document.querySelector('.ds-specimen-example .session-indicator');
+        const counterPanel=document.getElementById(counter.getAttribute('aria-controls'));
+        counter.click();await wait();
+        check(counter.type==='button'&&counter.getAttribute('aria-expanded')==='true'&&counterPanel.matches(':popover-open'),'count button opens the associated popover without submitting a form');
+        counter.click();await wait();
+        check(counter.getAttribute('aria-expanded')==='false'&&!counterPanel.matches(':popover-open'),'count button closes the same popover');
+        await render(pickerOption);
+        const [local,remote]=document.querySelectorAll('.ds-specimen-example [role="option"]');
+        const marker=remote.querySelector('.model-selected-mark');
+        const markerWidth=marker.getBoundingClientRect().width;
+        remote.click();await wait();
+        check(local.getAttribute('aria-selected')==='false'&&remote.getAttribute('aria-selected')==='true','one picker option is selected');
+        check(marker.querySelector('.lucide-check')&&marker.getAttribute('aria-hidden')==='true'&&marker.getBoundingClientRect().width===markerWidth,'picker check is decorative and does not resize the marker slot');
+        check(document.querySelector('.ds-specimen-variants button:disabled'),'unavailable picker option stays disabled');
+        await render(dialogFrame);
+        document.querySelector('.ds-specimen-example > button').click();await wait();
+        const frame=document.querySelector('.dialog-frame[open]');
+        check(frame&&frame.getAttribute('aria-modal')==='false'&&!frame.matches(':modal'),'shared frame is non-modal');
+        check(document.getElementById(frame.getAttribute('aria-labelledby'))?.textContent==='設定内容の確認','frame is labelled by its title');
+        check(frame.getBoundingClientRect().width===Math.min(520,innerWidth-32),'frame retains the default size');
+        const escape=(el,isComposing=false)=>el.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true,cancelable:true,isComposing}));
+        escape(frame,true);await wait();
+        check(frame.open,'IME Escape does not dismiss the frame');
+        escape(frame);await wait();
+        check(!frame.open,'Escape dismisses the frame');
+        await render(sheet);
+        const opener=document.querySelector('.ds-specimen-variants figure:last-child button');
+        opener.focus();opener.click();await wait();
+        const openedSheet=document.querySelector('dialog.mac-sheet');
+        openedSheet.getAnimations().forEach(animation=>animation.finish());
+        const codeInput=openedSheet.querySelector('input');
+        check(openedSheet.open&&document.activeElement===codeInput,'sheet focuses its own input on open');
+        check(openedSheet.getBoundingClientRect().width===Math.min(560,innerWidth-32),'wide sheet keeps its own width over frame defaults');
+        check(getComputedStyle(openedSheet).transitionDuration.split(',')[0]==='0.16s','sheet retains its opening motion without pairing-page CSS');
+        escape(codeInput);await wait();
+        check(!openedSheet.open&&openedSheet.isConnected&&document.activeElement===opener,'sheet stays mounted and restores opener focus on close');
+        check(getComputedStyle(openedSheet).transitionDuration.split(',')[0]==='0.09s','sheet retains its closing motion');
+        await render(ComposerActions);
         const buttons=[...document.querySelectorAll('.send-button')];
         check(buttons.length===7,'all submit states are represented');
         const bounds=buttons.map(button=>button.getBoundingClientRect());

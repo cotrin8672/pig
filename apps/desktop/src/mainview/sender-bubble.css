@@ -1,10 +1,3 @@
-/* A user-side bubble sent by someone other than the user (a schedule, a subagent, an extension). */
-.user-bubble.sender-bubble {
-  display: grid;
-  gap: 4px;
-  border: 1px solid color-mix(in srgb, var(--ds-info) 45%, transparent);
-  background: color-mix(in srgb, var(--ds-info) 26%, var(--ds-bg-tertiary));
-}
 .sender-head {
   display: flex;
   align-items: center;

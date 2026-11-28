@@ -7,7 +7,7 @@
   - Subagent: nicobailon版のセッション単位の公開EventBus RPCでバックグラウンド実行を取得し、フォアグラウンド実行は `subagent` ツールの構造化された進捗・結果を表示する。接続前のフォアグラウンド結果はツール履歴に残る。
   - Schedule: `cron:change` ごとに当該Extensionの保存ファイルを読み取り専用で読み、このセッション＋共有ジョブを表示。「Manage」は `/schedule-prompt` を起動。
   - Ask: 追加実装なし（`ctx.ui.custom()` は既存のTerminalUIHostで描画）。npmの `pi-ask-user@0.17.2` をSDKのローダーで読み込み、pigのExtension UIホストと本番テーマで、選択・自由記入・キャンセル・abortが正しくツール結果に返ることを確認。WebView側の描画とキーボード操作は未確認。
-- Storybook: `Settings/Marketplace`、`Design System/Domain/ChatScreen` の SupportedExtensions。
+- Storybook: `Settings/Marketplace`、`Design System/Domain/SessionPanel` の「対応拡張の件数」。
 - アイドル休止: 実行中のsubagentや有効な予定のあるセッションは休止しない（休止はExtensionを破棄し、それらを失わせるため）。
 - セッションタイトル: `@pi-archimedes/session-name` を「pig対応」に掲載。導入後は設定の「一般」でタイトル用モデルを選べる。設定はPiの共有 `settings.json` の `"archimedes.sessionName".model` に保存する。2.14.0／2.15.0を隔離profileと模擬プロバイダーで確認済み。別モデルで返った日本語タイトルの一覧更新、会話モデルに戻す操作、手動名の保持を確認した。実モデルでの日本語品質は未検証。
 

@@ -1,5 +1,4 @@
-import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
-import { dirname } from "node:path";
+import { readFile, rename } from "node:fs/promises";
 import {
   type NewNotice,
   NOTICE_HISTORY_LIMIT,
@@ -10,6 +9,7 @@ import {
   validateNotice,
   validateNoticeHistory,
 } from "../shared/notification-history";
+import { writeAtomicJson } from "./atomic-json";
 
 export class NotificationHistory {
   private snapshot: NoticeHistorySnapshot = { revision: 0, notices: [] };
@@ -60,19 +60,11 @@ export class NotificationHistory {
       const notices = change(this.snapshot.notices);
       if (!migrate && notices === this.snapshot.notices) return this.snapshot;
       const migrated = migrate || this.migrated;
-      await mkdir(dirname(this.file), { recursive: true });
       if (this.corrupt) {
         await rename(this.file, `${this.file}.corrupt-${crypto.randomUUID()}`);
         this.corrupt = false;
       }
-      const temporary = `${this.file}.${crypto.randomUUID()}.tmp`;
-      try {
-        await writeFile(temporary, JSON.stringify({ migrated, notices }));
-        await rename(temporary, this.file);
-      } catch (error) {
-        await rm(temporary, { force: true }).catch(() => {});
-        throw error;
-      }
+      await writeAtomicJson(this.file, { migrated, notices });
       this.migrated = migrated;
       this.snapshot = { revision: this.snapshot.revision + 1, notices };
       this.publish(this.snapshot);

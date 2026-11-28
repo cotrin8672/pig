@@ -76,6 +76,7 @@ export default {
             "Primitives",
             "Foundations",
           ],
+          "ChatRenderer",
           "*",
         ],
       },
@@ -94,7 +95,7 @@ export default {
         parameters.appPreview ? (
           <Story />
         ) : (
-          <StoryTurn role={parameters.role}>
+          <StoryTurn>
             <Story />
           </StoryTurn>
         )}

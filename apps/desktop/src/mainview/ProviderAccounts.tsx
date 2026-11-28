@@ -14,11 +14,11 @@ import {
 import type { AccountTarget } from "../shared/provider-accounts";
 import type { ProviderInfo } from "../shared/rpc-schema";
 import { useT } from "./i18n";
+import { ProviderIcon } from "./ProviderIcon";
 import { ActionsMenu } from "./patterns/ActionsMenu";
 import { ConfirmButton } from "./patterns/ConfirmButton";
 import { InlineRename } from "./patterns/InlineRename";
 import { Chip } from "./primitives/Chip";
-import { ProviderIcon } from "./primitives/ProviderIcon";
 import { startProviderLogin } from "./provider-login";
 import { refresh, rpc } from "./rpc";
 import { showError, useStore } from "./store";

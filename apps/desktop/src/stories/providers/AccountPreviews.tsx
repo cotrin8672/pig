@@ -17,12 +17,12 @@ import {
   X,
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
+import { ProviderIcon } from "../../mainview/ProviderIcon";
 import { ProviderDetail } from "../../mainview/Providers";
 import { ActionsMenu } from "../../mainview/patterns/ActionsMenu";
 import { ConfirmButton } from "../../mainview/patterns/ConfirmButton";
 import { InlineRename } from "../../mainview/patterns/InlineRename";
 import { Chip } from "../../mainview/primitives/Chip";
-import { ProviderIcon } from "../../mainview/primitives/ProviderIcon";
 import { useStore } from "../../mainview/store";
 import {
   type Account,
@@ -35,6 +35,8 @@ import {
   shortLabel,
 } from "./accounts-data";
 import "./accounts.css";
+import "../../mainview/patterns/dialog-frame.css";
+import "../../mainview/patterns/picker-option.css";
 import { Button } from "../../mainview/primitives/Button";
 import { SearchField } from "../../mainview/primitives/SearchField";
 import { Spinner } from "../../mainview/primitives/Spinner";
@@ -322,7 +324,7 @@ function SignInCard({
   }, []);
   return (
     <div
-      className="oauth-dialog acp-signin"
+      className="dialog-frame acp-signin"
       role="dialog"
       aria-label="サインイン"
     >

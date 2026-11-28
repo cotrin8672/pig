@@ -253,6 +253,11 @@ test.skipIf(!existsSync(fixtureEdge) && !process.env.PIG_REQUIRE_UI_TESTS)(
       await render(<OpeningComposer preview={snapshot}/>);field().focus();
       await press('ArrowUp');check(field().value==='second prompt','opening an existing chat shares message recall');
       await press('ArrowDown');check(field().value==='','opening an existing chat restores the draft');
+      const marker='[paste #1 +12 lines]';
+      drafts.edit(snapshot.address,c=>({...c,text:marker,pastes:[{id:'folded',marker,text:pasted}]}));await wait();
+      field().setSelectionRange(1,2);await insert('!');
+      check(field().value.includes(pasted) && !drafts.read(snapshot.address).content.pastes.length,'editing a folded marker during startup keeps its hidden text');
+      drafts.edit(snapshot.address,emptyContent);await wait();
       flushSync(()=>useStore.setState({openingTarget:{cwd:'fixture',draftId:'new-editor'},newChatDrafts:{}}));
       await render(<OpeningComposer/>);field().focus();await insert('new draft');await press('Enter');
       await press('z',{ctrlKey:true});check(field().value==='new draft','new-chat editor shares undo');
@@ -290,7 +295,7 @@ test.skipIf(!existsSync(fixtureEdge) && !process.env.PIG_REQUIRE_UI_TESTS)(
       };
       drafts.edit(snapshot.address,c=>({...c,images:[image]}));await wait();
       checkAttachmentSpacing('ready / image');
-      flushSync(()=>useStore.setState({newChatImages:{'new-editor':[image]}}));
+      flushSync(()=>drafts.edit('new-editor',content=>({...content,images:[image]})));
       await render(<OpeningComposer/>);await wait();
       checkAttachmentSpacing('new-chat / image');
       `,

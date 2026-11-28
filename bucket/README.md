@@ -22,7 +22,7 @@ Neither relocates the AppData profile or uses Scoop `persist`.
   `version: "nightly"` intentionally omits a hash: Scoop updates re-download the
   rolling ZIP without integrity checking. The release body includes the base
   version, UTC date and short commit SHA.
-- Both are built with `tauri:package` and share desktop settings in
+- Both are built with `pnpm build` and share desktop settings in
   `~/.config/pig` by default. Quit before switching/updating, and back up
   settings before testing nightly. For the first Nightly update from
   Electrobun, use `scoop update pig-nightly --force --no-cache`.

@@ -36,7 +36,10 @@ import {
 import type { Message } from "../shared/transcript";
 import { transferEditorView } from "./ComposerEditor";
 import { addressKey, sameAddress } from "./chat-snapshot";
-import { attachmentReads } from "./composer-attachments";
+import {
+  attachmentReads,
+  discardOpeningAttachments,
+} from "./composer-attachments";
 import { createDraftImageRecovery } from "./draft-image-recovery";
 import { drafts } from "./draft-store";
 import { runEditMenuCommand } from "./edit-menu";
@@ -95,6 +98,7 @@ import {
   overlayProjects,
   overlaySessionInfo,
   publishProvider,
+  removingProjects,
   sessionTitlePreference,
   settleRead,
 } from "./ui-mutations";
@@ -378,6 +382,8 @@ export const rpc = createRendererRpc({
     windowState: ({ maximized }) => useStore.setState({ maximized }),
     editMenuCommand: runEditMenuCommand,
     projects: (projects) => {
+      for (const cwd of removingProjects)
+        if (!projects.includes(cwd)) removingProjects.delete(cwd);
       useStore.setState((s) => ({
         bootstrap: { ...s.bootstrap, projects: overlayProjects(projects) },
       }));
@@ -590,7 +596,6 @@ export async function refresh() {
       .then(receiveSnapshot)
       .catch(showSessionReadError);
   bootstrap.disabledModels = overlayModelVisibility(bootstrap.disabledModels);
-  bootstrap.projects = overlayProjects(bootstrap.projects);
   bootstrap.modelOverrides = overlayModelOverrides(bootstrap.modelOverrides);
   bootstrap.models = bootstrap.models.map(overlayDefaultEffort);
   const desiredDefault = defaultModelPreference.value("default");
@@ -615,6 +620,10 @@ export async function refresh() {
       : {}),
     bootstrap: {
       ...bootstrap,
+      projects:
+        s.bootstrap.projects === before.bootstrap.projects
+          ? overlayProjects(bootstrap.projects)
+          : s.bootstrap.projects,
       sessionTitleModel:
         desiredTitleModel !== undefined ||
         s.bootstrap.sessionTitleModel === before.bootstrap.sessionTitleModel
@@ -1058,7 +1067,8 @@ function restoreOpening(openId: string) {
 }
 export async function cancelOpening(openId = useStore.getState().openId) {
   if (!openId) return;
-  if (useStore.getState().pendingOpens[openId]?.deferred) {
+  const target = useStore.getState().pendingOpens[openId];
+  if (target?.deferred) {
     restoreOpening(openId);
     clearOpeningView(openId);
     useStore.setState((state) => {
@@ -1066,6 +1076,7 @@ export async function cancelOpening(openId = useStore.getState().openId) {
       delete pendingOpens[openId];
       return { pendingOpens };
     });
+    discardOpeningAttachments(openingDraftKey(target));
     return;
   }
   const cancellation = opens.cancel(openId);
@@ -1489,7 +1500,7 @@ async function openSnapshot(
     });
   }
   const revision = navigationRevision;
-  let transferred: { cwd: string; text: string } | undefined;
+  let transferred: { key: string; text: string } | undefined;
   let completed = false;
   try {
     await connectRuntime();
@@ -1505,17 +1516,21 @@ async function openSnapshot(
     if (optimistic) {
       const draftKey = openingDraftKey(optimistic);
       const text = useStore.getState().newChatDrafts[draftKey] ?? "";
-      if (text)
-        drafts.edit(snapshot.address, (content) =>
-          mergeOpeningText(content, text),
-        );
+      const { images, files } = drafts.read(draftKey).content;
+      if (text || images.length || files?.length)
+        drafts.edit(snapshot.address, (content) => ({
+          ...(text ? mergeOpeningText(content, text) : content),
+          images: [...content.images, ...images],
+          files: [...(content.files ?? []), ...(files ?? [])],
+        }));
+      attachmentReads.transfer(draftKey, snapshot.address);
       const merged = drafts.read(snapshot.address).content.text;
       transferEditorView(
         `new:${optimistic.draftId ?? optimistic.cwd}`,
         addressKey(snapshot.address),
         merged.slice(0, merged.length - text.length),
       );
-      transferred = { cwd: draftKey, text };
+      transferred = { key: draftKey, text };
     }
     receiveSnapshot(snapshot);
     useStore.setState((state) => ({
@@ -1540,7 +1555,12 @@ async function openSnapshot(
           );
       } else
         void sends
-          .send(snapshot.address, op.content, undefined, op.delivery)
+          .send(
+            snapshot.address,
+            op.content,
+            op.attachments?.result,
+            op.delivery,
+          )
           .catch((error) => {
             drafts.restoreSent(snapshot.address, op.content);
             showError(error);
@@ -1608,8 +1628,8 @@ async function openSnapshot(
         const pendingOpens = { ...state.pendingOpens };
         delete pendingOpens[openId];
         const newChatDrafts = { ...state.newChatDrafts };
-        if (transferred && newChatDrafts[transferred.cwd] === transferred.text)
-          delete newChatDrafts[transferred.cwd];
+        if (transferred && newChatDrafts[transferred.key] === transferred.text)
+          delete newChatDrafts[transferred.key];
         return {
           pendingOpens,
           newChatDrafts,
@@ -1621,6 +1641,7 @@ async function openSnapshot(
           ),
         };
       });
+      if (transferred) drafts.forgetOpening(transferred.key);
     }
   }
 }

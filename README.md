@@ -83,12 +83,8 @@ On `dev`, `mise run dev` starts the Windows
 Requires Windows with WebView2, Node 22+, pnpm 10.14, Bun (tested with 1.4.2),
 and [mise](https://mise.jdx.dev/) for the pinned type checkers.
 
-Tauri development additionally requires the Rust MSVC toolchain and Visual
-Studio C++ Build Tools with a Windows SDK. To compare the Electrobun version,
-stop the running development app, then run
-`mise exec -- pnpm --filter @pig/desktop dev:electrobun`.
-The Electrobun `build` and `typecheck` scripts still generate
-`apps/desktop/.hutch/devkit` with `electrobun sync`.
+Development also requires the Rust MSVC toolchain and Visual C++
+Build Tools with a Windows SDK.
 
 ```sh
 mise install
@@ -97,11 +93,11 @@ mise run dev
 ```
 
 To preview the built-in chat renderers, run `mise run storybook` and open
-[Storybook](http://127.0.0.1:6006). Open **Chat → Overview → All Components**
-to compare every example on one page, or choose **Chat → Tools** or **Chat → Items** for individual stories.
-Changes to the desktop components, styles, and fixtures appear on save. Add
-examples in `apps/desktop/src/stories`. The gallery uses sample data and does
-not load pi-lens, local renderer overrides, or a desktop session.
+[Storybook](http://127.0.0.1:6006). Under **ChatRenderer**, each component has
+one page with a usage example and its supported states. Add examples in
+`apps/desktop/src/stories/chat-renderer`. The catalog renders production
+components with sample data; it does not load extensions, local renderer
+overrides, or a desktop session.
 
 Add a project folder with **+**, open **Providers** to sign in with an OpenAI
 ChatGPT Plus/Pro or Anthropic Claude Pro/Max subscription, then create a chat
@@ -148,9 +144,8 @@ other applications.
 terminal (including Nushell), just like `mise run storybook`.
 Stop it with Ctrl+C before starting another development session.
 
-`pnpm dev` builds the webview, starts Vite with HMR, and launches the app.
-Main-process changes automatically restart the app; do not launch a second Vite
-server or development app.
+`pnpm dev` builds the webview and launches the Tauri app. Stop and rerun it
+to pick up code changes.
 
 ```sh
 pnpm typecheck
@@ -167,20 +162,17 @@ pnpm build
 `pnpm typecheck:tsgo`. Both are pinned in `mise.toml` and installed locally
 with `mise install`. `pnpm typecheck:tsc` remains available for compatibility
 comparisons.
-The desktop tsconfig overrides the generated Electrobun `baseUrl` with `null`
-because TypeScript 7 removes that option; the generated `paths` aliases remain
-in use. Do not edit the generated devkit to change this setting.
 
 | Command | Scope | Automation |
 | --- | --- | --- |
-| `pnpm test` | Fast source tests, UI style rules, SDK packaging and build metadata tests | Every PR and `main`/`dev` push; release validation |
+| `pnpm test` | Fast source tests, UI style rules and SDK packaging tests | Every PR and `main`/`dev` push; release validation |
 | `pnpm test:integration` | Real SDK startup, native processes, large storage/recovery fixtures | Daily and manual `Regression` workflow |
 | `pnpm test:ui` | Edge/Chromium drawing and input regressions; missing browser fails | Daily and manual `Regression` workflow |
 | `pnpm test:all` | All three maintained suites | Local full verification |
 
-CI also runs Lint, TypeScript and a Vite webview build. Superseded CI runs are
-cancelled. Native packaging runs only for stable tags (Electrobun) and scheduled
-or manual nightlies (Tauri), after the same fast checks pass. A release deliberately
+CI also runs Lint, TypeScript and the Tauri Vite webview build. Superseded CI runs
+are cancelled. Native packaging runs only for stable tags and scheduled
+or manual nightlies, after the same fast checks pass. A release deliberately
 rechecks its exact revision rather than assuming a previous CI build covered
 it. It does **not** rerun the slow regression suites or wait for their daily run.
 Before releases or changes to SDK/storage/UI behavior, run the relevant suites
@@ -200,18 +192,15 @@ Remove-Item Env:PIG_TEST_WORKERS
 
 `apps/desktop/scripts/run-tests.ts` owns suite membership; new source tests are
 included in the fast suite by default. Existing heavy suites are explicitly
-listed, and a test checks that no source test is lost or assigned twice. The
-previously excluded `scripts/lazy-routes.test.ts` remains excluded: it describes
-an obsolete route-loading policy, not the current application contract.
+listed, and a test checks that no source test is lost or assigned twice.
 Regression suites run serially within each of two independent jobs to avoid
 SDK/Edge contention. The workflow runs daily at 18:00 UTC (03:00 JST) on `dev`,
-an hour before its nightly, or manually on a selected branch/tag. CI, Regression and Release share the Hutch cache key;
-the generated project devkit is never cached. Release ZIP/checksum artifacts are
+an hour before its nightly, or manually on a selected branch/tag. Release ZIP/checksum artifacts are
 also retained for seven days if publishing or the Scoop update fails.
 
-`pnpm build` writes an unsigned development bundle under
-`apps/desktop/build/dev-win-x64/`. Release automation builds the `stable` channel
-and packages a portable ZIP instead.
+`pnpm build` writes an unsigned Tauri portable bundle to
+`apps/desktop/build/tauri-portable/`. Release automation packages this bundle
+as a ZIP and builds the signed installer separately.
 
 ## Storage and limits
 
@@ -222,20 +211,16 @@ and packages a portable ZIP instead.
   `%USERPROFILE%\.config\pig`): `projects.json`, `appearance.json`,
   `disabled-models.json`, `settings.json` (language/context display/keybindings),
   and `desktop.json` (pins, archives, chat width, recent models).
-  First startup copies the known legacy Desktop files from Electrobun userData
-  without overwriting existing destination files. Originals remain untouched;
+  Missing Desktop settings are copied from the legacy Electrobun profile
+  under `%LOCALAPPDATA%\dev.pig.desktop` without overwriting existing files.
+  Originals remain untouched;
   legacy browser width/recent-model preferences are imported only when unset.
 - Extension UI dialogs are not implemented. Only `openai-codex` and `anthropic`
   appear in the model picker.
 - OAuth URLs remain visible beside manual-code inputs; the system browser opens
   automatically. Cancel handles both the whole flow and per-prompt cancellation.
-- The Windows folder picker uses an RPC **message**, not a request, to avoid
-  Electrobun #156. Both RPC endpoints allow ten-minute requests.
-- Electrobun types and Vite aliases come from the generated `.hutch/devkit`.
-  No upstream type-suppression or native DLL patch is applied. Do not edit the
-  generated SDK or Hutch's shared store.
 - pnpm's normal isolated linker works without a hoisting workaround. Only
-  electrobun/esbuild dependency build scripts are approved.
+  `esbuild` dependency build scripts are approved.
 
 The smoke script creates and disposes an in-memory session without sending a
 prompt or initiating login. Automated session/storage tests use scratch files;

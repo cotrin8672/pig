@@ -3,23 +3,26 @@ import "./specimen.css";
 
 export function PrimitiveSpecimen({
   layer = "Primitives",
+  wide,
   title,
   intro,
   context,
   children,
-  variants,
+  variants = [],
 }: {
-  layer?: "Primitives" | "Patterns";
+  layer?: "Primitives" | "Patterns" | "Domain" | "ChatRenderer";
+  wide?: boolean;
   title: string;
   intro: string;
   context: string;
   children: ReactNode;
-  variants: readonly { label: string; sample: ReactNode }[];
+  variants?: readonly { label: string; sample: ReactNode }[];
 }) {
+  const renderer = layer === "ChatRenderer";
   return (
-    <main className="ds-specimen">
+    <main className="ds-specimen" data-wide={wide || renderer || undefined}>
       <header>
-        <small>Design system / {layer}</small>
+        <small>{renderer ? layer : `Design system / ${layer}`}</small>
         <h1>{title}</h1>
         <p>{intro}</p>
       </header>
@@ -27,17 +30,19 @@ export function PrimitiveSpecimen({
         <figcaption>{context}</figcaption>
         <div className="ds-specimen-example">{children}</div>
       </figure>
-      <section aria-label="バリエーション">
-        <h2>バリエーション</h2>
-        <div className="ds-specimen-variants">
-          {variants.map(({ label, sample }) => (
-            <figure key={label}>
-              <div className="ds-specimen-sample">{sample}</div>
-              <figcaption>{label}</figcaption>
-            </figure>
-          ))}
-        </div>
-      </section>
+      {variants.length > 0 && (
+        <section aria-label="バリエーション">
+          <h2>バリエーション</h2>
+          <div className="ds-specimen-variants">
+            {variants.map(({ label, sample }) => (
+              <figure key={label}>
+                <div className="ds-specimen-sample">{sample}</div>
+                <figcaption>{label}</figcaption>
+              </figure>
+            ))}
+          </div>
+        </section>
+      )}
     </main>
   );
 }

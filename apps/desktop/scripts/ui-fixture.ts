@@ -100,16 +100,12 @@ export async function runUiFixture(
           name: "isolated-host",
           setup(b) {
             if (options.realRpc) {
-              b.onResolve({ filter: /^electrobun\/view$/ }, () => ({
-                path: "fixture-electroview",
-                namespace: "fixture-host",
-              }));
-              b.onLoad({ filter: /.*/, namespace: "fixture-host" }, () => ({
-                loader: "js",
-                contents: `export class Electroview {
-                  constructor() {}
-                  static defineRPC(options) {
-                    window.__rpcHandlers = options.handlers;
+              b.onLoad(
+                { filter: /[\\/]mainview[\\/]rpc-transport\.ts$/ },
+                () => ({
+                  loader: "js",
+                  contents: `export function createRendererRpc(handlers) {
+                    window.__rpcHandlers = handlers;
                     return {
                       request: new Proxy({}, {get: (_, method) => async params => {
                         if (!window.__requests?.[method]) throw Error('Unmocked RPC: ' + String(method));
@@ -117,9 +113,9 @@ export async function runUiFixture(
                       }}),
                       send: new Proxy({}, {get: (_, method) => params => window.__messages?.[method]?.(params)}),
                     };
-                  }
                 }`,
-              }));
+                }),
+              );
             }
             b.onResolve({ filter: /^react\/jsx-runtime$/ }, () => ({
               path: fileURLToPath(import.meta.resolve("react/jsx-runtime")),

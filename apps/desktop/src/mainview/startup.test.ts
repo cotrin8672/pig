@@ -37,39 +37,38 @@ if (process.env.PIG_STARTUP_CHILD !== "1") {
     settings: (settings: Settings) => void;
     appearance: (appearance: Appearance) => void;
     installed: (installed: InstalledPackage[]) => void;
+    projects: (projects: string[]) => void;
   };
-  mock.module("electrobun/view", () => ({
-    Electroview: class {
-      constructor(readonly options: unknown) {}
-      static defineRPC(config: { handlers: { messages: typeof messages } }) {
-        messages = config.handlers.messages;
-        return {
-          send: { setSettings() {} },
-          request: {
-            bootstrap: () => {
-              const read = Promise.withResolvers<Bootstrap>();
-              reads.bootstrap.push(read);
-              return read.promise;
-            },
-            appearance: () => {
-              const read = Promise.withResolvers<Appearance>();
-              reads.appearance.push(read);
-              return read.promise;
-            },
-            settings: () => {
-              const read = Promise.withResolvers<Settings>();
-              reads.settings.push(read);
-              return read.promise;
-            },
-            listInstalled: () => {
-              const read = Promise.withResolvers<InstalledPackage[]>();
-              reads.installed.push(read);
-              return read.promise;
-            },
-            actionKeymaps: async () => [],
+  mock.module("./rpc-transport", () => ({
+    createRendererRpc(handlers: { messages: typeof messages }) {
+      messages = handlers.messages;
+      return {
+        send: { setSettings() {} },
+        request: {
+          bootstrap: () => {
+            const read = Promise.withResolvers<Bootstrap>();
+            reads.bootstrap.push(read);
+            return read.promise;
           },
-        };
-      }
+          appearance: () => {
+            const read = Promise.withResolvers<Appearance>();
+            reads.appearance.push(read);
+            return read.promise;
+          },
+          settings: () => {
+            const read = Promise.withResolvers<Settings>();
+            reads.settings.push(read);
+            return read.promise;
+          },
+          listInstalled: () => {
+            const read = Promise.withResolvers<InstalledPackage[]>();
+            reads.installed.push(read);
+            return read.promise;
+          },
+          actionKeymaps: async () => [],
+          listSessions: async () => [],
+        },
+      };
     },
   }));
   let savedWorkspace: string | null;
@@ -128,7 +127,7 @@ if (process.env.PIG_STARTUP_CHILD !== "1") {
     }
   });
 
-  test("background refresh keeps the known screen and cannot undo newer settings or appearance", async () => {
+  test("background refresh keeps the known screen and cannot undo newer publications", async () => {
     useStore.setState({ initialized: true, settings });
     const pending = refresh();
     const latestSettings = { ...settings, language: "en" as const };
@@ -136,7 +135,8 @@ if (process.env.PIG_STARTUP_CHILD !== "1") {
     messages.settings(latestSettings);
     const latestAppearance = { ...appearance, backdrop: "acrylic" as const };
     messages.appearance(latestAppearance);
-    reads.bootstrap[0].resolve(bootstrap);
+    messages.projects(["latest"]);
+    reads.bootstrap[0].resolve({ ...bootstrap, projects: ["stale"] });
     reads.appearance[0].resolve(appearance);
     await tick();
     expect(useStore.getState().initialized).toBe(true);
@@ -145,6 +145,7 @@ if (process.env.PIG_STARTUP_CHILD !== "1") {
     await pending;
     expect(useStore.getState().settings).toBe(latestSettings);
     expect(useStore.getState().appearance).toBe(latestAppearance);
+    expect(useStore.getState().bootstrap.projects).toEqual(["latest"]);
   });
 
   test("failed initialization leaves no fake empty or disconnected state and can be retried", async () => {

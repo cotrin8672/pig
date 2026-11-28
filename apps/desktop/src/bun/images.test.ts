@@ -1,9 +1,7 @@
-import { expect, mock, test } from "bun:test";
+import { expect, test } from "bun:test";
 import { PhotonImage } from "@silvia-odwyer/photon";
+import { decodeDataUrl, encodePng, imageExtension } from "./images";
 import { dibToBmp } from "./windows-clipboard";
-
-mock.module("electrobun/bun", () => ({ ContextMenu: {}, Utils: {} }));
-const { decodeDataUrl, imageExtension, encodePng } = await import("./images");
 
 test("decodes base64 image data URLs only", () => {
   const decoded = decodeDataUrl("data:image/png;base64,aGk=");

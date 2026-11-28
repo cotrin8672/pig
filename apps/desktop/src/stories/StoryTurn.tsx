@@ -1,15 +1,15 @@
 import type { ReactNode } from "react";
 
 export function StoryTurn({
-  role = "assistant",
+  speaker = "assistant",
   children,
 }: {
-  role?: string;
+  speaker?: "assistant" | "user";
   children: ReactNode;
 }) {
   return (
     <div className="response-turn">
-      <article className={`message ${role}`}>{children}</article>
+      <article className={`message ${speaker}`}>{children}</article>
     </div>
   );
 }

@@ -1,6 +1,5 @@
 import {
   Brain,
-  Check,
   ChevronDown,
   Clock3,
   Image,
@@ -39,7 +38,8 @@ import { EffortSlider } from "./EffortSlider";
 import { useT } from "./i18n";
 import type { ModelPickerSnapshot } from "./model-picker-view";
 import { changeSelection, usePicker } from "./Picker";
-import { ProviderIcon } from "./primitives/ProviderIcon";
+import { ProviderIcon } from "./ProviderIcon";
+import { PickerOption } from "./patterns/PickerOption";
 import { SearchField } from "./primitives/SearchField";
 import { startProviderLogin } from "./provider-login";
 import {
@@ -536,47 +536,43 @@ export const ModelPicker = memo(function ModelPicker({
                             {source.label}
                           </div>
                         )}
-                        <button
-                          type="button"
-                          className="model-option"
-                          role="option"
-                          aria-selected={selected}
+                        <PickerOption
+                          label={<span>{model.name}</span>}
+                          selected={selected}
                           aria-disabled={
                             accountLocked(source, snapshot) || undefined
                           }
-                          data-highlighted={index === activeIndex || undefined}
+                          highlighted={index === activeIndex}
                           data-model-index={index}
                           id={`${listId}-${index}`}
                           aria-description={`${source.label}\n${model.name}\n${model.id}`}
                           onPointerMove={() => setHighlight(index)}
                           onClick={() => select(choice)}
-                        >
-                          {!searching && activeKey === "recent" && (
-                            <ProviderIcon
-                              provider={source.provider}
-                              size={12}
-                            />
-                          )}
-                          <span className="model-option-name">
-                            <span>{model.name}</span>
-                          </span>
-                          <span className="model-capabilities">
-                            {model.reasoning && (
-                              <Brain size={12} aria-label={t.Reasoning} />
-                            )}
-                            {model.vision && (
-                              <Image size={12} aria-label={t.Images} />
-                            )}
-                            {model.contextWindow && (
-                              <small>
-                                {Math.round(model.contextWindow / 1000)}k
-                              </small>
-                            )}
-                          </span>
-                          <span className="model-selected-mark">
-                            {selected && <Check size={13} />}
-                          </span>
-                        </button>
+                          icon={
+                            !searching &&
+                            activeKey === "recent" && (
+                              <ProviderIcon
+                                provider={source.provider}
+                                size={12}
+                              />
+                            )
+                          }
+                          detail={
+                            <>
+                              {model.reasoning && (
+                                <Brain size={12} aria-label={t.Reasoning} />
+                              )}
+                              {model.vision && (
+                                <Image size={12} aria-label={t.Images} />
+                              )}
+                              {model.contextWindow && (
+                                <small>
+                                  {Math.round(model.contextWindow / 1000)}k
+                                </small>
+                              )}
+                            </>
+                          }
+                        />
                       </div>
                     );
                   })}

@@ -24,26 +24,21 @@ if (process.env.PIG_ACCOUNT_EVENTS_CHILD !== "1") {
   let receive!: (frame: LoginFrame) => void;
   let bootstrap = Promise.withResolvers<Bootstrap>();
   let refreshes = 0;
-  mock.module("electrobun/view", () => ({
-    Electroview: class {
-      constructor(readonly options: unknown) {}
-      static defineRPC(options: {
-        handlers: { messages: { loginFrame: typeof receive } };
-      }) {
-        receive = options.handlers.messages.loginFrame;
-        return {
-          send: {},
-          request: {
-            bootstrap: () => {
-              refreshes++;
-              return bootstrap.promise;
-            },
-            appearance: async () => useStore.getState().appearance,
-            settings: async () => useStore.getState().settings,
-            actionKeymaps: async () => [],
+  mock.module("./rpc-transport", () => ({
+    createRendererRpc(handlers: { messages: { loginFrame: typeof receive } }) {
+      receive = handlers.messages.loginFrame;
+      return {
+        send: {},
+        request: {
+          bootstrap: () => {
+            refreshes++;
+            return bootstrap.promise;
           },
-        };
-      }
+          appearance: async () => useStore.getState().appearance,
+          settings: async () => useStore.getState().settings,
+          actionKeymaps: async () => [],
+        },
+      };
     },
   }));
   await import("./rpc");

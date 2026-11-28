@@ -148,7 +148,7 @@ function ImageViewer({
   return (
     <dialog
       ref={dialog}
-      className="image-viewer electrobun-webkit-app-region-no-drag"
+      className="image-viewer window-no-drag"
       aria-label={multiple ? t.imageN(index + 1, sources.length) : t.Image}
       onCancel={(e) => {
         e.preventDefault();

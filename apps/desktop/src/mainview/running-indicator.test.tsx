@@ -1,8 +1,8 @@
 import { expect, test } from "bun:test";
 import { renderToStaticMarkup } from "react-dom/server";
 import { en } from "../shared/i18n";
-import { TURN_SPINNERS } from "./primitives/TurnSpinner";
 import { RunningIndicator } from "./RunningIndicator";
+import { TURN_SPINNERS } from "./running-indicator/TurnSpinner";
 
 function spinnerVariant(turnKey?: string) {
   const html = renderToStaticMarkup(<RunningIndicator turnKey={turnKey} />);

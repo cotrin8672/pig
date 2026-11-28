@@ -21,6 +21,11 @@
 .sidebar-update-dot {
   position: absolute;
   right: 3px;
+}
+.sidebar-update-dot {
+  top: 3px;
+}
+.sidebar-provider-dot {
   bottom: 3px;
   width: 6px;
   height: 6px;
@@ -35,12 +40,6 @@
 }
 .sidebar-provider-dot.busy {
   background: var(--ds-warning);
-}
-/* A found update is "new", so it takes the highlight, not a status colour. */
-.sidebar-update-dot {
-  top: 3px;
-  bottom: auto;
-  background: var(--ds-highlight);
 }
 .notification-center {
   flex-shrink: 0;

@@ -39,19 +39,10 @@
   flex: none;
   overflow: visible;
 }
-/* The status sits on the icon's corner, like the sidebar's provider dot. */
-.chat-target-dot {
+.chat-target-status {
   position: absolute;
   right: -2px;
   bottom: -2px;
-  width: 6px;
-  height: 6px;
-  border-radius: var(--radius-full);
-  background: var(--ds-text-faint);
-  box-shadow: 0 0 0 1.5px var(--ds-bg-primary);
-  &[data-online] {
-    background: var(--ds-success);
-  }
 }
 .chat-target-swap {
   display: inline-flex;

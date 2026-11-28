@@ -42,6 +42,7 @@ import {
 } from "./extension-notices";
 import { fontFamilyValue } from "./font-family";
 import { SavedOutputContext } from "./HighlightedCode";
+import { IndicatorDot } from "./IndicatorDot";
 import { useT } from "./i18n";
 import { AnswerMarkdown, MarkdownCwd, UserMessage } from "./MessageContent";
 import { modelDividers } from "./model-dividers";
@@ -56,10 +57,10 @@ import { McpAppScope } from "./McpAppPreview";
 import { Notifications } from "./Notifications";
 import { initNavigation, navigate } from "./navigation";
 import { PaneWorkspace } from "./PaneWorkspace";
+import { ProviderIcon } from "./ProviderIcon";
 import { Providers } from "./Providers";
 import { ProviderUsage } from "./ProviderUsage";
 import { createPane } from "./pane-state";
-import { ProviderIcon } from "./primitives/ProviderIcon";
 import { RemoteConversation } from "./RemoteConversation";
 import { RemotePairing } from "./RemotePairing";
 import { RemoteSidebar } from "./RemoteSidebar";
@@ -110,12 +111,26 @@ import { WindowTitlebar } from "./WindowTitlebar";
 function isWindowDragTarget(target: EventTarget) {
   return (
     target instanceof Element &&
-    !target.closest(".electrobun-webkit-app-region-no-drag") &&
-    !!target.closest(".electrobun-webkit-app-region-drag")
+    !target.closest(".window-no-drag") &&
+    !!target.closest(".window-drag-region")
   );
 }
 function renderPaneChat(snapshot: ChatSnapshot) {
   return <Chat key={chatViewKey(snapshot)} snapshot={snapshot} />;
+}
+
+// Slider previews only change the shell's background, not its React subtree.
+function bindWindowOpacity(shell: HTMLDivElement | null) {
+  if (!shell) return;
+  let opacity: number | undefined;
+  const apply = ({ appearance }: ReturnType<typeof useStore.getState>) => {
+    const next = appearance.opacity[appearance.backdrop];
+    if (next === opacity) return;
+    opacity = next;
+    shell.style.setProperty("--window-opacity", String(next));
+  };
+  apply(useStore.getState());
+  return useStore.subscribe(apply);
 }
 
 export function App() {
@@ -241,9 +256,7 @@ export function App() {
     <button
       type="button"
       className={
-        sidebarOpen || peek
-          ? "sidebar-toggle electrobun-webkit-app-region-no-drag"
-          : undefined
+        sidebarOpen || peek ? "sidebar-toggle window-no-drag" : undefined
       }
       aria-label={t["Toggle sidebar"]}
       aria-expanded={sidebarOpen}
@@ -262,6 +275,7 @@ export function App() {
     <TooltipLayer>
       {/* biome-ignore lint/a11y/noStaticElementInteractions: Native drag handles; maximize is also available as a keyboard-accessible button. */}
       <div
+        ref={bindWindowOpacity}
         className={`app-shell${sidebarOpen ? "" : " sidebar-collapsed"}`}
         data-peek={(!sidebarOpen && peek) || undefined}
         data-backdrop={state.backdrop}
@@ -276,7 +290,6 @@ export function App() {
         }}
         style={
           {
-            "--window-opacity": state.windowOpacity,
             "--ds-sidebar-width": `${savedSidebarWidth}px`,
           } as React.CSSProperties
         }
@@ -303,11 +316,7 @@ export function App() {
           style={liveSidebar}
         >
           <header
-            className={
-              sidebarOpen
-                ? "electrobun-webkit-app-region-drag"
-                : "electrobun-webkit-app-region-no-drag"
-            }
+            className={sidebarOpen ? "window-drag-region" : "window-no-drag"}
           >
             <strong className="sidebar-brand">
               <img src={appIcon} alt="" width={20} height={20} />
@@ -393,7 +402,7 @@ export function App() {
           splitDisabled={!state.initialized || state.page !== "chat"}
         >
           {!sidebarOpen && !peek && (
-            <div className="window-controls window-sidebar-controls electrobun-webkit-app-region-no-drag">
+            <div className="window-controls window-sidebar-controls window-no-drag">
               {sidebarToggle}
             </div>
           )}
@@ -439,7 +448,7 @@ function SidebarFooter({
       >
         <SettingsIcon size={16} aria-hidden="true" />
         {updateVersion && (
-          <span className="sidebar-update-dot" aria-hidden="true" />
+          <IndicatorDot state="unread" className="sidebar-update-dot" />
         )}
       </button>
       <button
@@ -468,7 +477,7 @@ function SidebarFooter({
       >
         <Puzzle size={16} aria-hidden="true" />
         {extensionUpdateAvailable && (
-          <span className="sidebar-update-dot" aria-hidden="true" />
+          <IndicatorDot state="unread" className="sidebar-update-dot" />
         )}
       </button>
       <button

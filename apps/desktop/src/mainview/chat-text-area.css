@@ -1,0 +1,15 @@
+.chat-text-area {
+  display: block;
+  width: 100%;
+  min-width: 0;
+  min-height: calc(1lh + 4px);
+  background: transparent;
+  border: 0;
+  resize: none;
+  padding: 2px 4px;
+  font: inherit;
+  color: inherit;
+}
+.chat-text-area::placeholder {
+  color: var(--ds-placeholder-ink);
+}

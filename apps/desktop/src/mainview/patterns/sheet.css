@@ -1,0 +1,47 @@
+/* Same entry as Snappy popovers; the exit retraces it. */
+.mac-sheet {
+  --sheet-open: 160ms;
+  --sheet-exit: 90ms;
+  --sheet-rest: translateY(-6px) scale(0.97);
+  width: min(460px, calc(100vw - 32px));
+  padding: 18px 20px 16px;
+  border: 0;
+  border-radius: var(--radius-md-plus);
+  box-shadow: var(--ds-elevation-stroke), var(--ds-shadow-dialog);
+  transform-origin: top center;
+  opacity: 0;
+  transform: var(--sheet-rest);
+  transition:
+    opacity var(--sheet-exit) var(--motion-ease-out),
+    transform var(--sheet-exit) var(--motion-ease-out),
+    display var(--sheet-exit) allow-discrete;
+  &[data-wide] {
+    width: min(560px, calc(100vw - 32px));
+  }
+  &:not([open]) {
+    pointer-events: none;
+  }
+  &[open] {
+    gap: 14px;
+    opacity: 1;
+    transform: none;
+    transition-duration: var(--sheet-open);
+    @starting-style {
+      opacity: 0;
+      transform: var(--sheet-rest);
+    }
+  }
+  & .dialog-heading h2 {
+    margin: 0;
+    font-size: var(--text-base);
+    font-weight: var(--font-weight-semibold);
+  }
+  & .dialog-actions {
+    gap: 8px;
+    margin-top: 2px;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    --sheet-open: 0ms;
+    --sheet-exit: 0ms;
+  }
+}

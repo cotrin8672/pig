@@ -1,0 +1,25 @@
+.copy-button {
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border-radius: var(--radius-sm);
+  color: inherit;
+}
+.copy-button:hover:not(:disabled) {
+  background: var(--ds-bg-hover);
+  color: var(--ds-text-secondary);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .completion-pop {
+    animation: completion-pop var(--motion-duration-feedback)
+      var(--motion-ease-out);
+  }
+}
+
+@keyframes completion-pop {
+  from {
+    transform: scale(0.6);
+  }
+}

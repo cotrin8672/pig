@@ -1,10 +1,11 @@
-import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
-import { dirname, join, resolve } from "node:path";
+import { readFile } from "node:fs/promises";
+import { join, resolve } from "node:path";
 import {
   defaultSettings,
   type Settings,
   validateSettings,
 } from "../shared/settings";
+import { writeAtomicJson } from "./atomic-json";
 import { desktopConfigDir } from "./desktop-config";
 
 let runtimeSettings = defaultSettings;
@@ -34,9 +35,6 @@ export async function loadSettings(
 }
 export async function saveSettings(file: string, settings: Settings) {
   const validated = validateSettings(settings);
-  await mkdir(dirname(file), { recursive: true });
-  const temporary = `${file}.${crypto.randomUUID()}.tmp`;
-  await writeFile(temporary, JSON.stringify(validated));
-  await rename(temporary, file);
+  await writeAtomicJson(file, validated);
   applyRuntimeSettings(file, validated);
 }

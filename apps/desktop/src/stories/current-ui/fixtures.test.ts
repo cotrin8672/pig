@@ -53,10 +53,8 @@ test("the shared preview entry does not eagerly import feature UI", () => {
         lazyExports.push(variable.id.name);
   }
   expect(lazyExports.sort()).toEqual([
-    "ActivityPreview",
     "ChatScreenPreview",
     "DesktopPreview",
-    "NotificationPreview",
     "SidebarPreview",
   ]);
 });

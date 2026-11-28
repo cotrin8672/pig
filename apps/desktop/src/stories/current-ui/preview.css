@@ -53,16 +53,23 @@
   flex: none;
 }
 .current-ui-notification-anchor {
-  position: relative;
+  width: min(100%, 360px);
   min-height: 440px;
-  margin-top: auto;
 }
 .current-ui-notification-anchor > .sidebar-footer {
   margin-top: auto;
 }
+.current-ui-notification-anchor .notification-panel {
+  max-width: 100%;
+}
+.current-ui-toast-sample > .notifications {
+  position: static;
+  width: min(100%, 280px);
+  margin-inline: auto;
+}
 .current-ui-activity-anchor {
-  margin-top: auto;
   min-width: 0;
+  padding-top: clamp(120px, 25vh, 230px);
 }
 .current-ui-activity-composer {
   width: min(100%, 768px);

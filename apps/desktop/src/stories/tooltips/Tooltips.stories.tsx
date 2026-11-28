@@ -30,15 +30,6 @@ const meta = {
 export default meta;
 type Story = StoryObj<Args>;
 
-export const Shapes: Story = {
-  name: "中身の型",
-  render: ({ backdrop }) => (
-    <div className="tt-page">
-      <TooltipShapes backdrop={backdrop} />
-    </div>
-  ),
-};
-
 export const LighterSurface: Story = {
   name: "色比較：以前／薄め／ごく薄め／採用",
   parameters: {

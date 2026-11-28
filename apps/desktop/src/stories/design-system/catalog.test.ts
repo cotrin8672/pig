@@ -11,6 +11,7 @@ const directory = fileURLToPath(new URL(".", import.meta.url));
 const desktop = resolve(directory, "../../..");
 
 test("design system stories live under a layer and a named subject", () => {
+  const primitiveStories: string[] = [];
   for (const name of new Bun.Glob("src/stories/**/*.stories.tsx").scanSync(
     desktop,
   )) {
@@ -22,8 +23,25 @@ test("design system stories live under a layer and a named subject", () => {
         name,
       ).toBe(true);
       expect(subject, name).toBeTruthy();
+      if (layer === "Primitives") primitiveStories.push(subject);
     }
   }
+  const registeredPrimitives = inventory
+    .filter(
+      (entry) => entry.layer === "Primitives" && entry.evidence === "既存部品",
+    )
+    .flatMap((entry) => entry.name.split(" / "))
+    .sort();
+  const primitiveFiles = [
+    ...new Bun.Glob("*.tsx").scanSync(
+      resolve(desktop, "src/mainview/primitives"),
+    ),
+  ]
+    .filter((name) => !name.endsWith(".test.tsx"))
+    .map((name) => name.slice(0, -4))
+    .sort();
+  expect(primitiveStories.sort()).toEqual(registeredPrimitives);
+  expect(primitiveFiles).toEqual(registeredPrimitives);
 });
 
 test("the catalogue distinguishes existing code from proposals in every layer", () => {

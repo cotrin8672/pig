@@ -1,10 +1,13 @@
 import type { DraftFile } from "../shared/attachments";
 import type { DraftContent, SessionAddress } from "../shared/runtime-contract";
-import { addressKey, sameAddress } from "./chat-snapshot";
-import type { DraftStore } from "./draft-store";
+import { sameAddress } from "./chat-snapshot";
+import type { DraftAddress, DraftStore } from "./draft-store";
 
-export const maxImageBase64 = 4.5 * 1024 * 1024;
-export const imageTypes = new Set([
+const maxImageBase64 = 4.5 * 1024 * 1024;
+export const imageLimitMessage = "You can attach up to 8 images.";
+export const imageSizeMessage =
+  "Each image must be at most 4.5 MiB of base64 data.";
+const imageTypes = new Set([
   "image/png",
   "image/jpeg",
   "image/gif",
@@ -19,10 +22,15 @@ type Claim = {
   >;
   resolve(value: Loaded): void;
   reject(error: Error): void;
+  error?: Error;
+};
+export type AttachmentClaim = {
+  result: Promise<Loaded>;
+  restore(address: DraftAddress): Loaded;
 };
 type Read = {
   id: string;
-  address: SessionAddress;
+  address: DraftAddress;
   name: string;
   kind: "image" | "file";
   state: "pending" | "ready";
@@ -30,6 +38,18 @@ type Read = {
   reader: FileReader;
   claim?: Claim;
 };
+const ownsRead = (read: Read, address: DraftAddress) =>
+  typeof read.address === "string" || typeof address === "string"
+    ? read.address === address
+    : sameAddress(read.address, address);
+
+function loadedAttachments(claim: Claim): Loaded {
+  const ordered = claim.reads.map((read) => claim.loaded.get(read.id));
+  return {
+    images: ordered.flatMap((each) => (each?.image ? [each.image] : [])),
+    files: ordered.flatMap((each) => (each?.file ? [each.file] : [])),
+  };
+}
 
 /** Reads follow explicit draft transfers, never the currently visible chat. */
 export class AttachmentReads {
@@ -66,40 +86,59 @@ export class AttachmentReads {
     for (const listener of this.listeners) listener();
   }
   /** Unsent attachments still owned by the editor. */
-  read(address: SessionAddress) {
+  read(address: DraftAddress) {
     return [...this.reads.values()].filter(
       (read) =>
-        !read.claim &&
-        read.state !== "ready" &&
-        sameAddress(read.address, address),
+        !read.claim && read.state === "pending" && ownsRead(read, address),
     );
   }
-  pending(address: SessionAddress) {
-    return this.read(address).filter((read) => read.state === "pending").length;
+  pending(address: DraftAddress) {
+    return this.read(address).length;
   }
   protectedAddresses(): SessionAddress[] {
-    return [...this.reads.values()]
-      .filter((read) => read.state === "pending")
-      .map((read) => read.address);
+    return [...this.reads.values()].flatMap((read) =>
+      read.state === "pending" && typeof read.address !== "string"
+        ? [read.address]
+        : [],
+    );
   }
   /**
    * Moves every in-flight attachment from the editor to the message being
    * sent, so a late load can never land in the next draft.
    */
-  claim(address: SessionAddress): Promise<Loaded> | undefined {
-    const reads = this.read(address).filter((read) => read.state === "pending");
+  claim(address: DraftAddress): AttachmentClaim | undefined {
+    const reads = this.read(address);
     if (!reads.length) return;
     const result = Promise.withResolvers<Loaded>();
+    // Startup or an earlier send may hold the queue after the read already failed.
+    void result.promise.catch(() => {});
     const claim: Claim = { reads, loaded: new Map(), ...result };
     for (const read of reads) read.claim = claim;
     this.changed();
-    return result.promise;
+    return {
+      result: result.promise,
+      restore: (owner) => {
+        for (const read of reads) {
+          if (read.claim !== claim || !this.reads.has(read.id)) continue;
+          read.claim = undefined;
+          read.address = owner;
+        }
+        const loaded = loadedAttachments(claim);
+        claim.resolve(loaded);
+        if (claim.error) this.notice(claim.error.message);
+        this.changed();
+        return loaded;
+      },
+    };
   }
-  transfer(previous: SessionAddress, next: SessionAddress) {
-    for (const read of this.reads.values())
-      if (addressKey(read.address) === addressKey(previous))
-        read.address = next;
-    this.changed();
+  transfer(previous: DraftAddress, next: SessionAddress) {
+    let moved = false;
+    for (const read of this.reads.values()) {
+      if (!ownsRead(read, previous)) continue;
+      read.address = next;
+      moved = true;
+    }
+    if (moved) this.changed();
   }
   cancel(id: string) {
     const read = this.reads.get(id);
@@ -111,9 +150,9 @@ export class AttachmentReads {
     this.releaseReady(read.address);
     this.changed();
   }
-  private releaseReady(address: SessionAddress) {
+  private releaseReady(address: DraftAddress) {
     const reads = [...this.reads.values()].filter((read) =>
-      sameAddress(read.address, address),
+      ownsRead(read, address),
     );
     if (!reads.some((read) => read.state === "pending"))
       for (const read of reads)
@@ -129,16 +168,11 @@ export class AttachmentReads {
         image: item.images[0],
         file: item.files?.[0],
       });
-      if (claim.reads.every((each) => claim.loaded.has(each.id))) {
-        const ordered = claim.reads.map((each) => claim.loaded.get(each.id));
-        claim.resolve({
-          images: ordered.flatMap((each) => (each?.image ? [each.image] : [])),
-          files: ordered.flatMap((each) => (each?.file ? [each.file] : [])),
-        });
-      }
+      if (claim.reads.every((each) => claim.loaded.has(each.id)))
+        claim.resolve(loadedAttachments(claim));
     } else {
       const order = [...this.reads.values()]
-        .filter((each) => sameAddress(each.address, read.address))
+        .filter((each) => ownsRead(each, read.address))
         .map((each) => each.id);
       this.drafts.edit(read.address, (content) => ({
         ...content,
@@ -153,7 +187,7 @@ export class AttachmentReads {
     this.releaseReady(read.address);
     this.changed();
   }
-  private begin(address: SessionAddress, file: File, kind: Read["kind"]) {
+  private begin(address: DraftAddress, file: File, kind: Read["kind"]) {
     if (this.drafts.read(address).retired) {
       this.notice(
         `Image loading cancelled because its chat closed: ${file.name}`,
@@ -179,14 +213,40 @@ export class AttachmentReads {
       reader.abort();
       if (read.claim) {
         // The message fails as a whole and returns to the editor with this error.
-        read.claim.reject(new Error(message));
+        read.claim.error = new Error(message);
+        read.claim.reject(read.claim.error);
       } else this.notice(message);
       this.releaseReady(read.address);
       this.changed();
     };
     return { read, reader, fail };
   }
-  start(address: SessionAddress, file: File) {
+  private imageSlot(address: DraftAddress) {
+    if (
+      this.drafts.read(address).content.images.length +
+        this.read(address).filter((load) => load.kind === "image").length <
+      8
+    )
+      return true;
+    this.notice(imageLimitMessage);
+    return false;
+  }
+  startFiles(
+    address: DraftAddress,
+    files: File[],
+    store: (name: string, data: string) => Promise<string>,
+  ) {
+    for (const file of files) {
+      if (imageTypes.has(file.type)) this.start(address, file);
+      else this.startFile(address, file, store);
+    }
+  }
+  start(address: DraftAddress, file: File) {
+    if (!this.imageSlot(address)) return;
+    if (4 * Math.ceil(file.size / 3) > maxImageBase64) {
+      this.notice(imageSizeMessage);
+      return;
+    }
     const started = this.begin(address, file, "image");
     if (!started) return;
     const { read, reader, fail } = started;
@@ -194,8 +254,7 @@ export class AttachmentReads {
       if (!this.reads.has(read.id) || read.state !== "pending") return;
       try {
         const data = String(reader.result).replace(/^data:[^,]*;base64,/, "");
-        if (data.length > maxImageBase64)
-          throw new Error("Each image must be at most 4.5 MiB of base64 data.");
+        if (data.length > maxImageBase64) throw new Error(imageSizeMessage);
         reader.abort();
         this.deliver(read, {
           images: [
@@ -218,7 +277,8 @@ export class AttachmentReads {
       fail(error);
     }
   }
-  startClipboard(address: SessionAddress, load: () => Promise<string | null>) {
+  startClipboard(address: DraftAddress, load: () => Promise<string | null>) {
+    if (!this.imageSlot(address)) return;
     const started = this.begin(address, new File([], "clipboard.png"), "image");
     if (!started) return;
     const { read, fail } = started;
@@ -235,7 +295,7 @@ export class AttachmentReads {
           return;
         }
         if (data.length > maxImageBase64) {
-          fail(new Error("Each image must be at most 4.5 MiB of base64 data."));
+          fail(new Error(imageSizeMessage));
           return;
         }
         this.deliver(read, {
@@ -250,7 +310,7 @@ export class AttachmentReads {
   }
   /** Non-image files go to the agent as a stored path, like pi's TUI paste. */
   startFile(
-    address: SessionAddress,
+    address: DraftAddress,
     file: File,
     store: (name: string, data: string) => Promise<string>,
   ) {
@@ -261,13 +321,15 @@ export class AttachmentReads {
       if (!this.reads.has(read.id) || read.state !== "pending") return;
       const url = String(reader.result);
       reader.onload = reader.onerror = reader.onabort = null;
-      void store(file.name, url.slice(url.indexOf(",") + 1)).then((path) => {
-        if (!this.reads.has(read.id) || read.state !== "pending") return;
-        this.deliver(read, {
-          images: [],
-          files: [{ id: read.id, path, name: file.name }],
-        });
-      }, fail);
+      void Promise.resolve()
+        .then(() => store(file.name, url.slice(url.indexOf(",") + 1)))
+        .then((path) => {
+          if (!this.reads.has(read.id) || read.state !== "pending") return;
+          this.deliver(read, {
+            images: [],
+            files: [{ id: read.id, path, name: file.name }],
+          });
+        }, fail);
     };
     reader.onerror = reader.onabort = () =>
       fail(new Error(`Could not read ${file.name}`));

@@ -9,8 +9,6 @@ import { Spinner } from "../../mainview/primitives/Spinner";
 export const DesktopPreview = lazy(() => import("./DesktopPreview"));
 export const ChatScreenPreview = lazy(() => import("./ChatScreenPreview"));
 export const SidebarPreview = lazy(() => import("./SidebarPreview"));
-export const NotificationPreview = lazy(() => import("./NotificationPreview"));
-export const ActivityPreview = lazy(() => import("./ActivityPreview"));
 
 export function PreviewTheme({
   args,

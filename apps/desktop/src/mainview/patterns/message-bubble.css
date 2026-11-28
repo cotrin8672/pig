@@ -1,0 +1,14 @@
+.user-bubble {
+  max-width: 85%;
+  white-space: pre-wrap;
+  background: var(--ds-bg-tertiary);
+  padding: 10px 16px;
+  border-radius: var(--radius-lg);
+  overflow-wrap: anywhere;
+}
+.user-bubble.sender-bubble {
+  display: grid;
+  gap: 4px;
+  border: 1px solid color-mix(in srgb, var(--ds-info) 45%, transparent);
+  background: color-mix(in srgb, var(--ds-info) 26%, var(--ds-bg-tertiary));
+}

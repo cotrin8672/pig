@@ -52,7 +52,7 @@ test("copies only the four allowed config files and retains every legacy file", 
   const history = join(legacy, "sessions", "fixture.jsonl");
   await writeFile(history, "private history\n");
 
-  await prepareDesktopConfig(legacy, destination);
+  await prepareDesktopConfig([legacy], destination);
 
   expect((await readdir(destination)).sort()).toEqual(
     [...allowed, "general"].sort(),
@@ -75,9 +75,9 @@ test("does not overwrite desktop settings and tolerates missing legacy files on 
   await writeFile(join(legacy, "projects.json"), '["fixture"]');
   await writeFile(join(destination, "settings.json"), '{"source":"desktop"}');
 
-  await prepareDesktopConfig(legacy, destination);
+  await prepareDesktopConfig([legacy], destination);
   await writeFile(join(legacy, "projects.json"), '["changed"]');
-  await prepareDesktopConfig(legacy, destination);
+  await prepareDesktopConfig([legacy], destination);
 
   expect(await readFile(join(destination, "settings.json"), "utf8")).toBe(
     '{"source":"desktop"}',
@@ -95,7 +95,7 @@ test("does not overwrite desktop settings and tolerates missing legacy files on 
   ]);
 
   const emptyDestination = join(destination, "empty");
-  await prepareDesktopConfig(join(legacy, "missing"), emptyDestination);
+  await prepareDesktopConfig([join(legacy, "missing")], emptyDestination);
   expect(await readdir(emptyDestination)).toEqual(["general"]);
   expect(await readdir(join(emptyDestination, "general"))).toEqual([]);
 });

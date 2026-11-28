@@ -34,14 +34,13 @@ import { AnnotationDrafts } from "./AnnotationCards";
 import { AnnotationPopover } from "./AnnotationPopover";
 import { AskUserPanel } from "./AskUserPanel";
 import { rememberAnnotationRange } from "./annotation-highlights";
-import { imageTypes, maxImageBase64 } from "./attachment-reads";
 import { ComposerAttachments } from "./ComposerAttachments";
 import { ComposerEditor, insertEditorNewline } from "./ComposerEditor";
 import { ComposerFrame } from "./ComposerFrame";
 import { ComposerSubmit } from "./ComposerSubmit";
 import { ContextIndicator } from "./ContextIndicator";
 import { addressKey } from "./chat-snapshot";
-import { attachmentReads } from "./composer-attachments";
+import { attachmentReads, clipboardFiles } from "./composer-attachments";
 import { composerHistory } from "./composer-input-history";
 import { createDraftMirror } from "./draft-mirror";
 import { drafts, emptyContent, expandedDraft } from "./draft-store";
@@ -50,8 +49,8 @@ import { MessageQueue } from "./MessageQueue";
 import { ModelPicker } from "./ModelPicker";
 import { applyMention, mentionContext } from "./mention-completion";
 import { createModelPickerSelector } from "./model-picker-view";
+import { ComposerForm } from "./patterns/ComposerForm";
 import { FileIcon } from "./primitives/FileIcon";
-import { Spinner } from "./primitives/Spinner";
 import { ensureSessionRuntime, rpc, sends } from "./rpc";
 import { SessionIndicators } from "./SessionIndicators";
 import { SessionPanel } from "./SessionPanel";
@@ -123,8 +122,7 @@ export function Composer({
   );
   useSyncExternalStore(attachmentReads.subscribe, attachmentReads.getTick);
   const loads = attachmentReads.read(address);
-  const loading = loads.some((load) => load.state === "pending");
-  const previews = loads.filter((load) => load.preview);
+  const loading = loads.length > 0;
   const { text, images, pastes, files = [], annotations = [] } = draft.content;
   const shownPastes = pastes.filter((paste) => text.includes(paste.marker));
   const [stopping, setStopping] = useState<string>();
@@ -432,7 +430,7 @@ export function Composer({
       .send(
         address,
         undefined,
-        attachmentReads.claim(address),
+        attachmentReads.claim(address)?.result,
         delivery,
         resume,
       )
@@ -447,31 +445,9 @@ export function Composer({
       });
   }
   function attach(files: File[]) {
-    // Capture the address, not whichever session happens to be active at FileReader completion.
-    for (const file of files) {
-      if (!imageTypes.has(file.type)) {
-        attachmentReads.startFile(address, file, (name, data) =>
-          rpc.request.storeAttachment({ name, data }),
-        );
-        continue;
-      }
-      if (
-        drafts.read(address).content.images.length +
-          attachmentReads
-            .read(address)
-            .filter((load) => load.kind === "image" && load.state === "pending")
-            .length >=
-        8
-      ) {
-        showError(t["You can attach up to 8 images."]);
-        continue;
-      }
-      if (4 * Math.ceil(file.size / 3) > maxImageBase64) {
-        showError(t["Each image must be at most 4.5 MiB of base64 data."]);
-        continue;
-      }
-      attachmentReads.start(address, file);
-    }
+    attachmentReads.startFiles(address, files, (name, data) =>
+      rpc.request.storeAttachment({ name, data }),
+    );
   }
   return (
     <ComposerFrame onFiles={attach}>
@@ -547,12 +523,53 @@ export function Composer({
           else if (!sends.queued(address).length) textareaRef.current?.focus();
         }}
       />
-      <form
-        className="composer"
+      <ComposerForm
         onSubmit={(event) => {
           event.preventDefault();
           send();
         }}
+        toolbar={
+          <>
+            <div className="composer-session">
+              <SessionPanel
+                key={key}
+                sessionId={address.sessionId}
+                state={snapshot.sessionUI}
+                configError={snapshot.configError}
+                onAction={(request) =>
+                  rpc.request.invokeSessionAction({ ...address, ...request })
+                }
+                onActionError={showError}
+                onReload={reloadAdapters}
+              />
+              <SessionIndicators address={address} />
+            </div>
+            <div className="composer-pickers">
+              <ContextIndicator
+                usage={snapshot.contextUsage}
+                action={{
+                  label: t["Compact context"],
+                  run: () => runCompaction(),
+                  disabled: !canSend || !!transcript.compaction,
+                }}
+              />
+              <ModelPicker snapshot={pickerSnapshot} />
+            </div>
+          </>
+        }
+        submit={
+          <ComposerSubmit
+            busy={transcript.running || admitted}
+            waiting={waiting}
+            stopping={stopping === key}
+            resumable={resumable}
+            hasContent={hasContent}
+            onStop={stop}
+            disabled={
+              (!hasContent && !resumable) || (!canSend && !extensionSend)
+            }
+          />
+        }
       >
         <AnnotationDrafts
           annotations={annotations}
@@ -565,8 +582,10 @@ export function Composer({
             }))
           }
         />
-        {images.length + files.length + previews.length + shownPastes.length >
-          0 && (
+        {(images.length > 0 ||
+          files.length > 0 ||
+          shownPastes.length > 0 ||
+          loads.some((load) => load.preview)) && (
           <div className="composer-attachments">
             {shownPastes.map((paste) => {
               const body = paste.text.replace(/\r\n/g, "\n");
@@ -614,6 +633,7 @@ export function Composer({
             <ComposerAttachments
               images={images}
               files={files}
+              loads={loads}
               onRemoveImage={(id) =>
                 drafts.edit(address, (content) => ({
                   ...content,
@@ -627,25 +647,6 @@ export function Composer({
                 }))
               }
             />
-            {previews.map((load) => (
-              <div
-                className={`composer-attachment pending ${load.kind === "file" ? "file" : ""}`}
-                key={load.id}
-                aria-description={load.name}
-                aria-busy="true"
-              >
-                <Spinner size={22} />
-                <span>{load.name}</span>
-                <button
-                  type="button"
-                  className="composer-attachment-remove"
-                  aria-label={`${t["Remove attachment"]}: ${load.name}`}
-                  onClick={() => attachmentReads.cancel(load.id)}
-                >
-                  <X size={14} />
-                </button>
-              </div>
-            ))}
           </div>
         )}
         {options.length > 0 && (
@@ -761,12 +762,7 @@ export function Composer({
             event.preventDefault();
           }}
           onPaste={(event) => {
-            const files = Array.from(event.clipboardData.files);
-            if (!files.length)
-              for (const item of Array.from(event.clipboardData.items)) {
-                const file = item.kind === "file" ? item.getAsFile() : null;
-                if (file) files.push(file);
-              }
+            const files = clipboardFiles(event.clipboardData);
             if (files.length) {
               event.preventDefault();
               void attach(files);
@@ -777,16 +773,6 @@ export function Composer({
               .replace(/\r\n/g, "\n");
             if (!pasted && !event.clipboardData.getData("text/html")) {
               event.preventDefault();
-              if (
-                images.length +
-                  loads.filter(
-                    (load) => load.kind === "image" && load.state === "pending",
-                  ).length >=
-                8
-              ) {
-                showError(t["You can attach up to 8 images."]);
-                return;
-              }
               attachmentReads.startClipboard(address, () =>
                 rpc.request.readClipboardImage({}),
               );
@@ -894,47 +880,7 @@ export function Composer({
               );
           }}
         />
-        <div className="composer-toolbar">
-          <div className="composer-session">
-            <SessionPanel
-              key={key}
-              sessionId={address.sessionId}
-              state={snapshot.sessionUI}
-              configError={snapshot.configError}
-              onAction={(request) =>
-                rpc.request.invokeSessionAction({ ...address, ...request })
-              }
-              onActionError={showError}
-              onReload={reloadAdapters}
-            />
-            <SessionIndicators address={address} />
-          </div>
-          <div className="composer-pickers">
-            <ContextIndicator
-              usage={snapshot.contextUsage}
-              action={{
-                label: t["Compact context"],
-                run: () => runCompaction(),
-                disabled: !canSend || !!transcript.compaction,
-              }}
-            />
-            <ModelPicker snapshot={pickerSnapshot} />
-          </div>
-          <div className="send-controls">
-            <ComposerSubmit
-              busy={transcript.running || admitted}
-              waiting={waiting}
-              stopping={stopping === key}
-              resumable={resumable}
-              hasContent={hasContent}
-              onStop={stop}
-              disabled={
-                (!hasContent && !resumable) || (!canSend && !extensionSend)
-              }
-            />
-          </div>
-        </div>
-      </form>
+      </ComposerForm>
     </ComposerFrame>
   );
 }

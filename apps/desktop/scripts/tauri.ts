@@ -31,8 +31,6 @@ for (const args of [
     "node",
     join(desktop, "node_modules/vite/bin/vite.js"),
     "build",
-    "--config",
-    "vite.tauri.config.ts",
     ...(smoke ? ["--mode", "tauri-smoke"] : []),
   ],
   [

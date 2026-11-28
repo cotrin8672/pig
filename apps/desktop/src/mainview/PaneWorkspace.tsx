@@ -92,7 +92,7 @@ export function PaneWorkspace({
           >
             {active === id ? children : null}
           </PaneContent>
-          <div className="pane-actions electrobun-webkit-app-region-no-drag">
+          <div className="pane-actions window-no-drag">
             <button
               type="button"
               className="pane-action pane-new-chat"

@@ -1,0 +1,30 @@
+.session-indicator {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex: none;
+  height: 24px;
+  padding: 0 8px;
+  border-radius: var(--radius-full);
+  color: var(--ds-text-secondary);
+  font-size: var(--text-xs);
+  font-variant-numeric: tabular-nums;
+}
+.session-indicator:hover {
+  background: var(--ds-bg-hover);
+  color: var(--ds-text-primary);
+}
+.session-indicator[aria-expanded="true"] {
+  background: var(--ds-bg-active);
+  color: var(--ds-accent);
+}
+.session-indicator[data-warning="true"] {
+  color: var(--ds-warning);
+}
+.session-indicator[data-live="true"]::after {
+  content: "";
+  width: 5px;
+  height: 5px;
+  border-radius: var(--radius-round);
+  background: var(--ds-success);
+}

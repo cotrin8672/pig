@@ -33,6 +33,7 @@ import type {
   SessionView,
   ViewEnvelope,
 } from "../../../../packages/config/src";
+import { ComposerCountButton } from "./ComposerCountButton";
 import { useT } from "./i18n";
 import { Markdown } from "./MessageContent";
 import { TextField } from "./primitives/TextField";
@@ -88,16 +89,6 @@ function Fact({ label, value }: { label: string; value?: ReactNode }) {
       <dd>{value}</dd>
     </div>
   );
-}
-function Facts({ facts }: { facts?: { label: string; value: string }[] }) {
-  return facts?.length ? (
-    <dl>
-      {facts.map((fact, index) => (
-        // biome-ignore lint/suspicious/noArrayIndexKey: Facts have no IDs or local state; duplicates are allowed.
-        <Fact key={index} {...fact} />
-      ))}
-    </dl>
-  ) : null;
 }
 /** Resource references are deliberately inert: a file/URL is not permission to read it. */
 function Resource({ resource }: { resource: ResourceRef }) {
@@ -270,46 +261,6 @@ function Actions({
     </div>
   ) : null;
 }
-function Run({
-  run,
-  context,
-  children,
-}: {
-  run: RunRecord;
-  context: ActionContext;
-  children?: ReactNode;
-}) {
-  return (
-    <>
-      <h4>{run.title}</h4>
-      <RunStatus state={run.state} />
-      <dl>
-        <Fact label="Run ID" value={run.id} />
-        <Fact label="Started" value={run.startedAt} />
-        <Fact label="Ended" value={run.endedAt} />
-      </dl>
-      {run.detail && <p className="session-text">{run.detail}</p>}
-      {children}
-      {run.origin && (
-        <p>
-          <Resource resource={run.origin} />
-        </p>
-      )}
-      <Facts facts={run.facts} />
-      {run.output && (
-        <details>
-          <summary>
-            Logs / result · {run.output.stream ?? "output"}
-            {run.output.truncated ? " · truncated" : ""}
-          </summary>
-          <pre>{run.output.text}</pre>
-        </details>
-      )}
-      <Actions context={context} actions={run.actions} />
-    </>
-  );
-}
-
 function ViewContent({
   view,
   context,
@@ -321,54 +272,8 @@ function ViewContent({
     case "todo":
     case "agents":
     case "background":
-      return null;
     case "schedule":
-      return (
-        <>
-          <ul className="session-items">
-            {view.schedules.map((schedule) => (
-              <li key={schedule.id}>
-                <h4>{schedule.title}</h4>
-                <span className="session-badge">
-                  {schedule.enabled === null
-                    ? "Enabled state unknown"
-                    : schedule.enabled
-                      ? "Enabled"
-                      : "Disabled"}
-                </span>
-                <dl>
-                  <Fact label="Schedule ID" value={schedule.id} />
-                  <Fact label="Timing" value={timingLabel(schedule.timing)} />
-                  <Fact
-                    label="Next run (reported)"
-                    value={schedule.nextRunAt ?? "Not reported"}
-                  />
-                  <Fact label="Lifetime" value={schedule.lifetime} />
-                  <Fact label="Policy" value={schedule.policy} />
-                </dl>
-                <Actions context={context} actions={schedule.actions} />
-                <details>
-                  <summary>Run history ({schedule.runs?.length ?? 0})</summary>
-                  {schedule.runs?.length ? (
-                    <ul className="session-items">
-                      {schedule.runs.map((run) => (
-                        <li key={run.id}>
-                          <Run run={run} context={context} />
-                        </li>
-                      ))}
-                    </ul>
-                  ) : (
-                    <p>No reported runs.</p>
-                  )}
-                </details>
-              </li>
-            ))}
-          </ul>
-          {!view.schedules.length && (
-            <p className="session-muted">No schedules.</p>
-          )}
-        </>
-      );
+      return null;
     case "mode":
       return (
         <>
@@ -911,27 +816,21 @@ export function SessionPanel({
   });
   return (
     <div className="session-activity">
-      {tabs.map((tab) => {
-        const Glyph = icon(tab);
-        return (
-          <button
-            {...trigger(tab)}
-            type="button"
-            key={tab}
-            className="session-indicator"
-            data-tab={tab}
-            data-warning={tab === "info" && problems.length > 0}
-            data-live={
-              (tab === "tasks" && running > 0) ||
-              (tab === "todo" && progress.activeCount > 0)
-            }
-            aria-label={chipLabel(tab)}
-          >
-            <Glyph size={13} aria-hidden="true" />
-            <span>{counts[tab]}</span>
-          </button>
-        );
-      })}
+      {tabs.map((tab) => (
+        <ComposerCountButton
+          {...trigger(tab)}
+          key={tab}
+          data-tab={tab}
+          icon={icon(tab)}
+          count={counts[tab]}
+          warning={tab === "info" && problems.length > 0}
+          live={
+            (tab === "tasks" && running > 0) ||
+            (tab === "todo" && progress.activeCount > 0)
+          }
+          aria-label={chipLabel(tab)}
+        />
+      ))}
       <div
         {...panel}
         className="session-indicator-panel session-panel"

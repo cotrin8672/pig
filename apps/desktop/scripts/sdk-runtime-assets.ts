@@ -15,17 +15,18 @@ import {
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 
 // Keep these packages unbundled: their import.meta.url/package.json, loader aliases,
-// theme JSON, QuickJS WASM and adjacent code-mode worker are runtime contracts.
+// theme JSON, WASM and adjacent code-mode worker are runtime contracts.
 export const SDK_RUNTIME_ROOTS = [
   "@earendil-works/pi-coding-agent",
   "@earendil-works/pi-ai",
   "@earendil-works/pi-tui",
+  "@silvia-odwyer/photon",
 ] as const;
 export const SDK_RUNTIME_EXTERNALS = SDK_RUNTIME_ROOTS.flatMap((name) => [
   name,
   `${name}/*`,
 ]);
-export const SDK_RUNTIME_STAGE = "build/sdk-runtime";
+export const SDK_RUNTIME_STAGE = "build/tauri-sdk";
 
 type PackageManifest = {
   name: string;
@@ -346,28 +347,20 @@ function assemble(
   }
 }
 
-/** Hutch (Electrobun 2) imports the preBuild hook and calls its default
- * export; `bun scripts/sdk-runtime-assets.ts` runs it directly. Both paths
- * must stage, so no work may hide behind import.meta.main or process.exit.
- */
-export function stageSdkRuntime(
-  projectDir = resolve(import.meta.dir, ".."),
-): void {
+export function stageSdkRuntime(projectDir = resolve(import.meta.dir, "..")) {
   const destination = join(projectDir, SDK_RUNTIME_STAGE);
   if (
-    existsSync(dirname(destination)) &&
-    lstatSync(dirname(destination)).isSymbolicLink()
+    lstatSync(dirname(destination), { throwIfNoEntry: false })?.isSymbolicLink()
   )
     throw new Error("SDK build directory must not be a symlink");
-  // This fixed, generated directory is the only path the build hook replaces.
-  if (existsSync(destination) && lstatSync(destination).isSymbolicLink())
+  if (lstatSync(destination, { throwIfNoEntry: false })?.isSymbolicLink())
     throw new Error("SDK stage must not be a symlink");
   if (sdkStageMatches({ projectDir, destination })) {
     console.log("[sdk-runtime] Reusing verified SDK runtime.");
-    return;
+    return destination;
   }
   const temporary = `${destination}.next`;
-  if (existsSync(temporary))
+  if (lstatSync(temporary, { throwIfNoEntry: false }))
     throw new Error(`Remove interrupted SDK stage first: ${temporary}`);
   const manifest = copySdkRuntime({ projectDir, destination: temporary });
   rmSync(destination, { recursive: true, force: true });
@@ -375,8 +368,6 @@ export function stageSdkRuntime(
   console.log(
     `[sdk-runtime] Staged ${manifest.packages.length} package placements (no Durable).`,
   );
-}
-export default function preBuild() {
-  stageSdkRuntime();
+  return destination;
 }
 if (import.meta.main) stageSdkRuntime();

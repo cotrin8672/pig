@@ -1,3 +1,4 @@
+// biome-ignore-all lint/suspicious/noConfusingVoidType: The IPC schema uses void for omitted arguments and empty replies.
 import type { AuthEvent, AuthPrompt } from "@earendil-works/pi-ai";
 import type {
   ActionKeymap,
@@ -265,15 +266,12 @@ import type { PiDataImportResult, PiDataReport } from "./pi-data";
 export type RPCSchema = {
   bun: {
     requests: {
-      // biome-ignore lint/suspicious/noConfusingVoidType: Electrobun convention.
       getAppUpdate: { params: void; response: AppUpdateState };
-      // biome-ignore lint/suspicious/noConfusingVoidType: Electrobun convention.
       getPiData: { params: void; response: PiDataReport };
       importLegacyAuth: {
         params: { file: string; providers: string[] };
         response: PiDataImportResult;
       };
-      // biome-ignore lint/suspicious/noConfusingVoidType: Electrobun convention.
       importLegacySessions: { params: void; response: PiDataImportResult };
       importChatHistory: {
         // The host picks each chat's project from its original folder.
@@ -281,21 +279,17 @@ export type RPCSchema = {
         response: ChatHistoryImportResult;
       };
       getChatRendererBundle: {
-        // biome-ignore lint/suspicious/noConfusingVoidType: Electrobun convention.
         params: void;
         response: { file: string; source: string | null; error?: string };
       };
       invokeSessionAction: {
         params: SessionAddress & SessionActionRequest;
-        // biome-ignore lint/suspicious/noConfusingVoidType: Electrobun convention.
         response: void;
       };
       reloadAdapterConfig: {
-        // biome-ignore lint/suspicious/noConfusingVoidType: Electrobun convention.
         params: void;
         response: { state: "pending" | "applied" | "failed" };
       };
-      // biome-ignore lint/suspicious/noConfusingVoidType: Electrobun's parameterless RPC convention.
       actionKeymaps: { params: void; response: ActionKeymap[] };
       heartbeatUI: {
         params: { clientId: string; usage?: RuntimeUsage };
@@ -311,31 +305,24 @@ export type RPCSchema = {
         params: { names: string[] };
         response: Record<string, string | null>;
       };
-      // biome-ignore lint/suspicious/noConfusingVoidType: Electrobun's parameterless RPC convention.
       listInstalled: { params: void; response: InstalledPackage[] };
       prompt: {
         params: PromptParams;
         response: PromptAccepted;
       };
-      // biome-ignore lint/suspicious/noConfusingVoidType: Electrobun's parameterless RPC convention.
       bootstrap: { params: void; response: Bootstrap };
       noticeHistory: {
         params: NoticeHistoryRequest;
         response: NoticeHistorySnapshot;
       };
-      // biome-ignore lint/suspicious/noConfusingVoidType: Electrobun's parameterless RPC convention.
       appearance: { params: void; response: Appearance };
-      // biome-ignore lint/suspicious/noConfusingVoidType: Electrobun's parameterless RPC convention.
       settings: { params: void; response: Settings };
-      // biome-ignore lint/suspicious/noConfusingVoidType: Electrobun's parameterless RPC convention.
       providerUsage: { params: void; response: ProviderUsage[] };
       statistics: {
         params: { period: StatisticsPeriod; requestId?: string };
         response: StatisticsData;
       };
-      // biome-ignore lint/suspicious/noConfusingVoidType: Electrobun's parameterless RPC convention.
       refreshProviderUsage: { params: void; response: void };
-      // biome-ignore lint/suspicious/noConfusingVoidType: Electrobun's parameterless RPC convention.
       pairingStatus: { params: void; response: PairingStatus };
       remoteHosts: { params: {}; response: import("./pairing").PairingHost[] };
       remoteProjectsSave: {
@@ -350,15 +337,12 @@ export type RPCSchema = {
         response: unknown;
       };
       pairingSetAllow: { params: { allow: boolean }; response: void };
-      // biome-ignore lint/suspicious/noConfusingVoidType: Electrobun's parameterless RPC convention.
       pairingInvite: { params: void; response: PairingInvite };
-      // biome-ignore lint/suspicious/noConfusingVoidType: Electrobun's parameterless RPC convention.
       pairingCancelInvite: { params: void; response: void };
       pairingRevoke: { params: { id: string }; response: void };
       pairingRemoveHost: { params: { id: string }; response: void };
       /** Starts pairing; progress arrives through `pairingStatus().connect`. */
       pairingConnect: { params: { code: string }; response: { id: number } };
-      // biome-ignore lint/suspicious/noConfusingVoidType: Electrobun's parameterless RPC convention.
       listFontFamilies: { params: void; response: string[] };
       listSessions: { params: { cwd: string }; response: SessionInfo[] };
       /** `refresh` rescans session files; `indexing` asks the caller to retry. */
@@ -380,7 +364,6 @@ export type RPCSchema = {
         response: DesktopState;
       };
       openSessionLink: { params: { url: string }; response: Snapshot };
-      // biome-ignore lint/suspicious/noConfusingVoidType: Electrobun's empty response convention.
       setUiPreferences: { params: UiPreferences; response: void };
       openSession: {
         params: OpenSessionParams;
@@ -395,7 +378,6 @@ export type RPCSchema = {
         response: Snapshot;
       };
       getOpenState: { params: { openId: string }; response: OpenState };
-      // biome-ignore lint/suspicious/noConfusingVoidType: Electrobun convention.
       cancelOpen: { params: { openId: string }; response: void };
       getSessionSnapshot: { params: SessionAddress; response: Snapshot };
       getMcpAppPreview: {
@@ -429,7 +411,6 @@ export type RPCSchema = {
       cancelPrompt: { params: SendKey; response: PromptReceipt };
       acknowledgePromptRecovery: {
         params: PromptRecoveryAck;
-        // biome-ignore lint/suspicious/noConfusingVoidType: Electrobun convention.
         response: void;
       };
       reorderQueuedPrompts: {
@@ -445,25 +426,19 @@ export type RPCSchema = {
       };
       discardRecovery: {
         params: { current: SessionAddress; retained: SessionAddress };
-        // biome-ignore lint/suspicious/noConfusingVoidType: Electrobun convention.
         response: void;
       };
-      // biome-ignore lint/suspicious/noConfusingVoidType: Electrobun convention.
       resolveExtensionUI: { params: UIReply; response: void };
       terminalCommand: {
         params: TerminalClientCommand & SessionAddress;
-        // biome-ignore lint/suspicious/noConfusingVoidType: Electrobun convention.
         response: void;
       };
-      // biome-ignore lint/suspicious/noConfusingVoidType: Electrobun convention.
       abort: { params: SessionAddress; response: void };
-      // biome-ignore lint/suspicious/noConfusingVoidType: Electrobun convention.
       closeSession: { params: SessionAddress; response: void };
       reloadSession: {
         params: SessionAddress;
         response: { state: "applied" | "pending" };
       };
-      // biome-ignore lint/suspicious/noConfusingVoidType: Electrobun convention.
       runtimeState: { params: void; response: RuntimeStateSnapshot };
       removeProject: { params: { cwd: string }; response: string[] };
       setProjectState: {
@@ -471,7 +446,6 @@ export type RPCSchema = {
         response: DesktopState;
       };
       openProjectFolder: { params: { cwd: string }; response: boolean };
-      // biome-ignore lint/suspicious/noConfusingVoidType: Electrobun's empty response convention.
       logout: { params: AccountTarget; response: void };
       createProviderAccount: {
         params: { provider: string; label: string };
@@ -479,7 +453,6 @@ export type RPCSchema = {
       };
       renameDefaultProviderAccount: {
         params: { provider: string; label: string };
-        // biome-ignore lint/suspicious/noConfusingVoidType: Electrobun convention.
         response: void;
       };
       renameProviderAccount: {
@@ -488,7 +461,6 @@ export type RPCSchema = {
       };
       removeProviderAccount: {
         params: { provider: string; accountId: string };
-        // biome-ignore lint/suspicious/noConfusingVoidType: Electrobun convention.
         response: void;
       };
       accountModels: {
@@ -497,7 +469,6 @@ export type RPCSchema = {
       };
       refreshProviderModels: {
         params: { provider: string };
-        // biome-ignore lint/suspicious/noConfusingVoidType: Electrobun's empty response convention.
         response: void;
       };
       setModel: {
@@ -526,19 +497,16 @@ export type RPCSchema = {
       };
       setModelOverride: {
         params: { provider: string; id: string; override: ModelOverride };
-        // biome-ignore lint/suspicious/noConfusingVoidType: Electrobun's empty response convention.
         response: void;
       };
       setDefaultEffort: {
         params: { provider: string; id: string; effort: Effort | null };
-        // biome-ignore lint/suspicious/noConfusingVoidType: Electrobun's empty response convention.
         response: void;
       };
       setEffort: {
         params: SessionAddress & { effort: Effort };
         response: ModelSelection;
       };
-      // biome-ignore lint/suspicious/noConfusingVoidType: Electrobun's empty response convention.
       copyImage: { params: { src: string }; response: void };
       saveImage: { params: { src: string }; response: string };
       readClipboardImage: {
@@ -555,13 +523,9 @@ export type RPCSchema = {
     messages: {
       chooseChatHistory: { requestId: string };
       listChatHistory: { requestId: string; source: LocalHistorySource };
-      // biome-ignore lint/suspicious/noConfusingVoidType: Electrobun convention.
       discardChatHistory: void;
-      // biome-ignore lint/suspicious/noConfusingVoidType: Electrobun convention.
       checkAppUpdate: void;
-      // biome-ignore lint/suspicious/noConfusingVoidType: Electrobun convention.
       installAppUpdate: void;
-      // biome-ignore lint/suspicious/noConfusingVoidType: Electrobun's parameterless RPC convention.
       addProject: void;
       setAppearance: Appearance;
       setSettings: SettingsPatch;
@@ -589,7 +553,6 @@ export type RPCSchema = {
   };
   webview: {
     requests: {
-      // biome-ignore lint/suspicious/noConfusingVoidType: Electrobun convention.
       flushDrafts: { params: void; response: void };
     };
     messages: {

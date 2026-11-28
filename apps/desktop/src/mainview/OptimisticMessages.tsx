@@ -1,9 +1,8 @@
 import { useLayoutEffect, useSyncExternalStore } from "react";
 import type { Snapshot } from "../shared/rpc-schema";
 import { RESUME_REQUEST_PREFIX } from "../shared/runtime-contract";
-import { expandedDraft } from "./draft-store";
-import { UserMessage } from "./MessageContent";
 import { usePendingArrival } from "./MessageQueue";
+import { PendingUserMessage } from "./PendingUserMessage";
 import { sends } from "./rpc";
 import { isPendingSteer } from "./send-controller";
 import { transcriptRequestIds } from "./transcript-requests";
@@ -41,25 +40,13 @@ export function OptimisticMessages({
     )
     .flatMap((send) =>
       send.content ? (
-        <div className="response-turn" key={send.key.requestId}>
-          <article
-            ref={arrival(send.key.requestId, send.content)}
-            className="message user"
-          >
-            <UserMessage
-              sessionId={snapshot.info.id}
-              disabled
-              message={{
-                role: "user",
-                timestamp: send.timestamp ?? 0,
-                content: [
-                  { type: "text", text: expandedDraft(send.content) },
-                  ...send.content.images.map(({ image }) => image),
-                ],
-              }}
-            />
-          </article>
-        </div>
+        <PendingUserMessage
+          key={send.key.requestId}
+          arrivalRef={arrival(send.key.requestId, send.content)}
+          sessionId={snapshot.info.id}
+          timestamp={send.timestamp ?? 0}
+          content={send.content}
+        />
       ) : (
         []
       ),

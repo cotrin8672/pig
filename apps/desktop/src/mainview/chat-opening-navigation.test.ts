@@ -2,8 +2,10 @@ import { afterAll, expect, mock, test } from "bun:test";
 import { fileURLToPath } from "node:url";
 import type { ModelInfo, Snapshot } from "../shared/rpc-schema";
 import type {
+  DraftSyncParams,
   OpenSessionParams,
   OpenState,
+  PromptParams,
   RuntimeRecoveryState,
   RuntimeStateSnapshot,
 } from "../shared/runtime-contract";
@@ -36,50 +38,63 @@ if (process.env.PIG_OPEN_NAVIGATION_CHILD !== "1") {
   let failRecovery = false;
   let recovery: Omit<RuntimeRecoveryState, "hostId"> = {};
   let startupState: Partial<RuntimeStateSnapshot> = {};
+  let attachmentSend:
+    | { sessionId: string; dispatched: (params: PromptParams) => void }
+    | undefined;
   const unexpectedSync = mock(async () => {
     throw new Error("Cannot sync an inactive draft");
   });
-  mock.module("electrobun/view", () => ({
-    Electroview: class {
-      constructor(readonly options: unknown) {}
-      static defineRPC() {
-        return {
-          send: { connectUI() {}, disconnectUI() {} },
-          request: {
-            runtimeState: async () => ({
-              hostId: "navigation",
-              publicationSeq: 0,
-              sessions: [],
-              pendingUI: [],
-              drafts: [],
-              statuses: [],
-              ...startupState,
-            }),
-            heartbeatUI: async () => ({ connected: true }),
-            getRecovery: () => {
-              if (failRecovery)
-                throw new Error("Recovery transport failed synchronously");
-              return Promise.resolve({
-                hostId: "navigation",
-                ...recovery,
-              });
-            },
-            syncDraft: unexpectedSync,
-            listSessions: async () => [],
-            openSession: (params: OpenSessionParams) => {
-              const deferred = Promise.withResolvers<Snapshot>();
-              calls.push({ params, deferred });
-              return deferred.promise;
-            },
-            getOpenState: async ({ openId }: { openId: string }) =>
-              states.get(openId) ?? { state: "unknown" },
-            cancelOpen: async ({ openId }: { openId: string }) => {
-              cancelled.push(openId);
-            },
-          },
-        };
-      }
-    },
+  mock.module("./rpc-transport", () => ({
+    createRendererRpc: () => ({
+      send: { connectUI() {}, disconnectUI() {} },
+      request: {
+        runtimeState: async () => ({
+          hostId: "navigation",
+          publicationSeq: 0,
+          sessions: [],
+          pendingUI: [],
+          drafts: [],
+          statuses: [],
+          ...startupState,
+        }),
+        heartbeatUI: async () => ({ connected: true }),
+        getRecovery: () => {
+          if (failRecovery)
+            throw new Error("Recovery transport failed synchronously");
+          return Promise.resolve({
+            hostId: "navigation",
+            ...recovery,
+          });
+        },
+        syncDraft: async (params: DraftSyncParams) =>
+          attachmentSend?.sessionId === params.sessionId
+            ? {
+                applied: true,
+                draft: {
+                  ...params.content,
+                  revision: params.expectedRevision + 1,
+                },
+              }
+            : unexpectedSync(),
+        prompt: async (params: PromptParams) => {
+          if (attachmentSend?.sessionId !== params.sessionId)
+            throw new Error("Sent to the wrong chat");
+          attachmentSend.dispatched(params);
+          return { disposition: "started" };
+        },
+        listSessions: async () => [],
+        openSession: (params: OpenSessionParams) => {
+          const deferred = Promise.withResolvers<Snapshot>();
+          calls.push({ params, deferred });
+          return deferred.promise;
+        },
+        getOpenState: async ({ openId }: { openId: string }) =>
+          states.get(openId) ?? { state: "unknown" },
+        cancelOpen: async ({ openId }: { openId: string }) => {
+          cancelled.push(openId);
+        },
+      },
+    }),
   }));
   Object.assign(globalThis, {
     history: {
@@ -432,6 +447,73 @@ if (process.env.PIG_OPEN_NAVIGATION_CHILD !== "1") {
     closePane(1);
     expect(useStore.getState().panes[1]).toBeDefined();
   });
+
+  test("startup forwards claimed reads to the send and transfers later attachments only to its draft", async () => {
+    const { attachmentReads } = await import("./composer-attachments");
+    const { emptyContent } = await import("./draft-store");
+    const { queueOpeningSend } = await import("./opening-sends");
+    const { createPane } = await import("./pane-state");
+    const fileReader = globalThis.FileReader;
+    Object.assign(globalThis, {
+      FileReader: class {
+        abort() {}
+      },
+    });
+    try {
+      const chat = await start(undefined, "attachment-open");
+      const openId = chat.params.openId;
+      const key = openingDraftKey(useStore.getState().pendingOpens[openId]);
+      const sent = Promise.withResolvers<string>();
+      const later = Promise.withResolvers<string>();
+      const dispatched = Promise.withResolvers<PromptParams>();
+      const address = chat.ready.address;
+      attachmentSend = {
+        sessionId: address.sessionId,
+        dispatched: dispatched.resolve,
+      };
+      attachmentReads.startClipboard(key, () => sent.promise);
+      queueOpeningSend(
+        openId,
+        { ...emptyContent(), text: "first" },
+        "steer",
+        attachmentReads.claim(key),
+      );
+      attachmentReads.startClipboard(key, () => later.promise);
+      drafts.edit(key, (content) => ({
+        ...content,
+        files: [
+          { id: "later-file", path: "fixture/note.txt", name: "note.txt" },
+        ],
+      }));
+      createPane("rows");
+      const otherId = useStore.getState().openId;
+      expect(otherId).toBeDefined();
+      expect(otherId).not.toBe(openId);
+
+      chat.deferred.resolve(chat.ready);
+      await chat.promise;
+      expect(useStore.getState().openId).toBe(otherId);
+      expect(sends.read(address)?.content?.images).toEqual([]);
+      expect(attachmentReads.pending(address)).toBe(1);
+      later.resolve("bGF0ZXI=");
+      sent.resolve("c2VudA==");
+      expect(await dispatched.promise).toMatchObject({
+        ...address,
+        text: "first",
+        images: [{ data: "c2VudA==" }],
+      });
+      expect(drafts.read(address).content).toMatchObject({
+        images: [{ image: { data: "bGF0ZXI=" } }],
+        files: [{ id: "later-file" }],
+      });
+      if (!otherId) throw Error("Expected a second editor");
+      expect(drafts.read(otherId).content).toEqual(emptyContent());
+    } finally {
+      Object.assign(globalThis, { FileReader: fileReader });
+      attachmentSend = undefined;
+    }
+  });
+
   test("optional recovery transport failure cannot fail a successful open or erase its new draft", async () => {
     failRecovery = true;
     try {

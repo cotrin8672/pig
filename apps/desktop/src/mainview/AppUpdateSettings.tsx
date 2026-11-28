@@ -21,24 +21,16 @@ export function AppUpdateSettings() {
       .catch(showError);
   }, []);
   if (!state) return null;
-  const busy = ["checking", "preparing", "restarting"].includes(state.status);
+  const busy = state.status === "checking" || state.status === "preparing";
   const available = Boolean(state.latest);
   const status =
     state.error ??
-    (state.reason &&
-      {
-        nightly: t.appUpdateNightly,
-        development: t.appUpdateDevelopment,
-        unsupported: t.appUpdateUnsupported,
-        unknown: t.appUpdateUnknown,
-      }[state.reason]) ??
     {
-      idle: "",
+      idle: state.method === "disabled" ? t.appUpdateUnknown : "",
       checking: t.appUpdateChecking,
       current: t.appUpdateCurrent,
       available: state.latest ? t.appUpdateAvailable(state.latest) : "",
       preparing: t.appUpdatePreparing,
-      restarting: t.appUpdateRestarting,
       error: "",
     }[state.status];
   return (

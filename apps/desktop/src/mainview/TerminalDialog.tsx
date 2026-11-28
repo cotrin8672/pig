@@ -219,7 +219,7 @@ function TerminalModal(props: TerminalDialogProps) {
     <dialog
       ref={dialog}
       data-terminal-ui
-      className="terminal-dialog electrobun-webkit-app-region-no-drag"
+      className="terminal-dialog window-no-drag"
       aria-label={request.title ?? t.Extension}
       aria-modal={modal}
       onCancel={(event) => event.preventDefault()}

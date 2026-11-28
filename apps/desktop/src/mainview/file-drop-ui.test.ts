@@ -68,6 +68,28 @@ test.skipIf(!existsSync(fixtureEdge) && !process.env.PIG_REQUIRE_UI_TESTS)(
       check(pending?.kind==='send'&&pending.content.text===''&&pending.content.files?.[0]?.path==='fixture/note.txt','a file alone is queued for the chat that is opening');
       await wait();
       check(!document.querySelector('.composer-attachment'),'the queued attachment leaves the draft');
+
+      const NativeReader=window.FileReader,readers=[];
+      window.FileReader=class extends NativeReader {
+        readAsDataURL(file){readers.push(()=>super.readAsDataURL(file));}
+      };
+      const next='other-pane',other={cwd:'fixture',draftId:next};
+      flushSync(()=>useStore.setState({openingTarget:opening,pendingOpens:{[openId]:opening,[next]:other}}));
+      const images=new DataTransfer();
+      for(let i=0;i<9;i++) images.items.add(new File(['image-'+i],i+'.png',{type:'image/png'}));
+      document.querySelector('.transcript').dispatchEvent(new DragEvent('drop',{bubbles:true,cancelable:true,dataTransfer:images}));
+      await until(()=>document.querySelectorAll('.composer-attachment.pending').length===8,'eight image slots are reserved even before reads finish');
+      check(readers.length===8,'the ninth image is not read');
+      document.querySelector('.send-button').click();
+      const firstSend=useStore.getState().pendingOpens[openId].queued?.[0];
+      check(firstSend?.kind==='send'&&firstSend.attachments,'send claims even unfinished image-only drops');
+      flushSync(()=>root.render(<ChatOpening openId={next}/>));
+      for(const read of readers.reverse())read();
+      window.FileReader=NativeReader;
+      const loaded=await firstSend.attachments.result;
+      check(loaded.images.map(({image})=>atob(image.data)).join()===Array.from({length:8},(_,i)=>'image-'+i).join(),'the captured send owns all eight images in drop order after switching panes');
+      await wait();
+      check(!document.querySelector('.composer-attachment'),'late reads must not attach to the other pane');
       `,
     ),
   60_000,

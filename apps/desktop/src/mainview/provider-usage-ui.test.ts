@@ -51,7 +51,7 @@ test.skipIf(!existsSync(edge) && !process.env.PIG_REQUIRE_UI_TESTS)(
           check(firstName.left-firstIcon.right>=4,'icon and account name keep a gap');
           const rows=[...card.querySelectorAll('.provider-usage-row')];
           check(rows.every(r=>r.getBoundingClientRect().height>=22),'row height');
-          const bars=[...card.querySelectorAll('.provider-usage-bar')];
+          const bars=[...card.querySelectorAll('.usage-meter')];
           check(bars.every(b=>b.getBoundingClientRect().height===8),'8px bars');
           check(bars.every(b=>b.getBoundingClientRect().width>20),'bars keep a readable width in every dock width');
           const percents=[...card.querySelectorAll('.provider-usage-percent')];
@@ -66,7 +66,7 @@ test.skipIf(!existsSync(edge) && !process.env.PIG_REQUIRE_UI_TESTS)(
           const codex=[...card.querySelectorAll('.provider-usage-row')].find(r=>r.querySelector('.provider-usage-name').textContent==='Work');
           check(codex.querySelectorAll('.provider-usage-window').length===2,'two limits take two lines');
           check(codex.getBoundingClientRect().height>rows.find(r=>r.querySelectorAll('.provider-usage-window').length===1).getBoundingClientRect().height,'two-limit rows grow by exactly one line');
-          const codexQuota=[...codex.querySelectorAll('.provider-usage-window')].map(w=>w.style.getPropertyValue('--usage-quota'));
+          const codexQuota=[...codex.querySelectorAll('.usage-meter')].map(w=>w.style.getPropertyValue('--usage-quota'));
           check(codexQuota.join('|')==='12%|64%','shortest window first, quota follows the display preference');
           check(card.querySelector('.provider-usage-toggle').textContent===(language==='en'?'Usage':'使用量'),'heading must not show display mode or summary');
           check(!card.querySelector('.provider-usage-heading small'),'heading must not show an age timer');
@@ -92,11 +92,11 @@ test.skipIf(!existsSync(edge) && !process.env.PIG_REQUIRE_UI_TESTS)(
         const mistralRow=[...document.querySelectorAll('.provider-usage-row')].find(r=>r.querySelector('.provider-usage-name').textContent==='Mistral Vibe');
         const mistral=usageFixtures.find(e=>e.provider==='mistral');
         const monthly=mistral.data.windows[0];
-        const mistralTime=parseFloat(mistralRow.querySelector('.provider-usage-window').style.getPropertyValue('--usage-time'));
+        const mistralTime=parseFloat(mistralRow.querySelector('.usage-meter').style.getPropertyValue('--usage-time'));
         check(Math.abs(mistralTime-(monthly.resetsAt-usageFixtureTime)/monthly.durationMs*100)<0.001,'Mistral frame shows remaining monthly time');
         render(usageFixtures,'used',240);
         const usedRow=[...document.querySelectorAll('.provider-usage-row')].find(r=>r.querySelector('.provider-usage-name').textContent==='Mistral Vibe');
-        check(parseFloat(usedRow.querySelector('.provider-usage-window').style.getPropertyValue('--usage-time'))===mistralTime,'quota preference must not reverse time');
+        check(parseFloat(usedRow.querySelector('.usage-meter').style.getPropertyValue('--usage-time'))===mistralTime,'quota preference must not reverse time');
         check(usedRow.querySelector('.provider-usage-percent').textContent==='52%','used preference flips the percentage in the row');
         // A reset further away than the window is long clamps instead of overflowing the frame.
         const work=usageFixtures.find(e=>e.label==='OpenAI Work');
@@ -105,7 +105,7 @@ test.skipIf(!existsSync(edge) && !process.env.PIG_REQUIRE_UI_TESTS)(
           render([longReset,...usageFixtures.filter(e=>e!==work)],'remaining',width);
           const list=document.querySelector('.provider-usage-list');
           check(list.scrollWidth<=list.clientWidth+1,'long resets must fit without horizontal scrolling');
-          const times=[...list.querySelectorAll('.provider-usage-window')].map(w=>parseFloat(w.style.getPropertyValue('--usage-time')));
+          const times=[...list.querySelectorAll('.usage-meter')].map(w=>parseFloat(w.style.getPropertyValue('--usage-time')));
           check(times.every(t=>t>=0&&t<=100),'frame time is clamped to the bar');
           check([...list.querySelectorAll('.provider-usage-percent')].every(p=>p.scrollWidth<=p.clientWidth+1),'percentages are not clipped');
         }

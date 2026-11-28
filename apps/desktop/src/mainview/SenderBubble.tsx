@@ -3,6 +3,7 @@ import { type ReactNode, useLayoutEffect, useRef, useState } from "react";
 import type { TranscriptRecord } from "../shared/transcript";
 import { useT } from "./i18n";
 import { inboundMessage } from "./inbound-message";
+import { MessageBubble } from "./patterns/MessageBubble";
 import "./sender-bubble.css";
 
 /** The label riding on top of a bubble the user did not type. */
@@ -73,8 +74,7 @@ export function InboundMessage({
       <article className="message user">
         <div className="user-turn">
           {images}
-          <div className="user-bubble sender-bubble">
-            {head}
+          <MessageBubble sender={head}>
             {inbound.text && (
               <div
                 ref={body}
@@ -99,7 +99,7 @@ export function InboundMessage({
                 )}
               </button>
             )}
-          </div>
+          </MessageBubble>
         </div>
       </article>
     </div>

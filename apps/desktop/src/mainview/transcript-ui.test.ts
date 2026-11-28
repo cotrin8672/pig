@@ -25,52 +25,54 @@ const edge =
   "C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe";
 
 test.skipIf(!existsSync(edge) && !process.env.PIG_REQUIRE_UI_TESTS)(
-  "extension Compare stories explain the tool before the renderer candidates",
+  "ChatRenderer tool stories show the shipped examples and states at narrow widths",
   () => {
-    const directory = fileURLToPath(
-      new URL("../stories/tools/extensions/", import.meta.url),
-    );
     const imports = [
-      ...new Bun.Glob("**/*.stories.tsx").scanSync({
-        cwd: directory,
-        absolute: true,
-      }),
-    ].map((path) => `await import(${fixtureImport(pathToFileURL(path))})`);
+      "ApplyPatchRenderer",
+      "AskUserRenderer",
+      "CodexAgentRenderer",
+      "PiLensRenderer",
+      "SchedulePromptRenderer",
+      "SubagentRenderer",
+      "ToolBlock",
+      "ToolGroup",
+    ].map((name) =>
+      fixtureImport(
+        new URL(
+          `../stories/chat-renderer/${name}.stories.tsx`,
+          import.meta.url,
+        ),
+      ),
+    );
     return runUiFixture(
-      "extension-tool-descriptions",
+      "chat-renderer-tool-stories",
       `
       const {createRoot}=await import(${fixtureImport(import.meta.resolve("react-dom/client"))});
       const {flushSync}=await import(${fixtureImport(import.meta.resolve("react-dom"))});
       await import(${fixtureImport(new URL("./styles.css", import.meta.url))});
-      const modules=[${imports.join(",")}];
+      const modules=[${imports.map((path) => `await import(${path})`).join(",")}];
       ${fixtureHelpers}
       const root=createFixtureRoot(createRoot);
-      let count=0;
-      for(const module of modules){
-        for(const [name,story] of Object.entries(module)){
-          if(!name.startsWith('Compare'))continue;
-          count++;
-          for(const width of [760,320]){
-            document.getElementById('root').style.width=width+'px';
-            for(const phase of ['done','running','error']){
-              flushSync(()=>root.render(story.render({phase})));
-              await wait();
-              const label=module.default.title+'/'+name+'/'+phase+'/'+width;
-              const comparison=document.querySelector('.pp-compare');
-              const description=comparison?.querySelector('.pp-tool-description');
-              check(description&&comparison.firstElementChild===description,label+': description precedes all candidates');
-              check(description.querySelector('h2')?.textContent===module.default.title.split('/').pop(),label+': tool name');
-              check(description.querySelector('p')?.textContent.trim().length>0,label+': purpose');
-              check([...description.querySelectorAll('dt')].map(el=>el.textContent).join(',')==='入力,出力',label+': input/output labels');
-              check(description.querySelectorAll('dd').length===2&&[...description.querySelectorAll('dd')].every(el=>el.textContent.trim().length>0),label+': input/output explanations');
-              check(description.scrollWidth===description.clientWidth,label+': no horizontal overflow');
-              const bounds=description.getBoundingClientRect();
-              check(bounds.height>0&&bounds.bottom<=comparison.querySelector('.pp-specimen').getBoundingClientRect().top,label+': visible without overlapping candidates');
-            }
-          }
+      const host=document.getElementById('root');
+      for(const {States} of modules){
+        for(const width of [760,320]){
+          host.style.width=width+'px';
+          flushSync(()=>root.render(States.render()));
+          await wait();
+          const label=States.name+'/'+width;
+          const page=host.querySelector('.ds-specimen');
+          check(page?.querySelector('header small')?.textContent==='ChatRenderer',label+': renderer specimen');
+          check(page?.querySelector('h1')?.textContent===States.name,label+': component name');
+          const example=page.querySelector('.ds-specimen-stage');
+          const variants=page.querySelector('.ds-specimen-variants');
+          const tool='.tool-row,.tool-term';
+          check(example?.querySelector(tool)&&variants,label+': shipped example and state section');
+          check(example.getBoundingClientRect().bottom<=variants.getBoundingClientRect().top,label+': example precedes the states');
+          const cases=[...variants.querySelectorAll(':scope > figure')];
+          check(cases.length>0&&cases.every(item=>item.querySelector(tool)&&item.querySelector('figcaption')?.textContent.trim()),label+': each state renders a labelled tool');
+          check(host.scrollWidth<=host.clientWidth+1,label+': no page overflow');
         }
       }
-      check(count>0,'extension Compare stories must be covered');
       await capturePixels();
       `,
       { viewport: { width: 900, height: 800 } },
@@ -512,7 +514,7 @@ test.skipIf(!existsSync(edge) && !process.env.PIG_REQUIRE_UI_TESTS)(
         const rows=[...card.querySelectorAll('.provider-usage-row')];
         check(card.getBoundingClientRect().width===width,'usage dock must follow available sidebar width');
         check(rows.every(row=>row.getBoundingClientRect().height>=22),'usage rows must remain compact');
-        check([...card.querySelectorAll('.provider-usage-bar')].every(b=>b.getBoundingClientRect().height===8),'usage bars must be 8px tall');
+        check([...card.querySelectorAll('.usage-meter')].every(b=>b.getBoundingClientRect().height===8),'usage bars must be 8px tall');
         check([...card.querySelectorAll('.provider-usage-percent')].every(p=>p.textContent.endsWith('%')&&Number.isFinite(parseFloat(p.textContent))),'usage rows must show only the bar and its percentage');
         check(!card.querySelector('.provider-usage-reset'),'usage reset time must stay out of the row text');
         check(!card.textContent.includes('NaN'),'unknown reset/duration must not be invented');
@@ -1655,7 +1657,7 @@ test.skipIf(!existsSync(edge) && !process.env.PIG_REQUIRE_UI_TESTS)(
         ["models",'<div class="picker-panel model-panel" style="position:static;width:100%"><div class="model-results audit-scroller"></div></div>'],
         ["fonts",'<div class="font-picker-panel" style="padding:6px"><div class="font-picker-list audit-scroller"></div></div>'],
         ["notification-history",'<div class="notification-panel" style="position:static;width:100%"><div class="notification-history audit-scroller"></div></div>'],
-        ["oauth",'<dialog class="oauth-dialog audit-scroller" open></dialog>'],
+        ["oauth",'<dialog class="dialog-frame audit-scroller" open></dialog>'],
         ["sdk-dialog",'<dialog class="sdk-request audit-scroller" open></dialog>'],
         ["session-activity",'<div class="session-indicator-panel session-panel audit-scroller" style="position:static;width:100%"></div>'],
         ["session-task",'<div class="session-task-output"><pre class="audit-scroller"></pre></div>'],

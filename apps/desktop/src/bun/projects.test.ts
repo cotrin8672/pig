@@ -1,14 +1,15 @@
 import { expect, test } from "bun:test";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, sep } from "node:path";
 import {
   knownProject,
   validateProjectFlags,
   visibleProjects,
-  withoutProject,
 } from "../shared/projects";
+import { ClientHub } from "./client-hub";
 import { DesktopStateStore } from "./desktop-state";
+import { ProjectStore } from "./project-store";
 
 test("project rename/reset, pin and archive persist without changing legacy projects", async () => {
   const directory = await mkdtemp(
@@ -79,7 +80,7 @@ test("project RPC validation rejects unknown paths and malformed patches", () =>
   });
 });
 
-test("removing a project only updates the list, leaving its files, chats and metadata intact", async () => {
+test("project aliases register once; both windows see addition and removal without removing chats or metadata", async () => {
   const directory = await mkdtemp(
     join(process.env.PI_SCRATCH_DIR ?? tmpdir(), "project-remove-"),
   );
@@ -88,21 +89,43 @@ test("removing a project only updates the list, leaving its files, chats and met
     const chats = join(directory, "chat.jsonl");
     const list = join(directory, "projects.json");
     const desktop = join(directory, "desktop.json");
+    const hub = new ClientHub("test");
+    const notifications = [[], []] as string[][][];
+    for (const [i, changes] of notifications.entries())
+      hub.add(String(i), (type, value) => {
+        if (type === "projects" && Array.isArray(value))
+          changes.push(value as string[]);
+      });
+    const projects = new ProjectStore(list, join(directory, "general"), (p) =>
+      hub.broadcast("projects", p),
+    );
+    const alias = `${process.platform === "win32" ? directory.toUpperCase() : directory}${sep}.${sep}`;
+    const first = projects.register(directory);
+    const same = projects.register(alias);
+    const revoked = projects.register(join(directory, "revoked"), () => {
+      throw new Error("revoked");
+    });
+    expect(await Promise.all([first, same])).toEqual([directory, directory]);
+    await expect(revoked).rejects.toThrow("revoked");
+    expect(projects.value).toEqual([directory]);
+    await projects.validateScope(directory);
+    await expect(projects.validateScope(alias)).rejects.toThrow();
     await writeFile(file, "keep source");
     await writeFile(chats, "keep chat");
     const store = new DesktopStateStore(desktop);
     await store.setProject(directory, { name: "Keep metadata" });
     await store.setSession("chat", { pinned: true });
     const before = await readFile(desktop, "utf8");
-    await writeFile(
-      list,
-      JSON.stringify(withoutProject([directory, "/other"], directory)),
-    );
-    expect(JSON.parse(await readFile(list, "utf8"))).toEqual(["/other"]);
+    expect(await projects.remove(directory)).toEqual([]);
+    expect(notifications).toEqual([
+      [[directory], []],
+      [[directory], []],
+    ]);
+    expect(JSON.parse(await readFile(list, "utf8"))).toEqual([]);
     expect(await readFile(file, "utf8")).toBe("keep source");
     expect(await readFile(chats, "utf8")).toBe("keep chat");
     expect(await readFile(desktop, "utf8")).toBe(before);
-    expect(() => withoutProject([directory], "/unknown")).toThrow();
+    await expect(projects.remove("/unknown")).rejects.toThrow();
   } finally {
     await rm(directory, { recursive: true, force: true });
   }

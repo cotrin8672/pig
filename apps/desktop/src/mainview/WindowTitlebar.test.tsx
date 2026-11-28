@@ -214,7 +214,7 @@ test("pane actions precede window controls and can stay disabled without disappe
     );
     expect(html.match(/<button\b/g)).toHaveLength(5);
     expect(html).toContain(
-      'class="window-controls window-pane-controls electrobun-webkit-app-region-no-drag"',
+      'class="window-controls window-pane-controls window-no-drag"',
     );
     const columns = html.indexOf(`aria-label="${t.paneSplitColumns}"`);
     const rows = html.indexOf(`aria-label="${t.paneSplitRows}"`);

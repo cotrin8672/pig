@@ -1,15 +1,9 @@
 import { lstatSync } from "node:fs";
-import { copyFile, mkdir, rename, rm } from "node:fs/promises";
+import { copyFile, mkdir } from "node:fs/promises";
 import { dirname, join } from "node:path";
-import { buildChatHistoryWorker, buildStatisticsWorker } from "./pre-build";
-import {
-  copySdkRuntime,
-  SDK_RUNTIME_EXTERNALS,
-  SDK_RUNTIME_ROOTS,
-  sdkStageMatches,
-} from "./sdk-runtime-assets";
+import { buildChatHistoryWorker, buildStatisticsWorker } from "./build-workers";
+import { SDK_RUNTIME_EXTERNALS, stageSdkRuntime } from "./sdk-runtime-assets";
 
-const photon = "@silvia-odwyer/photon";
 function refuseLink(path: string) {
   if (lstatSync(path, { throwIfNoEntry: false })?.isSymbolicLink())
     throw new Error(`Refusing to stage through a symlink: ${path}`);
@@ -43,19 +37,11 @@ export async function stageTauriApp(
     refuseLink(path);
   await mkdir(bin, { recursive: true });
   // The SDK stage must not contain our generated files while it is being verified.
-  const sdk = join(desktop, "build", "tauri-sdk");
-  refuseLink(sdk);
-  const roots = [...SDK_RUNTIME_ROOTS, photon];
-  if (!sdkStageMatches({ projectDir: desktop, destination: sdk, roots })) {
-    refuseLink(`${sdk}.next`);
-    copySdkRuntime({ projectDir: desktop, destination: `${sdk}.next`, roots });
-    await rm(sdk, { force: true, recursive: true });
-    await rename(`${sdk}.next`, sdk);
-  }
+  const sdk = stageSdkRuntime(desktop);
   const result = await Bun.build({
     entrypoints: [join(desktop, "src/bun/tauri-host.ts")],
     target: "bun",
-    external: [...SDK_RUNTIME_EXTERNALS, photon, `${photon}/*`],
+    external: SDK_RUNTIME_EXTERNALS,
     outdir: bundle,
     naming: "tauri-host.js",
   });

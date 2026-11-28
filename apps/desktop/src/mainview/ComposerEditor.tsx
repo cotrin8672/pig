@@ -7,6 +7,7 @@ import {
   useRef,
 } from "react";
 
+import { ChatTextArea } from "./ChatTextArea";
 import {
   ComposerInputHistory,
   type EditGroup,
@@ -257,7 +258,7 @@ export function ComposerEditor({
           {paint}
         </div>
       )}
-      <textarea
+      <ChatTextArea
         {...props}
         ref={ref}
         rows={1}

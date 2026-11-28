@@ -11,7 +11,7 @@ import type { ProjectFlags } from "../shared/projects";
 import { useT } from "./i18n";
 import { ActionsMenu } from "./patterns/ActionsMenu";
 import { ConfirmButton } from "./patterns/ConfirmButton";
-import { refresh, refreshSessions, rpc } from "./rpc";
+import { refresh, rpc } from "./rpc";
 import { showError, useStore } from "./store";
 import {
   overlayProjects,
@@ -75,26 +75,22 @@ export function ProjectMenu({
   async function remove() {
     if (removingProjects.has(cwd)) return;
     // The list only forgets the folder, so hide it now and restore on failure.
-    const before = useStore.getState().bootstrap.projects;
     removingProjects.add(cwd);
-    const publish = (projects: string[]) =>
-      useStore.setState((s) => ({
-        bootstrap: { ...s.bootstrap, projects: overlayProjects(projects) },
-      }));
-    publish(before);
+    useStore.setState((s) => ({
+      bootstrap: {
+        ...s.bootstrap,
+        projects: overlayProjects(s.bootstrap.projects),
+      },
+    }));
     try {
       await waitPreferenceWrites("projects", cwd);
-      const projects = await rpc.request.removeProject({ cwd });
-      removingProjects.delete(cwd);
-      publish(projects);
+      await rpc.request.removeProject({ cwd });
     } catch (error) {
       removingProjects.delete(cwd);
       showError(error);
       // The host's list is authoritative after a refused removal.
       void refresh().catch(showError);
-      return;
     }
-    void refreshSessions().catch(showError);
   }
   return (
     <ActionsMenu label={`${t["Project actions"]}: ${displayName}`}>

@@ -1,5 +1,6 @@
 import { ArrowUp, ChevronDown, SquarePen, X } from "lucide-react";
 import { useRef, useState } from "react";
+import { ChatTextArea } from "../../mainview/ChatTextArea";
 import {
   PaneDragGrip,
   PaneDropOverlay,
@@ -11,6 +12,7 @@ import {
   type PaneLayout,
   paneGeometry,
 } from "../../mainview/pane-layout";
+import { MessageBubble } from "../../mainview/patterns/MessageBubble";
 import { ResizeDivider } from "../../mainview/ResizeDivider";
 import "../../mainview/panes.css";
 import "./panes.css";
@@ -105,7 +107,7 @@ export function PaneDragPreview({
                     <section className="pane-preview-history">
                       <div className="transcript">
                         <div className="message user">
-                          <div className="user-bubble">{session.prompt}</div>
+                          <MessageBubble>{session.prompt}</MessageBubble>
                         </div>
                         <div className="message assistant">
                           <p>{session.response}</p>
@@ -114,7 +116,7 @@ export function PaneDragPreview({
                     </section>
                     <div className="pane-preview-composer">
                       <div className="composer">
-                        <textarea
+                        <ChatTextArea
                           aria-label={`Pane ${id}へのメッセージ（プレビュー）`}
                           placeholder="メッセージを入力…"
                         />
